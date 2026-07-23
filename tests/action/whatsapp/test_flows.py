@@ -317,6 +317,38 @@ async def test_meta_send_flow_message_payload(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_meta_send_cta_url_message_payload(monkeypatch):
+    api = MetaWhatsAppAPI(
+        api_url="https://graph.facebook.com/v25.0",
+        session="phone1",
+        token="tok",
+        phone_number_id="phone1",
+        waba_id="waba1",
+    )
+    called = {}
+
+    async def fake_send_rest(endpoint, method="POST", data=None, **kwargs):
+        called["data"] = data
+        return {"ok": True, "messages": [{"id": "wamid.cta"}]}
+
+    monkeypatch.setattr(api, "send_rest_request", fake_send_rest)
+    result = await api.send_cta_url_message(
+        "15551112222",
+        url="https://mmgpg.example/pay?token=abc",
+        body="Tap Pay now to complete payment for invoice Z1.",
+        display_text="Pay now",
+        footer="One-time link",
+    )
+    assert result["ok"] is True
+    assert called["data"]["type"] == "interactive"
+    assert called["data"]["interactive"]["type"] == "cta_url"
+    params = called["data"]["interactive"]["action"]["parameters"]
+    assert params["display_text"] == "Pay now"
+    assert params["url"] == "https://mmgpg.example/pay?token=abc"
+    assert called["data"]["interactive"]["footer"]["text"] == "One-time link"
+
+
+@pytest.mark.asyncio
 async def test_jvconnect_list_and_send_flow(monkeypatch):
     api = JvconnectWhatsAppAPI(
         api_url="https://connect.example.com",

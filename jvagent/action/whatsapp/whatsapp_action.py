@@ -312,6 +312,24 @@ class WhatsAppAction(Action):
             return "jvconnect"
         return derive_meta_verify_token(agent_id, self._env_app_secret())
 
+    async def _flow_exchange_sibling(self, agent: Any = None) -> Any:
+        """Resolve optional ``flow_data_exchange_action`` sibling, if configured."""
+        handler_type = (self.flow_data_exchange_action or "").strip()
+        if agent is None or not handler_type:
+            return None
+        try:
+            sibling = await agent.get_action_by_type(handler_type)
+        except Exception:
+            logger.debug(
+                "flow data exchange: get_action_by_type(%s) failed",
+                handler_type,
+                exc_info=True,
+            )
+            return None
+        if sibling is None or sibling is self:
+            return None
+        return sibling
+
     async def handle_flow_data_exchange(
         self, payload: Dict[str, Any], agent: Any = None
     ) -> Dict[str, Any]:
@@ -325,33 +343,51 @@ class WhatsAppAction(Action):
         from .utils.flow_data_exchange import build_flow_data_exchange_response
 
         body = payload if isinstance(payload, dict) else {}
-        handler_type = (self.flow_data_exchange_action or "").strip()
-        if agent is not None and handler_type:
-            try:
-                sibling = await agent.get_action_by_type(handler_type)
-            except Exception:
-                logger.debug(
-                    "flow data exchange: get_action_by_type(%s) failed",
-                    handler_type,
-                    exc_info=True,
-                )
-                sibling = None
-            if sibling is not None and sibling is not self:
-                handler = getattr(sibling, "handle_flow_data_exchange", None)
-                if callable(handler):
-                    try:
-                        result = handler(body)
-                        if asyncio.iscoroutine(result):
-                            result = await result
-                    except Exception:
-                        logger.exception(
-                            "flow data exchange handler failed on %s",
-                            type(sibling).__name__,
-                        )
-                        result = None
-                    if result is not None:
-                        return result
+        sibling = await self._flow_exchange_sibling(agent)
+        if sibling is not None:
+            handler = getattr(sibling, "handle_flow_data_exchange", None)
+            if callable(handler):
+                try:
+                    result = handler(body)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                except Exception:
+                    logger.exception(
+                        "flow data exchange handler failed on %s",
+                        type(sibling).__name__,
+                    )
+                    result = None
+                if result is not None:
+                    return result
         return build_flow_data_exchange_response(body)
+
+    async def should_ignore_flow_nfm_reply(
+        self, body: str, agent: Any = None
+    ) -> bool:
+        """Ask the Flow exchange sibling whether an ``nfm_reply`` should skip Interact.
+
+        Endpoint-powered Flows often finish create work during data exchange; the
+        subsequent Meta ``nfm_reply`` (SUCCESS params as chat text) would only
+        race a duplicate LLM reply. Apps opt in via
+        ``should_ignore_flow_nfm_reply`` on ``flow_data_exchange_action``.
+        """
+        sibling = await self._flow_exchange_sibling(agent)
+        if sibling is None:
+            return False
+        handler = getattr(sibling, "should_ignore_flow_nfm_reply", None)
+        if not callable(handler):
+            return False
+        try:
+            result = handler(body)
+            if asyncio.iscoroutine(result):
+                result = await result
+            return bool(result)
+        except Exception:
+            logger.exception(
+                "should_ignore_flow_nfm_reply failed on %s",
+                type(sibling).__name__,
+            )
+            return False
 
     def _env_waba_id(self) -> str:
         w = (self.waba_id or "").strip()

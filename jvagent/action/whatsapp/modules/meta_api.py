@@ -881,6 +881,60 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             self._messages_url(), method="POST", data=data, use_full_url=True
         )
 
+    async def send_cta_url_message(
+        self,
+        phone: str,
+        *,
+        url: str,
+        body: str,
+        display_text: str = "Open",
+        header: str = "",
+        footer: str = "",
+    ) -> dict:
+        """Send an interactive CTA URL button message to *phone*.
+
+        Maps a URL to a button so the raw link need not appear in the body.
+        See Meta docs: interactive call-to-action URL button messages.
+        """
+        to = self._normalize_recipient(phone)
+        href = (url or "").strip()
+        text = (body or "").strip()
+        label = (display_text or "Open").strip() or "Open"
+        if not to or not href or not text:
+            return {
+                "ok": False,
+                "error": "phone, url, and body are required",
+            }
+        # Meta limits: body 1024, display_text 20, header/footer 60.
+        interactive: Dict[str, Any] = {
+            "type": "cta_url",
+            "body": {"text": text[:1024]},
+            "action": {
+                "name": "cta_url",
+                "parameters": {
+                    "display_text": label[:20],
+                    "url": href,
+                },
+            },
+        }
+        header_text = (header or "").strip()
+        if header_text:
+            interactive["header"] = {"type": "text", "text": header_text[:60]}
+        footer_text = (footer or "").strip()
+        if footer_text:
+            interactive["footer"] = {"text": footer_text[:60]}
+
+        data: Dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive,
+        }
+        return await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+
     async def send_image(
         self,
         phone: str,

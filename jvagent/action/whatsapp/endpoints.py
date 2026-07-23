@@ -631,6 +631,16 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         utterance = data.body or data.caption
         utterance = utterance.strip() if utterance else None
 
+        # Endpoint-powered Flows may already have finished work on data exchange;
+        # sibling can opt to ignore the follow-up nfm_reply chat utterance.
+        if utterance and await whatsapp_action.should_ignore_flow_nfm_reply(
+            utterance, agent=agent
+        ):
+            logger.info(
+                "WhatsApp webhook: ignoring Flow nfm_reply (handled by exchange action)"
+            )
+            return {"status": "ignored", "response": "Flow nfm_reply ignored"}
+
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
         if (
             not whatsapp_action.is_meta_provider()
