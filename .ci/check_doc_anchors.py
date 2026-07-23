@@ -109,9 +109,7 @@ def check_line_ref(
     return (False, f"File not found: {filepath}")
 
 
-def check_relative_link(
-    doc_path: Path, link: str, repo_root: Path
-) -> Tuple[bool, str]:
+def check_relative_link(doc_path: Path, link: str, repo_root: Path) -> Tuple[bool, str]:
     if "#" in link:
         link = link.split("#", 1)[0]
     if not link:

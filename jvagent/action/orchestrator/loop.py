@@ -154,7 +154,14 @@ class OrchestratorLoopMixin:
                     # next step (or close the plan if it's really done).
                     plan_deflections += 1
                     observations.append(self._plan_drain_nudge(open_steps))
-                    return (None, None, {}, chain_deflections, plan_deflections, nd_streak)
+                    return (
+                        None,
+                        None,
+                        {},
+                        chain_deflections,
+                        plan_deflections,
+                        nd_streak,
+                    )
         return (action, tool_name, args, chain_deflections, plan_deflections, nd_streak)
 
     async def _handle_locked_flow(

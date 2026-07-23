@@ -31,9 +31,7 @@ async def test_heartbeat_renews_until_cancelled():
     async def renew():
         calls.append(1)
 
-    task = asyncio.create_task(
-        lb.run_lease_heartbeat(renew, interval=0.02, key="c")
-    )
+    task = asyncio.create_task(lb.run_lease_heartbeat(renew, interval=0.02, key="c"))
     await asyncio.sleep(0.11)  # ~5 intervals
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -50,9 +48,7 @@ async def test_heartbeat_survives_a_failed_renew():
         if len(calls) == 1:
             raise RuntimeError("transient")
 
-    task = asyncio.create_task(
-        lb.run_lease_heartbeat(renew, interval=0.02, key="c")
-    )
+    task = asyncio.create_task(lb.run_lease_heartbeat(renew, interval=0.02, key="c"))
     await asyncio.sleep(0.11)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

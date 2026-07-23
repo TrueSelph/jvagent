@@ -613,7 +613,7 @@ async def _compose_success_response(
     system_queue: List[Dict[str, Any]],
 ) -> None:
     """Compose response payload for successful set_fields (no failures).
-    
+
     Mutates payload dict in-place to add:
     - response_directive
     - next_field_key (if applicable)
@@ -628,7 +628,7 @@ async def _compose_success_response(
     )
     notes_text = " ".join(n for n in note_queue if n).strip()
     inline_question = bool(next_field) and (notes_text or stored_for_each_child)
-    
+
     if inline_question:
         # Inlining the next question bypasses interview__next_field, so carry
         # what that tool would have provided: the canonical key (next_field_key
@@ -653,10 +653,10 @@ async def _compose_success_response(
         # directive such as a first-turn intro). Any pending note is carried
         # as system_message below so it survives without blocking the chain.
         payload["response_directive"] = call_tool_directive(next_tool)
-    
+
     if next_field:
         payload["next_field_key"] = next_field["key"]
-    
+
     # Build for_each metadata
     fe_meta = None
     fe_store = get_for_each_store(session)
@@ -679,14 +679,14 @@ async def _compose_success_response(
                     "complete": True,
                 }
                 break
-    
+
     if not inline_question:
         # next_tool signals a CHAIN: the model MUST call it before finalizing.
         # The inline-question branch above is a terminal reply (the question is
         # already in the directive), so it carries no next_tool — the directive
         # is delivered and the turn ends, preserving the note.
         payload["next_tool"] = next_tool
-    
+
     system_message = compose_system_message(
         system_queue,
         fallback=str(post_outcome.get("system_message") or "").strip(),
@@ -695,11 +695,9 @@ async def _compose_success_response(
         # The note had no follow-up question to attach to; surface it as
         # context so the model can relay it when it presents the review.
         system_message = (
-            f"{notes_text} {system_message}".strip()
-            if system_message
-            else notes_text
+            f"{notes_text} {system_message}".strip() if system_message else notes_text
         )
-    
+
     fe_payload = payload.get("for_each")
     active_fe = get_active_for_each(session, spec)
     example_child_keys = (
@@ -727,8 +725,7 @@ async def _compose_success_response(
                     child_keys=example_child_keys,
                 )
                 nudge += (
-                    f"Example (full): {full_ex}. "
-                    f"Example (partial OK): {partial_ex}"
+                    f"Example (full): {full_ex}. " f"Example (partial OK): {partial_ex}"
                 )
             else:
                 nudge += (

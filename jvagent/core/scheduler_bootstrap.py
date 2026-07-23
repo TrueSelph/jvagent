@@ -114,8 +114,6 @@ async def ensure_scheduler_for_server(
     return svc
 
 
-
-
 def resolve_scheduler_service(server: Optional[Any] = None) -> Optional[Any]:
     """Best-effort scheduler lookup for TaskMonitor."""
     from jvspatial.api.context import get_current_server

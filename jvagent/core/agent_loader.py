@@ -9,16 +9,14 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.actions import Actions
 from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
-from jvagent.core.yaml_io import load_yaml_sync
-from jvagent.core.agent import Agent
-from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.app import App
+from jvagent.core.yaml_io import load_yaml_sync
 from jvagent.memory import Memory
 
 logger = logging.getLogger(__name__)
@@ -775,7 +773,6 @@ class AgentLoader:
             logger.warning(
                 f"Actions for {agent.name}: {registered_count} registered, {failed_count} failed"
             )
-
 
     async def uninstall_agent(self, namespace: str, agent_name: str) -> bool:
         """Uninstall an agent.

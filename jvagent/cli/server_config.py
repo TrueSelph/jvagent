@@ -70,9 +70,7 @@ def _initialize_logging_database(
         "ERROR,CRITICAL",
     )
     if isinstance(log_levels_str, str):
-        log_level_names = [
-            level.strip().upper() for level in log_levels_str.split(",")
-        ]
+        log_level_names = [level.strip().upper() for level in log_levels_str.split(",")]
     else:
         log_level_names = ["ERROR", "CRITICAL"]
 

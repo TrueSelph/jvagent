@@ -55,7 +55,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - **Dead code and scaffolding removal (Wave 4).** Reverted `repair_phases/` parallel
   M1 scaffolding — moved `RepairLimits`, `STATE_VERSION`, phase constants, and memory
   repair functions inline into `graph_repair_job.py`; removed `_repair_checkpoint`
-  alias. Collapsed callback duplication — removed dead `try: pass` block and 
+  alias. Collapsed callback duplication — removed dead `try: pass` block and
   `_validate_webhook_url` wrapper. Deleted unused symbols: `get_conversation_history`,
   `get_event_history`, `get_interpretation_history`, `get_context_history` (use
   `get_interaction_history` with flags); `ToolSerializer`; `SkillActivationEnvelope`;
