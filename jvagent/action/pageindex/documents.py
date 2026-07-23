@@ -1145,7 +1145,8 @@ async def patch_document_root(
     fields: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     """Apply partial updates to DocumentRootNode. ``fields`` keys may include
-    ``metadata`` (dict or None) and/or ``doc_url`` (str or None). Must be non-empty."""
+    ``metadata`` (dict or None), ``doc_url`` (str or None), and/or ``doc_description``
+    (str or None). Must be non-empty."""
     if not fields:
         return None
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
@@ -1164,12 +1165,20 @@ async def patch_document_root(
             else:
                 s = str(u).strip()
                 root.doc_url = s or None
+        if "doc_description" in fields:
+            d = fields["doc_description"]
+            if d is None:
+                root.doc_description = None
+            else:
+                s = str(d).strip()
+                root.doc_description = s or None
         await root.save()
         return {
             "doc_name": root.doc_name,
             "root_id": root.id,
             "metadata": root.metadata,
             "doc_url": root.doc_url,
+            "doc_description": root.doc_description,
         }
 
 

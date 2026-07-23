@@ -459,13 +459,52 @@ class PageIndexAction(Action):
         self,
         collection_name: Optional[str] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
+        access_control: Optional[bool] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        summary: bool = False,
     ) -> List[Dict[str, Any]]:
         from ..documents import list_documents as _list_documents
 
-        return await _list_documents(
-            collection_name=collection_name or self._resolve_collection(),
-            metadata_filter=metadata_filter,
+        resolved_collection = collection_name or self._resolve_collection()
+        resolved_ac = (
+            access_control if access_control is not None else self.access_control
         )
+
+        if not resolved_ac:
+            result = await _list_documents(
+                collection_name=resolved_collection,
+                metadata_filter=metadata_filter,
+            )
+        else:
+            import types
+
+            visitor = types.SimpleNamespace(user_id=user_id, session_id=session_id)
+            access_filter = await self.resolved_metadata_filter(
+                visitor, metadata_filter=None, access_control=True
+            )
+
+            if metadata_filter and access_filter:
+                combined = {**metadata_filter, **access_filter}
+            elif access_filter:
+                combined = access_filter
+            else:
+                combined = metadata_filter
+
+            result = await _list_documents(
+                collection_name=resolved_collection,
+                metadata_filter=combined,
+            )
+
+        if summary:
+            return [
+                {
+                    "doc_name": d["doc_name"],
+                    "doc_description": d.get("doc_description", ""),
+                }
+                for d in result
+            ]
+        return result
 
     async def assimilate(
         self,
@@ -708,11 +747,26 @@ class PageIndexAction(Action):
         collection_name: Annotated[
             Optional[str], "Optional collection to filter by."
         ] = None,
+        summary: Annotated[
+            bool,
+            "If true, return only document names and descriptions (lighter response for quick lookup).",
+        ] = False,
     ) -> str:
-        """List all documents in the knowledge base."""
+        """List documents in the knowledge base. When access control is enabled,
+        only documents the current user can access are returned. Set summary=true
+        to get document names and descriptions for quick lookup."""
         import json
 
-        result = await self.list_documents(collection_name=collection_name or None)
+        from jvagent.tooling.tool_executor import get_tool_visitor
+
+        visitor = get_tool_visitor()
+        result = await self.list_documents(
+            collection_name=collection_name or None,
+            access_control=self.access_control,
+            user_id=getattr(visitor, "user_id", None) if visitor else None,
+            session_id=getattr(visitor, "session_id", None) if visitor else None,
+            summary=summary,
+        )
         return json.dumps(result, indent=2)
 
     @tool(name="pageindex__delete")

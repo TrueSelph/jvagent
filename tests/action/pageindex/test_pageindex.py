@@ -9,6 +9,7 @@ pytest.importorskip("pypdf")
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from jvspatial.api.exceptions import ValidationError
 from jvspatial.db import get_database_manager, unregister_database
 
@@ -37,7 +38,12 @@ from jvagent.action.pageindex.documents import (
 )
 from jvagent.action.pageindex.endpoints import (
     _do_assimilate,
+    _jvforge_request,
+    _jvforge_verify_queue_job_agent,
+    boost_documents_queue_job_endpoint,
+    cancel_documents_queue_job_endpoint,
     get_documents_queue_endpoint,
+    retry_documents_queue_job_endpoint,
 )
 from jvagent.action.pageindex.jvforge_routing import resolve_effective_jvforge_base
 from jvagent.action.pageindex.md_tree_enriched import (
@@ -1031,6 +1037,116 @@ async def test_get_documents_queue_empty_without_jvforge():
 
 
 @pytest.mark.asyncio
+async def test_get_documents_queue_degrades_to_empty_when_jvforge_unreachable():
+    """When jvforge is configured but unreachable, GET /documents_queue degrades to empty."""
+    with (
+        patch(
+            "jvagent.action.pageindex.endpoints.get_jvagent_jvforge_base_url",
+            return_value="http://127.0.0.1:8088",
+        ),
+        patch(
+            "jvagent.action.pageindex.endpoints._jvforge_request",
+            new_callable=AsyncMock,
+            side_effect=ValidationError(
+                message="jvforge is not reachable at http://127.0.0.1:8088."
+            ),
+        ),
+    ):
+        out = await get_documents_queue_endpoint("agent-x")
+    assert out == {"jobs": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_jvforge_verify_raises_validation_error_on_connect_failure():
+    """_jvforge_verify_queue_job_agent wraps httpx.ConnectError into ValidationError."""
+    with (
+        patch(
+            "jvagent.action.pageindex.endpoints.get_jvagent_jvforge_base_url",
+            return_value="http://127.0.0.1:8088",
+        ),
+        patch(
+            "jvagent.action.pageindex.endpoints._jvforge_request",
+            new_callable=AsyncMock,
+            side_effect=ValidationError(
+                message="jvforge is not reachable at http://127.0.0.1:8088.",
+                details={"error_type": "ConnectError", "agent_id": "agent-x"},
+            ),
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_verify_queue_job_agent("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert exc_info.value.details["agent_id"] == "agent-x"
+
+
+@pytest.mark.asyncio
+async def test_cancel_documents_queue_raises_validation_error_on_connect_failure():
+    """DELETE /documents_queue/{job_id} raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await cancel_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_boost_documents_queue_raises_validation_error_on_connect_failure():
+    """POST /documents_queue/{job_id}/boost raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await boost_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_retry_documents_queue_raises_validation_error_on_connect_failure():
+    """POST /documents_queue/{job_id}/retry raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await retry_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_jvforge_request_raises_validation_error_on_connect_error():
+    """_jvforge_request wraps httpx.ConnectError into a ValidationError with remediation hint."""
+    with patch(
+        "httpx.AsyncClient.request",
+        new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("All connection attempts failed"),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_request(
+                "GET", "http://127.0.0.1:8088", "/v1/queue", agent_id="agent-x"
+            )
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert "JVAGENT_JVFORGE_BASE_URL" in exc_info.value.message
+    assert exc_info.value.details["error_type"] == "ConnectError"
+    assert exc_info.value.details["agent_id"] == "agent-x"
+    assert exc_info.value.details["url"] == "http://127.0.0.1:8088/v1/queue"
+
+
+@pytest.mark.asyncio
 async def test_ensure_jvforge_llm_webhook_skipped_when_jvforge_url_unset():
     """Do not call get_webhook_url when JVAGENT_JVFORGE_BASE_URL is unset."""
     action = object.__new__(PageIndexAction)
@@ -1278,6 +1394,79 @@ def test_ssrf_guard_allows_public_https():
 
     # google.com / cloudflare.com etc. depend on DNS — use literal public IP.
     _ssrf_guard_url("https://1.1.1.1/")
+
+
+def test_rewrite_process_document_url_to_jvforge_base(monkeypatch):
+    """Tunnel artifact hosts rewrite onto JVAGENT_JVFORGE_BASE_URL."""
+    from jvagent.action.pageindex.url_guard import (
+        rewrite_process_document_url_to_jvforge_base,
+    )
+
+    monkeypatch.setenv("JVAGENT_JVFORGE_BASE_URL", "http://127.0.0.1:8089")
+    # Clear dotenv cache path by patching the getter used inside url_guard.
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    public = (
+        "https://filling-placement-integration-ambient.trycloudflare.com"
+        "/v1/artifacts/16b0cc4e-d25d-475e-b0a2-652fa870f0cb"
+    )
+    assert (
+        rewrite_process_document_url_to_jvforge_base(public)
+        == "http://127.0.0.1:8089/v1/artifacts/16b0cc4e-d25d-475e-b0a2-652fa870f0cb"
+    )
+    # Non-artifact URLs unchanged.
+    assert (
+        rewrite_process_document_url_to_jvforge_base("https://example.com/doc.pdf")
+        == "https://example.com/doc.pdf"
+    )
+    # Jobs path also rewritten.
+    assert (
+        rewrite_process_document_url_to_jvforge_base(
+            "https://tunnel.example/v1/jobs/abc?x=1"
+        )
+        == "http://127.0.0.1:8089/v1/jobs/abc?x=1"
+    )
+
+
+def test_ssrf_guard_allows_trusted_jvforge_loopback(monkeypatch):
+    """Configured forge origin may be loopback; other private hosts stay blocked."""
+    from jvspatial.api.exceptions import ValidationError
+
+    from jvagent.action.pageindex.url_guard import ssrf_guard_url
+
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    ssrf_guard_url(
+        "http://127.0.0.1:8089/v1/artifacts/x",
+        allow_private_for_trusted_jvforge=True,
+    )
+    with pytest.raises(ValidationError):
+        ssrf_guard_url(
+            "http://127.0.0.1:8089/v1/artifacts/x",
+            allow_private_for_trusted_jvforge=False,
+        )
+    with pytest.raises(ValidationError):
+        ssrf_guard_url(
+            "http://10.0.0.1/v1/artifacts/x",
+            allow_private_for_trusted_jvforge=True,
+        )
+
+
+def test_is_trusted_jvforge_url(monkeypatch):
+    from jvagent.action.pageindex.url_guard import is_trusted_jvforge_url
+
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    assert is_trusted_jvforge_url("http://127.0.0.1:8089/v1/artifacts/a")
+    assert not is_trusted_jvforge_url(
+        "https://filling-placement.trycloudflare.com/v1/artifacts/a"
+    )
 
 
 # ---------------------------------------------------------------------------
