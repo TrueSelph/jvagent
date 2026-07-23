@@ -123,7 +123,7 @@ async def _post_webhook_pinned_async(
     For HTTPS the SNI server-name is forwarded via the per-request extension
     so certificate validation still uses the original hostname.
     """
-    hostname, safe_ips = _resolve_and_validate(webhook_url)
+    hostname, safe_ips = await _resolve_and_validate(webhook_url)
     parsed = urlparse(webhook_url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     target_ip = safe_ips[0]

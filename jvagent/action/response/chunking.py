@@ -6,7 +6,6 @@ match real token streaming; strings with no spaces are split into subword tokens
 """
 
 import logging
-import re
 from typing import Generator
 
 logger = logging.getLogger(__name__)
