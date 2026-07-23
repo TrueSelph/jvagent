@@ -268,7 +268,7 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` **or*
 | Path | Transport | Agent handling |
 |------|-----------|----------------|
 | User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body) |
-| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler returns `{screen,data}` (or `endpoint_not_configured` for INIT). Prefer navigate Flows (“No data”) unless you implement INIT screens |
+| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler on `WhatsAppAction.handle_flow_data_exchange`. Optional sibling via `flow_data_exchange_action` (entity type, same pattern as `stt_action` / `tts_action`) that implements `handle_flow_data_exchange` and returns `{screen,data}` (or `None` to fall through). Default stub returns `endpoint_not_configured` for INIT. Prefer navigate Flows (“No data”) unless you implement INIT screens |
 | Agent GET hub.challenge | Unused when `provider=meta` via jvconnect | Meta verifies jvconnect only (`FB_VERIFY_TOKEN`) |
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.

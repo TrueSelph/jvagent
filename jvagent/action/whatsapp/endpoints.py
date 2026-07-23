@@ -570,9 +570,12 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 # (Meta Flows contract), not this endpoint's declared
                 # {status, response} schema — letting FastAPI serialize it
                 # against the response model 500s the exchange.
-                return JSONResponse(
-                    content=whatsapp_action.handle_flow_data_exchange(request_data)
+                # Optional app handler via WhatsAppAction.flow_data_exchange_action
+                # (same pattern as stt_action / tts_action).
+                content = await whatsapp_action.handle_flow_data_exchange(
+                    request_data, agent=agent
                 )
+                return JSONResponse(content=content)
         else:
             await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)
