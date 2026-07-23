@@ -393,14 +393,14 @@ async def apply_soft_abandon(visitor: Any, agent: Any, locked_skill: str) -> boo
         return False
 
     from jvagent.action.interview import tasks as interview_tasks
-    from jvagent.action.interview.reaper import _apply_abandon
+    from jvagent.action.interview.reaper import apply_abandon
 
     handle = interview_tasks._find_existing_active_task(visitor, locked_skill)
     if handle is None:
         return False
     store = getattr(visitor, "tasks", None) or _store(conversation)
     try:
-        await _apply_abandon(conversation, store, handle, spec)
+        await apply_abandon(conversation, store, handle, spec)
     except Exception as exc:
         logger.warning("continuation: apply_soft_abandon failed: %s", exc)
         return False

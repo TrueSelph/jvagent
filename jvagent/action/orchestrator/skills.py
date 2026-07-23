@@ -82,6 +82,31 @@ def _parse_requires_tasks(raw: Any) -> Tuple[dict, ...]:
     return tuple(out)
 
 
+def _validate_preconditions(skill_name: str, requires_tasks: Tuple[dict, ...]) -> None:
+    """Startup validation: warn loudly when a skill declares unregistered preconditions.
+
+    Runtime fail-open behavior (evaluate_precondition returns True on unknown names)
+    is unchanged; this is an early warning at skill load time.
+    """
+    if not requires_tasks:
+        return
+    try:
+        from jvagent.action.orchestrator.preconditions import precondition_registered
+    except Exception:  # pragma: no cover
+        return
+
+    for entry in requires_tasks:
+        when = entry.get("when") or ""
+        if when and not precondition_registered(when):
+            logger.warning(
+                "Skill %r declares precondition %r which is not registered. "
+                "Runtime will fail open (treat as satisfied). Register it via "
+                "register_precondition() at app bootstrap.",
+                skill_name,
+                when,
+            )
+
+
 def discover_skill_docs(
     agent: Any,
     *,
@@ -166,6 +191,11 @@ def discover_skill_docs(
     docs: List[SkillDoc] = []
     for nm, bundle in kept.items():
         body = (bundle.get("content") or "").strip()
+        requires_tasks_tuple = _parse_requires_tasks(
+            bundle.get("requires_tasks") or bundle.get("requires-tasks")
+        )
+        # Validate precondition names (fail open at runtime, warn at load).
+        _validate_preconditions(nm, requires_tasks_tuple)
         docs.append(
             SkillDoc(
                 name=nm,
@@ -179,9 +209,7 @@ def discover_skill_docs(
                 always_active=bool(bundle.get("always_active", False)),
                 task_lock=bool(bundle.get("task_lock", False)),
                 lock_companions=tuple(bundle.get("lock_companions") or ()),
-                requires_tasks=_parse_requires_tasks(
-                    bundle.get("requires_tasks") or bundle.get("requires-tasks")
-                ),
+                requires_tasks=requires_tasks_tuple,
                 extends=bundle.get("extends") or None,
                 allowed_channels=tuple(bundle.get("allowed_channels") or ()),
                 denied_channels=tuple(bundle.get("denied_channels") or ()),
