@@ -116,15 +116,25 @@ def check_relative_link(doc_path: Path, link: str, repo_root: Path) -> Tuple[boo
         return (True, "")
     if link.startswith(("http://", "https://", "mailto:")):
         return (True, "")
+    # Sibling / external checkouts (e.g. ../../jvspatial/...) — absent in CI.
+    normalized = link.replace("\\", "/")
+    if "/jvspatial/" in f"/{normalized}" or normalized.startswith("jvspatial/"):
+        return (True, "")
 
     doc_dir = doc_path.parent
+    repo_resolved = repo_root.resolve()
     candidates = [
         doc_dir / link,
         repo_root / link.lstrip("./"),
     ]
     for target in candidates:
-        if target.exists():
+        if not target.exists():
+            continue
+        try:
+            target.resolve().relative_to(repo_resolved)
+        except ValueError:
             return (True, "")
+        return (True, "")
     return (False, f"Link target not found: {link}")
 
 

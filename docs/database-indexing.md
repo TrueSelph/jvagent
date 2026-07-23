@@ -4,8 +4,8 @@ jvagent builds on [jvspatial](https://github.com/trueselph/jvspatial) declarativ
 
 ## jvspatial reference
 
-- [Declarative Database Indexing](../../jvspatial/docs/md/optimization.md#declarative-database-indexing) — when `ensure_indexes` runs, `JVSPATIAL_AUTO_CREATE_INDEXES`, backend behavior
-- [Custom Database Implementation Guide](../../jvspatial/docs/md/custom-database-guide.md) — `Database.create_index`, `Database.drop_deprecated_indexes`
+- [Declarative Database Indexing](https://github.com/TrueSelph/jvspatial/blob/main/docs/md/optimization.md#declarative-database-indexing) — when `ensure_indexes` runs, `JVSPATIAL_AUTO_CREATE_INDEXES`, backend behavior
+- [Custom Database Implementation Guide](https://github.com/TrueSelph/jvspatial/blob/main/docs/md/custom-database-guide.md) — `Database.create_index`, `Database.drop_deprecated_indexes`
 
 ## What jvagent adds
 
