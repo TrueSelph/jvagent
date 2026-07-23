@@ -8,6 +8,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Security
+
+- **MCP OAuth tokens encrypted at rest.** `MCPOAuthAction` uses
+  `encrypt_token_for_storage`; `client_secret` is no longer persisted (resolved
+  from env at use time). Legacy plaintext JSON still decrypts. Extra routes
+  declared via `additional_endpoint_path_prefixes` so deregister cleans `/mcp/`.
+
+### Fixed
+
+- **TaskMonitor tick endpoint** raises `ResourceNotFoundError` when the monitor
+  is missing (was HTTP 200 + error body).
+
 ### Changed
 
 - **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
