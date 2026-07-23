@@ -163,7 +163,7 @@ All thought emissions are `transient` (they land in `interaction.agent_trace`, n
 3. **Turn-lock is deterministic when `lock_active_flow=True`** (default — the loop restricts its callable surface to the active flow's IA tool and dispatches it with no model round-trip) and **emergent/model-mediated when `False`** (the flow's tool is surfaced and the model decides whether to continue or detour). In both modes the control-task persists across turns and is cleared only by the flow's own session logic.
 4. **Routing is tool selection.** There is no separate router or capability registry; IAs, core services, and skills are all tools.
 5. **Actions own their output.** Actions publish their own results; the `reply`/`respond` egress tools (from the responder — `ReplyAction`, ADR-0014/0025) are model-discretionary. A turn that ends with no emission and no active flow gets a single fallback reply.
-6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved).
+6. **Access control gates tool dispatch** (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}` preserved). **Fail-open when no AC is attached** (all tools allowed); **fail-closed when AC.has_action_access() raises** (tool denied). See `jvagent.action.orchestrator.access`.
 
 ## Configuration
 

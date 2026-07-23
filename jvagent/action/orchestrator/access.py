@@ -1,8 +1,17 @@
 """AccessControl for the Orchestrator (ADR-0012 inv. 6).
 
 Tool dispatch is gated on the existing AC taxonomy; IA-as-tools use the stable
-``tool:delegate:{action_name}`` label. Fail-open when no enforcing
-``AccessControlAction`` is attached; fail-closed when AC raises.
+``tool:delegate:{action_name}`` label.
+
+**Fail-open / fail-closed behavior:**
+
+- **No AccessControlAction attached** → fail-open (allow). When no AC is enabled
+  or ``policy_applies()`` returns False, tools are allowed.
+- **AC.has_action_access() raises** → fail-closed (deny). An exception during
+  access check is logged and the tool is denied. This is the safe default when
+  AC wiring is broken.
+  
+See ``is_tool_allowed`` for the resolution logic.
 """
 
 from __future__ import annotations

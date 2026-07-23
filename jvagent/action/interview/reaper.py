@@ -141,7 +141,7 @@ async def reap_interview_tasks(
                 await handle.update(**{NUDGE_SENT_KEY: True})
                 counts["nudged"] += 1
             elif action == "abandon":
-                await _apply_abandon(conversation, store, handle, spec)
+                await apply_abandon(conversation, store, handle, spec)
                 counts["abandoned"] += 1
             elif action == "expire":
                 await handle.cancel(reason="parked interview expired (ADR-0034)")
@@ -152,10 +152,15 @@ async def reap_interview_tasks(
     return counts
 
 
-async def _apply_abandon(
+async def apply_abandon(
     conversation: Any, store: Any, handle: Any, spec: InterviewSpec
 ) -> None:
-    """Apply the skill's on_abandon policy to an idle active interview task."""
+    """Apply the skill's on_abandon policy to an idle active interview task.
+    
+    Public as of Wave 2 remediation; orchestrator continuation uses this for
+    soft-abandon handling (ADR-0034). The leading-underscore alias is kept for
+    one release cycle for backward compatibility.
+    """
     if (spec.on_abandon or "park").lower() == "cancel":
         if conversation is not None:
             try:
@@ -181,3 +186,7 @@ async def _apply_abandon(
             clear_interview_context(conversation)
         except Exception:
             pass
+
+
+# Backward compatibility alias (one release).
+_apply_abandon = apply_abandon

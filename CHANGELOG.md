@@ -19,6 +19,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 - **TaskMonitor tick endpoint** raises `ResourceNotFoundError` when the monitor
   is missing (was HTTP 200 + error body).
+- **Orchestrator fail-open validation (Wave 2).** Precondition startup validation
+  logs WARNING when skills declare unregistered preconditions (runtime fail-open
+  unchanged); `apply_abandon` promoted to public API; coupling guard allowlists
+  intentional ADR-0034 touchpoints; AC fail-open / fail-closed behavior documented.
 
 ### Changed
 
