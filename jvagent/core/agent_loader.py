@@ -9,12 +9,13 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-import yaml
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from jvagent.action.actions import Actions
 from jvagent.action.base import Action
+from jvagent.core.agent import Agent
+from jvagent.core.agent_yaml_validator import warn_agent_yaml
+from jvagent.core.yaml_io import load_yaml_sync
 from jvagent.core.agent import Agent
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.app import App
@@ -119,9 +120,7 @@ class AgentLoader:
             return None
 
         try:
-            with open(agent_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
+            data = load_yaml_sync(agent_file)
             if not data:
                 logger.warning(f"Empty agent descriptor: {agent_file}")
                 return None

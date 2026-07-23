@@ -42,6 +42,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Wave 5 Remediation**: Extracted shared lease backend (`jvagent/core/lease_backend.py`) from `distributed_lease.py` and `distributed_conversation_lock.py`, fixing import inversion where core imported from memory. Both modules now use the unified Redis/DynamoDB lease primitives. Adopted single YAML loader (`yaml_io.load_yaml_sync`) across `config.py`, `app_loader.py`, `agent_loader.py`, and `cli/validate.py`, eliminating duplicate `yaml.safe_load` patterns. Migrated environment variable access in `distributed_conversation_lock.py` and `lease_backend.py` to `jvspatial.env.env`.
 - **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
   pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
   `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md

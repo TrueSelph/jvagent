@@ -15,6 +15,7 @@ from typing import Any, Callable, ClassVar, Dict, Generic, Literal, Optional, Ty
 
 from jvagent.core.app_yaml_validator import warn_app_yaml_config
 from jvagent.core.env_resolver import resolve_env_placeholders
+from jvagent.core.yaml_io import load_yaml_sync
 
 logger = logging.getLogger(__name__)
 
@@ -219,16 +220,13 @@ def load_app_config(app_root: Optional[str] = None) -> dict:
     app_yaml_path = Path(app_root) / "app.yaml"
     try:
         if app_yaml_path.exists():
-            import yaml
-
-            with open(app_yaml_path, "r", encoding="utf-8") as f:
-                yaml_data = yaml.safe_load(f)
-                if yaml_data and "config" in yaml_data:
-                    app_config = resolve_env_placeholders(yaml_data.get("config", {}))
-                    if isinstance(app_config, dict):
-                        warn_app_yaml_config(
-                            app_config, source=f"{app_yaml_path}:config"
-                        )
+            yaml_data = load_yaml_sync(app_yaml_path)
+            if yaml_data and "config" in yaml_data:
+                app_config = resolve_env_placeholders(yaml_data.get("config", {}))
+                if isinstance(app_config, dict):
+                    warn_app_yaml_config(
+                        app_config, source=f"{app_yaml_path}:config"
+                    )
     except Exception as e:
         logger.warning(
             "Could not load app.yaml config from %s: %s",
@@ -369,10 +367,7 @@ def load_app_yaml_app_id(app_root: str) -> Optional[str]:
         app_yaml_path = Path(app_root) / "app.yaml"
         if not app_yaml_path.exists():
             return None
-        import yaml
-
-        with open(app_yaml_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        data = load_yaml_sync(app_yaml_path)
         if not data:
             return None
         data = resolve_env_placeholders(data)

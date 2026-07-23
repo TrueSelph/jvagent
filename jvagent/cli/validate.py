@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import List
 
+from jvagent.core.yaml_io import load_yaml_sync
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,8 +22,6 @@ def run_validate(app_root: str) -> int:
     Returns:
         0 if no issues, 1 otherwise.
     """
-    import yaml
-
     from jvagent.core.agent_loader import AgentLoader
     from jvagent.core.agent_yaml_validator import (
         _reset_warning_cache_for_tests as reset_agent_yaml_warnings,
@@ -48,14 +48,9 @@ def run_validate(app_root: str) -> int:
         return 1
 
     try:
-        with open(app_yaml, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+        raw = load_yaml_sync(app_yaml)
     except Exception as e:
         logger.error("Failed to read or parse app.yaml: %s", e, exc_info=True)
-        return 1
-
-    if not isinstance(raw, dict):
-        logger.error("app.yaml must contain a mapping at the root")
         return 1
 
     data = resolve_env_placeholders(raw)
@@ -68,13 +63,9 @@ def run_validate(app_root: str) -> int:
     for namespace, agent_name in loader.discover_agents():
         agent_file = root / "agents" / namespace / agent_name / "agent.yaml"
         try:
-            with open(agent_file, encoding="utf-8") as f:
-                agent_raw = yaml.safe_load(f)
+            agent_raw = load_yaml_sync(agent_file)
         except Exception as e:
             issues.append(f"{agent_file}: failed to load ({e})")
-            continue
-        if not isinstance(agent_raw, dict):
-            issues.append(f"{agent_file}: expected mapping at root")
             continue
         agent_data = resolve_env_placeholders(agent_raw)
         for agent_issue in validate_agent_yaml(agent_data):

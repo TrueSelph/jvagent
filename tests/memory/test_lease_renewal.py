@@ -13,15 +13,16 @@ import types
 
 import pytest
 
+import jvagent.core.lease_backend as lb
 import jvagent.memory.distributed_conversation_lock as dcl
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_lease_renew_interval_is_below_ttl():
-    assert dcl._lease_renew_interval(45) == pytest.approx(15.0)
-    assert dcl._lease_renew_interval(5) == pytest.approx(1.667, abs=0.01)
-    assert dcl._lease_renew_interval(1) == 1.0  # floor
+    assert lb.lease_renew_interval(45) == pytest.approx(15.0)
+    assert lb.lease_renew_interval(5) == pytest.approx(1.667, abs=0.01)
+    assert lb.lease_renew_interval(1) == 1.0  # floor
 
 
 async def test_heartbeat_renews_until_cancelled():
@@ -31,7 +32,7 @@ async def test_heartbeat_renews_until_cancelled():
         calls.append(1)
 
     task = asyncio.create_task(
-        dcl._run_lease_heartbeat(renew, interval=0.02, conversation_id="c")
+        lb.run_lease_heartbeat(renew, interval=0.02, key="c")
     )
     await asyncio.sleep(0.11)  # ~5 intervals
     task.cancel()
@@ -50,7 +51,7 @@ async def test_heartbeat_survives_a_failed_renew():
             raise RuntimeError("transient")
 
     task = asyncio.create_task(
-        dcl._run_lease_heartbeat(renew, interval=0.02, conversation_id="c")
+        lb.run_lease_heartbeat(renew, interval=0.02, key="c")
     )
     await asyncio.sleep(0.11)
     task.cancel()
@@ -86,7 +87,7 @@ async def test_redis_lock_renews_lease_while_held(monkeypatch):
 
     monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
     # Shrink the heartbeat so the test doesn't wait real TTL seconds.
-    monkeypatch.setattr(dcl, "_lease_renew_interval", lambda ttl: 0.02)
+    monkeypatch.setattr(lb, "lease_renew_interval", lambda ttl: 0.02)
 
     async with dcl.conversation_mutation_lock("conv-renew"):
         await asyncio.sleep(0.1)  # ~5 heartbeats
@@ -116,7 +117,7 @@ async def test_redis_lock_stops_renewing_after_release(monkeypatch):
     monkeypatch.setitem(sys.modules, "redis", types.ModuleType("redis"))
     monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio)
     monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
-    monkeypatch.setattr(dcl, "_lease_renew_interval", lambda ttl: 0.02)
+    monkeypatch.setattr(lb, "lease_renew_interval", lambda ttl: 0.02)
 
     async with dcl.conversation_mutation_lock("conv-stop"):
         await asyncio.sleep(0.05)

@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-import jvagent.core.distributed_lease as dl
+import jvagent.core.lease_backend as lb
 from jvagent.core.distributed_lease import distributed_lease
 
 pytestmark = pytest.mark.asyncio
@@ -75,7 +75,7 @@ async def test_redis_lease_acquires_renews_releases(monkeypatch):
     monkeypatch.setitem(sys.modules, "redis", types.ModuleType("redis"))
     monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio)
     monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
-    monkeypatch.setattr(dl, "_lease_renew_interval", lambda ttl: 0.02)
+    monkeypatch.setattr(lb, "lease_renew_interval", lambda ttl: 0.02)
 
     async with distributed_lease("k-redis"):
         await asyncio.sleep(0.1)
