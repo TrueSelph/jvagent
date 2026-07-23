@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+- Conversation health test coverage: `tests/core/conversation_health/test_scoring.py` and `test_heuristics.py`
+- Task monitor finalize tests: `tests/action/task_monitor/test_finalize.py`
+- Environment key coverage test: `tests/test_env_keys_documented.py` to ensure all `JVAGENT_*` keys are documented
+- Documented missing environment keys: `JVAGENT_TOKEN_ENC_KEY`, `JVAGENT_TOKEN_ENC_KEY_PREVIOUS`, `JVAGENT_CONVERSATION_LOCK_*`, `JVAGENT_CONVERSATION_HEALTH_ENABLED`, `JVAGENT_API_KEY_AUTH_ENABLED`, `JVAGENT_STRICT_CONFIG`, `JVAGENT_DEFER_REPAIR`, `JVAGENT_BASE_URL`, `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL`
+
+### Fixed
+- Fixed over-broad `pytestmark` in `tests/action/interact/test_session_refresh.py` and `tests/action/orchestrator/test_directive_trust.py` causing pytest warnings on sync tests
+- Removed duplicate `pre-commit run --all-files` from `.github/workflows/test-jvagent.yaml` (kept dedicated `pre-commit.yaml` workflow)
+- Updated stale references in `examples/jvagent_app/` docs: replaced obsolete `example_agent` and `resolv_demo` references with current `leadgen_agent` and `orchestrator_agent`
+
 ### Removed
 
 - **Dead APIs deleted** — `jvagent.action.plugin_contracts` (LanguageModelProvider, VectorStoreProvider), `jvagent.action.streaming` (StreamWriter), unused functions (`install_all_agents`, `ensure_standalone_scheduler`, `get_bound_scheduler_server`).

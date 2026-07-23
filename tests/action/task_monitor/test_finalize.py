@@ -33,8 +33,12 @@ class TestCancelExpiredPending:
 
         handle = MagicMock()
         handle.cancel = AsyncMock()
-        handle.parameters = {"not_after": past.isoformat()}
-        handle.task_type = "proactive"
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test",
+            "not_after": past.isoformat(),
+        }
 
         store = MagicMock()
         store.list_queue = MagicMock(return_value=[handle])
@@ -52,7 +56,7 @@ class TestCancelExpiredPending:
         handle = MagicMock()
         handle.cancel = AsyncMock()
         handle.parameters = {"not_after": future.isoformat()}
-        handle.task_type = "proactive"
+        handle.task_type = "PROACTIVE"
 
         store = MagicMock()
         store.list_queue = MagicMock(return_value=[handle])
@@ -101,7 +105,7 @@ class TestSweepTerminalProactive:
             to_dict=lambda: {"id": "task1"},
         )
         handle = SimpleNamespace(
-            task_type="conversation_health.proactive",
+            task_type="PROACTIVE",
             status="completed",
             _task=task,
         )
@@ -130,7 +134,7 @@ class TestSweepTerminalProactive:
             to_dict=lambda: {"id": "task1"},
         )
         handle = SimpleNamespace(
-            task_type="conversation_health.proactive",
+            task_type="PROACTIVE",
             status="completed",
             _task=task,
         )
@@ -158,7 +162,7 @@ class TestSweepTerminalProactive:
             to_dict=lambda: {"id": "task1"},
         )
         handle = SimpleNamespace(
-            task_type="conversation_health.proactive",
+            task_type="PROACTIVE",
             status="active",
             _task=task,
         )
@@ -218,11 +222,13 @@ class TestFinalizeProactiveTask:
         """Error + attempts remain → requeued."""
         handle = MagicMock()
         handle.status = "active"
-        handle.parameters = {
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test directive",
             "attempt_count": 0,
             "max_attempts": 3,
         }
-        handle.task_type = "conversation_health.proactive"
 
         store = MagicMock()
         store.get = MagicMock(return_value=handle)
@@ -239,11 +245,13 @@ class TestFinalizeProactiveTask:
         """Error + no attempts remain → failed."""
         handle = MagicMock()
         handle.status = "active"
-        handle.parameters = {
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test directive",
             "attempt_count": 2,
             "max_attempts": 3,
         }
-        handle.task_type = "conversation_health.proactive"
         handle.fail = AsyncMock()
 
         store = MagicMock()
@@ -260,11 +268,13 @@ class TestFinalizeProactiveTask:
         """Empty response + attempts remain → requeued."""
         handle = MagicMock()
         handle.status = "active"
-        handle.parameters = {
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test directive",
             "attempt_count": 0,
             "max_attempts": 3,
         }
-        handle.task_type = "conversation_health.proactive"
 
         interaction = SimpleNamespace(response="")
 
@@ -280,11 +290,13 @@ class TestFinalizeProactiveTask:
         """Empty response + no attempts remain → failed."""
         handle = MagicMock()
         handle.status = "active"
-        handle.parameters = {
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test directive",
             "attempt_count": 2,
             "max_attempts": 3,
         }
-        handle.task_type = "conversation_health.proactive"
         handle.fail = AsyncMock()
 
         interaction = SimpleNamespace(response="")
@@ -300,11 +312,13 @@ class TestFinalizeProactiveTask:
         """Valid response → completed."""
         handle = MagicMock()
         handle.status = "active"
-        handle.parameters = {
+        handle.task_type = "PROACTIVE"
+        handle.data = {
+            "spec_version": 2,
+            "directive": "test directive",
             "attempt_count": 0,
             "max_attempts": 3,
         }
-        handle.task_type = "conversation_health.proactive"
         handle.complete = AsyncMock()
 
         interaction = SimpleNamespace(response="This is a valid response.")

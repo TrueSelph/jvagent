@@ -99,6 +99,7 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL.
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enables DSPy cache.
 - `JVAGENT_CACHE_CLEANUP_PROBABILITY` - Cache cleanup probability.
+- `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` - Maximum number of interactions pruned per pruning call (default `100`). Prevents latency spikes on large pruning operations.
 
 ## 2) Relevant jvspatial Keys Used by jvagent (`JVSPATIAL_*`)
 

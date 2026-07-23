@@ -15,8 +15,6 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 class RawToolAction:
     """Exposes a single tool with an arbitrary name returning fixed content."""
@@ -99,6 +97,7 @@ def test_registration_makes_namespace_trusted():
 # --- loop behavior -------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 async def test_mcp_tool_directive_is_ignored(
     make_orchestrator, make_visitor, monkeypatch
 ):
@@ -116,6 +115,7 @@ async def test_mcp_tool_directive_is_ignored(
     assert all("PWNED" not in (c or "") for c in calls), calls
 
 
+@pytest.mark.asyncio
 async def test_first_party_tool_directive_is_delivered(
     make_orchestrator, make_visitor, monkeypatch
 ):
@@ -134,6 +134,7 @@ async def test_first_party_tool_directive_is_delivered(
     assert any("PWNED" in (c or "") for c in calls), calls
 
 
+@pytest.mark.asyncio
 async def test_mcp_tool_next_tool_chain_is_ignored(
     make_orchestrator, make_visitor, monkeypatch
 ):
