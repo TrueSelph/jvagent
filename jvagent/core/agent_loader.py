@@ -776,35 +776,6 @@ class AgentLoader:
                 f"Actions for {agent.name}: {registered_count} registered, {failed_count} failed"
             )
 
-    async def install_all_agents(
-        self, update_mode: Optional[str] = None
-    ) -> List[Agent]:
-        """Install all discovered agents.
-
-        Args:
-            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
-
-        Returns:
-            List of installed/updated agent instances
-        """
-        agent_list = self.discover_agents()
-
-        if not agent_list:
-            logger.info("No agents found to install")
-            return []
-
-        logger.info(f"Found {len(agent_list)} agent(s) to install")
-
-        installed = []
-        for namespace, agent_name in agent_list:
-            agent = await self.install_agent(
-                namespace, agent_name, update_mode=update_mode
-            )
-            if agent:
-                installed.append(agent)
-
-        logger.info(f"Successfully installed {len(installed)} agent(s)")
-        return installed
 
     async def uninstall_agent(self, namespace: str, agent_name: str) -> bool:
         """Uninstall an agent.

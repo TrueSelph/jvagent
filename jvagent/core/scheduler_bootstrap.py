@@ -114,46 +114,6 @@ async def ensure_scheduler_for_server(
     return svc
 
 
-async def ensure_standalone_scheduler(*, start: bool = True) -> Optional[Any]:
-    """Process-level scheduler for bootstrap-only paths without a Server."""
-    global _standalone_scheduler, _last_unavailable_reason
-
-    if _standalone_scheduler is not None:
-        return _standalone_scheduler
-
-    imported = _import_scheduler()
-    if imported is None:
-        return None
-
-    (
-        SchedulerService,
-        SchedulerConfig,
-        register_scheduled_tasks,
-        set_default_scheduler,
-    ) = imported
-
-    from jvspatial.runtime.serverless import is_serverless_mode
-
-    svc = SchedulerService(config=SchedulerConfig(enabled=True, interval=60))
-    _standalone_scheduler = svc
-    set_default_scheduler(svc)
-
-    try:
-        await register_scheduled_tasks(svc)
-    except Exception as exc:
-        _last_unavailable_reason = f"failed to register scheduled tasks: {exc}"
-        logger.error("scheduler_bootstrap: standalone register failed: %s", exc)
-        return None
-
-    if start and not is_serverless_mode() and not svc.is_running:
-        svc.start()
-
-    _last_unavailable_reason = None
-    return svc
-
-
-def get_bound_scheduler_server() -> Optional[Any]:
-    return _bound_server
 
 
 def resolve_scheduler_service(server: Optional[Any] = None) -> Optional[Any]:

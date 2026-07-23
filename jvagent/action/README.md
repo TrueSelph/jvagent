@@ -17,8 +17,8 @@ Action plugins live under `jvagent/action/{name}/`. Each package owns its Action
 
 ## Modularization contract
 
-See [`.planning/reference/action-authoring.md` §15](../.planning/reference/action-authoring.md)
-and [action-modularization-audit.md](../.planning/reference/action-modularization-audit.md).
+See [`.planning/reference/action-authoring.md` §15](./.planning/reference/action-authoring.md)
+and [action-modularization-audit.md](./.planning/reference/action-modularization-audit.md).
 
 **Rules (summary):**
 

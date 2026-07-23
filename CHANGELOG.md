@@ -8,6 +8,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Removed
+
+- **Dead APIs deleted** — `jvagent.action.plugin_contracts` (LanguageModelProvider, VectorStoreProvider), `jvagent.action.streaming` (StreamWriter), unused functions (`install_all_agents`, `ensure_standalone_scheduler`, `get_bound_scheduler_server`).
+
+### Added
+
+- **Documentation anchor check** — `.ci/check_doc_anchors.py` validates file:line references and relative markdown links in CLAUDE.md, AGENTS.md, docs/, .planning/ on every pre-commit. Prevents rotten anchors.
+
+### Fixed
+
+- **Broken doc links** — `jvagent/action/README.md` modularization-audit link.
+
 ### Security
 
 - **MCP OAuth tokens encrypted at rest.** `MCPOAuthAction` uses
