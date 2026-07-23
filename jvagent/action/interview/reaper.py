@@ -156,7 +156,7 @@ async def apply_abandon(
     conversation: Any, store: Any, handle: Any, spec: InterviewSpec
 ) -> None:
     """Apply the skill's on_abandon policy to an idle active interview task.
-    
+
     Public as of Wave 2 remediation; orchestrator continuation uses this for
     soft-abandon handling (ADR-0034). The leading-underscore alias is kept for
     one release cycle for backward compatibility.
