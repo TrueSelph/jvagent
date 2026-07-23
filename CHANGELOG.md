@@ -8,14 +8,40 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-23
+
+### Added
+
+- **ADR-0034 interview abandonment (#112).** Field unavailability (park / cancel /
+  relax + resume), TaskMonitor staleness reaper, and two-strike soft-abandon at
+  the companion gate.
+- **MCP OAuth action (#113).** OAuth-backed MCP connections and related leadgen
+  updates (including mcp_oauth import-guard allowlisting).
+- **Voice channel optimizations (#107).** Per-channel acknowledgment statements,
+  first-emit timeout, latency tracking, and related WhatsApp/voice interaction
+  flows.
+
+### Fixed
+
+- **ResponseBus channel-filter leak (#114).** Dedup channel filter registration;
+  TaskMonitor initializes actions once per process (not per tick).
+- **Conversation-health AI history (#115).** AI eval history uses prior-only
+  turns (excludes the interaction under score).
+- **Gated resume for auto-resolving skills (#108).** Server-driven resume /
+  compose for ADR-0026 auto-resolving first-field / single-field skills.
+- **Interview `for_each` ask-time skips (#111).** Run ask-time skip hooks after a
+  `for_each` advance in `set_fields`.
+
 ### Changed
 
-- **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
-  pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
+- **Lint gate honesty (#116).** Pre-commit flake8 plugins and mypy type-stub deps
+  are pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
   `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md
   documents the real (non-strict) typing bar. Fixed flake8-bugbear B042/B043 in
   `manifest.py` / `llm_bridge.py`. Hot-path None guards in MCP tool selection,
   TaskMonitor tick, and interview set_fields.
+- **CI publish environment (#106).** Final PyPI publish records a `pypi`
+  environment deployment. Dependabot: `actions/setup-node` 6 → 7 (#109).
 
 ## [0.1.2] - 2026-07-17
 
