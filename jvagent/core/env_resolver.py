@@ -18,10 +18,25 @@ logger = logging.getLogger(__name__)
 ENV_PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?)?\}")
 
 
+def parse_bool_env(raw: Any) -> bool:
+    """Parse an environment variable or config value as boolean.
+
+    Recognizes truthy strings: "true", "1", "yes", "on" (case-insensitive).
+    All other values (including empty string, None, and "false") are falsy.
+
+    Args:
+        raw: Value to parse (typically from os.getenv or config)
+
+    Returns:
+        True if value matches one of the truthy patterns, False otherwise
+    """
+    return str(raw).strip().lower() in ("true", "1", "yes", "on")
+
+
 def _warn_all_empty_placeholders() -> bool:
     """Warn on every unset ``${VAR}`` placeholder (default ON)."""
     raw = os.getenv("JVAGENT_WARN_EMPTY_PLACEHOLDERS", "true")
-    return str(raw).strip().lower() in ("true", "1", "yes", "on")
+    return parse_bool_env(raw)
 
 
 def resolve_env_placeholders(value: Any) -> Any:

@@ -6,12 +6,14 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from jvagent.core.env_resolver import parse_bool_env
+
 
 def _env_bool(name: str) -> Optional[bool]:
     raw = os.getenv(name)
     if raw is None or not str(raw).strip():
         return None
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    return parse_bool_env(raw)
 
 
 def _as_bool(value: Any, default: bool) -> bool:
@@ -22,7 +24,7 @@ def _as_bool(value: Any, default: bool) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
+        return parse_bool_env(value)
     return default
 
 

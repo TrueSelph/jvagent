@@ -75,11 +75,9 @@ _OPTIONAL_POST_LISTEN_PHASES = frozenset(
 def _defer_noncritical_repair() -> bool:
     import os
 
-    return os.getenv("JVAGENT_DEFER_REPAIR", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    from jvagent.core.env_resolver import parse_bool_env
+
+    return parse_bool_env(os.getenv("JVAGENT_DEFER_REPAIR", ""))
 
 
 def _apply_deferred_phase_skip(state: Dict[str, Any]) -> None:

@@ -15,6 +15,7 @@ Dependencies are automatically installed during action discovery, ensuring
 they are available before the action module is imported.
 """
 
+import asyncio
 import logging
 import subprocess
 import sys
@@ -233,3 +234,22 @@ def check_pip_dependency_installed(package_spec: str) -> bool:
         return installed_version in specifier
     except Exception:
         return True
+
+
+async def install_action_dependencies_async(
+    metadata: Dict[str, Any], action_name: str
+) -> bool:
+    """Async wrapper for install_action_dependencies.
+
+    Wraps the synchronous installation path (which uses subprocess.run) in
+    asyncio.to_thread so it can be awaited from async code without blocking
+    the event loop.
+
+    Args:
+        metadata: Action metadata dictionary (from info.yaml)
+        action_name: Name of the action (for logging)
+
+    Returns:
+        True if installation succeeded or no dependencies, False otherwise
+    """
+    return await asyncio.to_thread(install_action_dependencies, metadata, action_name)
