@@ -34,6 +34,151 @@ from jvagent.core.scheduler_bootstrap import app_has_task_monitor
 logger = logging.getLogger(__name__)
 
 
+def _initialize_logging_database(
+    app_root: str, app_config: Dict[str, Any], mongodb_uri: str, debug: bool
+) -> None:
+    """Initialize the logging database with app.yaml and environment config.
+
+    Automatically installs DBLogHandler. Imports INTERACTION level to ensure it's
+    registered before initialization.
+
+    Args:
+        app_root: Path to app root directory
+        app_config: Loaded app configuration dict
+        mongodb_uri: MongoDB URI to fall back to for log DB
+        debug: Debug mode flag
+    """
+    import logging
+
+    from jvspatial.logging.config import initialize_logging_database
+
+    from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
+
+    # Get logging configuration from app.yaml if available
+    logging_enabled = get_config_value(
+        app_config, "logging.enabled", "JVSPATIAL_DB_LOGGING_ENABLED", True
+    )
+    if not logging_enabled:
+        logger.info("Logging is disabled in configuration")
+        return
+
+    # Get log levels from app.yaml or environment
+    log_levels_str = get_config_value(
+        app_config,
+        "logging.levels",
+        "JVSPATIAL_DB_LOGGING_LEVELS",
+        "ERROR,CRITICAL",
+    )
+    if isinstance(log_levels_str, str):
+        log_level_names = [level.strip().upper() for level in log_levels_str.split(",")]
+    else:
+        log_level_names = ["ERROR", "CRITICAL"]
+
+    # Convert level names to logging constants
+    log_levels = set()
+    for level_name in log_level_names:
+        try:
+            level = getattr(logging, level_name)
+            log_levels.add(level)
+        except AttributeError:
+            logger.warning(f"Invalid log level: {level_name}, skipping")
+
+    # Default to ERROR and CRITICAL if no valid levels
+    if not log_levels:
+        log_levels = {logging.ERROR, logging.CRITICAL}
+
+    # Add INTERACTION level to capture interaction logs
+    log_levels.add(INTERACTION_LEVEL_NUMBER)
+
+    # Get logging database config from app.yaml / JVSPATIAL_LOG_DB_*
+    log_db_type = get_config_value(
+        app_config, "logging.database.type", "JVSPATIAL_LOG_DB_TYPE", None
+    )
+    log_db_uri = get_config_value(
+        app_config, "logging.database.uri", "JVSPATIAL_LOG_DB_URI", None
+    )
+    log_db_name = get_config_value(
+        app_config, "logging.database.name", "JVSPATIAL_LOG_DB_NAME", "jvagent_logs"
+    )
+
+    # DynamoDB logging database configuration
+    log_dynamodb_table_name = get_config_value(
+        app_config,
+        "logging.database.table_name",
+        "JVSPATIAL_LOG_DB_TABLE_NAME",
+        None,
+    )
+    log_dynamodb_region = get_config_value(
+        app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None
+    )
+    log_dynamodb_endpoint_url = get_config_value(
+        app_config,
+        "logging.database.endpoint_url",
+        "JVSPATIAL_LOG_DB_ENDPOINT_URL",
+        None,
+    )
+    log_dynamodb_access_key_id = get_config_value(
+        app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None
+    )
+    log_dynamodb_secret_access_key = get_config_value(
+        app_config,
+        "logging.database.secret_access_key",
+        "AWS_SECRET_ACCESS_KEY",
+        None,
+    )
+
+    if normalize_empty(log_db_uri) is None:
+        log_db_uri = env("JVSPATIAL_LOG_DB_URI", default="") or mongodb_uri
+    log_db_path = resolve_log_db_path(app_root, app_config)
+    log_dynamodb_table_name = normalize_empty(log_dynamodb_table_name) or None
+    log_dynamodb_region = normalize_empty(log_dynamodb_region) or None
+    log_dynamodb_endpoint_url = normalize_empty(log_dynamodb_endpoint_url) or None
+    log_dynamodb_access_key_id = normalize_empty(log_dynamodb_access_key_id) or None
+    log_dynamodb_secret_access_key = (
+        normalize_empty(log_dynamodb_secret_access_key) or None
+    )
+
+    # Set logging database environment variables if specified
+    if log_db_type:
+        os.environ["JVSPATIAL_LOG_DB_TYPE"] = log_db_type
+    if log_db_uri:
+        os.environ["JVSPATIAL_LOG_DB_URI"] = log_db_uri
+    if log_db_name:
+        os.environ["JVSPATIAL_LOG_DB_NAME"] = log_db_name
+    if log_db_path:
+        os.environ["JVSPATIAL_LOG_DB_PATH"] = log_db_path
+
+    # Set DynamoDB logging database environment variables if using DynamoDB.
+    # Pass credentials via initialize_logging_database(config=...) — never
+    # clobber process-wide AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+    if log_db_type == "dynamodb":
+        if log_dynamodb_table_name:
+            os.environ["JVSPATIAL_LOG_DB_TABLE_NAME"] = log_dynamodb_table_name
+        if log_dynamodb_region:
+            os.environ["JVSPATIAL_LOG_DB_REGION"] = log_dynamodb_region
+        if log_dynamodb_endpoint_url:
+            os.environ["JVSPATIAL_LOG_DB_ENDPOINT_URL"] = log_dynamodb_endpoint_url
+
+    log_init_config: Optional[Dict[str, Any]] = None
+    if log_db_type == "dynamodb":
+        log_init_config = {
+            "enabled": True,
+            "db_type": "dynamodb",
+            "table_name": log_dynamodb_table_name,
+            "region_name": log_dynamodb_region,
+            "endpoint_url": log_dynamodb_endpoint_url,
+            "aws_access_key_id": log_dynamodb_access_key_id,
+            "aws_secret_access_key": log_dynamodb_secret_access_key,
+            "database_name": "logs",
+        }
+
+    # Initialize with updated log_levels
+    initialize_logging_database(
+        config=log_init_config,
+        log_levels=log_levels,
+    )
+
+
 def _set_db_env_from_config(app_root: str) -> None:
     """Set database environment variables from app config.
 
@@ -399,138 +544,8 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     server = Server(**server_kwargs)
 
-    # Initialize logging database (automatically installs DBLogHandler)
-    # Import INTERACTION level to ensure it's registered before initialization
-    import logging
-
-    from jvspatial.logging.config import initialize_logging_database
-
-    from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
-
-    # Get logging configuration from app.yaml if available
-    logging_enabled = get_config_value(
-        app_config, "logging.enabled", "JVSPATIAL_DB_LOGGING_ENABLED", True
-    )
-    if logging_enabled:
-        # Get log levels from app.yaml or environment
-        log_levels_str = get_config_value(
-            app_config,
-            "logging.levels",
-            "JVSPATIAL_DB_LOGGING_LEVELS",
-            "ERROR,CRITICAL",
-        )
-        if isinstance(log_levels_str, str):
-            log_level_names = [
-                level.strip().upper() for level in log_levels_str.split(",")
-            ]
-        else:
-            log_level_names = ["ERROR", "CRITICAL"]
-
-        # Convert level names to logging constants
-        log_levels = set()
-        for level_name in log_level_names:
-            try:
-                level = getattr(logging, level_name)
-                log_levels.add(level)
-            except AttributeError:
-                logger.warning(f"Invalid log level: {level_name}, skipping")
-
-        # Default to ERROR and CRITICAL if no valid levels
-        if not log_levels:
-            log_levels = {logging.ERROR, logging.CRITICAL}
-
-        # Add INTERACTION level to capture interaction logs
-        log_levels.add(INTERACTION_LEVEL_NUMBER)
-
-        # Get logging database config from app.yaml / JVSPATIAL_LOG_DB_*
-        log_db_type = get_config_value(
-            app_config, "logging.database.type", "JVSPATIAL_LOG_DB_TYPE", None
-        )
-        log_db_uri = get_config_value(
-            app_config, "logging.database.uri", "JVSPATIAL_LOG_DB_URI", None
-        )
-        log_db_name = get_config_value(
-            app_config, "logging.database.name", "JVSPATIAL_LOG_DB_NAME", "jvagent_logs"
-        )
-
-        # DynamoDB logging database configuration
-        log_dynamodb_table_name = get_config_value(
-            app_config,
-            "logging.database.table_name",
-            "JVSPATIAL_LOG_DB_TABLE_NAME",
-            None,
-        )
-        log_dynamodb_region = get_config_value(
-            app_config, "logging.database.region", "JVSPATIAL_LOG_DB_REGION", None
-        )
-        log_dynamodb_endpoint_url = get_config_value(
-            app_config,
-            "logging.database.endpoint_url",
-            "JVSPATIAL_LOG_DB_ENDPOINT_URL",
-            None,
-        )
-        log_dynamodb_access_key_id = get_config_value(
-            app_config, "logging.database.access_key_id", "AWS_ACCESS_KEY_ID", None
-        )
-        log_dynamodb_secret_access_key = get_config_value(
-            app_config,
-            "logging.database.secret_access_key",
-            "AWS_SECRET_ACCESS_KEY",
-            None,
-        )
-
-        if normalize_empty(log_db_uri) is None:
-            log_db_uri = env("JVSPATIAL_LOG_DB_URI", default="") or mongodb_uri
-        log_db_path = resolve_log_db_path(app_root, app_config)
-        log_dynamodb_table_name = normalize_empty(log_dynamodb_table_name) or None
-        log_dynamodb_region = normalize_empty(log_dynamodb_region) or None
-        log_dynamodb_endpoint_url = normalize_empty(log_dynamodb_endpoint_url) or None
-        log_dynamodb_access_key_id = normalize_empty(log_dynamodb_access_key_id) or None
-        log_dynamodb_secret_access_key = (
-            normalize_empty(log_dynamodb_secret_access_key) or None
-        )
-
-        # Set logging database environment variables if specified
-        if log_db_type:
-            os.environ["JVSPATIAL_LOG_DB_TYPE"] = log_db_type
-        if log_db_uri:
-            os.environ["JVSPATIAL_LOG_DB_URI"] = log_db_uri
-        if log_db_name:
-            os.environ["JVSPATIAL_LOG_DB_NAME"] = log_db_name
-        if log_db_path:
-            os.environ["JVSPATIAL_LOG_DB_PATH"] = log_db_path
-
-        # Set DynamoDB logging database environment variables if using DynamoDB.
-        # Pass credentials via initialize_logging_database(config=...) — never
-        # clobber process-wide AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
-        if log_db_type == "dynamodb":
-            if log_dynamodb_table_name:
-                os.environ["JVSPATIAL_LOG_DB_TABLE_NAME"] = log_dynamodb_table_name
-            if log_dynamodb_region:
-                os.environ["JVSPATIAL_LOG_DB_REGION"] = log_dynamodb_region
-            if log_dynamodb_endpoint_url:
-                os.environ["JVSPATIAL_LOG_DB_ENDPOINT_URL"] = log_dynamodb_endpoint_url
-
-        log_init_config: Optional[Dict[str, Any]] = None
-        if log_db_type == "dynamodb":
-            log_init_config = {
-                "enabled": True,
-                "db_type": "dynamodb",
-                "table_name": log_dynamodb_table_name,
-                "region_name": log_dynamodb_region,
-                "endpoint_url": log_dynamodb_endpoint_url,
-                "aws_access_key_id": log_dynamodb_access_key_id,
-                "aws_secret_access_key": log_dynamodb_secret_access_key,
-                "database_name": "logs",
-            }
-
-        # Initialize with updated log_levels
-        initialize_logging_database(
-            config=log_init_config,
-            log_levels=log_levels,
-        )
-    else:
-        logger.info("Logging is disabled in configuration")
+    # Initialize logging database
+    _initialize_logging_database(app_root, app_config, mongodb_uri, debug)
 
     # Production safety checks
     if is_production_mode():

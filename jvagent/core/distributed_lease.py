@@ -43,7 +43,7 @@ _inproc_guard = threading.Lock()
 
 def _inproc_lock_for(key: str) -> asyncio.Lock:
     """Get or create an in-process asyncio.Lock for *key*.
-    
+
     Used as fallback when no distributed backend is configured.
     """
     with _inproc_guard:
@@ -64,9 +64,7 @@ async def distributed_lease(
     by a heartbeat while held (so a slow section can't let it expire) and
     released on exit.
     """
-    lease_ttl = (
-        ttl if ttl is not None else lock_ttl_seconds(env_var=_REDIS_TTL_ENV)
-    )
+    lease_ttl = ttl if ttl is not None else lock_ttl_seconds(env_var=_REDIS_TTL_ENV)
     url = redis_url(env_var=_REDIS_URL_ENV)
     if url:
         async with redis_lease(key, url, lease_ttl, prefix=_LEASE_PREFIX):

@@ -224,9 +224,7 @@ def load_app_config(app_root: Optional[str] = None) -> dict:
             if yaml_data and "config" in yaml_data:
                 app_config = resolve_env_placeholders(yaml_data.get("config", {}))
                 if isinstance(app_config, dict):
-                    warn_app_yaml_config(
-                        app_config, source=f"{app_yaml_path}:config"
-                    )
+                    warn_app_yaml_config(app_config, source=f"{app_yaml_path}:config")
     except Exception as e:
         logger.warning(
             "Could not load app.yaml config from %s: %s",

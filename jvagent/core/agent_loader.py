@@ -9,16 +9,14 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.actions import Actions
 from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
-from jvagent.core.yaml_io import load_yaml_sync
-from jvagent.core.agent import Agent
-from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.app import App
+from jvagent.core.yaml_io import load_yaml_sync
 from jvagent.memory import Memory
 
 logger = logging.getLogger(__name__)
@@ -775,36 +773,6 @@ class AgentLoader:
             logger.warning(
                 f"Actions for {agent.name}: {registered_count} registered, {failed_count} failed"
             )
-
-    async def install_all_agents(
-        self, update_mode: Optional[str] = None
-    ) -> List[Agent]:
-        """Install all discovered agents.
-
-        Args:
-            update_mode: "merge" for non-destructive, "source" for destructive, None to skip
-
-        Returns:
-            List of installed/updated agent instances
-        """
-        agent_list = self.discover_agents()
-
-        if not agent_list:
-            logger.info("No agents found to install")
-            return []
-
-        logger.info(f"Found {len(agent_list)} agent(s) to install")
-
-        installed = []
-        for namespace, agent_name in agent_list:
-            agent = await self.install_agent(
-                namespace, agent_name, update_mode=update_mode
-            )
-            if agent:
-                installed.append(agent)
-
-        logger.info(f"Successfully installed {len(installed)} agent(s)")
-        return installed
 
     async def uninstall_agent(self, namespace: str, agent_name: str) -> bool:
         """Uninstall an agent.

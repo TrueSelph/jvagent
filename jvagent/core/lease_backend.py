@@ -21,7 +21,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Callable, Optional
+from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from jvspatial.env import env
 
@@ -64,7 +64,7 @@ def lease_renew_interval(ttl: int) -> float:
 
 
 async def run_lease_heartbeat(
-    renew: Callable[[], asyncio.Future[None]], interval: float, key: str
+    renew: Callable[[], Awaitable[None]], interval: float, key: str
 ) -> None:
     """Loop: sleep ``interval``, then ``await renew()`` while the lock is held.
 
@@ -107,9 +107,7 @@ async def redis_lease(
     try:
         import redis.asyncio as redis  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s-lease: redis not installed; using in-process lock", key
-        )
+        logger.warning("%s-lease: redis not installed; using in-process lock", key)
         from jvagent.core.distributed_lease import _inproc_lock_for
 
         async with _inproc_lock_for(key):
@@ -144,9 +142,7 @@ async def redis_lease(
                 break
             elapsed = asyncio.get_event_loop().time() - start
             if elapsed >= max_wait:
-                raise TimeoutError(
-                    f"Redis lease {key} not acquired within {max_wait}s"
-                )
+                raise TimeoutError(f"Redis lease {key} not acquired within {max_wait}s")
             attempt += 1
             if attempt % 20 == 0:
                 logger.warning(
@@ -205,9 +201,7 @@ async def dynamo_lease(
         import boto3  # type: ignore[import-untyped]
         from botocore.exceptions import ClientError  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s-lease: boto3 not installed; using in-process lock", key
-        )
+        logger.warning("%s-lease: boto3 not installed; using in-process lock", key)
         from jvagent.core.distributed_lease import _inproc_lock_for
 
         async with _inproc_lock_for(key):

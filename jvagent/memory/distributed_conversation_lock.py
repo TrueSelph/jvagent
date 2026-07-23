@@ -18,16 +18,12 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, Tuple
 
-from jvspatial.env import env
-
 from jvagent.core.lease_backend import (
     dynamo_lease,
     dynamo_table,
-    lease_renew_interval,
     lock_ttl_seconds,
     redis_lease,
     redis_url,
-    run_lease_heartbeat,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,7 +110,9 @@ async def conversation_mutation_lock(conversation_id: str) -> AsyncIterator[None
         table = dynamo_table(env_var=_DYNAMO_TABLE_ENV)
         if table:
             ttl = lock_ttl_seconds(env_var=_DYNAMO_TTL_ENV)
-            async with dynamo_lease(conversation_id, table, ttl, prefix="conversation:"):
+            async with dynamo_lease(
+                conversation_id, table, ttl, prefix="conversation:"
+            ):
                 yield
             return
 
