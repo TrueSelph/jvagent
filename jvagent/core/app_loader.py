@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import yaml
 from jvspatial.core import Root
 from jvspatial.env import env
 
@@ -20,6 +19,7 @@ from jvagent.core.app import App
 from jvagent.core.app_yaml_validator import warn_app_yaml_descriptor
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.core.config import get_file_storage_config, load_app_config
+from jvagent.core.yaml_io import load_yaml_sync
 
 logger = logging.getLogger(__name__)
 
@@ -156,9 +156,7 @@ class AppLoader:
             return None
 
         try:
-            with open(app_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
+            data = load_yaml_sync(app_file)
             if not data:
                 logger.debug("Empty app descriptor: %s", app_file)
                 return None

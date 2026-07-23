@@ -39,6 +39,239 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
+    async def _process_model_decision(
+        self,
+        visitor: "InteractWalker",
+        decision: Optional[Dict[str, Any]],
+        tools: Dict[str, Any],
+        skill_names: Set[str],
+        observations: List[Dict[str, Any]],
+        pending_chain: Optional[str],
+        chain_deflections: int,
+        plan_deflections: int,
+        nd_streak: int,
+        active_skill_doc: Any,
+    ) -> tuple[Optional[str], Optional[str], Dict[str, Any], int, int, int]:
+        """Process a model decision and return action routing.
+
+        Handles garbled decisions, normalization, final action deflections,
+        and extracts action/tool_name/args for dispatch.
+
+        Args:
+            visitor: Current InteractWalker
+            decision: Raw model decision (may be None if garbled)
+            tools: Available tools dict
+            skill_names: Set of skill names (for locked-skill guard)
+            observations: Observation list to append feedback
+            pending_chain: Pending chained tool name
+            chain_deflections: Count of chain deflections this turn
+            plan_deflections: Count of plan deflections this turn
+            nd_streak: Consecutive garbled decision count
+            active_skill_doc: Active skill doc (for locked-skill guard)
+
+        Returns:
+            Tuple of (action, tool_name, args_dict, chain_deflections, plan_deflections, nd_streak).
+            action is None when the decision should be retried.
+        """
+        if decision is None:
+            # A truncated/garbled decision (common when a verbose thinking
+            # model overruns the token cap). One transient miss → nudge
+            # and retry with the tool surface intact, so a productive turn
+            # isn't aborted mid-task. Only a persistent streak falls
+            # through to the partial-compose (work-done-but-can't-emit).
+            nd_streak += 1
+            if nd_streak >= 3:
+                # Persistent failure - caller should end turn
+                return (None, None, {}, chain_deflections, plan_deflections, nd_streak)
+            observations.append(
+                {
+                    "tool": "(parse)",
+                    "args": {},
+                    "observation": (
+                        "(Your previous response was not a single valid "
+                        "JSON object. Reply with exactly ONE JSON object "
+                        "for your next step — a tool call or a final "
+                        "answer. Keep it short.)"
+                    ),
+                }
+            )
+            return (None, None, {}, chain_deflections, plan_deflections, nd_streak)
+        nd_streak = 0
+        action, tool_name, args = self._normalize(decision, tools, skill_names)
+        if (
+            action == "tool"
+            and tool_name in skill_names
+            and tool_name not in tools
+            and active_skill_doc is not None
+            and tool_name == getattr(active_skill_doc, "name", None)
+        ):
+            observations.append(
+                {
+                    "tool": tool_name,
+                    "args": args,
+                    "observation": (
+                        f"({tool_name} is the active locked skill, not a "
+                        "callable tool. Follow the ACTIVE SKILL procedure "
+                        "and use its listed tools, or reply/respond to the "
+                        "user. Do not invoke the skill name as a tool.)"
+                    ),
+                }
+            )
+            return (None, None, {}, chain_deflections, plan_deflections, nd_streak)
+        # Progress/reasoning line for the UI's REASONING disclosure. Fires
+        # on both gears so single-step (light) turns still show their
+        # reasoning, not just multi-step heavy ones. Skip when substantive
+        # tool thoughts will surface the same tick in TOOL CALLS.
+        if self.stream_internal_progress:
+            await self._emit_thought(
+                visitor,
+                self._progress_line(action, tool_name, args, decision),
+            )
+        if action == "final":
+            if pending_chain and chain_deflections < 2:
+                # A tool result told the model to call ``pending_chain``
+                # next. Don't let it finalize (or claim completion) until
+                # that step has run.
+                chain_deflections += 1
+                observations.append(
+                    {
+                        "tool": "(guard)",
+                        "args": {},
+                        "observation": (
+                            f"(The task is not finished — call "
+                            f"{pending_chain} now to continue. Do NOT give a "
+                            "final answer or claim the process is "
+                            "complete until it has run.)"
+                        ),
+                    }
+                )
+                return (None, None, {}, chain_deflections, plan_deflections, nd_streak)
+            if plan_deflections < int(self.plan_completion_max_deflections):
+                open_steps = self._open_plan_step(visitor)
+                if open_steps:
+                    # An active multi-step plan still has open steps —
+                    # don't finalize mid-task. Nudge the model to run the
+                    # next step (or close the plan if it's really done).
+                    plan_deflections += 1
+                    observations.append(self._plan_drain_nudge(open_steps))
+                    return (
+                        None,
+                        None,
+                        {},
+                        chain_deflections,
+                        plan_deflections,
+                        nd_streak,
+                    )
+        return (action, tool_name, args, chain_deflections, plan_deflections, nd_streak)
+
+    async def _handle_locked_flow(
+        self,
+        visitor: "InteractWalker",
+        flow_owner: str,
+        tools: Dict[str, Any],
+        activated: List[str],
+        loop_t0: float,
+        tool_timings: List[Dict[str, Any]],
+    ) -> bool:
+        """Execute hard-locked flow when lock_active_flow is enabled.
+
+        When a control-task points to an IA that furnished a tool, restrict the
+        callable surface to that one tool and dispatch it. The loop can only
+        continue the flow, never route elsewhere.
+
+        Args:
+            visitor: Current InteractWalker
+            flow_owner: Name of the flow owner tool
+            tools: Available tools dict
+            activated: List of activated skill names
+            loop_t0: Loop start time
+            tool_timings: List to append timing info
+
+        Returns:
+            True if the flow was handled and caller should return, False otherwise.
+        """
+        if not (self.lock_active_flow and flow_owner and flow_owner in tools):
+            return False
+
+        tool_t0 = time.perf_counter()
+        try:
+            if self.tool_call_timeout and self.tool_call_timeout > 0:
+                locked_result = (
+                    await asyncio.wait_for(
+                        tools[flow_owner].run({}),
+                        timeout=self.tool_call_timeout,
+                    )
+                ) or ""
+            else:
+                locked_result = (await tools[flow_owner].run({})) or ""
+        except asyncio.TimeoutError:
+            locked_result = (
+                f"(tool error: locked flow {flow_owner} timed out after "
+                f"{self.tool_call_timeout}s)"
+            )
+        tool_timings.append(
+            {
+                "name": flow_owner,
+                "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
+            }
+        )
+        interaction = getattr(visitor, "interaction", None)
+        # The locked IA "emits" either by setting a response OR by queuing a
+        # directive (the directive-based publishing pattern — `_egress`
+        # renders it after the loop). Checking only `interaction.response`
+        # missed the directive path, so the orchestrator mistook a publishing
+        # IA for a silent one and echoed the IA-as-tool status sentinel
+        # ("(ran X)") as a spurious reply/directive (ADR-0013 follow-up).
+        emitted = self._ia_emitted(interaction)
+        ended = "locked"
+        if not emitted:
+            # The IA ran but produced nothing user-facing. NEVER echo its
+            # internal status sentinel ("(ran X)" / "(no visitor available)"
+            # / "(flow error: …)") — those are loop-internal. Surface a clean
+            # message instead.
+            #
+            # EVERY non-emitting locked turn — access-denied, a thrown
+            # error, or a silently-non-emitting IA — must count toward the
+            # escape streak. Otherwise a flow that denies access (AC revoked
+            # mid-flow) or runs without ever emitting/completing traps the
+            # user behind the turn-lock forever: the same dead-end reply on
+            # every subsequent turn, with no way to route elsewhere. After
+            # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
+            # control-task is abandoned so the next turn runs the loop.
+            # AUDIT-orchestrator HIGH.
+            res = locked_result.strip()
+            if "access denied" in res.lower():
+                ended = "locked_denied"
+                reply = (
+                    "You don't currently have access to continue this. Let "
+                    "me know if there's something else I can help with."
+                )
+            elif res.startswith("(flow error") or res.startswith("(tool error"):
+                ended = "locked_error"
+                reply = self.clarify_text
+            else:
+                ended = "locked_silent"
+                reply = self.clarify_text
+            if await _orch().note_locked_flow_error(visitor, flow_owner):
+                ended = f"{ended}_escape"
+            await self._emit_reply(visitor, reply)
+        else:
+            # A working flow resets the failure streak.
+            await _orch().clear_locked_flow_error(visitor, flow_owner)
+        await self._record_orchestrator_activation(
+            visitor,
+            continuation_mode="locked",
+            flow_owner=flow_owner,
+            tools_invoked=[flow_owner],
+            tick_count=0,
+            ended_via=ended,
+            activated=activated,
+            loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
+            tool_timings=tool_timings,
+        )
+        await self._finalize_plan(visitor)
+        return True
+
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         loop_t0 = time.perf_counter()
         tool_timings: List[Dict[str, Any]] = []
@@ -112,84 +345,9 @@ class OrchestratorLoopMixin:
         # elsewhere. The IA's tool is visitor-bound, AC-gated, and terminal
         # (so it owns the turn's output). The IA receives all input including
         # off-topic; interruption/cancel is the IA's own concern.
-        if self.lock_active_flow and flow_owner and flow_owner in tools:
-            tool_t0 = time.perf_counter()
-            try:
-                if self.tool_call_timeout and self.tool_call_timeout > 0:
-                    locked_result = (
-                        await asyncio.wait_for(
-                            tools[flow_owner].run({}),
-                            timeout=self.tool_call_timeout,
-                        )
-                    ) or ""
-                else:
-                    locked_result = (await tools[flow_owner].run({})) or ""
-            except asyncio.TimeoutError:
-                locked_result = (
-                    f"(tool error: locked flow {flow_owner} timed out after "
-                    f"{self.tool_call_timeout}s)"
-                )
-            tool_timings.append(
-                {
-                    "name": flow_owner,
-                    "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
-                }
-            )
-            interaction = getattr(visitor, "interaction", None)
-            # The locked IA "emits" either by setting a response OR by queuing a
-            # directive (the directive-based publishing pattern — `_egress`
-            # renders it after the loop). Checking only `interaction.response`
-            # missed the directive path, so the orchestrator mistook a publishing
-            # IA for a silent one and echoed the IA-as-tool status sentinel
-            # ("(ran X)") as a spurious reply/directive (ADR-0013 follow-up).
-            emitted = self._ia_emitted(interaction)
-            ended = "locked"
-            if not emitted:
-                # The IA ran but produced nothing user-facing. NEVER echo its
-                # internal status sentinel ("(ran X)" / "(no visitor available)"
-                # / "(flow error: …)") — those are loop-internal. Surface a clean
-                # message instead.
-                #
-                # EVERY non-emitting locked turn — access-denied, a thrown
-                # error, or a silently-non-emitting IA — must count toward the
-                # escape streak. Otherwise a flow that denies access (AC revoked
-                # mid-flow) or runs without ever emitting/completing traps the
-                # user behind the turn-lock forever: the same dead-end reply on
-                # every subsequent turn, with no way to route elsewhere. After
-                # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
-                # control-task is abandoned so the next turn runs the loop.
-                # AUDIT-orchestrator HIGH.
-                res = locked_result.strip()
-                if "access denied" in res.lower():
-                    ended = "locked_denied"
-                    reply = (
-                        "You don't currently have access to continue this. Let "
-                        "me know if there's something else I can help with."
-                    )
-                elif res.startswith("(flow error") or res.startswith("(tool error"):
-                    ended = "locked_error"
-                    reply = self.clarify_text
-                else:
-                    ended = "locked_silent"
-                    reply = self.clarify_text
-                if await _orch().note_locked_flow_error(visitor, flow_owner):
-                    ended = f"{ended}_escape"
-                await self._emit_reply(visitor, reply)
-            else:
-                # A working flow resets the failure streak.
-                await _orch().clear_locked_flow_error(visitor, flow_owner)
-            await self._record_orchestrator_activation(
-                visitor,
-                continuation_mode="locked",
-                flow_owner=flow_owner,
-                tools_invoked=[flow_owner],
-                tick_count=0,
-                ended_via=ended,
-                activated=activated,
-                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
-                tool_timings=tool_timings,
-            )
-            await self._finalize_plan(visitor)
+        if await self._handle_locked_flow(
+            visitor, flow_owner, tools, activated, loop_t0, tool_timings
+        ):
             return
 
         if flow_owner and flow_owner not in tools:
@@ -460,88 +618,31 @@ class OrchestratorLoopMixin:
                     capabilities_section=capabilities_section,
                     parameters_section=parameters_section,
                 )
-                if decision is None:
-                    # A truncated/garbled decision (common when a verbose thinking
-                    # model overruns the token cap). One transient miss → nudge
-                    # and retry with the tool surface intact, so a productive turn
-                    # isn't aborted mid-task. Only a persistent streak falls
-                    # through to the partial-compose (work-done-but-can't-emit).
-                    nd_streak += 1
+                (
+                    action,
+                    tool_name,
+                    args,
+                    chain_deflections,
+                    plan_deflections,
+                    nd_streak,
+                ) = await self._process_model_decision(
+                    visitor,
+                    decision,
+                    tools,
+                    skill_names,
+                    observations,
+                    pending_chain,
+                    chain_deflections,
+                    plan_deflections,
+                    nd_streak,
+                    active_skill_doc,
+                )
+                if action is None:
                     if nd_streak >= 3:
                         ended_via = "no_decision"
                         break
-                    observations.append(
-                        {
-                            "tool": "(parse)",
-                            "args": {},
-                            "observation": (
-                                "(Your previous response was not a single valid "
-                                "JSON object. Reply with exactly ONE JSON object "
-                                "for your next step — a tool call or a final "
-                                "answer. Keep it short.)"
-                            ),
-                        }
-                    )
                     continue
-                nd_streak = 0
-                action, tool_name, args = self._normalize(decision, tools, skill_names)
-                if (
-                    action == "tool"
-                    and tool_name in skill_names
-                    and tool_name not in tools
-                    and active_skill_doc is not None
-                    and tool_name == getattr(active_skill_doc, "name", None)
-                ):
-                    observations.append(
-                        {
-                            "tool": tool_name,
-                            "args": args,
-                            "observation": (
-                                f"({tool_name} is the active locked skill, not a "
-                                "callable tool. Follow the ACTIVE SKILL procedure "
-                                "and use its listed tools, or reply/respond to the "
-                                "user. Do not invoke the skill name as a tool.)"
-                            ),
-                        }
-                    )
-                    continue
-                # Progress/reasoning line for the UI's REASONING disclosure. Fires
-                # on both gears so single-step (light) turns still show their
-                # reasoning, not just multi-step heavy ones. Skip when substantive
-                # tool thoughts will surface the same tick in TOOL CALLS.
-                if self.stream_internal_progress:
-                    await self._emit_thought(
-                        visitor,
-                        self._progress_line(action, tool_name, args, decision),
-                    )
                 if action == "final":
-                    if pending_chain and chain_deflections < 2:
-                        # A tool result told the model to call ``pending_chain``
-                        # next. Don't let it finalize (or claim completion) until
-                        # that step has run.
-                        chain_deflections += 1
-                        observations.append(
-                            {
-                                "tool": "(guard)",
-                                "args": {},
-                                "observation": (
-                                    f"(The task is not finished — call "
-                                    f"{pending_chain} now to continue. Do NOT give a "
-                                    "final answer or claim the process is "
-                                    "complete until it has run.)"
-                                ),
-                            }
-                        )
-                        continue
-                    if plan_deflections < int(self.plan_completion_max_deflections):
-                        open_steps = self._open_plan_step(visitor)
-                        if open_steps:
-                            # An active multi-step plan still has open steps —
-                            # don't finalize mid-task. Nudge the model to run the
-                            # next step (or close the plan if it's really done).
-                            plan_deflections += 1
-                            observations.append(self._plan_drain_nudge(open_steps))
-                            continue
                     answer = _text_candidate(decision)
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
