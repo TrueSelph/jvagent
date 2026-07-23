@@ -35,6 +35,7 @@ from jvagent.action.pageindex.documents import (
     get_document_roots,
     list_document_chunks,
     list_documents,
+    patch_document_root,
 )
 from jvagent.action.pageindex.endpoints import (
     _do_assimilate,
@@ -127,6 +128,49 @@ async def test_assimilate_document_without_metadata(pageindex_temp_db, sample_ma
     root = await get_document_root("test_doc_no_meta", collection_name="default")
     assert root is not None
     assert root.metadata is None
+
+
+@pytest.mark.asyncio
+async def test_patch_document_root_doc_description(pageindex_temp_db, sample_markdown):
+    """patch_document_root sets and clears doc_description (empty string → None)."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="desc_doc",
+        if_add_node_summary="no",
+        collection_name="col_desc",
+        doc_description="initial",
+    )
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root is not None
+    assert root.doc_description == "initial"
+
+    updated = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": "updated blurb"},
+    )
+    assert updated is not None
+    assert updated["doc_description"] == "updated blurb"
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root.doc_description == "updated blurb"
+
+    cleared = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": None},
+    )
+    assert cleared is not None
+    assert cleared["doc_description"] is None
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root.doc_description is None
+
+    blank = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": "  "},
+    )
+    assert blank is not None
+    assert blank["doc_description"] is None
 
 
 @pytest.mark.asyncio
@@ -1147,6 +1191,22 @@ async def test_jvforge_request_raises_validation_error_on_connect_error():
 
 
 @pytest.mark.asyncio
+async def test_jvforge_request_raises_validation_error_on_local_protocol_error():
+    """_jvforge_request wraps httpx.LocalProtocolError into ValidationError."""
+    with patch(
+        "httpx.AsyncClient.request",
+        new_callable=AsyncMock,
+        side_effect=httpx.LocalProtocolError("Illegal header value"),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_request(
+                "GET", "http://127.0.0.1:8088", "/v1/queue", agent_id="agent-x"
+            )
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert exc_info.value.details["error_type"] == "LocalProtocolError"
+
+
+@pytest.mark.asyncio
 async def test_ensure_jvforge_llm_webhook_skipped_when_jvforge_url_unset():
     """Do not call get_webhook_url when JVAGENT_JVFORGE_BASE_URL is unset."""
     action = object.__new__(PageIndexAction)
@@ -1561,7 +1621,7 @@ async def test_resolved_metadata_filter_access_control_true_ac_absent(caplog):
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups():
-    """access_control=True with empty user_groups → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True with empty user_groups → access=["public"] (no caller filter passed)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1579,7 +1639,7 @@ async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope():
-    """access_control=True with no PageIndexAction groups → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True with no PageIndexAction groups → access=["public"] (no caller filter passed)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "finance"}, access_control=True
     )
@@ -1597,7 +1657,7 @@ async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope()
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_matches():
-    """access_control=True, visitor matches group → access includes public + matched group (no metadata_filter merge)."""
+    """access_control=True, visitor matches group → access includes public + matched group."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1622,7 +1682,7 @@ async def test_resolved_metadata_filter_access_control_true_visitor_matches():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_unmatched():
-    """access_control=True, visitor matches no group → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True, visitor matches no group → access=["public"]."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1711,7 +1771,7 @@ async def test_resolved_metadata_filter_access_control_true_multiple_groups():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_preserves_existing_access():
-    """access_control=True with existing access key in metadata_filter → overwritten with group-based access (no merge)."""
+    """access_control=True overwrites caller access and keeps other metadata keys."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq", "access": "public"}, access_control=True
     )
@@ -1727,10 +1787,54 @@ async def test_resolved_metadata_filter_access_control_true_preserves_existing_a
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None, access_control=True
+            action,
+            _make_visitor("user-1"),
+            {"topic": "faq", "access": "public"},
+            access_control=True,
         )
 
-    assert result == {"access": ["public", "private"]}
+    assert result == {"topic": "faq", "access": ["public", "private"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_keeps_caller_metadata():
+    """access_control=True writes access into the caller metadata_filter in one dict."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "private": ["user-1"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action,
+            _make_visitor("user-1"),
+            {"topic": "faq", "year": 2024},
+            access_control=True,
+        )
+
+    assert result == {
+        "topic": "faq",
+        "year": 2024,
+        "access": ["public", "private"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_keeps_metadata_when_public_only():
+    """access_control=True with no identity still keeps caller keys and sets access=public."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+
+    result = await PageIndexAction.resolved_metadata_filter(
+        action, None, {"topic": "faq"}, access_control=True
+    )
+
+    assert result == {"topic": "faq", "access": ["public"]}
 
 
 @pytest.mark.asyncio
@@ -1822,6 +1926,69 @@ async def test_resolved_metadata_filter_access_control_true_no_aca_uses_enabled_
 
     assert result == {"access": ["public"]}
     mock_get.assert_awaited_once_with("AccessControlAction", enabled_only=False)
+
+
+@pytest.mark.asyncio
+async def test_list_documents_access_control_merges_and_summary():
+    """list_documents AC path uses resolved_metadata_filter; summary projects fields."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    object.__setattr__(action, "collection_name", None)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["user-1"]}})
+    listed = [
+        {
+            "doc_name": "a.md",
+            "doc_description": "Alpha",
+            "root_id": "r1",
+            "metadata": {"topic": "faq"},
+            "collection_name": "c1",
+        },
+        {
+            "doc_name": "b.md",
+            "doc_description": "",
+            "root_id": "r2",
+            "metadata": {},
+            "collection_name": "c1",
+        },
+    ]
+
+    with (
+        patch.object(
+            PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+        ),
+        patch.object(
+            PageIndexAction,
+            "_resolve_collection",
+            return_value="c1",
+        ),
+        patch(
+            "jvagent.action.pageindex.documents.list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ) as mock_list,
+    ):
+        full = await PageIndexAction.list_documents(
+            action,
+            metadata_filter={"topic": "faq"},
+            access_control=True,
+            user_id="user-1",
+        )
+        summary = await PageIndexAction.list_documents(
+            action,
+            metadata_filter={"topic": "faq"},
+            access_control=True,
+            user_id="user-1",
+            summary=True,
+        )
+
+    assert full == listed
+    assert summary == [
+        {"doc_name": "a.md", "doc_description": "Alpha"},
+        {"doc_name": "b.md", "doc_description": ""},
+    ]
+    assert mock_list.await_args_list[0].kwargs["metadata_filter"] == {
+        "topic": "faq",
+        "access": ["public", "private"],
+    }
 
 
 def test_root_matches_metadata_access_public_or_member():

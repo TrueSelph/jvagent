@@ -8,8 +8,28 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **PageIndex document edits.** PATCH document root supports `metadata`,
+  `doc_url`, and `doc_description`; jvchat documents modal can edit those
+  fields with dirty-check PATCH.
+- **PageIndex `list_documents` / `pageindex__list`.** Optional
+  `access_control` with `user_id` / `session_id`, plus `summary=True` to
+  return only `doc_name` and `doc_description`.
+- **JVForge resilience + URL rewrite.** Queue ops wrap transport failures
+  (including `LocalProtocolError`) as actionable ValidationError (422); GET
+  documents queue degrades to empty when forge is down; artifact/job URLs
+  rewrite onto `JVAGENT_JVFORGE_BASE_URL` with trusted-forge SSRF bypass for
+  matching origin (incl. loopback dev).
+- **Ingest notifications.** `notification_url` / `notification_secret`
+  passthrough on async jvforge assimilate.
+
 ### Changed
 
+- **PageIndex access control + metadata.** When `access_control=True`,
+  `resolved_metadata_filter` keeps caller metadata keys and sets `access` on
+  the same filter (search and list share this rule). When `access_control=False`
+  (default), the caller filter is unchanged and `access` is not injected.
 - **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
   pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
   `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md

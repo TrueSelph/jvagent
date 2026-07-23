@@ -480,20 +480,11 @@ class PageIndexAction(Action):
             import types
 
             visitor = types.SimpleNamespace(user_id=user_id, session_id=session_id)
-            access_filter = await self.resolved_metadata_filter(
-                visitor, metadata_filter=None, access_control=True
-            )
-
-            if metadata_filter and access_filter:
-                combined = {**metadata_filter, **access_filter}
-            elif access_filter:
-                combined = access_filter
-            else:
-                combined = metadata_filter
-
             result = await _list_documents(
                 collection_name=resolved_collection,
-                metadata_filter=combined,
+                metadata_filter=await self.resolved_metadata_filter(
+                    visitor, metadata_filter, access_control=True
+                ),
             )
 
         if summary:
@@ -795,16 +786,16 @@ class PageIndexAction(Action):
 
         **Access control is opt-in via ``access_control``.** When ``access_control``
         is ``False`` (the default), no access filtering is applied — the
-        metadata filter (if any) is returned unchanged. When ``True``, the
-        agent's ``AccessControlAction.user_groups`` is consulted under the
-        ``PageIndexAction`` scope and the visitor's matching group names are
-        used to build a pure access filter.
+        metadata filter (if any) is returned unchanged and ``access`` is **not**
+        injected. When ``True``, the agent's ``AccessControlAction.user_groups``
+        is consulted under the ``PageIndexAction`` scope and the visitor's
+        matching group names are written into the same ``metadata_filter`` as
+        the ``access`` key (overwriting any caller-supplied ``access``).
 
         When ``access_control`` is ``True``:
 
-        *   ``metadata_filter`` is **not** merged — access groups are the sole
-            filter. This decouples access control from document metadata
-            filtering so the two concerns do not interfere.
+        *   Caller metadata keys (e.g. ``topic``) are kept; ``access`` is set
+            on that same dict so list and search AND metadata with visibility.
         *   ``"public"`` is **always** included in the ``access`` list, ensuring
             every visitor can reach public (untagged or ``access: "public"``)
             documents.
@@ -848,19 +839,22 @@ class PageIndexAction(Action):
             )
             return metadata_filter
 
-        # Access control is on — build a pure access filter.
-        # metadata_filter is intentionally NOT merged so that
-        # access control and document metadata filtering stay decoupled.
+        # AC on only — copy caller filter and set access on the same dict.
+        def _with_access(groups: List[str]) -> Dict[str, Any]:
+            resolved = dict(metadata_filter or {})
+            resolved["access"] = groups
+            return resolved
+
         if visitor is None or (visitor.user_id is None and visitor.session_id is None):
             logger.debug(
                 "PageIndex access_control: visitor has no identity "
                 "(visitor=%s, user_id=%s, session_id=%s); "
-                "returning access=['public'] only",
+                "returning access=['public']",
                 type(visitor).__name__ if visitor else "None",
                 visitor.user_id if visitor else None,
                 visitor.session_id if visitor else None,
             )
-            return {"access": ["public"]}
+            return _with_access(["public"])
 
         access_control_action = await self.get_action(
             "AccessControlAction", enabled_only=False
@@ -868,16 +862,16 @@ class PageIndexAction(Action):
         if not access_control_action:
             logger.debug(
                 "PageIndex access_control: AccessControlAction not found; "
-                "returning access=['public'] only"
+                "returning access=['public']"
             )
-            return {"access": ["public"]}
+            return _with_access(["public"])
 
         if not access_control_action.user_groups:
             logger.debug(
                 "PageIndex access_control: AccessControlAction has no user_groups; "
-                "returning access=['public'] only"
+                "returning access=['public']"
             )
-            return {"access": ["public"]}
+            return _with_access(["public"])
 
         page_index_groups = access_control_action._resolve_user_groups(
             "PageIndexAction"
@@ -890,9 +884,9 @@ class PageIndexAction(Action):
         if not page_index_groups:
             logger.debug(
                 "PageIndex access_control: no groups resolved for PageIndexAction; "
-                "returning access=['public'] only"
+                "returning access=['public']"
             )
-            return {"access": ["public"]}
+            return _with_access(["public"])
 
         matched_groups: List[str] = [
             group
@@ -911,22 +905,22 @@ class PageIndexAction(Action):
         if not matched_groups:
             logger.debug(
                 "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
-                "matched no groups; returning access=['public'] only",
+                "matched no groups; returning access=['public']",
                 visitor.user_id,
                 visitor.session_id,
             )
-            return {"access": ["public"]}
+            return _with_access(["public"])
 
-        result = {"access": ["public", *matched_groups]}
+        access = ["public", *matched_groups]
         logger.debug(
             "PageIndex access_control: visitor (user_id=%r, session_id=%r) "
             "matched groups %s; returning access=%s",
             visitor.user_id,
             visitor.session_id,
             matched_groups,
-            result["access"],
+            access,
         )
-        return result
+        return _with_access(access)
 
     def _resolve_include_references(self) -> bool:
         cfg = self.config or {}

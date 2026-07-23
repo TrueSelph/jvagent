@@ -72,7 +72,7 @@ from .url_guard import (
 from .url_guard import (
     rewrite_process_document_url_to_jvforge_base as _rewrite_process_document_url_to_jvforge_base,
 )
-from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401,E402
+from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -2037,6 +2037,7 @@ _JVFORGE_HTTPX_ERRORS = (
     httpx.TimeoutException,
     httpx.NetworkError,
     httpx.RemoteProtocolError,
+    httpx.LocalProtocolError,
 )
 
 
