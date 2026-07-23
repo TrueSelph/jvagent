@@ -247,6 +247,8 @@ class TaskMonitor(Action):
         from jvagent.logging.retention import purge_logs_past_retention
 
         app = await App.get()
+        if app is None:
+            return {"error": "App not found"}
         now_dt = await app_now_aware_utc(app)
 
         # Bound INTERACTION / DBLog growth using App.log_retention_days

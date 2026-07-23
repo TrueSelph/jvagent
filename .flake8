@@ -1,5 +1,6 @@
 [flake8]
 max-line-length = 88
+max-complexity = 90
 # E722 (bare except), F401 (unused import), F811 (redefinition), F841 (unused
 # local) are enforced — they are the dead-code detectors. Keep them out of
 # this list.

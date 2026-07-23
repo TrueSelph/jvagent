@@ -616,6 +616,12 @@ class MCPAction(Action):
             natural_language_command, tools_description
         )
         model_action = await self.get_model_action(required=True)
+        if model_action is None:
+            return MCPFulfillResult(
+                text="No language model action available for tool selection.",
+                is_error=True,
+                error_kind="gateway_error",
+            )
         try:
             result = await model_action.query_sync(
                 user_prompt,

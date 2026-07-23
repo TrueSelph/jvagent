@@ -1114,6 +1114,7 @@ async def handle_set_fields(
             # Inlining the next question bypasses interview__next_field, so carry
             # what that tool would have provided: the canonical key (next_field_key
             # below) and, for optional fields, the skip path.
+            assert next_field is not None  # narrowed by inline_question
             next_fdef = resolve_field_def(session, spec, next_field["key"])
             next_hint = (next_fdef.hint or "").strip() if next_fdef is not None else ""
             prompt = str(next_field.get("prompt") or "")
