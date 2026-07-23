@@ -1929,6 +1929,7 @@ class ApiClient {
     const updates: Record<string, unknown> = {}
     if ('metadata' in partial) updates.metadata = partial.metadata
     if ('doc_url' in partial) updates.doc_url = partial.doc_url
+    if ('doc_description' in partial) updates.doc_description = partial.doc_description
     const response = await this._withFallback((baseURL) =>
       this.client.patch(path, { updates }, { baseURL })
     )

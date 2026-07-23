@@ -137,6 +137,8 @@ def _jvforge_form_data(
     normalize_bold_headings: bool,
     llm_webhook_url: str,
     file_url: Optional[str] = None,
+    notification_url: Optional[str] = None,
+    notification_secret: Optional[str] = None,
 ) -> Dict[str, str]:
     data: Dict[str, str] = {
         "agent_id": agent_id,
@@ -160,6 +162,10 @@ def _jvforge_form_data(
         data["metadata"] = json.dumps(metadata)
     if file_url:
         data["file_url"] = file_url
+    if notification_url:
+        data["notification_url"] = notification_url
+    if notification_secret:
+        data["notification_secret"] = notification_secret
     return data
 
 
@@ -342,6 +348,8 @@ async def assimilate_via_jvforge_async(
     filename: Optional[str] = None,
     content: Optional[bytes] = None,
     file_url: Optional[str] = None,
+    notification_url: Optional[str] = None,
+    notification_secret: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     POST document to jvforge /v1/jobs (async), return immediately with job info.
@@ -379,6 +387,8 @@ async def assimilate_via_jvforge_async(
         normalize_bold_headings=normalize_bold_headings,
         llm_webhook_url=llm_webhook_url,
         file_url=fu or None,
+        notification_url=notification_url,
+        notification_secret=notification_secret,
     )
 
     headers: Dict[str, str] = {}

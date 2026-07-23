@@ -402,6 +402,12 @@ export function PageIndexDocumentsModal({
   const [deletingChunkId, setDeletingChunkId] = useState<string | null>(null);
   const [editEnabled, setEditEnabled] = useState(true);
   const [editContentType, setEditContentType] = useState("");
+  const [editingDocument, setEditingDocument] = useState<PageIndexDocument | null>(null);
+  const [editDocDescription, setEditDocDescription] = useState("");
+  const [editDocSourceUrl, setEditDocSourceUrl] = useState("");
+  const [editDocMetadataJson, setEditDocMetadataJson] = useState("");
+  const [savingDocument, setSavingDocument] = useState(false);
+  const [saveDocumentError, setSaveDocumentError] = useState<string | null>(null);
   const [chunkSort, setChunkSort] = useState<{
     key: ChunkSortKey;
     dir: "asc" | "desc";
@@ -854,6 +860,69 @@ export function PageIndexDocumentsModal({
       setError(err.message || "Delete failed");
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const openEditDocument = (doc: PageIndexDocument) => {
+    setEditingDocument(doc);
+    setEditDocDescription(doc.doc_description || "");
+    setEditDocSourceUrl(doc.doc_url || "");
+    setEditDocMetadataJson(doc.metadata ? JSON.stringify(doc.metadata, null, 2) : "{}");
+    setSaveDocumentError(null);
+  };
+
+  const closeEditDocument = () => {
+    setEditingDocument(null);
+    setSaveDocumentError(null);
+  };
+
+  const handleSaveDocument = async () => {
+    if (!editingDocument) return;
+    let parsedMeta: Record<string, unknown> | null;
+    try {
+      const trimmed = editDocMetadataJson.trim() || "{}";
+      const p = JSON.parse(trimmed);
+      if (p === null) {
+        parsedMeta = null;
+      } else if (typeof p === "object" && !Array.isArray(p)) {
+        parsedMeta = p as Record<string, unknown>;
+      } else {
+        setSaveDocumentError("Metadata must be a JSON object or null");
+        return;
+      }
+    } catch {
+      setSaveDocumentError("Invalid metadata JSON");
+      return;
+    }
+    setSavingDocument(true);
+    setSaveDocumentError(null);
+    try {
+      const patch: PageIndexDocumentPatchUpdates = {};
+      const origDescription = editingDocument.doc_description || "";
+      const origUrl = editingDocument.doc_url || "";
+      const newDescTrimmed = editDocDescription.trim();
+      const newUrlTrimmed = editDocSourceUrl.trim();
+      const newMetaNormalized = JSON.stringify(parsedMeta || {});
+      const origMetaNormalized = JSON.stringify(
+        editingDocument.metadata ?? {},
+      );
+      if (newDescTrimmed !== origDescription) patch.doc_description = newDescTrimmed || null;
+      if (newUrlTrimmed !== origUrl) patch.doc_url = newUrlTrimmed || null;
+      if (newMetaNormalized !== origMetaNormalized) patch.metadata = parsedMeta;
+      if (Object.keys(patch).length > 0) {
+        await apiClient.patchPageIndexDocumentMetadata(
+          agentId,
+          editingDocument.doc_name,
+          patch,
+        );
+        await fetchDocuments();
+      }
+      closeEditDocument();
+    } catch (err: any) {
+      console.error("Document update failed:", err);
+      setSaveDocumentError(err.message || "Update failed");
+    } finally {
+      setSavingDocument(false);
     }
   };
 
@@ -3743,7 +3812,13 @@ export function PageIndexDocumentsModal({
                                 ? JSON.stringify(doc.metadata)
                                 : "—"}
                             </td>
-                            <td className="px-4 py-3 text-right">
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => openEditDocument(doc)}
+                                className="text-zinc-600 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 text-sm font-medium mr-3"
+                              >
+                                Edit
+                              </button>
                               <button
                                 onClick={() => handleDelete(doc.doc_name)}
                                 disabled={deleting === doc.doc_name}
@@ -3765,6 +3840,96 @@ export function PageIndexDocumentsModal({
           </div>
         )}
       </div>
+
+      {editingDocument && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 dark:bg-black/70"
+          onClick={closeEditDocument}
+        >
+          <div
+            className={`w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg shadow-xl border p-4 sm:p-6 ${
+              dark ? "bg-zinc-900 border-zinc-600" : "bg-white border-zinc-200"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              className={`text-lg font-semibold mb-4 ${dark ? "text-zinc-100" : "text-zinc-900"}`}
+            >
+              Edit document
+            </h3>
+            <p
+              className={`text-xs mb-4 ${dark ? "text-zinc-400" : "text-zinc-500"}`}
+            >
+              <span className="font-medium">Name:</span>{" "}
+              {editingDocument.doc_name}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className={`block ${labelClass} mb-1`}>
+                  Description
+                </label>
+                <textarea
+                  value={editDocDescription}
+                  onChange={(e) => setEditDocDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Document description"
+                  className={`${inputClass} resize-y`}
+                />
+              </div>
+              <div>
+                <label className={`block ${labelClass} mb-1`}>
+                  Source URL
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://…"
+                  value={editDocSourceUrl}
+                  onChange={(e) => setEditDocSourceUrl(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={`block ${labelClass} mb-1`}>
+                  Metadata
+                </label>
+                <JsonCodeEditor
+                  value={editDocMetadataJson}
+                  onChange={setEditDocMetadataJson}
+                  dark={dark}
+                  height="min(220px, 35vh)"
+                  className="w-full"
+                />
+              </div>
+            </div>
+            {saveDocumentError && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-3">
+                {saveDocumentError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={closeEditDocument}
+                className={`px-4 py-2 text-sm rounded-lg border ${
+                  dark
+                    ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800"
+                    : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDocument}
+                disabled={savingDocument}
+                className="px-4 py-2 bg-zinc-600 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 disabled:opacity-50"
+              >
+                {savingDocument ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingChunk && (
         <div
