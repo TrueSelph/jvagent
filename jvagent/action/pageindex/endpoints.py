@@ -66,7 +66,13 @@ from .url_guard import (
     MAX_UPLOAD_BYTES,
 )
 from .url_guard import fetch_url_bytes_capped as _fetch_url_bytes_capped
-from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401,E402
+from .url_guard import (
+    is_trusted_jvforge_url,
+)
+from .url_guard import (
+    rewrite_process_document_url_to_jvforge_base as _rewrite_process_document_url_to_jvforge_base,
+)
+from .url_guard import ssrf_guard_url as _ssrf_guard_url  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -474,14 +480,28 @@ async def _stage_graph_from_remote_url(
     Retries on 404 (artifact may not be written yet or propagating across replicas)
     with exponential backoff up to 30 seconds.
 
+    When ``url`` is a jvforge ``/v1/artifacts/...`` (or ``/v1/jobs/...``) link, it is
+    rewritten onto ``JVAGENT_JVFORGE_BASE_URL`` so local/tunnel public hostnames
+    do not have to resolve from this host.
+
     Caller must delete the staged file after import (or on failure).
     """
+    fetch_url = _rewrite_process_document_url_to_jvforge_base(url)
+    trusted = is_trusted_jvforge_url(fetch_url)
+    if fetch_url != url:
+        logger.info(
+            "process_document_url rewritten to JVAGENT_JVFORGE_BASE_URL: %s -> %s",
+            (url[:120] + "…") if len(url) > 120 else url,
+            (fetch_url[:120] + "…") if len(fetch_url) > 120 else fetch_url,
+        )
     _ARTIFACT_404_RETRIES = 6
     _ARTIFACT_404_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 10.0, 5.0)
     for attempt in range(1, _ARTIFACT_404_RETRIES + 1):
         try:
             raw, _fname_hint, ct = await _fetch_url_bytes_capped(
-                url, read_timeout=fetch_read_timeout
+                fetch_url,
+                read_timeout=fetch_read_timeout,
+                trusted_jvforge=trusted,
             )
             break
         except ValidationError as exc:
@@ -495,13 +515,17 @@ async def _stage_graph_from_remote_url(
                     attempt,
                     _ARTIFACT_404_RETRIES,
                     delay,
-                    url,
+                    fetch_url,
                 )
                 await asyncio.sleep(delay)
                 continue
             raise
-    staging_fn = _import_staging_filename(url, ct)
-    meta: Dict[str, Any] = {"source_url": url, "agent_id": agent_id}
+    staging_fn = _import_staging_filename(fetch_url, ct)
+    meta: Dict[str, Any] = {
+        "source_url": url,
+        "fetch_url": fetch_url,
+        "agent_id": agent_id,
+    }
     if extra_staging_metadata:
         meta = {**meta, **extra_staging_metadata}
     return await _save_pageindex_staging(
@@ -613,13 +637,16 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
+    Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
              collection_name, metadata, doc_description, doc_url,
              convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url,
-             use_jvforge).
+             use_jvforge, notification_url, notification_secret).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -649,6 +676,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     normalize_bold_headings: Optional[str] = None
     file_url: Optional[str] = None
     use_jvforge: Optional[str] = None
+    notification_url: Optional[str] = None
+    notification_secret: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -657,7 +686,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge, notification_url, notification_secret
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -687,6 +716,10 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             file_url = value or None
         elif name == "use_jvforge":
             use_jvforge = value or None
+        elif name == "notification_url":
+            notification_url = value or None
+        elif name == "notification_secret":
+            notification_secret = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -724,6 +757,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         normalize_bold_headings,
         file_url,
         use_jvforge,
+        notification_url,
+        notification_secret,
     )
 
 
@@ -906,9 +941,14 @@ async def ingest_document_endpoint(
         normalize_bold_headings_raw,
         file_url_raw,
         use_jvforge_raw,
+        notification_url_raw,
+        notification_secret_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
+
+    notification_url = (notification_url_raw or "").strip() or None
+    notification_secret = (notification_secret_raw or "").strip() or None
 
     if if_add_node_summary is None:
         await ensure_ingestion_config_for_agent(agent_id)
@@ -1015,6 +1055,8 @@ async def ingest_document_endpoint(
                         file_url=file_url,
                         filename=None,
                         content=None,
+                        notification_url=notification_url,
+                        notification_secret=notification_secret,
                     )
                     return {
                         "status": result["status"],
@@ -1146,6 +1188,8 @@ async def ingest_document_endpoint(
                         emergency=False,  # Can be made configurable via form field
                         filename=filename,
                         content=content,
+                        notification_url=notification_url,
+                        notification_secret=notification_secret,
                     )
 
                     # Return async response with queue position (root_id/description
@@ -1404,6 +1448,10 @@ async def get_document_endpoint(agent_id: str, doc_name: str) -> Dict[str, Any]:
                 field_type=Optional[str],
                 description="Source URL for citations (document root)",
             ),
+            "doc_description": ResponseField(
+                field_type=Optional[str],
+                description="Updated document description",
+            ),
         }
     ),
 )
@@ -1411,17 +1459,20 @@ async def patch_document_endpoint(
     agent_id: str,
     doc_name: str,
     updates: Dict[str, Any] = EndpointField(
-        description='Include "metadata" (object or null) and/or "doc_url" (string or null)'
+        description='Include "metadata" (object or null), "doc_url" (string or null), and/or "doc_description" (string or null)'
     ),
 ) -> Dict[str, Any]:
-    """Update document root metadata and/or source URL (doc_url)."""
+    """Update document root metadata, source URL (doc_url), and/or description (doc_description)."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     if not isinstance(updates, dict):
         raise ValidationError("Request body must be a JSON object")
     has_meta = "metadata" in updates
     has_url = "doc_url" in updates
-    if not has_meta and not has_url:
-        raise ValidationError('updates must include "metadata" and/or "doc_url"')
+    has_desc = "doc_description" in updates
+    if not has_meta and not has_url and not has_desc:
+        raise ValidationError(
+            'updates must include "metadata", "doc_url", and/or "doc_description"'
+        )
     fields: Dict[str, Any] = {}
     if has_meta:
         meta = updates["metadata"]
@@ -1433,6 +1484,11 @@ async def patch_document_endpoint(
         if u is not None and not isinstance(u, str):
             raise ValidationError("doc_url must be a string or null")
         fields["doc_url"] = u
+    if has_desc:
+        d = updates["doc_description"]
+        if d is not None and not isinstance(d, str):
+            raise ValidationError("doc_description must be a string or null")
+        fields["doc_description"] = d
     result = await patch_document_root(
         doc_name, collection_name=agent_id, fields=fields
     )
@@ -1971,6 +2027,77 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             )
 
 
+# Transient httpx transport errors that indicate jvforge is unreachable or
+# the connection dropped mid-request. Wrapping these in a clear ValidationError
+# avoids the generic 502 "Unable to connect to external service" response that
+# the global error handler emits (with a full stack trace) and gives callers
+# an actionable hint to check JVAGENT_JVFORGE_BASE_URL and that jvforge is up.
+_JVFORGE_HTTPX_ERRORS = (
+    httpx.ConnectError,
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+    httpx.LocalProtocolError,
+)
+
+
+async def _jvforge_request(
+    method: str,
+    forge_base: str,
+    path: str,
+    *,
+    agent_id: str,
+    timeout: float = 60.0,
+    **kwargs: Any,
+) -> httpx.Response:
+    """Issue an httpx request to jvforge, wrapping transport errors in ValidationError.
+
+    Builds the URL as ``{forge_base}{path}`` and runs ``httpx.AsyncClient.request``
+    with the given ``method`` and ``kwargs``. On transient httpx transport errors
+    (ConnectError/Timeout/Network/RemoteProtocol), raises ``ValidationError`` (HTTP
+    422) with the configured base URL and a remediation hint, instead of letting the
+    raw ``httpx.ConnectError`` propagate to the generic 502 handler which logs a full
+    stack trace and returns a message with no jvforge context.
+
+    Args:
+        method: HTTP method (``"GET"``, ``"DELETE"``, ``"POST"`` ...).
+        forge_base: jvforge base URL (already stripped of trailing slash).
+        path: Path under the base URL, beginning with ``"/"``.
+        agent_id: Agent id for error details context.
+        timeout: Per-request timeout in seconds.
+        **kwargs: Forwarded to ``httpx.AsyncClient.request``.
+
+    Returns:
+        The ``httpx.Response`` on success.
+
+    Raises:
+        ValidationError: When jvforge is unreachable or the connection drops.
+    """
+    url = f"{forge_base.rstrip('/')}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.request(method, url, **kwargs)
+    except _JVFORGE_HTTPX_ERRORS as exc:
+        logger.warning(
+            "jvforge %s %s unreachable (%s: %s)",
+            method,
+            url,
+            type(exc).__name__,
+            exc,
+        )
+        raise ValidationError(
+            message=(
+                f"jvforge is not reachable at {forge_base}. "
+                "Verify JVAGENT_JVFORGE_BASE_URL is correct and that jvforge is running."
+            ),
+            details={
+                "error_type": type(exc).__name__,
+                "url": url,
+                "agent_id": agent_id,
+            },
+        ) from exc
+
+
 @endpoint(
     "/agents/{agent_id}/pageindex/documents_queue",
     methods=["GET"],
@@ -2004,6 +2131,8 @@ async def get_documents_queue_endpoint(
     """Get the documents queue for the agent (proxied from jvforge ``/v1/queue``).
 
     When jvforge is not configured, native ingest has no remote queue; returns empty ``jobs``.
+    When jvforge is configured but unreachable, degrades to empty ``jobs`` (with a warning
+    logged) rather than erroring, so the queue UI stays usable during outages.
 
     Args:
         agent_id: Agent id.
@@ -2014,9 +2143,20 @@ async def get_documents_queue_endpoint(
     forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
     if not forge_base:
         return {"jobs": [], "total": 0}
-    url = f"{forge_base}/v1/queue?agent_id={agent_id}"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.get(url)
+    try:
+        response = await _jvforge_request(
+            "GET",
+            forge_base,
+            f"/v1/queue?agent_id={agent_id}",
+            agent_id=agent_id,
+        )
+    except ValidationError as exc:
+        logger.warning(
+            "documents_queue degraded to empty: jvforge unreachable for agent %s (%s)",
+            agent_id,
+            exc.message,
+        )
+        return {"jobs": [], "total": 0}
     response.raise_for_status()
     body = response.json()
     jobs = body.get("jobs", []) if isinstance(body, dict) else []
@@ -2040,9 +2180,8 @@ async def _jvforge_verify_queue_job_agent(agent_id: str, job_id: str) -> str:
             details={"agent_id": agent_id},
         )
     safe_jid = quote(job_id, safe="")
-    job_get_url = f"{forge_base}/v1/jobs/{safe_jid}"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        get_resp = await client.get(job_get_url)
+    job_get_url = f"/v1/jobs/{safe_jid}"
+    get_resp = await _jvforge_request("GET", forge_base, job_get_url, agent_id=agent_id)
     if get_resp.status_code == 404:
         raise ResourceNotFoundError(
             message="Job not found",
@@ -2097,9 +2236,10 @@ async def cancel_documents_queue_job_endpoint(
     """
     forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
     safe_jid = quote(job_id, safe="")
-    delete_url = f"{forge_base}/v1/jobs/{safe_jid}"
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        del_resp = await client.delete(delete_url)
+    delete_url = f"/v1/jobs/{safe_jid}"
+    del_resp = await _jvforge_request(
+        "DELETE", forge_base, delete_url, agent_id=agent_id
+    )
     if del_resp.status_code == 404:
         raise ResourceNotFoundError(
             message="Job not found in queue",
@@ -2169,9 +2309,10 @@ async def boost_documents_queue_job_endpoint(
     """
     forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
     safe_jid = quote(job_id, safe="")
-    boost_url = f"{forge_base}/v1/jobs/{safe_jid}/boost"
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        post_resp = await client.post(boost_url)
+    boost_url = f"/v1/jobs/{safe_jid}/boost"
+    post_resp = await _jvforge_request(
+        "POST", forge_base, boost_url, agent_id=agent_id, timeout=120.0
+    )
     if post_resp.status_code == 404:
         raise ResourceNotFoundError(
             message="Job not found",
@@ -2242,9 +2383,10 @@ async def retry_documents_queue_job_endpoint(
     """
     forge_base = await _jvforge_verify_queue_job_agent(agent_id, job_id)
     safe_jid = quote(job_id, safe="")
-    retry_url = f"{forge_base}/v1/jobs/{safe_jid}/retry"
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        post_resp = await client.post(retry_url)
+    retry_url = f"/v1/jobs/{safe_jid}/retry"
+    post_resp = await _jvforge_request(
+        "POST", forge_base, retry_url, agent_id=agent_id, timeout=120.0
+    )
     if post_resp.status_code == 404:
         raise ResourceNotFoundError(
             message="Job not found",

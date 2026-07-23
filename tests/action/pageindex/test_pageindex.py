@@ -9,6 +9,7 @@ pytest.importorskip("pypdf")
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from jvspatial.api.exceptions import ValidationError
 from jvspatial.db import get_database_manager, unregister_database
 
@@ -34,10 +35,16 @@ from jvagent.action.pageindex.documents import (
     get_document_roots,
     list_document_chunks,
     list_documents,
+    patch_document_root,
 )
 from jvagent.action.pageindex.endpoints import (
     _do_assimilate,
+    _jvforge_request,
+    _jvforge_verify_queue_job_agent,
+    boost_documents_queue_job_endpoint,
+    cancel_documents_queue_job_endpoint,
     get_documents_queue_endpoint,
+    retry_documents_queue_job_endpoint,
 )
 from jvagent.action.pageindex.jvforge_routing import resolve_effective_jvforge_base
 from jvagent.action.pageindex.md_tree_enriched import (
@@ -121,6 +128,49 @@ async def test_assimilate_document_without_metadata(pageindex_temp_db, sample_ma
     root = await get_document_root("test_doc_no_meta", collection_name="default")
     assert root is not None
     assert root.metadata is None
+
+
+@pytest.mark.asyncio
+async def test_patch_document_root_doc_description(pageindex_temp_db, sample_markdown):
+    """patch_document_root sets and clears doc_description (empty string → None)."""
+    await assimilate_document(
+        sample_markdown,
+        doc_name="desc_doc",
+        if_add_node_summary="no",
+        collection_name="col_desc",
+        doc_description="initial",
+    )
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root is not None
+    assert root.doc_description == "initial"
+
+    updated = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": "updated blurb"},
+    )
+    assert updated is not None
+    assert updated["doc_description"] == "updated blurb"
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root.doc_description == "updated blurb"
+
+    cleared = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": None},
+    )
+    assert cleared is not None
+    assert cleared["doc_description"] is None
+    root = await get_document_root("desc_doc", collection_name="col_desc")
+    assert root.doc_description is None
+
+    blank = await patch_document_root(
+        "desc_doc",
+        collection_name="col_desc",
+        fields={"doc_description": "  "},
+    )
+    assert blank is not None
+    assert blank["doc_description"] is None
 
 
 @pytest.mark.asyncio
@@ -1031,6 +1081,132 @@ async def test_get_documents_queue_empty_without_jvforge():
 
 
 @pytest.mark.asyncio
+async def test_get_documents_queue_degrades_to_empty_when_jvforge_unreachable():
+    """When jvforge is configured but unreachable, GET /documents_queue degrades to empty."""
+    with (
+        patch(
+            "jvagent.action.pageindex.endpoints.get_jvagent_jvforge_base_url",
+            return_value="http://127.0.0.1:8088",
+        ),
+        patch(
+            "jvagent.action.pageindex.endpoints._jvforge_request",
+            new_callable=AsyncMock,
+            side_effect=ValidationError(
+                message="jvforge is not reachable at http://127.0.0.1:8088."
+            ),
+        ),
+    ):
+        out = await get_documents_queue_endpoint("agent-x")
+    assert out == {"jobs": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_jvforge_verify_raises_validation_error_on_connect_failure():
+    """_jvforge_verify_queue_job_agent wraps httpx.ConnectError into ValidationError."""
+    with (
+        patch(
+            "jvagent.action.pageindex.endpoints.get_jvagent_jvforge_base_url",
+            return_value="http://127.0.0.1:8088",
+        ),
+        patch(
+            "jvagent.action.pageindex.endpoints._jvforge_request",
+            new_callable=AsyncMock,
+            side_effect=ValidationError(
+                message="jvforge is not reachable at http://127.0.0.1:8088.",
+                details={"error_type": "ConnectError", "agent_id": "agent-x"},
+            ),
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_verify_queue_job_agent("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert exc_info.value.details["agent_id"] == "agent-x"
+
+
+@pytest.mark.asyncio
+async def test_cancel_documents_queue_raises_validation_error_on_connect_failure():
+    """DELETE /documents_queue/{job_id} raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await cancel_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_boost_documents_queue_raises_validation_error_on_connect_failure():
+    """POST /documents_queue/{job_id}/boost raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await boost_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_retry_documents_queue_raises_validation_error_on_connect_failure():
+    """POST /documents_queue/{job_id}/retry raises actionable ValidationError when jvforge is down."""
+    with patch(
+        "jvagent.action.pageindex.endpoints._jvforge_verify_queue_job_agent",
+        new_callable=AsyncMock,
+        side_effect=ValidationError(
+            message="jvforge is not reachable at http://127.0.0.1:8088.",
+            details={"error_type": "ConnectError", "agent_id": "agent-x"},
+        ),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await retry_documents_queue_job_endpoint("agent-x", "job-1")
+    assert "jvforge is not reachable" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_jvforge_request_raises_validation_error_on_connect_error():
+    """_jvforge_request wraps httpx.ConnectError into a ValidationError with remediation hint."""
+    with patch(
+        "httpx.AsyncClient.request",
+        new_callable=AsyncMock,
+        side_effect=httpx.ConnectError("All connection attempts failed"),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_request(
+                "GET", "http://127.0.0.1:8088", "/v1/queue", agent_id="agent-x"
+            )
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert "JVAGENT_JVFORGE_BASE_URL" in exc_info.value.message
+    assert exc_info.value.details["error_type"] == "ConnectError"
+    assert exc_info.value.details["agent_id"] == "agent-x"
+    assert exc_info.value.details["url"] == "http://127.0.0.1:8088/v1/queue"
+
+
+@pytest.mark.asyncio
+async def test_jvforge_request_raises_validation_error_on_local_protocol_error():
+    """_jvforge_request wraps httpx.LocalProtocolError into ValidationError."""
+    with patch(
+        "httpx.AsyncClient.request",
+        new_callable=AsyncMock,
+        side_effect=httpx.LocalProtocolError("Illegal header value"),
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            await _jvforge_request(
+                "GET", "http://127.0.0.1:8088", "/v1/queue", agent_id="agent-x"
+            )
+    assert "jvforge is not reachable" in exc_info.value.message
+    assert exc_info.value.details["error_type"] == "LocalProtocolError"
+
+
+@pytest.mark.asyncio
 async def test_ensure_jvforge_llm_webhook_skipped_when_jvforge_url_unset():
     """Do not call get_webhook_url when JVAGENT_JVFORGE_BASE_URL is unset."""
     action = object.__new__(PageIndexAction)
@@ -1280,6 +1456,79 @@ def test_ssrf_guard_allows_public_https():
     _ssrf_guard_url("https://1.1.1.1/")
 
 
+def test_rewrite_process_document_url_to_jvforge_base(monkeypatch):
+    """Tunnel artifact hosts rewrite onto JVAGENT_JVFORGE_BASE_URL."""
+    from jvagent.action.pageindex.url_guard import (
+        rewrite_process_document_url_to_jvforge_base,
+    )
+
+    monkeypatch.setenv("JVAGENT_JVFORGE_BASE_URL", "http://127.0.0.1:8089")
+    # Clear dotenv cache path by patching the getter used inside url_guard.
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    public = (
+        "https://filling-placement-integration-ambient.trycloudflare.com"
+        "/v1/artifacts/16b0cc4e-d25d-475e-b0a2-652fa870f0cb"
+    )
+    assert (
+        rewrite_process_document_url_to_jvforge_base(public)
+        == "http://127.0.0.1:8089/v1/artifacts/16b0cc4e-d25d-475e-b0a2-652fa870f0cb"
+    )
+    # Non-artifact URLs unchanged.
+    assert (
+        rewrite_process_document_url_to_jvforge_base("https://example.com/doc.pdf")
+        == "https://example.com/doc.pdf"
+    )
+    # Jobs path also rewritten.
+    assert (
+        rewrite_process_document_url_to_jvforge_base(
+            "https://tunnel.example/v1/jobs/abc?x=1"
+        )
+        == "http://127.0.0.1:8089/v1/jobs/abc?x=1"
+    )
+
+
+def test_ssrf_guard_allows_trusted_jvforge_loopback(monkeypatch):
+    """Configured forge origin may be loopback; other private hosts stay blocked."""
+    from jvspatial.api.exceptions import ValidationError
+
+    from jvagent.action.pageindex.url_guard import ssrf_guard_url
+
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    ssrf_guard_url(
+        "http://127.0.0.1:8089/v1/artifacts/x",
+        allow_private_for_trusted_jvforge=True,
+    )
+    with pytest.raises(ValidationError):
+        ssrf_guard_url(
+            "http://127.0.0.1:8089/v1/artifacts/x",
+            allow_private_for_trusted_jvforge=False,
+        )
+    with pytest.raises(ValidationError):
+        ssrf_guard_url(
+            "http://10.0.0.1/v1/artifacts/x",
+            allow_private_for_trusted_jvforge=True,
+        )
+
+
+def test_is_trusted_jvforge_url(monkeypatch):
+    from jvagent.action.pageindex.url_guard import is_trusted_jvforge_url
+
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "http://127.0.0.1:8089",
+    )
+    assert is_trusted_jvforge_url("http://127.0.0.1:8089/v1/artifacts/a")
+    assert not is_trusted_jvforge_url(
+        "https://filling-placement.trycloudflare.com/v1/artifacts/a"
+    )
+
+
 # ---------------------------------------------------------------------------
 # resolved_metadata_filter — AccessControlAction integration
 # ---------------------------------------------------------------------------
@@ -1372,7 +1621,7 @@ async def test_resolved_metadata_filter_access_control_true_ac_absent(caplog):
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups():
-    """access_control=True with empty user_groups → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True with empty user_groups → access=["public"] (no caller filter passed)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1390,7 +1639,7 @@ async def test_resolved_metadata_filter_access_control_true_ac_empty_user_groups
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope():
-    """access_control=True with no PageIndexAction groups → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True with no PageIndexAction groups → access=["public"] (no caller filter passed)."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "finance"}, access_control=True
     )
@@ -1408,7 +1657,7 @@ async def test_resolved_metadata_filter_access_control_true_no_pageindex_scope()
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_matches():
-    """access_control=True, visitor matches group → access includes public + matched group (no metadata_filter merge)."""
+    """access_control=True, visitor matches group → access includes public + matched group."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1433,7 +1682,7 @@ async def test_resolved_metadata_filter_access_control_true_visitor_matches():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_visitor_unmatched():
-    """access_control=True, visitor matches no group → access=["public"] only (no metadata_filter merge)."""
+    """access_control=True, visitor matches no group → access=["public"]."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq"}, access_control=True
     )
@@ -1522,7 +1771,7 @@ async def test_resolved_metadata_filter_access_control_true_multiple_groups():
 
 @pytest.mark.asyncio
 async def test_resolved_metadata_filter_access_control_true_preserves_existing_access():
-    """access_control=True with existing access key in metadata_filter → overwritten with group-based access (no merge)."""
+    """access_control=True overwrites caller access and keeps other metadata keys."""
     action = _make_pageindex_action(
         metadata_filter={"topic": "faq", "access": "public"}, access_control=True
     )
@@ -1538,10 +1787,54 @@ async def test_resolved_metadata_filter_access_control_true_preserves_existing_a
         PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
     ):
         result = await PageIndexAction.resolved_metadata_filter(
-            action, _make_visitor("user-1"), None, access_control=True
+            action,
+            _make_visitor("user-1"),
+            {"topic": "faq", "access": "public"},
+            access_control=True,
         )
 
-    assert result == {"access": ["public", "private"]}
+    assert result == {"topic": "faq", "access": ["public", "private"]}
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_keeps_caller_metadata():
+    """access_control=True writes access into the caller metadata_filter in one dict."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    aca = _StubACA(
+        user_groups={
+            "PageIndexAction": {
+                "private": ["user-1"],
+            }
+        }
+    )
+
+    with patch.object(
+        PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+    ):
+        result = await PageIndexAction.resolved_metadata_filter(
+            action,
+            _make_visitor("user-1"),
+            {"topic": "faq", "year": 2024},
+            access_control=True,
+        )
+
+    assert result == {
+        "topic": "faq",
+        "year": 2024,
+        "access": ["public", "private"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolved_metadata_filter_access_control_true_keeps_metadata_when_public_only():
+    """access_control=True with no identity still keeps caller keys and sets access=public."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+
+    result = await PageIndexAction.resolved_metadata_filter(
+        action, None, {"topic": "faq"}, access_control=True
+    )
+
+    assert result == {"topic": "faq", "access": ["public"]}
 
 
 @pytest.mark.asyncio
@@ -1633,6 +1926,69 @@ async def test_resolved_metadata_filter_access_control_true_no_aca_uses_enabled_
 
     assert result == {"access": ["public"]}
     mock_get.assert_awaited_once_with("AccessControlAction", enabled_only=False)
+
+
+@pytest.mark.asyncio
+async def test_list_documents_access_control_merges_and_summary():
+    """list_documents AC path uses resolved_metadata_filter; summary projects fields."""
+    action = _make_pageindex_action(metadata_filter=None, access_control=True)
+    object.__setattr__(action, "collection_name", None)
+    aca = _StubACA(user_groups={"PageIndexAction": {"private": ["user-1"]}})
+    listed = [
+        {
+            "doc_name": "a.md",
+            "doc_description": "Alpha",
+            "root_id": "r1",
+            "metadata": {"topic": "faq"},
+            "collection_name": "c1",
+        },
+        {
+            "doc_name": "b.md",
+            "doc_description": "",
+            "root_id": "r2",
+            "metadata": {},
+            "collection_name": "c1",
+        },
+    ]
+
+    with (
+        patch.object(
+            PageIndexAction, "get_action", new_callable=AsyncMock, return_value=aca
+        ),
+        patch.object(
+            PageIndexAction,
+            "_resolve_collection",
+            return_value="c1",
+        ),
+        patch(
+            "jvagent.action.pageindex.documents.list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ) as mock_list,
+    ):
+        full = await PageIndexAction.list_documents(
+            action,
+            metadata_filter={"topic": "faq"},
+            access_control=True,
+            user_id="user-1",
+        )
+        summary = await PageIndexAction.list_documents(
+            action,
+            metadata_filter={"topic": "faq"},
+            access_control=True,
+            user_id="user-1",
+            summary=True,
+        )
+
+    assert full == listed
+    assert summary == [
+        {"doc_name": "a.md", "doc_description": "Alpha"},
+        {"doc_name": "b.md", "doc_description": ""},
+    ]
+    assert mock_list.await_args_list[0].kwargs["metadata_filter"] == {
+        "topic": "faq",
+        "access": ["public", "private"],
+    }
 
 
 def test_root_matches_metadata_access_public_or_member():

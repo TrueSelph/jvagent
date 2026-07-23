@@ -12,34 +12,60 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
-- **ADR-0034 interview abandonment (#112).** Field unavailability (park / cancel /
-  relax + resume), TaskMonitor staleness reaper, and two-strike soft-abandon at
-  the companion gate.
-- **MCP OAuth action (#113).** OAuth-backed MCP connections and related leadgen
+- **PageIndex document edits (#123).** PATCH document root supports `metadata`,
+  `doc_url`, and `doc_description`; jvchat documents modal can edit those
+  fields with dirty-check PATCH.
+- **PageIndex `list_documents` / `pageindex__list` (#123).** Optional
+  `access_control` with `user_id` / `session_id`, plus `summary=True` to
+  return only `doc_name` and `doc_description`.
+- **JVForge resilience + URL rewrite (#123).** Queue ops wrap transport
+  failures (including `LocalProtocolError`) as actionable ValidationError
+  (422); GET documents queue degrades to empty when forge is down;
+  artifact/job URLs rewrite onto `JVAGENT_JVFORGE_BASE_URL` with
+  trusted-forge SSRF bypass for matching origin (incl. loopback dev).
+- **Ingest notifications (#123).** `notification_url` / `notification_secret`
+  passthrough on async jvforge assimilate.
+- **ADR-0034 interview abandonment (#112).** Field unavailability (park /
+  cancel / relax + resume), TaskMonitor staleness reaper, and two-strike
+  soft-abandon at the companion gate.
+- **MCP OAuth action (#113, #117).** OAuth-backed MCP connections with
+  encrypted token storage, deregister path prefixes, and related leadgen
   updates (including mcp_oauth import-guard allowlisting).
-- **Voice channel optimizations (#107).** Per-channel acknowledgment statements,
-  first-emit timeout, latency tracking, and related WhatsApp/voice interaction
-  flows.
+- **Voice channel optimizations (#107).** Per-channel acknowledgment
+  statements, first-emit timeout, latency tracking, and related
+  WhatsApp/voice interaction flows.
 
 ### Fixed
 
-- **ResponseBus channel-filter leak (#114).** Dedup channel filter registration;
-  TaskMonitor initializes actions once per process (not per tick).
+- **ResponseBus channel-filter leak (#114).** Dedup channel filter
+  registration; TaskMonitor initializes actions once per process (not per
+  tick).
 - **Conversation-health AI history (#115).** AI eval history uses prior-only
   turns (excludes the interaction under score).
 - **Gated resume for auto-resolving skills (#108).** Server-driven resume /
   compose for ADR-0026 auto-resolving first-field / single-field skills.
-- **Interview `for_each` ask-time skips (#111).** Run ask-time skip hooks after a
-  `for_each` advance in `set_fields`.
+- **Interview `for_each` ask-time skips (#111).** Run ask-time skip hooks
+  after a `for_each` advance in `set_fields`.
 
 ### Changed
 
-- **Lint gate honesty (#116).** Pre-commit flake8 plugins and mypy type-stub deps
-  are pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
-  `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md
-  documents the real (non-strict) typing bar. Fixed flake8-bugbear B042/B043 in
-  `manifest.py` / `llm_bridge.py`. Hot-path None guards in MCP tool selection,
-  TaskMonitor tick, and interview set_fields.
+- **PageIndex access control + metadata (#123).** When `access_control=True`,
+  `resolved_metadata_filter` keeps caller metadata keys and sets `access` on
+  the same filter (search and list share this rule). When
+  `access_control=False` (default), the caller filter is unchanged and
+  `access` is not injected.
+- **Lint gate honesty (#116).** Pre-commit flake8 plugins and mypy type-stub
+  deps are pinned; `[tool.mypy]` matches the hook (`strict_optional = false`,
+  etc.) so `mypy jvagent/` agrees with CI; `.flake8` sets
+  `max-complexity = 90`; CLAUDE.md documents the real (non-strict) typing bar.
+  Fixed flake8-bugbear B042/B043 in `manifest.py` / `llm_bridge.py`. Hot-path
+  None guards in MCP tool selection, TaskMonitor tick, and interview
+  set_fields.
+- **Remediation waves (#117–#122).** Orchestrator fail-open startup validation
+  + behavior-lock tests; hygiene/async bootstrap/docs/coverage; dead-API /
+  `repair_phases` cleanup; shared lease backend + YAML loader; orchestrator
+  `_run_loop` / interview `handle_set_fields` extracts; env-key docs +
+  doc-anchor CI.
 - **CI publish environment (#106).** Final PyPI publish records a `pypi`
   environment deployment. Dependabot: `actions/setup-node` 6 → 7 (#109).
 

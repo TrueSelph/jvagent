@@ -9,9 +9,51 @@ import pytest
 from jvspatial.api.exceptions import ValidationError
 
 from jvagent.action.pageindex.jvforge_assimilate import (
+    _jvforge_form_data,
     _post_jvforge_with_retries,
     assimilate_via_jvforge_async,
 )
+
+
+def test_jvforge_form_data_notification_passthrough() -> None:
+    """notification_url / notification_secret are included in the multipart form."""
+    data = _jvforge_form_data(
+        agent_id="agent-1",
+        doc_name="doc.docx",
+        model=None,
+        if_add_node_summary="no",
+        collection_name="agent-1",
+        metadata=None,
+        doc_description=None,
+        doc_url=None,
+        convert_to_markdown=True,
+        ocr=False,
+        normalize_bold_headings=False,
+        llm_webhook_url="http://localhost/webhook",
+        notification_url="https://hooks.example/notify",
+        notification_secret="s3cret",
+    )
+    assert data["notification_url"] == "https://hooks.example/notify"
+    assert data["notification_secret"] == "s3cret"
+
+
+def test_jvforge_form_data_omits_notification_when_unset() -> None:
+    data = _jvforge_form_data(
+        agent_id="agent-1",
+        doc_name="doc.docx",
+        model=None,
+        if_add_node_summary="no",
+        collection_name="agent-1",
+        metadata=None,
+        doc_description=None,
+        doc_url=None,
+        convert_to_markdown=True,
+        ocr=False,
+        normalize_bold_headings=False,
+        llm_webhook_url="http://localhost/webhook",
+    )
+    assert "notification_url" not in data
+    assert "notification_secret" not in data
 
 
 def _ok_queued_response() -> MagicMock:
