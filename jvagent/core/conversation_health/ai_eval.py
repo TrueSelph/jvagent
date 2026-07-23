@@ -37,10 +37,13 @@ Return ONLY a JSON object with this shape:
 }}
 
 Rules:
+- Evaluate ONLY the User utterance / Agent response pair below.
 - Only report clear problems; empty issues array if the turn looks fine.
 - Prefer codes from the list; use "other" only if needed.
 - dimension must match the issue type.
 - Be conservative: false positives are costly.
+- evidence_excerpt and notes must quote ONLY the evaluated utterance/response pair.
+  Recent conversation is context for coherence checks — do not score it or quote it as evidence.
 
 User utterance:
 {utterance}
@@ -48,7 +51,7 @@ User utterance:
 Agent response:
 {response}
 
-Recent conversation (oldest first):
+Recent conversation (oldest first; prior turns only):
 {history}
 """
 

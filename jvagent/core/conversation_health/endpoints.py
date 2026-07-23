@@ -490,6 +490,7 @@ async def deep_review_conversation(
     conv = await _require_conversation_for_agent(agent_id, conversation_id)
 
     targets: List[Interaction] = []
+    ordered_for_ai: Optional[List[Interaction]] = None
     if interaction_id:
         ix = await Interaction.get(interaction_id)
         if not ix or str(getattr(ix, "conversation_id", "")) != str(conversation_id):
@@ -501,8 +502,10 @@ async def deep_review_conversation(
                 },
             )
         targets = [ix]  # type: ignore[list-item]
+        ordered_for_ai = await conv.get_interactions(limit=0, reverse=False)
     else:
         targets = await conv.get_interactions(limit=0, reverse=False)
+        ordered_for_ai = targets
 
     results = []
     for ix in targets:
@@ -514,7 +517,11 @@ async def deep_review_conversation(
             await health_service.score_interaction(
                 ix, agent_id=agent_id, schedule_ai=False
             )
-        out = await health_service.run_ai_for_interaction(str(ix.id), agent_id=agent_id)
+        out = await health_service.run_ai_for_interaction(
+            str(ix.id),
+            agent_id=agent_id,
+            ordered_interactions=ordered_for_ai,
+        )
         results.append({"interaction_id": ix.id, **out})
 
     return {"results": results, "status": status}

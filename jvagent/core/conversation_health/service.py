@@ -26,6 +26,11 @@ from .config import (
 )
 from .constants import DEFERRED_TASK_TYPE, DIMENSIONS
 from .heuristics import response_duration_seconds, run_heuristics
+from .history import (
+    history_for_ai,
+    prior_interactions,
+    prior_responses_for_heuristics,
+)
 from .sampling import assign_bucket, decide_ai_schedule
 from .scoring import (
     build_contribution,
@@ -138,18 +143,13 @@ async def score_interaction(
         conversation = await Conversation.get(interaction.conversation_id)
         if conversation:
             try:
-                recent = await conversation.get_interactions(
-                    limit=cfg.history_limit + 1, reverse=True
+                ordered = await conversation.get_interactions(limit=0, reverse=False)
+                priors = prior_interactions(
+                    ordered,
+                    str(interaction.id),
+                    limit=cfg.history_limit,
                 )
-                for other in recent:
-                    if other.id == interaction.id:
-                        continue
-                    r = getattr(other, "response", None)
-                    if r:
-                        prior_responses.append(str(r))
-                    if len(prior_responses) >= cfg.history_limit:
-                        break
-                prior_responses.reverse()
+                prior_responses = prior_responses_for_heuristics(priors)
             except Exception:
                 logger.debug("Could not load prior interactions", exc_info=True)
 
@@ -341,9 +341,17 @@ async def _schedule_ai_eval(
 
 
 async def run_ai_for_interaction(
-    interaction_id: str, *, agent_id: str = ""
+    interaction_id: str,
+    *,
+    agent_id: str = "",
+    ordered_interactions: Optional[List[Interaction]] = None,
 ) -> Dict[str, Any]:
-    """Execute AI Evaluation and merge (deferred handler / Deep Review)."""
+    """Execute AI Evaluation and merge (deferred handler / Deep Review).
+
+    ``ordered_interactions``: optional chrono (oldest-first) list for the
+    conversation. Deep Review passes this once to avoid N reloads; history
+    is always **prior turns only** (never later turns).
+    """
     cfg = load_conversation_health_config()
     interaction = await Interaction.get(interaction_id)
     if not interaction:
@@ -384,26 +392,21 @@ async def run_ai_for_interaction(
         return {"error": "no_language_model", "health": health}
 
     history: List[Dict[str, str]] = []
-    if interaction.conversation_id:
-        conv = await Conversation.get(interaction.conversation_id)
-        if conv:
-            try:
-                recent = await conv.get_interactions(
-                    limit=cfg.history_limit + 1, reverse=True
-                )
-                for ix in reversed(recent):
-                    if str(getattr(ix, "id", "")) == str(interaction.id):
-                        continue
-                    if ix.utterance:
-                        history.append({"role": "user", "content": str(ix.utterance)})
-                    if ix.response:
-                        history.append(
-                            {"role": "assistant", "content": str(ix.response)}
-                        )
-                    if len(history) >= cfg.history_limit * 2:
-                        break
-            except Exception:
-                pass
+    try:
+        ordered = ordered_interactions
+        if ordered is None and interaction.conversation_id:
+            conv = await Conversation.get(interaction.conversation_id)
+            if conv:
+                ordered = await conv.get_interactions(limit=0, reverse=False)
+        if ordered:
+            priors = prior_interactions(
+                ordered,
+                str(interaction.id),
+                limit=cfg.history_limit,
+            )
+            history = history_for_ai(priors)
+    except Exception:
+        logger.debug("Could not load prior interactions for AI", exc_info=True)
 
     try:
         ai_payload = await run_ai_evaluation(
