@@ -39,6 +39,114 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
+    async def _handle_locked_flow(
+        self,
+        visitor: "InteractWalker",
+        flow_owner: str,
+        tools: Dict[str, Any],
+        activated: List[str],
+        loop_t0: float,
+        tool_timings: List[Dict[str, Any]],
+    ) -> bool:
+        """Execute hard-locked flow when lock_active_flow is enabled.
+
+        When a control-task points to an IA that furnished a tool, restrict the
+        callable surface to that one tool and dispatch it. The loop can only
+        continue the flow, never route elsewhere.
+
+        Args:
+            visitor: Current InteractWalker
+            flow_owner: Name of the flow owner tool
+            tools: Available tools dict
+            activated: List of activated skill names
+            loop_t0: Loop start time
+            tool_timings: List to append timing info
+
+        Returns:
+            True if the flow was handled and caller should return, False otherwise.
+        """
+        if not (self.lock_active_flow and flow_owner and flow_owner in tools):
+            return False
+
+        tool_t0 = time.perf_counter()
+        try:
+            if self.tool_call_timeout and self.tool_call_timeout > 0:
+                locked_result = (
+                    await asyncio.wait_for(
+                        tools[flow_owner].run({}),
+                        timeout=self.tool_call_timeout,
+                    )
+                ) or ""
+            else:
+                locked_result = (await tools[flow_owner].run({})) or ""
+        except asyncio.TimeoutError:
+            locked_result = (
+                f"(tool error: locked flow {flow_owner} timed out after "
+                f"{self.tool_call_timeout}s)"
+            )
+        tool_timings.append(
+            {
+                "name": flow_owner,
+                "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
+            }
+        )
+        interaction = getattr(visitor, "interaction", None)
+        # The locked IA "emits" either by setting a response OR by queuing a
+        # directive (the directive-based publishing pattern — `_egress`
+        # renders it after the loop). Checking only `interaction.response`
+        # missed the directive path, so the orchestrator mistook a publishing
+        # IA for a silent one and echoed the IA-as-tool status sentinel
+        # ("(ran X)") as a spurious reply/directive (ADR-0013 follow-up).
+        emitted = self._ia_emitted(interaction)
+        ended = "locked"
+        if not emitted:
+            # The IA ran but produced nothing user-facing. NEVER echo its
+            # internal status sentinel ("(ran X)" / "(no visitor available)"
+            # / "(flow error: …)") — those are loop-internal. Surface a clean
+            # message instead.
+            #
+            # EVERY non-emitting locked turn — access-denied, a thrown
+            # error, or a silently-non-emitting IA — must count toward the
+            # escape streak. Otherwise a flow that denies access (AC revoked
+            # mid-flow) or runs without ever emitting/completing traps the
+            # user behind the turn-lock forever: the same dead-end reply on
+            # every subsequent turn, with no way to route elsewhere. After
+            # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
+            # control-task is abandoned so the next turn runs the loop.
+            # AUDIT-orchestrator HIGH.
+            res = locked_result.strip()
+            if "access denied" in res.lower():
+                ended = "locked_denied"
+                reply = (
+                    "You don't currently have access to continue this. Let "
+                    "me know if there's something else I can help with."
+                )
+            elif res.startswith("(flow error") or res.startswith("(tool error"):
+                ended = "locked_error"
+                reply = self.clarify_text
+            else:
+                ended = "locked_silent"
+                reply = self.clarify_text
+            if await _orch().note_locked_flow_error(visitor, flow_owner):
+                ended = f"{ended}_escape"
+            await self._emit_reply(visitor, reply)
+        else:
+            # A working flow resets the failure streak.
+            await _orch().clear_locked_flow_error(visitor, flow_owner)
+        await self._record_orchestrator_activation(
+            visitor,
+            continuation_mode="locked",
+            flow_owner=flow_owner,
+            tools_invoked=[flow_owner],
+            tick_count=0,
+            ended_via=ended,
+            activated=activated,
+            loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
+            tool_timings=tool_timings,
+        )
+        await self._finalize_plan(visitor)
+        return True
+
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         loop_t0 = time.perf_counter()
         tool_timings: List[Dict[str, Any]] = []
@@ -112,84 +220,9 @@ class OrchestratorLoopMixin:
         # elsewhere. The IA's tool is visitor-bound, AC-gated, and terminal
         # (so it owns the turn's output). The IA receives all input including
         # off-topic; interruption/cancel is the IA's own concern.
-        if self.lock_active_flow and flow_owner and flow_owner in tools:
-            tool_t0 = time.perf_counter()
-            try:
-                if self.tool_call_timeout and self.tool_call_timeout > 0:
-                    locked_result = (
-                        await asyncio.wait_for(
-                            tools[flow_owner].run({}),
-                            timeout=self.tool_call_timeout,
-                        )
-                    ) or ""
-                else:
-                    locked_result = (await tools[flow_owner].run({})) or ""
-            except asyncio.TimeoutError:
-                locked_result = (
-                    f"(tool error: locked flow {flow_owner} timed out after "
-                    f"{self.tool_call_timeout}s)"
-                )
-            tool_timings.append(
-                {
-                    "name": flow_owner,
-                    "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
-                }
-            )
-            interaction = getattr(visitor, "interaction", None)
-            # The locked IA "emits" either by setting a response OR by queuing a
-            # directive (the directive-based publishing pattern — `_egress`
-            # renders it after the loop). Checking only `interaction.response`
-            # missed the directive path, so the orchestrator mistook a publishing
-            # IA for a silent one and echoed the IA-as-tool status sentinel
-            # ("(ran X)") as a spurious reply/directive (ADR-0013 follow-up).
-            emitted = self._ia_emitted(interaction)
-            ended = "locked"
-            if not emitted:
-                # The IA ran but produced nothing user-facing. NEVER echo its
-                # internal status sentinel ("(ran X)" / "(no visitor available)"
-                # / "(flow error: …)") — those are loop-internal. Surface a clean
-                # message instead.
-                #
-                # EVERY non-emitting locked turn — access-denied, a thrown
-                # error, or a silently-non-emitting IA — must count toward the
-                # escape streak. Otherwise a flow that denies access (AC revoked
-                # mid-flow) or runs without ever emitting/completing traps the
-                # user behind the turn-lock forever: the same dead-end reply on
-                # every subsequent turn, with no way to route elsewhere. After
-                # LOCKED_FLOW_ERROR_LIMIT consecutive dead-ends the owning
-                # control-task is abandoned so the next turn runs the loop.
-                # AUDIT-orchestrator HIGH.
-                res = locked_result.strip()
-                if "access denied" in res.lower():
-                    ended = "locked_denied"
-                    reply = (
-                        "You don't currently have access to continue this. Let "
-                        "me know if there's something else I can help with."
-                    )
-                elif res.startswith("(flow error") or res.startswith("(tool error"):
-                    ended = "locked_error"
-                    reply = self.clarify_text
-                else:
-                    ended = "locked_silent"
-                    reply = self.clarify_text
-                if await _orch().note_locked_flow_error(visitor, flow_owner):
-                    ended = f"{ended}_escape"
-                await self._emit_reply(visitor, reply)
-            else:
-                # A working flow resets the failure streak.
-                await _orch().clear_locked_flow_error(visitor, flow_owner)
-            await self._record_orchestrator_activation(
-                visitor,
-                continuation_mode="locked",
-                flow_owner=flow_owner,
-                tools_invoked=[flow_owner],
-                tick_count=0,
-                ended_via=ended,
-                activated=activated,
-                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
-                tool_timings=tool_timings,
-            )
-            await self._finalize_plan(visitor)
+        if await self._handle_locked_flow(
+            visitor, flow_owner, tools, activated, loop_t0, tool_timings
+        ):
             return
 
         if flow_owner and flow_owner not in tools:
