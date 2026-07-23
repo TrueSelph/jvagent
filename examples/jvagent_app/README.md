@@ -13,21 +13,13 @@ jvagent_app/
 ├── app.yaml              # Application descriptor (metadata & agent list)
 ├── agents/               # Custom agent packages
 │   ├── jvagent/
-│   │   ├── orchestrator_agent/  # Orchestrator agent
+│   │   ├── orchestrator_agent/  # Orchestrator agent (core pattern)
 │   │   │   ├── agent.yaml
+│   │   │   ├── skills/          # SOP skills (signup_interview, etc.)
 │   │   │   └── README.md
-│   │   ├── example_agent/   # Main demo agent (core + PageIndex)
-│   │   │   ├── agent.yaml
-│   │   │   └── README.md
-│   │   ├── unified_agent/   # AgentInteractAction (unified routing + skill loop)
-│   │   │   ├── agent.yaml
-│   │   │   └── README.md
-│   │   └── skills_agent/   # Optional Ollama + skills (add to app.yaml to enable)
-│   └── resolv/
-│       └── resolv_demo/     # Resolv API + interview flows (set RESOLV_TEST_* in .env)
-│           ├── actions/resolv/
-│           ├── agent.yaml
-│           └── README.md
+│   │   └── leadgen_agent/       # Lead generation demo agent
+│   │       ├── agent.yaml
+│   │       └── README.md
 ├── docs/                 # Application documentation
 ├── .env                  # Environment configuration
 ├── .env.example          # Example environment configuration
@@ -148,9 +140,8 @@ config:
 # Agents (list of namespace/agent_name strings)
 # Agents listed here are automatically installed when you run jvagent or bootstrap
 agents:
-  - jvagent/example_agent
-  - resolv/resolv_demo
-  # Optional: jvagent/skills_agent
+  - jvagent/orchestrator_agent
+  - jvagent/leadgen_agent
 ```
 
 ### How It Works
@@ -231,9 +222,10 @@ agents/
   - `jvagent/openai_lm` — OpenAI language model
   - `jvagent/reply` — Egress voice
   - `jvagent/intro_interact_action` — First-time user intro
-  - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)
+  - `jvagent/handoff_interact_action` — Human handoff
+- **Skills**: `signup_interview` skill under `agents/jvagent/orchestrator_agent/skills/`
 
-**`resolv/resolv_demo`**: custom `resolv/*` interview and API actions plus `jvagent/access_control_action` and `jvagent/whatsapp_action`; configure `RESOLV_TEST_*` in `.env` for `resolv/resolv_api_action`.
+**`jvagent/leadgen_agent`**: lead generation and MCP sync demo agent
 
 ### Using Core Actions
 

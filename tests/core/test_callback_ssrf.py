@@ -16,47 +16,55 @@ import pytest
 from jvagent.core.callback import _is_unsafe_ip, _resolve_and_validate
 
 
-def test_literal_loopback_rejected():
+@pytest.mark.asyncio
+async def test_literal_loopback_rejected():
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://127.0.0.1/x")
+        await _resolve_and_validate("http://127.0.0.1/x")
 
 
-def test_literal_private_v4_rejected():
+@pytest.mark.asyncio
+async def test_literal_private_v4_rejected():
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://10.0.0.5/x")
+        await _resolve_and_validate("http://10.0.0.5/x")
 
 
-def test_literal_link_local_aws_metadata_rejected():
+@pytest.mark.asyncio
+async def test_literal_link_local_aws_metadata_rejected():
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://169.254.169.254/latest/meta-data/")
+        await _resolve_and_validate("http://169.254.169.254/latest/meta-data/")
 
 
-def test_literal_unspecified_rejected():
+@pytest.mark.asyncio
+async def test_literal_unspecified_rejected():
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://0.0.0.0/x")
+        await _resolve_and_validate("http://0.0.0.0/x")
 
 
-def test_literal_ipv6_loopback_rejected():
+@pytest.mark.asyncio
+async def test_literal_ipv6_loopback_rejected():
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://[::1]/x")
+        await _resolve_and_validate("http://[::1]/x")
 
 
-def test_literal_ipv4_mapped_ipv6_loopback_rejected():
+@pytest.mark.asyncio
+async def test_literal_ipv4_mapped_ipv6_loopback_rejected():
     # ::ffff:127.0.0.1 — IPv4-mapped IPv6, easy SSRF bypass if not handled
     with pytest.raises(ValueError, match="blocked IP literal"):
-        _resolve_and_validate("http://[::ffff:127.0.0.1]/x")
+        await _resolve_and_validate("http://[::ffff:127.0.0.1]/x")
 
 
-def test_non_http_scheme_rejected():
+@pytest.mark.asyncio
+async def test_non_http_scheme_rejected():
     with pytest.raises(ValueError, match="scheme"):
-        _resolve_and_validate("file:///etc/passwd")
+        await _resolve_and_validate("file:///etc/passwd")
     with pytest.raises(ValueError, match="scheme"):
-        _resolve_and_validate("gopher://example.com/")
+        await _resolve_and_validate("gopher://example.com/")
     with pytest.raises(ValueError, match="scheme"):
-        _resolve_and_validate("ftp://example.com/")
+        await _resolve_and_validate("ftp://example.com/")
 
 
-def test_resolved_private_ip_rejected():
+@pytest.mark.asyncio
+async def test_resolved_private_ip_rejected():
     """Hostname resolving to a private IP must be rejected."""
 
     def _fake_getaddrinfo(host, *_args, **_kwargs):
@@ -65,15 +73,16 @@ def test_resolved_private_ip_rejected():
 
     with patch("jvagent.core.callback.socket.getaddrinfo", _fake_getaddrinfo):
         with pytest.raises(ValueError, match="blocked address"):
-            _resolve_and_validate("http://attacker.example/x")
+            await _resolve_and_validate("http://attacker.example/x")
 
 
-def test_resolved_public_ip_accepted():
+@pytest.mark.asyncio
+async def test_resolved_public_ip_accepted():
     def _fake_getaddrinfo(host, *_args, **_kwargs):
         return [(0, 0, 0, "", ("93.184.216.34", 0))]  # example.com public IP
 
     with patch("jvagent.core.callback.socket.getaddrinfo", _fake_getaddrinfo):
-        hostname, safe_ips = _resolve_and_validate("http://example.com/x")
+        hostname, safe_ips = await _resolve_and_validate("http://example.com/x")
     assert hostname == "example.com"
     assert safe_ips == ["93.184.216.34"]
 

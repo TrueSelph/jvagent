@@ -37,13 +37,8 @@ tests/
 ├── cli/                     # CLI argparse + dispatch
 ├── scaffold/                # `jvagent app create` flow
 ├── bundle/                  # bundle/Dockerfile generation
-├── skills/                  # skill discovery + dispatch
 ├── integration/             # end-to-end flows
 ├── unit/                    # cross-cutting unit tests
-├── test_comprehensive_pruning.py
-├── test_pruning_fix.py
-├── test_interview_branch_cache.py
-├── test_interview_path_pruning_and_convergence.py
 ├── test_stress_seed_graph.py
 ├── test_tool_schema_audit.py
 ├── test_embed.py
@@ -83,7 +78,7 @@ Add at least one test slice:
 | Touched | Add tests at |
 |---|---|
 | `core/` | `tests/core/` |
-| `memory/` | `tests/memory/` + regression in `tests/test_comprehensive_pruning.py` if it affects pruning |
+| `memory/` | `tests/memory/` (pruning tests live under `tests/action/interview/`) |
 | `action/{name}/` | `tests/action/{name}/` |
 | `action/interact/` | `tests/action/interact/` + `tests/action/access_control/` if access control changes |
 | `action/orchestrator/` | `tests/action/orchestrator/` |

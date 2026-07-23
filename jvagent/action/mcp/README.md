@@ -4,7 +4,7 @@ MCPAction is a core singleton gateway action that manages **one or more named MC
 
 ## File I/O vs MCP
 
-For **read/write/list confined to the per-user workspace** (same `<agent_id>/<user_id>/` layout as sandboxed filesystem MCP), prefer the built-in **`fileinterface` skill** (`jvagent/skills/fileinterface/`): in-process calls to `App.get_file_interface()` with no MCP subprocess or `npx` dependency. Use **MCPAction** when you need **additional** MCP servers (HTTP or stdio tools from the ecosystem) or LLM-driven tool dispatch across those servers.
+For **read/write/list confined to the per-user workspace**, use the built-in **file storage** via `App.get_file_interface()` (in-process calls with no MCP subprocess or `npx` dependency). Use **MCPAction** when you need **additional** MCP servers (HTTP or stdio tools from the ecosystem) or LLM-driven tool dispatch across those servers.
 
 ## Requirements
 

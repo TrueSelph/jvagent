@@ -1,4 +1,4 @@
-# Executive profile (ADR-0012).
+# Orchestrator profile (ADR-0012).
 #
 # A single model-driven orchestrator. OrchestratorInteractAction at weight
 # -200 locks onto an active flow when one owns the turn (lock_active_flow),
@@ -8,7 +8,7 @@
 # selection; identity comes from the Agent (alias + role).
 #
 # The single pattern orchestrator at the -200 slot.
-# Use --profile executive to scaffold a new agent on this composition.
+# Use --profile orchestrator to scaffold a new agent on this composition.
 actions:
   - action: jvagent/orchestrator
     context:
@@ -31,7 +31,7 @@ actions:
       # record a multi-step plan that persists across turns and resumes if a turn
       # is interrupted. Off by default (zero cost); uncomment to enable.
       # planning: true
-      # -- Reasoning (only with a reasoning-capable model; see docs/EXECUTIVE.md).
+      # -- Reasoning (only with a reasoning-capable model; see docs/ORCHESTRATOR.md).
       # reasoning_effort: medium     # low | medium | high
       # -- Thinking stream (needs a live bus).
       stream_internal_progress: false

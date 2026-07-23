@@ -1,5 +1,6 @@
 """Interaction node for representing single exchanges within a conversation."""
 
+import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -7,7 +8,7 @@ from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
 from jvspatial.core.mixins import DeferredSaveMixin
 
-from jvagent.action.model.base import logger
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from jvagent.memory.conversation import Conversation
@@ -45,6 +46,25 @@ def interaction_sort_key(node: Any) -> tuple:
     if st.tzinfo is None:
         st = st.replace(tzinfo=timezone.utc)
     return (st, getattr(node, "id", ""))
+
+
+def ensure_interaction_graph_context(interaction: Any) -> None:
+    """Ensure interaction has a valid _graph_context for save.
+
+    Called before persisting an Interaction to ensure jvspatial's internal
+    _graph_context field is set. This is needed when the Interaction instance
+    was created outside the normal context manager flow.
+
+    Args:
+        interaction: Interaction node instance
+    """
+    if not hasattr(interaction, "_graph_context") or interaction._graph_context is None:
+        try:
+            from jvspatial.core.context import get_default_context
+
+            interaction._graph_context = get_default_context()
+        except Exception:
+            pass
 
 
 @compound_index([("conversation_id", 1), ("started_at", -1)], name="conv_timestamp")

@@ -23,6 +23,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   logs WARNING when skills declare unregistered preconditions (runtime fail-open
   unchanged); `apply_abandon` promoted to public API; coupling guard allowlists
   intentional ADR-0034 touchpoints; AC fail-open / fail-closed behavior documented.
+- **Hygiene and docs coverage (Wave 3).** Async bootstrap helpers (`yaml_io.py`,
+  `install_action_dependencies_async`, webhook DNS in `asyncio.to_thread`); logger
+  import cleanup; User docstring; `re` import; `_graph_context` helper. Docs:
+  orchestrator.yaml profile name, examples/jvagent_app references orchestrator/leadgen
+  agents, tests/CLAUDE.md layout, MCP README fileinterface pointer. Consolidated
+  boolean-env parsers into `env_resolver.parse_bool_env`.
 
 ### Changed
 

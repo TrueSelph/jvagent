@@ -47,7 +47,7 @@ def _is_unsafe_ip(ip: ipaddress._BaseAddress) -> bool:
     return False
 
 
-def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
+async def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     """Resolve *webhook_url*'s hostname once and reject private/reserved IPs.
 
     Returns ``(hostname, [validated_ip, ...])`` so the caller can pin the
@@ -60,6 +60,8 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     attempts. Retries must reuse the validated IP list from this call.
     AUDIT-core C-4(d).
     """
+    import asyncio
+
     parsed = urlparse(webhook_url)
     scheme = (parsed.scheme or "").lower()
     if scheme not in _ALLOWED_WEBHOOK_SCHEMES:
@@ -86,7 +88,9 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
         )
 
     try:
-        addrs = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        addrs = await asyncio.to_thread(
+            socket.getaddrinfo, hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
     except socket.gaierror as e:
         raise ValueError(f"Webhook URL hostname resolution failed: {hostname}: {e}")
 
@@ -108,9 +112,9 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     return hostname, safe
 
 
-def _validate_webhook_url(webhook_url: str) -> None:
+async def _validate_webhook_url(webhook_url: str) -> None:
     """Validate that *webhook_url* resolves to a non-private IP."""
-    _resolve_and_validate(webhook_url)
+    await _resolve_and_validate(webhook_url)
 
 
 async def _post_webhook_pinned_async(

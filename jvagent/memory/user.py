@@ -25,9 +25,10 @@ if TYPE_CHECKING:
 class User(Node):
     """Internal user model - identifier only, not an account.
 
-    This is a minimal node that only maintains a unique identifier for the person
-    interacting with the agent. It does not store email, name, or other account-like
-    attributes. The User node is solely for maintaining identity across conversations.
+    This is a minimal node that maintains a unique identifier and optional
+    display properties for the person interacting with the agent. It does not
+    store email or other account-like authentication attributes. The User node
+    is for maintaining identity across conversations.
 
     Entity Relationships:
         - Connected to Memory via incoming edge
@@ -40,6 +41,10 @@ class User(Node):
     Attributes:
         memory_id: Owning Memory node id (scopes user_id per agent / deployment)
         user_id: External user identifier (unique per memory_id)
+        name: User's preferred name (raw input)
+        display_name: Formatted display name for addressing the user
+        memory: General-purpose user-scoped memory (key→markdown map)
+        memory_tags: Tags per memory key for filtering
         usage: Cumulative token spend and model call metrics across all interactions
         created_at: Timestamp of user creation
         last_seen: Timestamp of last user activity

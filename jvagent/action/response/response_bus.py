@@ -763,16 +763,9 @@ class ResponseBus:
             return
 
         if interaction.set_response(new_response):
-            if (
-                not hasattr(interaction, "_graph_context")
-                or interaction._graph_context is None
-            ):
-                try:
-                    from jvspatial.core.context import get_default_context
+            from jvagent.memory.interaction import ensure_interaction_graph_context
 
-                    interaction._graph_context = get_default_context()
-                except Exception:
-                    pass
+            ensure_interaction_graph_context(interaction)
             await interaction.save()
 
     async def _append_to_interaction_agent_trace_impl(
@@ -804,16 +797,9 @@ class ResponseBus:
             changed = True
 
         if changed:
-            if (
-                not hasattr(interaction, "_graph_context")
-                or interaction._graph_context is None
-            ):
-                try:
-                    from jvspatial.core.context import get_default_context
+            from jvagent.memory.interaction import ensure_interaction_graph_context
 
-                    interaction._graph_context = get_default_context()
-                except Exception:
-                    pass
+            ensure_interaction_graph_context(interaction)
             await interaction.save()
 
     async def _send_to_adapter(

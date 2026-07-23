@@ -56,7 +56,7 @@ def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
             s = s.replace(f"{{{k}}}", str(v) if v is not None else "")
         # Any remaining {placeholder} refers to a field that has not been
         # captured; keep the cell blank instead of leaking the literal token.
-        s = __import__("re").sub(r"\{[A-Za-z_][A-Za-z0-9_]*\}", "", s)
+        s = re.sub(r"\{[A-Za-z_][A-Za-z0-9_]*\}", "", s)
         return s
 
     if isinstance(val, str):
