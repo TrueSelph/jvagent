@@ -8,6 +8,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
+  pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
+  `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md
+  documents the real (non-strict) typing bar. Fixed flake8-bugbear B042/B043 in
+  `manifest.py` / `llm_bridge.py`. Hot-path None guards in MCP tool selection,
+  TaskMonitor tick, and interview set_fields.
+
 ## [0.1.2] - 2026-07-17
 
 ### Added

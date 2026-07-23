@@ -51,7 +51,8 @@ class ManifestValidationError(ValueError):
     name (when known) for diagnostic logging.
     """
 
-    def __init__(self, message: str, *, field_name: Optional[str] = None):
+    def __init__(self, message: str, field_name: Optional[str] = None):  # noqa: B042
+        # field_name is diagnostic metadata for loaders; not Exception base state.
         super().__init__(message)
         self.field_name = field_name
 

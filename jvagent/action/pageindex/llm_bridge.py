@@ -27,8 +27,7 @@ class PageIndexCancelled(Exception):
 def attach_pageindex_cancel_event(event: Optional[threading.Event]) -> None:
     """Register cancel event for the current thread (PDF executor worker). Pass None to clear."""
     if event is None:
-        if hasattr(_tls, "cancel_event"):
-            delattr(_tls, "cancel_event")
+        _tls.cancel_event = None
     else:
         _tls.cancel_event = event
 
