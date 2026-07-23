@@ -10,7 +10,7 @@ Tool dispatch is gated on the existing AC taxonomy; IA-as-tools use the stable
 - **AC.has_action_access() raises** → fail-closed (deny). An exception during
   access check is logged and the tool is denied. This is the safe default when
   AC wiring is broken.
-  
+
 See ``is_tool_allowed`` for the resolution logic.
 """
 

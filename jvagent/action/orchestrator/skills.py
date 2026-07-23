@@ -84,7 +84,7 @@ def _parse_requires_tasks(raw: Any) -> Tuple[dict, ...]:
 
 def _validate_preconditions(skill_name: str, requires_tasks: Tuple[dict, ...]) -> None:
     """Startup validation: warn loudly when a skill declares unregistered preconditions.
-    
+
     Runtime fail-open behavior (evaluate_precondition returns True on unknown names)
     is unchanged; this is an early warning at skill load time.
     """
@@ -94,7 +94,7 @@ def _validate_preconditions(skill_name: str, requires_tasks: Tuple[dict, ...]) -
         from jvagent.action.orchestrator.preconditions import precondition_registered
     except Exception:  # pragma: no cover
         return
-    
+
     for entry in requires_tasks:
         when = entry.get("when") or ""
         if when and not precondition_registered(when):
