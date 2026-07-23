@@ -59,6 +59,13 @@ repos:
           - types-requests==2.32.0.20240914
   - repo: local
     hooks:
+      - id: check-doc-anchors
+        name: Check documentation anchors
+        entry: python3 .ci/check_doc_anchors.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        files: \.md$
       - id: pytest
         name: pytest
         entry: pytest

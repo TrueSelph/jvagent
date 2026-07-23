@@ -44,7 +44,6 @@ After installing jvagent, you can run this example application:
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
    # - OPENAI_API_KEY (needed for the bundled agents' OpenAI actions)
-   # For resolv/resolv_demo only: RESOLV_TEST_* variables (see .env.example)
    cd ../..
    ```
 
@@ -329,7 +328,7 @@ The `agent.yaml` file contains both agent configuration and action assignments:
 
 ```yaml
 # Agent reference in namespace/agent_name format
-agent: jvagent/example_agent
+agent: jvagent/orchestrator_agent
 
 # Agent metadata
 version: 1.0.0
@@ -337,7 +336,7 @@ author: Your Name
 
 # Agent context: Properties that configure the agent
 context:
-  alias: Example Agent
+  alias: Orchestrator Agent
   description: An example agent demonstrating jvagent agent configuration
   enabled: true
   custom_field: value  # Any additional public properties

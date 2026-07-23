@@ -16,15 +16,12 @@ jvagent_app/
 ├── STRUCTURE.md              # This file
 │
 ├── agents/                   # Custom agent packages (namespace / agent_id)
-│   ├── jvagent/
-│   │   ├── example_agent/    # Main demo agent
-│   │   │   ├── orchestrator_agent/skills/signup_interview/  # Current signup interview (skills-v2)
-│   │   │   ├── agent.yaml
-│   │   │   └── README.md
-│   │   └── skills_agent/     # Optional skills + Ollama agent (enable in app.yaml if needed)
-│   └── resolv/
-│       └── resolv_demo/      # Resolv API + interviews demo
-│           ├── actions/resolv/
+│   └── jvagent/
+│       ├── leadgen_agent/   # Lead generation demo agent
+│       │   ├── agent.yaml
+│       │   └── README.md
+│       └── orchestrator_agent/ # Orchestrator demo agent
+│           ├── skills/signup_interview/  # Current signup interview (skills-v2)
 │           ├── agent.yaml
 │           └── README.md
 │

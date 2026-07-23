@@ -15,8 +15,6 @@ from jvagent.action.interact import session_token as st
 
 _SECRET = "unit-test-secret-key-aaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-pytestmark = pytest.mark.asyncio
-
 
 @pytest.fixture(autouse=True)
 def _secret_env(monkeypatch):
@@ -146,6 +144,7 @@ def test_refresh_verify_no_secret(monkeypatch):
 # --- refresh_session_token (the exchange) -------------------------------------
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_returns_fresh_token():
     old = _mint(ttl=60)
     new_token, claims, err = await st.refresh_session_token(
@@ -161,6 +160,7 @@ async def test_refresh_exchange_returns_fresh_token():
     assert new_claims["jti"] != old_claims["jti"]
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_accepts_body_token_over_header():
     tok = _mint()
     new_token, _, err = await st.refresh_session_token(
@@ -172,6 +172,7 @@ async def test_refresh_exchange_accepts_body_token_over_header():
     assert err is None and new_token
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_recovers_expired_within_grace():
     new_token, _, err = await st.refresh_session_token(
         request=_request(_expired(60)), agent=_agent_with(_conv()), agent_id="a1"
@@ -179,6 +180,7 @@ async def test_refresh_exchange_recovers_expired_within_grace():
     assert err is None and new_token
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_missing_token():
     new_token, claims, err = await st.refresh_session_token(
         request=_request(None), agent=_agent_with(_conv()), agent_id="a1"
@@ -186,6 +188,7 @@ async def test_refresh_exchange_missing_token():
     assert new_token is None and claims is None and err == "missing_token"
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_no_conversation():
     new_token, _, err = await st.refresh_session_token(
         request=_request(_mint()), agent=_agent_with(None), agent_id="a1"
@@ -193,6 +196,7 @@ async def test_refresh_exchange_no_conversation():
     assert new_token is None and err == "no_conversation"
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_rotated_secret_revokes():
     new_token, _, err = await st.refresh_session_token(
         request=_request(_mint()),
@@ -202,6 +206,7 @@ async def test_refresh_exchange_rotated_secret_revokes():
     assert new_token is None and err == "bind_secret_mismatch"
 
 
+@pytest.mark.asyncio
 async def test_refresh_exchange_cross_channel_rejected():
     new_token, _, err = await st.refresh_session_token(
         request=_request(_mint()),

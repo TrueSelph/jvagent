@@ -13,7 +13,6 @@ The plugin-loadable extension surface of jvagent:
 - **Specialized bases**: `BaseModelAction`, `LanguageModelAction`, `BaseWebSearchAction`, `BaseSTTAction`, `BaseTTSAction`, `VectorStore`.
 - **Concrete plugins** organized by topic: language models, response/bus, Orchestrator, memory-related, channel adapters, productivity integrations, tasks. Catalog in [`/.planning/reference/actions-catalog.md`](../../.planning/reference/actions-catalog.md).
 - **Loader/registry** in `loader/`.
-- **Plugin contracts** in `plugin_contracts.py`.
 
 ---
 
@@ -37,8 +36,6 @@ The plugin-loadable extension surface of jvagent:
 | `actions.py` | `Actions` manager node |
 | `endpoints.py` | Top-level action HTTP routes (~9 routes) |
 | `loader/` | Action loader, registry, plugin discovery |
-| `plugin_contracts.py` | Plugin protocol definitions |
-| `streaming.py` | Streaming response helpers |
 
 ---
 

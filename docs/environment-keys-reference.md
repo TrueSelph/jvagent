@@ -30,6 +30,7 @@ Use this split for new app descriptors:
 - `JVAGENT_ADMIN_USERNAME` - Initial admin username.
 - `JVAGENT_ADMIN_EMAIL` - Initial admin email.
 - `JVAGENT_AUTH_ENABLED` - App-level auth enable toggle.
+- `JVAGENT_API_KEY_AUTH_ENABLED` - Enable API key authentication (default `false`).
 - `JVAGENT_API_KEY_MANAGEMENT_ENABLED` - API-key management enable toggle.
 - `JVAGENT_API_KEY_PREFIX` - API-key prefix.
 - `JVAGENT_API_KEY_HEADER` - API-key header name.
@@ -44,6 +45,24 @@ Use this split for new app descriptors:
 - `JVAGENT_INTERACT_TOKEN_TTL_SECONDS` - Mode B session capability token lifetime (default `604800` = 7 days). Tokens are re-minted on every interact turn and can be renewed without an utterance via `POST /agents/{id}/interact/session/refresh` (ADR-0032).
 - `JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS` - Post-expiry window in which an expired session token may still be exchanged at the refresh endpoint (default `604800` = 7 days; `0` disables — refresh then requires a still-valid token). Expired tokens are never accepted on `interact` itself.
 - `JVAGENT_TRUST_PROXY_HEADERS` - When `true`, `extract_client_ip` trusts `X-Forwarded-For`/`X-Real-IP`/`CF-Connecting-IP` for rate-limit bucketing. Default `false` (fail-safe): proxy headers are ignored and `request.client.host` is used. Enable ONLY behind a trusted reverse proxy that overwrites these headers.
+
+### Security and encryption
+- `JVAGENT_TOKEN_ENC_KEY` - Primary symmetric encryption key for session tokens (base64-encoded 256-bit key). Required when `JVAGENT_INTERACT_PUBLIC_AUTH` is enabled.
+- `JVAGENT_TOKEN_ENC_KEY_PREVIOUS` - Previous encryption key for token rotation. When set, tokens encrypted with the old key are decrypted and re-encrypted with the primary key.
+
+### Conversation locking (multi-process concurrency)
+- `JVAGENT_CONVERSATION_LOCK_REDIS_URL` - Redis URL for distributed conversation locks (e.g., `redis://localhost:6379/0`). When unset, uses local in-process locks.
+- `JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE` - DynamoDB table name for distributed conversation locks. Alternative to Redis.
+- `JVAGENT_CONVERSATION_LOCK_DYNAMODB_TTL_SECONDS` - DynamoDB lock TTL in seconds (default `300` = 5 minutes).
+- `JVAGENT_CONVERSATION_LOCK_TTL_SECONDS` - General conversation lock TTL in seconds (default `300` = 5 minutes). Applies to Redis and in-process locks.
+
+### Conversation health
+- `JVAGENT_CONVERSATION_HEALTH_ENABLED` - Enable conversation health scoring (default `true`). When enabled, interactions are scored with heuristic health metrics (quality, responsiveness, friction, integrity).
+
+### Bootstrap and runtime controls
+- `JVAGENT_STRICT_CONFIG` - When `true`, raises validation errors for unknown config keys in `app.yaml` (default `false` — warnings only).
+- `JVAGENT_DEFER_REPAIR` - When `true`, skips graph repair phases on startup (default `false`). Useful for ephemeral container restarts where repair adds latency.
+- `JVAGENT_BASE_URL` - Internal base URL for jvagent, used in contexts where the public base URL differs from the internal service address (e.g., container-to-container communication).
 
 ### PageIndex
 - `JVAGENT_PAGEINDEX_DB_TYPE` - PageIndex backend type.
@@ -80,6 +99,7 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_ACTION_CACHE_TTL` - Action cache TTL.
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enables DSPy cache.
 - `JVAGENT_CACHE_CLEANUP_PROBABILITY` - Cache cleanup probability.
+- `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL` - Maximum number of interactions pruned per pruning call (default `100`). Prevents latency spikes on large pruning operations.
 
 ## 2) Relevant jvspatial Keys Used by jvagent (`JVSPATIAL_*`)
 
@@ -207,7 +227,7 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
-- **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See [`.planning/runbooks/whatsapp-voice-calls.md`](../.planning/runbooks/whatsapp-voice-calls.md).
+- **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See `jvagent/action/whatsapp/README.md` (voice / calling notes).
 
 ### jvvoice delegation (WhatsApp voice calls)
 - `JVVOICE_BASE_URL` — **jvagent**: public URL of jvvoice connector API (`POST /api/calls/accept`)

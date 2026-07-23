@@ -364,7 +364,7 @@ Admin helpers:
 2. Replay the same webhook POST body (same wamid) → response `duplicate webhook`, no second reply.
 3. Automated regression: `pytest tests/action/whatsapp/test_meta_webhook_interact_smoke.py`.
 
-**Meta Groups:** deferred — see [ADR-0028](../../.planning/adr/0028-defer-meta-whatsapp-groups.md). Not wwebjs parity; requires OBA + separate implementation phase.
+**Meta Groups:** deferred — see [ADR-0028](../../../.planning/adr/0028-defer-meta-whatsapp-groups.md). Not wwebjs parity; requires OBA + separate implementation phase.
 
 Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION`) are not used when `provider: meta`.
 

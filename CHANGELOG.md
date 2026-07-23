@@ -8,6 +8,29 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+- Conversation health test coverage: `tests/core/conversation_health/test_scoring.py` and `test_heuristics.py`
+- Task monitor finalize tests: `tests/action/task_monitor/test_finalize.py`
+- Environment key coverage test: `tests/test_env_keys_documented.py` to ensure all `JVAGENT_*` keys are documented
+- Documented missing environment keys: `JVAGENT_TOKEN_ENC_KEY`, `JVAGENT_TOKEN_ENC_KEY_PREVIOUS`, `JVAGENT_CONVERSATION_LOCK_*`, `JVAGENT_CONVERSATION_HEALTH_ENABLED`, `JVAGENT_API_KEY_AUTH_ENABLED`, `JVAGENT_STRICT_CONFIG`, `JVAGENT_DEFER_REPAIR`, `JVAGENT_BASE_URL`, `JVAGENT_MAX_INTERACTIONS_PRUNED_PER_CALL`
+
+### Fixed
+- Fixed over-broad `pytestmark` in `tests/action/interact/test_session_refresh.py` and `tests/action/orchestrator/test_directive_trust.py` causing pytest warnings on sync tests
+- Removed duplicate `pre-commit run --all-files` from `.github/workflows/test-jvagent.yaml` (kept dedicated `pre-commit.yaml` workflow)
+- Updated stale references in `examples/jvagent_app/` docs: replaced obsolete `example_agent` and `resolv_demo` references with current `leadgen_agent` and `orchestrator_agent`
+
+### Removed
+
+- **Dead APIs deleted** — `jvagent.action.plugin_contracts` (LanguageModelProvider, VectorStoreProvider), `jvagent.action.streaming` (StreamWriter), unused functions (`install_all_agents`, `ensure_standalone_scheduler`, `get_bound_scheduler_server`).
+
+### Added
+
+- **Documentation anchor check** — `.ci/check_doc_anchors.py` validates file:line references and relative markdown links in CLAUDE.md, AGENTS.md, docs/, .planning/ on every pre-commit. Prevents rotten anchors.
+
+### Fixed
+
+- **Broken doc links** — `jvagent/action/README.md` modularization-audit link.
+
 ### Security
 
 - **MCP OAuth tokens encrypted at rest.** `MCPOAuthAction` uses
@@ -43,6 +66,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 ### Changed
 
 - **Wave 5 Remediation**: Extracted shared lease backend (`jvagent/core/lease_backend.py`) from `distributed_lease.py` and `distributed_conversation_lock.py`, fixing import inversion where core imported from memory. Both modules now use the unified Redis/DynamoDB lease primitives. Adopted single YAML loader (`yaml_io.load_yaml_sync`) across `config.py`, `app_loader.py`, `agent_loader.py`, and `cli/validate.py`, eliminating duplicate `yaml.safe_load` patterns. Migrated environment variable access in `distributed_conversation_lock.py` and `lease_backend.py` to `jvspatial.env.env`.
+- **Wave 6 Refactor**: Extracted `_process_model_decision` from `_run_loop` in `jvagent/action/orchestrator/loop.py` (handles garbled decisions, normalization, final action deflections, chain/plan guards — 87-line cohesive block), `_initialize_logging_database` from `create_server_from_config` in `jvagent/cli/server_config.py` (handles log DB config resolution, env var setting, and initialization — 131-line cohesive block), and `_compose_success_response` from `handle_set_fields` in `jvagent/action/interview/engine.py` (composes final response payload for successful field stores — 121-line reduction). All extractions are behavior-preserving and tested via existing test suites. Added smoke tests for `sentdm_broadcast`, `vectorstore`, and `skill_hub` actions. Documented in ADR-0035.
 - **Lint gate honesty.** Pre-commit flake8 plugins and mypy type-stub deps are
   pinned; `[tool.mypy]` matches the hook (`strict_optional = false`, etc.) so
   `mypy jvagent/` agrees with CI; `.flake8` sets `max-complexity = 90`; CLAUDE.md

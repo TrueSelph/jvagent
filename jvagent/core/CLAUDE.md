@@ -46,7 +46,6 @@ It does **not** own: per-user state (that's `memory/`), action plugins (that's `
 | `graph_repair_job.py` | Top-level repair orchestration |
 | `endpoints/` | Core HTTP routes (`agents.py`, `app.py`, `conversation.py`, `status.py`, `graph_repair.py`) |
 | `app_context.py` | `set_app_root()` / `get_app_root()` — used by CLI on startup |
-| `profiling.py` | `profile_enabled`, `profiled_request` decorators |
 | `jvspatial_compat.py` | Version compatibility shims |
 
 ---

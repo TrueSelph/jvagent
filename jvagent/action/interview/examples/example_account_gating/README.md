@@ -48,7 +48,7 @@ graph machinery is reused unchanged. See
 
 Declarative multi-turn scenarios for orchestrator E2E testing live in
 [`use-cases/`](use-cases/). They follow the jvagent
-[Conversation Use Case Specification](../../../../.planning/reference/conversation-use-cases.md)
+[Conversation Use Case Specification](../../../../../.planning/reference/conversation-use-cases.md)
 (`schema: jvagent.use-case/v1`).
 
 | ID | File | Demonstrates |

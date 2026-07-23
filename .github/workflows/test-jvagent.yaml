@@ -41,11 +41,6 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
-      - name: Run pre-commit checks
-        run: |
-          pip install pre-commit
-          pre-commit run --all-files
-
   jvchat:
     runs-on: ubuntu-latest
     steps:

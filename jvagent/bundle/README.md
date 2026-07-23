@@ -172,5 +172,5 @@ success = bundler.generate_dockerfile()
 
 ## See Also
 
-- [jvagent CLI Documentation](../cli.py)
-- [Docker Deployment Guide](../../../examples/api/README.md)
+- [jvagent CLI Documentation](../cli/CLAUDE.md)
+- [Docker / bundle usage](./)

@@ -132,7 +132,7 @@ class MyAction(Action):
 
 ## Configuration
 
-All actions are configured in `agents/jvagent/example_agent/agent.yaml`. Core actions are referenced directly without needing stub directories:
+All actions are configured in `agents/jvagent/orchestrator_agent/agent.yaml`. Core actions are referenced directly without needing stub directories:
 
 ```yaml
 actions:
