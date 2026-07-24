@@ -1,8 +1,9 @@
 """Deepgram speech-to-text action."""
 
+import asyncio
 import base64
 import logging
-from typing import Dict, Optional, Union
+from typing import AsyncIterator, Awaitable, Callable, Dict, Optional, Union
 
 from deepgram import AsyncDeepgramClient
 from deepgram.core.api_error import ApiError
@@ -116,8 +117,11 @@ class DeepgramSTTAction(BaseSTTAction):
         if not (self._env_api_key() or "").strip():
             return None
 
-        # MIME allowlist.
-        mime_norm = (audio_type or "").strip().lower()
+        # MIME allowlist. Strip any codecs parameter first — browsers label
+        # MediaRecorder output as e.g. "audio/webm;codecs=opus", which must
+        # match the bare "audio/webm" entry (Deepgram sniffs the actual codec
+        # from the bytes; audio_type is only used for this gate).
+        mime_norm = (audio_type or "").split(";", 1)[0].strip().lower()
         if mime_norm not in ALLOWED_STT_MIME_TYPES:
             logger.warning(
                 "invoke_base64: rejected audio_type=%r (allowed=%s)",
@@ -187,6 +191,80 @@ class DeepgramSTTAction(BaseSTTAction):
         except Exception as e:
             logger.error("Deepgram API error: %s", e, exc_info=True)
             return None
+
+    async def stream_transcribe(
+        self,
+        audio_iter: AsyncIterator[bytes],
+        on_event: Callable[[dict], Awaitable[None]],
+        *,
+        language: Optional[str] = None,
+    ) -> None:
+        """Real-time transcription over Deepgram's live WebSocket.
+
+        Pumps audio chunks from ``audio_iter`` (raw container bytes — a browser
+        ``MediaRecorder`` webm/opus stream is forwarded verbatim; Deepgram sniffs
+        the codec from the container, so no ``encoding`` is declared) into a live
+        connection and invokes ``on_event`` for each transcript update:
+
+        * ``{"type": "interim", "transcript": str}`` — partial (still changing)
+        * ``{"type": "final", "transcript": str}`` — stable segment
+        * ``{"type": "utterance_end"}`` — end-of-utterance marker
+        * ``{"type": "error", "message": str}`` — provider/setup failure
+
+        Returns when the audio iterator is exhausted and Deepgram has flushed its
+        final results. Used by the messenger's streaming STT WebSocket endpoint.
+        """
+        if not (self._env_api_key() or "").strip():
+            await on_event({"type": "error", "message": "stt_not_configured"})
+            return
+
+        connect_kwargs: Dict[str, Union[str, bool]] = {
+            "model": self.model,
+            "interim_results": True,
+            "smart_format": self.smart_format,
+        }
+        if language:
+            connect_kwargs["language"] = language
+
+        try:
+            client = self._get_client()
+            async with client.listen.v1.connect(**connect_kwargs) as sock:
+
+                async def _receiver() -> None:
+                    async for msg in sock:
+                        mtype = getattr(msg, "type", None)
+                        if mtype == "Results":
+                            try:
+                                alt = msg.channel.alternatives[0]
+                            except (AttributeError, IndexError):
+                                continue
+                            text = getattr(alt, "transcript", "") or ""
+                            if not text:
+                                continue
+                            kind = (
+                                "final"
+                                if getattr(msg, "is_final", False)
+                                else "interim"
+                            )
+                            await on_event({"type": kind, "transcript": text})
+                        elif mtype == "UtteranceEnd":
+                            await on_event({"type": "utterance_end"})
+
+                recv_task = asyncio.create_task(_receiver())
+                try:
+                    async for chunk in audio_iter:
+                        if chunk:
+                            await sock.send_media(chunk)
+                    await sock.send_close_stream()
+                    # Bound the wait for Deepgram's final flush so a stuck socket
+                    # can't hang the WebSocket handler indefinitely.
+                    await asyncio.wait_for(recv_task, timeout=self.timeout)
+                finally:
+                    if not recv_task.done():
+                        recv_task.cancel()
+        except Exception as exc:  # provider/socket errors must not crash the WS
+            logger.warning("Deepgram live stream error: %s", exc)
+            await on_event({"type": "error", "message": "stt_stream_failed"})
 
     async def healthcheck(self) -> Union[bool, Dict[str, str]]:
         """Perform health check for Deepgram API."""

@@ -608,6 +608,15 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     register_sentdm_webhook_debug_middleware(server)
 
+    # Real-time STT WebSocket for the embeddable messenger. Registered by wrapping
+    # the app factory (jvspatial's @endpoint is HTTP-only and app rebuilds replay
+    # only HTTP routes), so the route survives every rebuild.
+    from jvagent.action.interact.voice_stream_endpoints import (
+        register_voice_ws_routes,
+    )
+
+    register_voice_ws_routes(server)
+
     return server
 
 
