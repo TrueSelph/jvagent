@@ -6,12 +6,15 @@
  * structure follows the upstream assistant-ui base theme.
  */
 
-import { useState, type FC } from "react";
+import { useEffect, useState, type FC } from "react";
 import {
   ActionBarPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useComposerRuntime,
+  type FileMessagePartComponent,
+  type ImageMessagePartComponent,
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
@@ -19,6 +22,7 @@ import {
   CheckIcon,
   CopyIcon,
   InfoIcon,
+  PaperclipIcon,
   RefreshCwIcon,
   SquareIcon,
 } from "lucide-react";
@@ -87,13 +91,14 @@ export function Thread(props: ThreadServices) {
               <div className="min-h-4 flex-grow" />
             </ThreadPrimitive.If>
 
-            <div className="sticky bottom-0 mt-3 flex w-full flex-col items-stretch gap-2 bg-background pb-3">
+            <div className="msgr-composer-dock sticky bottom-0 mt-3 flex w-full flex-col items-stretch gap-2 pb-3">
               <ThreadScrollToBottom />
               {suggestions.length > 0 && (
                 <Suggestions items={suggestions} onPick={sendText} />
               )}
               <Composer
                 config={config}
+                sendText={sendText}
                 attachments={attachments}
                 addAttachment={addAttachment}
                 removeAttachment={removeAttachment}
@@ -220,48 +225,82 @@ const ThreadWelcome: FC<{
 
 const Composer: FC<{
   config: MessengerConfig;
+  sendText: (text: string) => void;
   attachments: UploadedAttachment[];
   addAttachment: (a: UploadedAttachment) => void;
   removeAttachment: (url: string) => void;
-}> = ({ config, attachments, addAttachment, removeAttachment }) => (
-  <ComposerPrimitive.Root className="focus-within:ring-ring/20 focus-within:border-ring/40 flex w-full flex-col rounded-2xl border bg-background px-2 pt-1.5 pb-1.5 shadow-sm transition-all focus-within:ring-2">
-    {attachments.length > 0 && (
-      <div className="px-1 pb-1.5">
-        <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
-      </div>
-    )}
-    <ComposerPrimitive.Input
-      rows={1}
-      autoFocus
-      placeholder="Send a message..."
-      className="placeholder:text-muted-foreground max-h-32 min-h-8 w-full resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
-    />
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-0.5">
-        {config.attachments && <AttachmentButton onUploaded={addAttachment} />}
-        {config.voice && <MicButton />}
-      </div>
-      <ThreadPrimitive.If running={false}>
-        <ComposerPrimitive.Send asChild>
-          <Button size="icon" className="size-8 rounded-full" aria-label="Send message">
-            <ArrowUpIcon className="size-4" />
-          </Button>
-        </ComposerPrimitive.Send>
-      </ThreadPrimitive.If>
-      <ThreadPrimitive.If running>
-        <ComposerPrimitive.Cancel asChild>
+}> = ({ config, sendText, attachments, addAttachment, removeAttachment }) => {
+  const composer = useComposerRuntime();
+  // Mirror the composer text so the send button can enable on typed text OR a
+  // pending attachment (an image may be sent with no accompanying text).
+  const [text, setText] = useState(() => composer.getState().text);
+  useEffect(
+    () => composer.subscribe(() => setText(composer.getState().text)),
+    [composer]
+  );
+
+  const hasAttachments = attachments.length > 0;
+  const canSend = text.trim().length > 0 || hasAttachments;
+  const submit = () => {
+    const value = composer.getState().text;
+    if (!value.trim() && !hasAttachments) return;
+    composer.setText("");
+    sendText(value);
+  };
+
+  return (
+    <ComposerPrimitive.Root className="border-border bg-background flex w-full flex-col rounded-2xl border px-2 pt-1.5 pb-1.5">
+      {hasAttachments && (
+        <div className="px-1 pb-1.5">
+          <AttachmentChips attachments={attachments} onRemove={removeAttachment} />
+        </div>
+      )}
+      <ComposerPrimitive.Input
+        rows={1}
+        autoFocus
+        // Own the Enter path (submit on Enter, newline on Shift+Enter) so it also
+        // covers attachment-only turns; avoids a double-submit with the primitive.
+        submitMode="none"
+        placeholder="Send a message..."
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        className="placeholder:text-muted-foreground max-h-32 min-h-8 w-full resize-none bg-transparent px-1.5 py-1 text-sm outline-none"
+      />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-0.5">
+          {config.attachments && <AttachmentButton onUploaded={addAttachment} />}
+          {config.voice && <MicButton />}
+        </div>
+        <ThreadPrimitive.If running={false}>
           <Button
             size="icon"
             className="size-8 rounded-full"
-            aria-label="Stop generating"
+            aria-label="Send message"
+            disabled={!canSend}
+            onClick={submit}
           >
-            <SquareIcon className="size-3 fill-current" />
+            <ArrowUpIcon className="size-4" />
           </Button>
-        </ComposerPrimitive.Cancel>
-      </ThreadPrimitive.If>
-    </div>
-  </ComposerPrimitive.Root>
-);
+        </ThreadPrimitive.If>
+        <ThreadPrimitive.If running>
+          <ComposerPrimitive.Cancel asChild>
+            <Button
+              size="icon"
+              className="size-8 rounded-full"
+              aria-label="Stop generating"
+            >
+              <SquareIcon className="size-3 fill-current" />
+            </Button>
+          </ComposerPrimitive.Cancel>
+        </ThreadPrimitive.If>
+      </div>
+    </ComposerPrimitive.Root>
+  );
+};
 
 const ReasoningPart: FC<{ text: string }> = ({ text }) => (
   <div className="border-muted-foreground/30 text-muted-foreground my-2 border-s-2 ps-3 text-xs whitespace-pre-wrap">
@@ -269,10 +308,36 @@ const ReasoningPart: FC<{ text: string }> = ({ text }) => (
   </div>
 );
 
+// Uploaded image → thumbnail (click to open full size in a new tab).
+const UserImagePart: ImageMessagePartComponent = ({ image }) => (
+  <a
+    href={image}
+    target="_blank"
+    rel="noreferrer"
+    className="mb-1 block overflow-hidden rounded-xl border border-border/40"
+  >
+    <img
+      src={image}
+      alt="attachment"
+      className="max-h-48 max-w-full object-cover"
+    />
+  </a>
+);
+
+// Uploaded non-image file → a compact chip with its name.
+const UserFilePart: FileMessagePartComponent = ({ filename }) => (
+  <span className="bg-background/50 text-foreground mb-1 flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs">
+    <PaperclipIcon className="size-3.5 shrink-0" />
+    <span className="truncate">{filename || "Attachment"}</span>
+  </span>
+);
+
 const UserMessage: FC = () => (
   <MessagePrimitive.Root className="animate-in fade-in slide-in-from-bottom-1 flex w-full flex-col items-end py-2">
-    <div className="bg-muted text-foreground max-w-[85%] rounded-3xl px-4 py-2 text-sm break-words">
-      <MessagePrimitive.Parts />
+    <div className="msgr-user-bubble bg-muted text-foreground flex max-w-[85%] flex-col rounded-xl px-4 py-2 text-sm break-words">
+      <MessagePrimitive.Parts
+        components={{ Image: UserImagePart, File: UserFilePart }}
+      />
     </div>
   </MessagePrimitive.Root>
 );

@@ -99,6 +99,21 @@ pre {
 :root:not([data-theme="dark"]) .aui-root .bg-background {
   background-color: #ffffff;
 }
+/* Light mode: user bubbles read as a strong dark-gray chip (light text) so they
+   stand out against the white surface. Dark mode keeps the muted surface. */
+:root:not([data-theme="dark"]) .msgr-user-bubble {
+  background-color: #27272a;
+  color: #fafafa;
+}
+/* The docked composer strip matches the thread surface (not the white card
+   surface) so only the composer's own bordered box stands out — no mismatched
+   rectangle around it. Dark mode is single-surface (--background). */
+.msgr-composer-dock {
+  background-color: var(--background);
+}
+:root:not([data-theme="dark"]) .msgr-composer-dock {
+  background-color: #f5f6f8;
+}
 
 /* Slim scrollbar (assistant-ui / tschat style). */
 ::-webkit-scrollbar {

@@ -33,6 +33,7 @@ import {
   type SessionState,
 } from "../streaming/session";
 import type { UploadedAttachment } from "../streaming/uploadClient";
+import { playChime, primeAudio } from "../streaming/sound";
 
 function attachmentsToData(
   pending: UploadedAttachment[]
@@ -100,19 +101,47 @@ export function useChatRuntime(config: MessengerConfig) {
 
   const runTurn = useCallback(
     async (userText: string) => {
-      if (!userText.trim() || isRunning) return;
+      if (isRunning) return;
 
-      // Snapshot + clear any pending uploads for this turn.
+      // Snapshot any pending uploads for this turn.
       const turnAttachments = attachments;
+      const trimmed = userText.trim();
+      // Allow attachment-only turns (image with no typed text): fall back to the
+      // filenames as the visible/utterance text so the vision reflex still fires.
+      if (!trimmed && !turnAttachments.length) return;
+      // Unlock the audio context now, while we're still inside the send gesture,
+      // so the reply chime can play later (autoplay policy).
+      if (config.sound) primeAudio();
+      const effectiveText =
+        trimmed || turnAttachments.map((a) => a.filename).join(", ");
       if (turnAttachments.length) setAttachments([]);
       // Clear last turn's suggestions; collect this turn's below.
       setSuggestions([]);
       let turnSuggestions: MessageAction[] = [];
 
+      // Render the sent attachments in the bubble: images as thumbnails, other
+      // files as chips (assistant-ui image/file parts). The filename fallback is
+      // only used as the utterance text when nothing visual is shown.
+      const attachmentParts = turnAttachments.map((a) =>
+        a.mime_type.startsWith("image/")
+          ? ({ type: "image" as const, image: a.url })
+          : ({
+              type: "file" as const,
+              data: a.url,
+              mimeType: a.mime_type,
+              filename: a.filename,
+            })
+      );
+      const displayParts = [
+        ...attachmentParts,
+        ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+      ];
       const userMsg: ThreadMessageLike = {
         id: nextId(),
         role: "user",
-        content: [{ type: "text", text: userText }],
+        content: displayParts.length
+          ? displayParts
+          : [{ type: "text", text: effectiveText }],
       };
       const assistantId = nextId();
       setMessages((prev) => [
@@ -167,7 +196,7 @@ export function useChatRuntime(config: MessengerConfig) {
             agentId: config.agentId,
             sessionToken: session.current.sessionToken,
             request: {
-              utterance: userText,
+              utterance: effectiveText,
               user_id: session.current.userId,
               session_id: session.current.sessionId,
               data: attachmentsToData(turnAttachments),
@@ -189,6 +218,8 @@ export function useChatRuntime(config: MessengerConfig) {
             },
           }
         );
+        // Subtle chime once the assistant reply has landed (skip on error).
+        if (config.sound && answer && !answer.startsWith("⚠️")) playChime();
       } catch {
         answer = answer || "⚠️ Connection error. Please try again.";
         update();
@@ -246,6 +277,46 @@ export function useChatRuntime(config: MessengerConfig) {
 
   const hasUserMessage = messages.some((m) => m.role === "user");
 
+  // Build a plain-text transcript of the local thread and download it.
+  const downloadTranscript = useCallback(() => {
+    if (!messages.length) return;
+    const partsToText = (content: unknown): string => {
+      if (typeof content === "string") return content;
+      if (!Array.isArray(content)) return "";
+      return content
+        .map((raw) => {
+          const p = raw as { type?: string; text?: string; filename?: string };
+          if (p.type === "text") return p.text ?? "";
+          if (p.type === "image") return "[image]";
+          if (p.type === "file") return `[file: ${p.filename ?? "attachment"}]`;
+          return "";
+        })
+        .filter(Boolean)
+        .join(" ");
+    };
+    const body = messages
+      .map((m) => ({
+        who: m.role === "user" ? "You" : "Assistant",
+        text: partsToText(m.content).trim(),
+      }))
+      .filter((l) => l.text)
+      .map((l) => `${l.who}: ${l.text}`)
+      .join("\n\n");
+    if (!body) return;
+    const header = `Chat transcript — ${config.title}\n${new Date().toString()}\n\n`;
+    const blob = new Blob([header + body + "\n"], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chat-transcript-${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [messages, config.title]);
+
   return useMemo(
     () => ({
       runtime,
@@ -257,6 +328,7 @@ export function useChatRuntime(config: MessengerConfig) {
       suggestions,
       reset,
       hasUserMessage,
+      downloadTranscript,
     }),
     [
       runtime,
@@ -268,6 +340,7 @@ export function useChatRuntime(config: MessengerConfig) {
       suggestions,
       reset,
       hasUserMessage,
+      downloadTranscript,
     ]
   );
 }

@@ -14,6 +14,7 @@ export function AttachmentButton({
   const { config, getToken } = useChatServices();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,21 +23,26 @@ export function AttachmentButton({
       const token = getToken();
       if (!token || !files.length) return;
       setBusy(true);
+      setError(null);
+      let failed = 0;
       try {
         for (const file of files) {
           const out = await uploadFile(config.agentUrl, config.agentId, token, file);
           if (out) onUploaded(out);
+          else failed += 1;
         }
       } finally {
         setBusy(false);
       }
+      // Surface upload failures instead of failing silently.
+      if (failed) setError(failed === 1 ? "Upload failed" : `${failed} uploads failed`);
     },
     [config, getToken, onUploaded]
   );
 
   const disabled = busy || !getToken();
   return (
-    <>
+    <div className="flex items-center gap-1.5">
       <TooltipIconButton
         tooltip={disabled ? "Send a message first to enable uploads" : "Attach a file"}
         onClick={() => inputRef.current?.click()}
@@ -44,6 +50,7 @@ export function AttachmentButton({
       >
         {busy ? <Loader2Icon className="animate-spin" /> : <PaperclipIcon />}
       </TooltipIconButton>
+      {error && <span className="text-destructive text-xs">{error}</span>}
       <input
         ref={inputRef}
         type="file"
@@ -52,7 +59,7 @@ export function AttachmentButton({
         onChange={onChange}
         accept="image/*,application/pdf,text/plain,text/csv"
       />
-    </>
+    </div>
   );
 }
 

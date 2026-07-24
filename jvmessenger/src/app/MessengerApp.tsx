@@ -79,17 +79,24 @@ export function MessengerApp() {
   const bridge = useBridge();
   const { config } = bridge;
   const systemDark = useSystemDark();
+  // A manual override from the header menu wins over the embed/system default.
+  const [override, setOverride] = useState<"light" | "dark" | null>(null);
 
-  // `auto` follows the live system setting; explicit light/dark pins it.
+  // `auto` follows the live system setting; explicit light/dark pins it; a
+  // user override (from the ⋯ menu) beats both.
   const theme = useMemo<"light" | "dark">(() => {
+    if (override) return override;
     const pref = config?.theme ?? "auto";
     if (pref === "auto") return systemDark ? "dark" : "light";
     return pref;
-  }, [config, systemDark]);
+  }, [config, systemDark, override]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  const toggleTheme = () =>
+    setOverride(theme === "dark" ? "light" : "dark");
 
   if (!config) {
     return (
@@ -102,15 +109,26 @@ export function MessengerApp() {
     );
   }
 
-  return <ChatSurface config={config} bridge={bridge} />;
+  return (
+    <ChatSurface
+      config={config}
+      bridge={bridge}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+    />
+  );
 }
 
 function ChatSurface({
   config,
   bridge,
+  theme,
+  onToggleTheme,
 }: {
   config: MessengerConfig;
   bridge: ReturnType<typeof useBridge>;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
 }) {
   const {
     runtime,
@@ -120,6 +138,7 @@ function ChatSurface({
     addAttachment,
     removeAttachment,
     suggestions,
+    downloadTranscript,
   } = useChatRuntime(config);
   const profile = useResolvedProfile(config);
   const shellConfig = useMemo(
@@ -133,7 +152,13 @@ function ChatSurface({
   );
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Shell config={shellConfig} bridge={bridge}>
+      <Shell
+        config={shellConfig}
+        bridge={bridge}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        onDownloadTranscript={downloadTranscript}
+      >
         <Thread
           config={shellConfig}
           sendText={sendText}

@@ -7,21 +7,53 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  DownloadIcon,
   Maximize2Icon,
   Minimize2Icon,
+  MoonIcon,
   MoreHorizontalIcon,
+  SunIcon,
   XIcon,
 } from "lucide-react";
 import type { MessengerConfig } from "../shared/config";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import type { BridgeApi } from "./useBridge";
 
+function MenuItem({
+  icon,
+  label,
+  onSelect,
+}: {
+  icon: ReactNode;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 function OverflowMenu({
+  showFullscreen,
   fullscreen,
   onToggleFullscreen,
+  theme,
+  onToggleTheme,
+  onDownloadTranscript,
 }: {
+  showFullscreen: boolean;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+  onDownloadTranscript: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -34,28 +66,47 @@ function OverflowMenu({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
   return (
     <div className="relative" ref={ref}>
       <TooltipIconButton tooltip="Menu" onClick={() => setOpen((o) => !o)}>
         <MoreHorizontalIcon />
       </TooltipIconButton>
       {open && (
-        <div className="border-border bg-popover text-popover-foreground animate-in fade-in zoom-in-95 absolute right-0 z-50 mt-1 min-w-44 overflow-hidden rounded-lg border p-1 shadow-md">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onToggleFullscreen();
-            }}
-            className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm"
-          >
-            {fullscreen ? (
-              <Minimize2Icon className="size-4" />
-            ) : (
-              <Maximize2Icon className="size-4" />
-            )}
-            {fullscreen ? "Exit fullscreen" : "Expand window"}
-          </button>
+        <div className="border-border bg-popover text-popover-foreground animate-in fade-in zoom-in-95 absolute right-0 z-50 mt-1 min-w-48 overflow-hidden rounded-lg border p-1 shadow-md">
+          {showFullscreen && (
+            <MenuItem
+              icon={
+                fullscreen ? (
+                  <Minimize2Icon className="size-4" />
+                ) : (
+                  <Maximize2Icon className="size-4" />
+                )
+              }
+              label={fullscreen ? "Exit fullscreen" : "Expand window"}
+              onSelect={pick(onToggleFullscreen)}
+            />
+          )}
+          <MenuItem
+            icon={
+              theme === "dark" ? (
+                <SunIcon className="size-4" />
+              ) : (
+                <MoonIcon className="size-4" />
+              )
+            }
+            label={theme === "dark" ? "Light theme" : "Dark theme"}
+            onSelect={pick(onToggleTheme)}
+          />
+          <MenuItem
+            icon={<DownloadIcon className="size-4" />}
+            label="Download transcript"
+            onSelect={pick(onDownloadTranscript)}
+          />
         </div>
       )}
     </div>
@@ -65,13 +116,27 @@ function OverflowMenu({
 export function Shell({
   config,
   bridge,
+  theme,
+  onToggleTheme,
+  onDownloadTranscript,
   children,
 }: {
   config: MessengerConfig;
   bridge: BridgeApi;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+  onDownloadTranscript: () => void;
   children: ReactNode;
 }) {
   const [fullscreen, setFullscreen] = useState(false);
+
+  // Exit fullscreen whenever the panel is hidden, so reopening always returns to
+  // the normal panel layout. Otherwise the app stays in its fullscreen layout
+  // (centered card + backdrop) while the host resets the iframe to panel size on
+  // reopen — leaving the popup oddly "wrapped in a container".
+  useEffect(() => {
+    if (!bridge.open) setFullscreen(false);
+  }, [bridge.open]);
 
   const toggleFullscreen = () => {
     const next = !fullscreen;
@@ -100,12 +165,14 @@ export function Shell({
           </div>
         </div>
         <div className="flex flex-none items-center gap-0.5">
-          {config.fullscreen && (
-            <OverflowMenu
-              fullscreen={fullscreen}
-              onToggleFullscreen={toggleFullscreen}
-            />
-          )}
+          <OverflowMenu
+            showFullscreen={config.fullscreen}
+            fullscreen={fullscreen}
+            onToggleFullscreen={toggleFullscreen}
+            theme={theme}
+            onToggleTheme={onToggleTheme}
+            onDownloadTranscript={onDownloadTranscript}
+          />
           <TooltipIconButton tooltip="Close" onClick={() => bridge.close()}>
             <XIcon />
           </TooltipIconButton>

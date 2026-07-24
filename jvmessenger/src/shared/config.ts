@@ -47,6 +47,8 @@ export interface MessengerConfig {
   voice: boolean;
   /** Allow expanding the popup to fullscreen. */
   fullscreen: boolean;
+  /** Play a subtle chime when an assistant message arrives. */
+  sound: boolean;
 }
 
 /** Defaults applied when a `data-*` attribute is absent. */
@@ -63,6 +65,7 @@ export const CONFIG_DEFAULTS: Omit<MessengerConfig, "agentUrl" | "agentId"> = {
   attachments: false,
   voice: false,
   fullscreen: true,
+  sound: true,
 };
 
 function asBool(value: string | undefined, fallback: boolean): boolean {
@@ -126,5 +129,6 @@ export function parseConfig(
     attachments: asBool(dataset.attachments, CONFIG_DEFAULTS.attachments),
     voice: asBool(dataset.voice, CONFIG_DEFAULTS.voice),
     fullscreen: asBool(dataset.fullscreen, CONFIG_DEFAULTS.fullscreen),
+    sound: asBool(dataset.sound, CONFIG_DEFAULTS.sound),
   };
 }

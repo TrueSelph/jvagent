@@ -115,7 +115,8 @@ export function createHostBridge(opts: {
     iframe.src = opts.iframeSrc;
     iframe.setAttribute(
       "sandbox",
-      "allow-scripts allow-forms allow-popups allow-same-origin"
+      // allow-downloads lets the "Download transcript" action save a file.
+      "allow-scripts allow-forms allow-popups allow-same-origin allow-downloads"
     );
     iframe.setAttribute("allow", "microphone; autoplay; clipboard-write");
     applyMode("panel");

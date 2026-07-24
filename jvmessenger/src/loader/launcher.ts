@@ -36,13 +36,13 @@ const STYLE = `
 :host { all: initial; }
 .wrap { position: fixed; bottom: 20px; right: 20px; z-index: 2147483000;
         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-.btn { width: 58px; height: 58px; border-radius: 18px; border: none; cursor: pointer;
+.btn { width: 58px; height: 58px; border-radius: 12px; border: none; cursor: pointer;
        background: #18181b; color: #fafafa; display: flex; align-items: center;
        justify-content: center; box-shadow: 0 8px 28px rgba(0,0,0,.22);
        transition: transform .15s ease, background .15s ease; position: relative; }
 .btn:hover { transform: scale(1.05); background: #27272a; }
 .btn:active { transform: scale(.97); }
-.btn img { width: 58px; height: 58px; border-radius: 18px; object-fit: cover; }
+.btn img { width: 58px; height: 58px; border-radius: 12px; object-fit: cover; }
 .badge { position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px;
          padding: 0 5px; border-radius: 10px; background: #ef4444; color: #fff;
          font-size: 12px; font-weight: 700; display: none; align-items: center;
