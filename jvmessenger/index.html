@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jvmessenger (dev)</title>
+    <style>
+      body { margin: 0; background: #eef0f5; }
+      #root { position: fixed; bottom: 20px; right: 20px;
+              width: 400px; height: 640px; border-radius: 16px;
+              box-shadow: 0 12px 48px rgba(0,0,0,.28); overflow: hidden;
+              background: #fff; }
+    </style>
+    <script>
+      // Dev-only config so the app renders standalone (no host iframe). In
+      // production this global is absent and config arrives via postMessage.
+      window.__JVMESSENGER_DEV_CONFIG__ = {
+        agentUrl: "http://localhost:8000",
+        agentId: "dev-agent",
+        theme: "auto",
+        title: "Support",
+        greeting: "Hi! 👋 How can I help you today?",
+        quickReplies: ["Track my order", "Talk to a human"],
+        showReasoning: false,
+        attachments: true,
+        voice: true,
+        fullscreen: true,
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

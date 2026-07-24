@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jvmessenger — scratch host page</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 48px;
+             background: #f4f5f8; color: #1f2333; }
+      .box { max-width: 640px; margin: 0 auto; }
+      code { background: #e6e8ef; padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Fake customer site</h1>
+      <p>
+        Manual E2E for the embeddable messenger. The agent is bound via
+        <strong>URL params</strong> on the loader src
+        (<code>?agentId=...&amp;agentUrl=...</code>), so no <code>data-agent-*</code>
+        attributes are needed. Serve this file from a <em>different</em> port than
+        the messenger to exercise the real cross-origin chain.
+      </p>
+    </div>
+
+    <!-- One script tag; agent bound via URL params. -->
+    <script
+      src="http://localhost:3000/loader.js?agentId=n.Agent.01a090ac0c7e464f975789c2&agentUrl=http://localhost:8000"
+      data-theme="auto"
+      data-title="Lead Gen Assistant"
+      data-greeting="Hi! 👋 Ask me about our products, pricing, or a free trial."
+      data-quick-replies='["What do you offer?","Pricing?","Start a free trial"]'
+      data-notice="We are experiencing high volume — replies may take a little longer than usual."
+      data-consent="Hi! I am an AI assistant. Your chat may be monitored and retained to improve support. Please accept to continue."
+      data-show-reasoning="false"
+      data-attachments="true"
+      data-voice="true"
+      data-fullscreen="true"
+    ></script>
+  </body>
+</html>

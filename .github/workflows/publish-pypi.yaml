@@ -54,10 +54,15 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: jvchat/package-lock.json
+          cache-dependency-path: |
+            jvchat/package-lock.json
+            jvmessenger/package-lock.json
 
       - name: Build + stage the jvchat UI
         run: python scripts/build_jvchat.py
+
+      - name: Build + stage the jvmessenger embeddable chat
+        run: python scripts/build_jvmessenger.py
 
       - name: Install build tooling
         run: python -m pip install --upgrade build twine packaging
