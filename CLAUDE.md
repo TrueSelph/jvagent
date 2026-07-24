@@ -42,6 +42,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
+| **Embed the customer-facing popup chat** | [`docs/jvmessenger.md`](docs/jvmessenger.md) + [ADR-0035](.planning/adr/0035-embeddable-chat-messenger.md) (source: [`jvmessenger/`](jvmessenger/), served by `jvagent messenger` from [`jvagent/messenger/`](jvagent/messenger/)) |
 | **See design rationale** | [`.planning/adr/`](.planning/adr/) |
 | **User-facing onboarding** | [`README.md`](README.md) |
 
