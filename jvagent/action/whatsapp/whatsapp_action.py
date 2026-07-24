@@ -361,9 +361,7 @@ class WhatsAppAction(Action):
                     return result
         return build_flow_data_exchange_response(body)
 
-    async def should_ignore_flow_nfm_reply(
-        self, body: str, agent: Any = None
-    ) -> bool:
+    async def should_ignore_flow_nfm_reply(self, body: str, agent: Any = None) -> bool:
         """Ask the Flow exchange sibling whether an ``nfm_reply`` should skip Interact.
 
         Endpoint-powered Flows often finish create work during data exchange; the

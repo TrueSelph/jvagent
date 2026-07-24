@@ -49,14 +49,14 @@ def _max_entries() -> int:
 
 def _redis_url() -> str:
     return (
-        os.environ.get("JVSPATIAL_REDIS_URL")
-        or os.environ.get("REDIS_URL")
-        or ""
+        os.environ.get("JVSPATIAL_REDIS_URL") or os.environ.get("REDIS_URL") or ""
     ).strip()
 
 
 def _backend() -> str:
-    raw = (os.environ.get("WHATSAPP_META_WAMID_DEDUP_BACKEND") or "auto").strip().lower()
+    raw = (
+        (os.environ.get("WHATSAPP_META_WAMID_DEDUP_BACKEND") or "auto").strip().lower()
+    )
     if raw in ("memory", "redis", "auto"):
         return raw
     return "auto"
