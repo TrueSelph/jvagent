@@ -15,6 +15,9 @@ lib64/
 # Frontend source: don't let the Python `lib/` rule above swallow jvchat/src/lib
 !jvchat/src/lib/
 !jvchat/src/lib/**
+# Same carve-out for the jvmessenger frontend source tree.
+!jvmessenger/src/lib/
+!jvmessenger/src/lib/**
 parts/
 sdist/
 var/

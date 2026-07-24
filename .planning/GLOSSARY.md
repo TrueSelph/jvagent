@@ -171,3 +171,9 @@ Integer attribute on `InteractAction` controlling top-tier execution order. Lowe
 
 ### Loop state (Orchestrator)
 The Orchestrator's per-turn state for the think-act-observe loop: the accumulated observations, the tool-call transcript, and the activation/model budget. It is transient and cleared after `execute()` returns. Turn-lock is NOT held here — a flow's control-task lives on the conversation `TaskStore` (see *Flow continuation*). Source: [`jvagent/action/orchestrator/orchestrator_interact_action.py`](../jvagent/action/orchestrator/orchestrator_interact_action.py).
+
+### jvmessenger
+Embeddable, customer-facing popup chat — a self-contained React/assistant-ui app (source [`jvmessenger/`](../jvmessenger)) embedded on third-party sites via a single `<script>` `loader.js` tag that injects a launcher + sandboxed iframe. Served by `jvagent messenger` from [`jvagent/messenger/`](../jvagent/messenger). Distinct from **jvchat** (the internal/admin SPA). See [`docs/jvmessenger.md`](../docs/jvmessenger.md), [ADR-0035](adr/0035-embeddable-chat-messenger.md).
+
+### Loader script (jvmessenger)
+The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in the host DOM, reads `data-*` config, renders the Shadow-DOM launcher, and bridges the host ↔ iframe over an origin-checked `postMessage` handshake. Config never travels via the URL.

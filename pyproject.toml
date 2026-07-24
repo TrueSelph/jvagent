@@ -144,6 +144,9 @@ version = {attr = "jvagent.version.__version__"}
     # Bundled jvchat UI (built by scripts/build_jvchat.py; served by
     # `jvagent chat`). Ship every asset type, not just the globs above.
     "webui/dist/**",
+    # Bundled jvmessenger embeddable chat (built by scripts/build_jvmessenger.py;
+    # served by `jvagent messenger`).
+    "messenger/dist/**",
 ]
 
 [tool.pytest.ini_options]
