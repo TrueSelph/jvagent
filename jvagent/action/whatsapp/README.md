@@ -261,14 +261,16 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` **or*
 
 **Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same WhatsApp text/call gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
+**CTA URL buttons:** Meta/jvconnect providers also support `send_cta_url_message` (interactive `cta_url`) for mapping a long URL to a button label without pasting the raw link in the body.
+
 **Flow prefill (navigate):** pass `screen` plus `screen_data` (object of field keys → values) on `whatsapp__send_flow`. That maps to Meta `flow_action_payload.data`. Keys must match bindings in the published Flow JSON; not valid with `flow_action=data_exchange` (INIT path).
 
 **Flow inbound paths (distinct from chat webhooks):**
 
 | Path | Transport | Agent handling |
 |------|-----------|----------------|
-| User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body) |
-| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler returns `{screen,data}` (or `endpoint_not_configured` for INIT). Prefer navigate Flows (“No data”) unless you implement INIT screens |
+| User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body), unless `flow_data_exchange_action.should_ignore_flow_nfm_reply` returns true (create already finished on data exchange) |
+| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler on `WhatsAppAction.handle_flow_data_exchange`. Optional sibling via `flow_data_exchange_action` (entity type, same pattern as `stt_action` / `tts_action`) that implements `handle_flow_data_exchange` and returns `{screen,data}` (or `None` to fall through). Default stub returns `endpoint_not_configured` for INIT. Prefer navigate Flows (“No data”) unless you implement INIT screens |
 | Agent GET hub.challenge | Unused when `provider=meta` via jvconnect | Meta verifies jvconnect only (`FB_VERIFY_TOKEN`) |
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
@@ -331,15 +333,15 @@ Avoid `--purge` on production unless you intentionally reset the database and ca
 
 **Retry idempotency (wamid dedup):**
 
-Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps an in-process cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
+Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps a cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
 
 Env tuning (optional):
 
+- `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default), `memory`, or `redis`. `auto` uses Redis when `JVSPATIAL_REDIS_URL` / `REDIS_URL` is set.
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — default **86400** (24h).
-- `WHATSAPP_META_WAMID_DEDUP_MAX` — default **10000** entries.
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process cache entries (default **10000**; Redis uses TTL only).
 
-For multi-worker deployments, consider a shared dedup store (not included in the default in-process cache).
-
+For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `REDIS_URL`) so wamid dedup is shared across processes.
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.

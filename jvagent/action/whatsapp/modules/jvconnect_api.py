@@ -310,3 +310,8 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
         """Send an interactive Flow through jvconnect ``POST .../messages``."""
         await self.ensure_account()
         return await MetaWhatsAppAPI.send_flow_message(self, phone, **kwargs)
+
+    async def send_cta_url_message(self, phone: str, **kwargs: Any) -> dict:
+        """Send an interactive CTA URL button through jvconnect ``POST .../messages``."""
+        await self.ensure_account()
+        return await MetaWhatsAppAPI.send_cta_url_message(self, phone, **kwargs)

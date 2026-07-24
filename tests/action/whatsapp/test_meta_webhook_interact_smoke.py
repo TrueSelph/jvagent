@@ -50,6 +50,7 @@ def mock_meta_webhook_stack():
     whatsapp_action.ignore_list = []
     whatsapp_action.utterance_max_length = 10000
     whatsapp_action.media_batch_window = 1.5
+    whatsapp_action.should_ignore_flow_nfm_reply = AsyncMock(return_value=False)
 
     from jvagent.action.whatsapp.modules.meta_api import MetaWhatsAppAPI
 
