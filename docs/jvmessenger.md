@@ -99,8 +99,34 @@ shapes are supported and merged:
 
 The messenger reads these off each turn's messages (client-side —
 `extractSuggestions`), so no widget change is needed to add options; the agent
-just attaches metadata to its published reply. (Emitting this from the
-Orchestrator/skills is the agent-side half — a small directive/tool follow-up.)
+just attaches metadata to a published message.
+
+**Emitting them:** the core `jvagent/suggestions` action
+([`suggestions_interact_action.py`](../jvagent/action/suggestions/suggestions_interact_action.py))
+generates the chips with an LLM after each reply and publishes an empty
+`category:"user"` message carrying `metadata.suggestions`. Add it to an agent
+and point it at a light model:
+
+```yaml
+- action: jvagent/suggestions
+  context:
+    enabled: true
+    model_action_type: OpenAILanguageModelAction
+    model: gpt-4o-mini      # keep it light — this is one extra call per turn
+    num_suggestions: 3
+    max_words: 8            # longer suggestions are dropped, never truncated
+    avoid_data_requests: true
+```
+
+It runs after the Orchestrator (weight 100), only on **streaming** turns (so it
+never posts an empty message to non-streaming channels), and no-ops when no
+model is available or the output can't be parsed. The prompt asks for chips
+phrased as a **first-person statement or question in the user's voice** (e.g.
+"How much does it cost?"), and `avoid_data_requests` drops any that ask the user
+to supply personal/contact data (e.g. "Share my email") — a tapped chip sends
+its label verbatim and can't carry that data. The leadgen reference agent
+enables it. Any action can alternatively attach `metadata.suggestions` /
+`metadata.actions` to its own published message.
 
 ## Serving
 

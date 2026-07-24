@@ -1,0 +1,28 @@
+package:
+  name: jvagent/suggestions
+  author: jvagent
+  archetype: SuggestionsInteractAction
+  version: 0.0.1
+  meta:
+    title: Quick-Reply Suggestions
+    description: >-
+      Generates dynamic quick-reply chips via a language model after each reply
+      and publishes them as metadata.suggestions for the embeddable messenger's
+      agent-driven quick replies. Foreground on streaming turns only; degrades
+      to a no-op when no model is available.
+    group: core
+    type: interact_action
+  config:
+    singleton: true
+    order:
+      weight: 100
+  manifest:
+    purpose: "Offer the user a few likely next quick replies after each turn."
+    activates_on:
+      - "a streaming (web/messenger) turn after the reply is produced"
+    terminates_when:
+      - "quick replies published as metadata.suggestions, or no model/parse"
+    latency_class: quick
+    expected_duration_seconds: 1.5
+  dependencies:
+    jvagent: ~0.0.1

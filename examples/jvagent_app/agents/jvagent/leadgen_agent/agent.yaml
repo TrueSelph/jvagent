@@ -76,6 +76,19 @@ actions:
     context:
       enabled: true
 
+  # ── Quick-reply suggestions (core) — LLM-generated messenger chips ──
+  # After each reply, asks a light model for a few short follow-up quick replies
+  # and publishes them as metadata.suggestions for the messenger's agent-driven
+  # chips. Streaming turns only; no-op without a model. Runs after the
+  # orchestrator (weight 100).
+  - action: jvagent/suggestions
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o-mini
+      num_suggestions: 3
+      max_words: 8
+
   # ── Intro opener — greets first-time visitors before the orchestrator runs ──
   # weight -300, always_execute; fires only when visitor.new_user. Contributed as
   # a response-shaping PARAMETER (HOW), so the greeting is woven into the same

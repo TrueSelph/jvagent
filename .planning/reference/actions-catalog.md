@@ -63,6 +63,7 @@ Bases:
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
 | jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields, proactive contact gap-fill, and destination-agnostic auto-sync via the standard MCP interface (sync configured on the action in agent.yaml, or a skill `sync:` block). Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
+| jvagent/suggestions | `SuggestionsInteractAction` | `InteractAction` | 100 | LLM-generated quick-reply chips for the embeddable messenger. After the reply, asks a light model for a few short follow-ups and publishes them as `metadata.suggestions` (rendered by jvmessenger). Streaming turns only; no-op without a model. See [`../../docs/jvmessenger.md`](../../docs/jvmessenger.md) |
 
 Bases: `InteractAction` — `interact/base.py:27`. See `.planning/architecture.md` §3 for traversal order.
 
