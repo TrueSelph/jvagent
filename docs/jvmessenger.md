@@ -62,7 +62,7 @@ on the loader src.
 | `theme` | `auto` | `light` / `dark` / `auto` (follows the system setting, live). |
 | `show-reasoning` | `false` | Reveal reasoning/tool rows (masked by default). |
 | `attachments` | `false` | Enable file uploads. |
-| `voice` | `false` | Enable mic (STT) + read-aloud (TTS). |
+| `voice` | `false` | Enable mic (STT — real-time when supported, batch fallback) + read-aloud (TTS). |
 | `fullscreen` | `true` | Allow expanding to a centered fullscreen view. |
 
 ¹ When `avatar` / `title` / `description` are not set, the messenger fetches the
@@ -126,7 +126,8 @@ interact stream plus a small public surface:
 | `POST /api/agents/{id}/interact` | session-token per mode | Streaming chat (SSE). |
 | `POST /api/agents/{id}/interact/session/refresh` | — | Renew the session token. |
 | `GET  /api/agents/{id}/profile` | none | Agent avatar + name + description (public branding). |
-| `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip (reuses `BaseSTTAction`). |
+| `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip, batch (reuses `BaseSTTAction`). |
+| `WS   /api/agents/{id}/voice/stt/stream` | **token query param required** | Real-time STT: stream mic audio → interim + final transcripts. |
 | `POST /api/agents/{id}/voice/tts` | **X-Session-Token required** | Synthesize speech (reuses `BaseTTSAction`). |
 | `POST /api/agents/{id}/uploads` | **X-Session-Token required** | Multipart upload → URL for the next interact `data`. |
 
@@ -135,9 +136,28 @@ interact turn) regardless of `JVAGENT_INTERACT_PUBLIC_AUTH` mode — so they are
 inert in `off` mode by design (no token is minted there). `/profile` is
 unauthenticated branding, served read-only. New public routes live in the
 interact package ([`voice_endpoints.py`](../jvagent/action/interact/voice_endpoints.py),
+[`voice_stream_endpoints.py`](../jvagent/action/interact/voice_stream_endpoints.py),
 [`upload_endpoints.py`](../jvagent/action/interact/upload_endpoints.py),
 [`avatar_endpoints.py`](../jvagent/action/interact/avatar_endpoints.py)) and reuse
 its rate limiter + session-token gate ([`public_gate.py`](../jvagent/action/interact/public_gate.py)).
+
+### Real-time STT (streaming)
+
+When `voice` is enabled, the mic **prefers live transcription**: the browser
+streams `MediaRecorder` webm/opus chunks over the `voice/stt/stream` WebSocket to
+the agent's STT provider (Deepgram's live API via `DeepgramSTTAction.stream_transcribe`),
+and interim + final transcripts fill the composer as the user speaks. If the
+browser can't stream (no `MediaRecorder`, mic denied, socket refused, or the STT
+provider has no `stream_transcribe`), the mic **falls back** to the batch
+`POST /voice/stt` path automatically — no config needed.
+
+Because browsers can't set custom headers on a WebSocket handshake, the session
+token rides as the `?token=` query param (verified the same way as the header on
+the POST routes). **Serve over `wss://` in production** so the token isn't exposed
+in plaintext. The WS route is registered by wrapping the server's app factory
+([`register_voice_ws_routes`](../jvagent/action/interact/voice_stream_endpoints.py)),
+because jvspatial's `@endpoint` is HTTP-only and app rebuilds replay only HTTP
+routes — the wrapper puts the route on every built app so it survives rebuilds.
 
 ## Production checklist
 
