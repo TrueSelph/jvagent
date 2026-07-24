@@ -33,6 +33,32 @@ from jvagent.core.scheduler_bootstrap import app_has_task_monitor
 
 logger = logging.getLogger(__name__)
 
+# Standard CORS request headers (mirrors the framework default) plus the
+# interact session-token header the browser messenger requires.
+_DEFAULT_CORS_HEADERS = [
+    "Accept",
+    "Accept-Language",
+    "Authorization",
+    "Content-Language",
+    "Content-Type",
+    "X-API-Key",
+]
+_SESSION_TOKEN_HEADER = "X-Session-Token"
+
+
+def _ensure_session_token_header(cors_headers: Optional[list]) -> list:
+    """Guarantee ``X-Session-Token`` is an allowed CORS request header.
+
+    The embeddable messenger (and any browser interact client) sends the ADR-0020
+    Mode B capability token as ``X-Session-Token`` on resume / voice / upload
+    calls, so it must be allow-listed or the browser preflight fails. Applied
+    whether or not the operator customized ``cors.headers``.
+    """
+    base = list(cors_headers) if cors_headers else list(_DEFAULT_CORS_HEADERS)
+    if not any(h.lower() == _SESSION_TOKEN_HEADER.lower() for h in base):
+        base.append(_SESSION_TOKEN_HEADER)
+    return base
+
 
 def _set_db_env_from_config(app_root: str) -> None:
     """Set database environment variables from app config.
@@ -275,6 +301,13 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         ]
     else:
         cors_headers = None
+    # The embeddable messenger (and any browser interact client) sends the
+    # ADR-0020 Mode B capability token as the ``X-Session-Token`` request header
+    # on resume / voice / upload calls. It must be an allowed CORS request header
+    # or the browser preflight fails (first turn works, the next turn — which
+    # carries the token — is blocked). Guarantee it's present so the messenger
+    # works out of the box, whether or not ``cors.headers`` was customized.
+    cors_headers = _ensure_session_token_header(cors_headers)
 
     # Build grouped configuration objects
     # Database configuration
