@@ -197,6 +197,10 @@ class ResponseBus:
             self._session_queues.pop(sid, None)
             self._session_queue_activity.pop(sid, None)
             self._subscriber_ids.pop(sid, None)
+            # Also drop the (empty) subscribers entry. Leaving it behind desynced
+            # the two maps — a later resume saw the session in ``_subscribers``,
+            # skipped init, then KeyError'd on ``_subscriber_ids[session_id]``.
+            self._subscribers.pop(sid, None)
 
     def _get_or_create_accumulator(
         self,
@@ -853,9 +857,14 @@ class ResponseBus:
             receive_chunks: If True, receive stream_chunk messages. If False, only receive
                           final and adhoc messages. Default: False
         """
-        if session_id not in self._subscribers:
-            self._subscribers[session_id] = []
-            self._subscriber_ids[session_id] = set()
+        # Initialize each map independently. Guarding only on ``_subscribers``
+        # membership left the two maps able to desync (e.g. a cleanup path that
+        # dropped ``_subscriber_ids[session_id]`` but not ``_subscribers``),
+        # which then raised ``KeyError`` on the ``_subscriber_ids[session_id]``
+        # read below when a session was resumed. ``setdefault`` keeps them in
+        # lockstep regardless of prior state.
+        self._subscribers.setdefault(session_id, [])
+        self._subscriber_ids.setdefault(session_id, set())
 
         # Use O(1) set lookup for duplicate check instead of O(n) list search
         cb_id = id(callback)

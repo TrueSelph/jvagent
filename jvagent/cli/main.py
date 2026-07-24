@@ -49,6 +49,7 @@ DISPATCH = frozenset(
         "app",
         "validate",
         "chat",
+        "messenger",
         "stress-seed",
         "stress_seed",
     }
@@ -235,6 +236,10 @@ def main() -> None:
             from jvagent.cli.chat import handle_chat_command
 
             handle_chat_command(args[1:])
+        elif args[0] == "messenger":
+            from jvagent.cli.messenger import handle_messenger_command
+
+            handle_messenger_command(args[1:])
         elif args[0] in ("stress-seed", "stress_seed"):
             from jvagent.stress_seed_graph import main as stress_seed_main
 

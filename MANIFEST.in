@@ -20,4 +20,8 @@ recursive-include jvagent/scaffold/static *.txt
 # Bundled jvchat UI (built by scripts/build_jvchat.py; served by `jvagent chat`).
 recursive-include jvagent/webui/dist *
 
+# Bundled jvmessenger embeddable chat (built by scripts/build_jvmessenger.py; served
+# by `jvagent messenger`).
+recursive-include jvagent/messenger/dist *
+
 recursive-include docs *.md
