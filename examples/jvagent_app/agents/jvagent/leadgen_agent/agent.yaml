@@ -30,6 +30,10 @@ actions:
         - product_faq             # answer common product questions (StorefrontAction)
         - product_search          # find / compare catalog products (StorefrontAction)
       lock_active_flow: false
+      # Vision (ADR-0021): a pre-loop reflex interprets images in data.image_urls
+      # (e.g. an attachment from the messenger), stores the description as a
+      # conversation artifact, and seeds it into the reply. Requires jvagent/vision.
+      vision: true
       # Multi-intent + anti-confabulation nudge. Compound asks ("product X and
       # free trial?") tempt the model to satisfy one intent and guess the rest —
       # e.g. return the product but wrongly claim "no free trial" without calling
@@ -127,3 +131,26 @@ actions:
       enabled: true
       model: gpt-4o-mini
       temperature: 0.2
+
+  # ── Vision — interprets attached images (uploads) with its own multimodal
+  # model. Consumed by the orchestrator's vision reflex above.
+  - action: jvagent/vision
+    context:
+      enabled: true
+      model_action_type: OpenAILanguageModelAction
+      model: gpt-4o
+
+  # ── Speech-to-text — powers the messenger mic (POST /agents/{id}/voice/stt).
+  # DEEPGRAM_API_KEY is read from the environment.
+  - action: jvagent/deepgram_stt
+    context:
+      enabled: true
+      model: nova-2
+
+  # ── Text-to-speech — powers the messenger read-aloud (POST .../voice/tts).
+  # ELEVENLABS_API_KEY is read from the environment.
+  - action: jvagent/elevenlabs_tts
+    context:
+      enabled: true
+      model: eleven_turbo_v2
+      voice: Sarah
