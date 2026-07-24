@@ -309,17 +309,35 @@ On startup (meta provider), jvagent registers via jvconnect (`POST /api/v1/meta/
 
 #### Purge and callback URLs
 
-`jvagent --purge` creates a **new agent node id** (`n.Agent.*`). Every Meta callback URL embeds that id, so after a purge you must realign **all three Meta routing layers**:
+**One API key = one phone.** Each `JVCONNECT_API_KEY` is bound to a single WhatsApp
+phone number id. Startup registration replaces **only that phone’s** row in
+jvconnect `webhook_forwards`. Messaging a different number (e.g. prod while
+registered with a staging key) still hits whatever stale forward that other phone
+has — often a previous `n.Agent.*` → HTTP 404 Agent not found even though
+register “succeeded.”
+
+`jvagent --purge` creates a **new agent node id** (`n.Agent.*`). Agent callback
+URLs embed that id. After a purge you must re-register **every phone you use**
+(restart or `POST .../meta/webhook-register` with each phone’s API key) so
+`webhook_forwards.callback_url` matches the current agent. Also realign Meta
+layers as needed:
 
 | Layer | Where it lives | Updated by jvagent? |
 |-------|----------------|---------------------|
-| `application` | Meta App Dashboard → WhatsApp → Configuration | **No** — manual update required |
-| `whatsapp_business_account` | WABA `subscribed_apps` override | Yes (when `waba_id` set) |
-| Phone override | Phone `webhook_configuration` | Yes (when `phone_number_id` set) |
+| `application` | Meta App Dashboard → WhatsApp → Configuration | **No** — manual; for `provider: meta` set to jvconnect `…/api/webhooks` |
+| `whatsapp_business_account` | WABA `subscribed_apps` override | Yes (via jvconnect register → Meta override to jvconnect) |
+| Phone override | Phone `webhook_configuration` | Yes (same) |
+| jvconnect forward | `webhook_forwards.callback_url` | Yes — **this** embeds `{agent_id}` |
 
-When both `waba_id` and `phone_number_id` are set, startup registers **both** overrides. If inbound POSTs still hit an old agent id (404 Agent not found), check `GET .../meta/webhook-status` → `stale_callbacks` and follow `dashboard_action` (usually: update App Dashboard callback + verify token, then restart or `POST .../meta/webhook-register`).
+With `provider: meta`, Meta Graph should point at jvconnect (`…/api/webhooks`), not
+the agent URL. `GET .../meta/webhook-status` → `stale_callbacks` flags Graph URLs
+that are not jvconnect’s ingress, and separately flags a forward whose agent id
+does not match the current agent (`jvconnect.forward.callback_url`). Follow
+`dashboard_action`.
 
-Avoid `--purge` on production unless you intentionally reset the database and can update Meta callbacks immediately.
+Avoid `--purge` on production unless you intentionally reset the database and can
+re-register every phone’s forward (and update the App Dashboard if needed)
+immediately.
 
 1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
 2. **Verify token**: derived automatically; `GET .../meta/webhook-url` (admin) shows the active token for debugging.

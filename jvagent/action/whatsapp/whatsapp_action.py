@@ -658,7 +658,12 @@ class WhatsAppAction(Action):
                     if reg.get("status") == "ok":
                         self._session_registered = True
                         logger.info(
-                            "WhatsApp Meta webhook registration succeeded: %s",
+                            "WhatsApp Meta webhook registration succeeded: "
+                            "phone_number_id=%s callback=%s "
+                            "(only this phone's forward was replaced)",
+                            reg.get("phone_number_id")
+                            or self.phone_number_id
+                            or "(from key)",
                             reg.get("callback_url"),
                         )
                     elif reg.get("status") == "skipped":
@@ -692,9 +697,31 @@ class WhatsAppAction(Action):
         agent_id: str,
         wa: MetaWhatsAppAPI,
     ) -> Dict[str, Any]:
-        """Fetch Graph webhook config and flag URLs that do not match this agent."""
+        """Fetch Graph/jvconnect webhook config and flag mismatched callbacks.
+
+        For ``provider: meta`` (jvconnect), Meta Graph overrides should point at
+        jvconnect ``…/api/webhooks``; the agent id is validated on the stored
+        ``webhook_forwards.callback_url``, not on Graph URLs.
+        """
         graph = await wa.get_webhook_override_status()
-        stale = find_stale_callbacks(graph, callback, agent_id)
+        meta_callback_url = ""
+        forward_callback: Optional[str] = None
+        if isinstance(graph, dict):
+            meta_callback_url = str(graph.get("meta_callback_url") or "").strip()
+            if meta_callback_url or "forward" in graph:
+                # jvconnect status shape: always validate the forward row.
+                forward = graph.get("forward")
+                if isinstance(forward, dict):
+                    forward_callback = str(forward.get("callback_url") or "").strip()
+                else:
+                    forward_callback = ""
+        stale = find_stale_callbacks(
+            graph,
+            callback,
+            agent_id,
+            expected_meta_callback_url=meta_callback_url,
+            agent_forward_callback_url=forward_callback,
+        )
         if stale:
             for item in stale:
                 logger.warning(
@@ -733,19 +760,37 @@ class WhatsAppAction(Action):
         verify = self.effective_verify_token(agent_id)
         wa = await self.api()
         check = await self._meta_webhook_stale_check(callback, expected_agent_id, wa)
+        graph = check["graph"] if isinstance(check.get("graph"), dict) else {}
+        meta_callback = str(graph.get("meta_callback_url") or "").strip()
+        forward = (
+            graph.get("forward") if isinstance(graph.get("forward"), dict) else None
+        )
+        forward_url = (
+            str(forward.get("callback_url") or "").strip() if forward else None
+        )
         return {
             "expected_callback_url": callback,
             "expected_agent_id": expected_agent_id,
+            "expected_meta_callback_url": meta_callback or None,
+            "forward_callback_url": forward_url,
+            "phone_number_id": (
+                str(graph.get("phone_number_id") or self.phone_number_id or "").strip()
+                or None
+            ),
             "verify_token": verify,
             "stale_callbacks": check["stale_callbacks"],
             "dashboard_action": check["dashboard_action"]
             or (
                 "Meta App Dashboard shows the app default callback URL only. "
-                "WABA/phone overrides appear here and in Graph subscribed_apps."
+                "WABA/phone overrides appear here and in Graph subscribed_apps. "
+                "For provider=meta, Graph should match expected_meta_callback_url "
+                "(jvconnect); agent id is checked on forward_callback_url."
             ),
             "dashboard_note": (
                 "Meta App Dashboard shows the app default callback URL only. "
-                "WABA/phone overrides appear here and in Graph subscribed_apps."
+                "WABA/phone overrides appear here and in Graph subscribed_apps. "
+                "One JVCONNECT_API_KEY = one phone; only that phone's forward is "
+                "replaced on register."
             ),
             "graph": check["graph"],
         }
@@ -1090,12 +1135,13 @@ class WhatsAppAction(Action):
             verify = self.effective_verify_token(agent_id)
             logger.info(
                 "Registering Meta WhatsApp webhook override (agent_id=%s callback=%s). "
-                "Meta will GET hub.challenge on that URL before accepting it.",
+                "Meta verifies jvconnect …/api/webhooks; jvconnect forwards to this agent.",
                 agent_id,
                 callback,
             )
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
+            phone = ""
             # Persist jvconnect binding + webhook HMAC secret for inbound verification
             if self.is_meta_provider() and isinstance(result, dict):
                 dirty = False
@@ -1145,9 +1191,14 @@ class WhatsAppAction(Action):
                     "agent_id": agent_id,
                     "result": result,
                 }
+            phone = phone or str(self.phone_number_id or "").strip()
             logger.info(
-                "WhatsApp Meta webhook override set (agent_id=%s callback=%s)",
+                "WhatsApp Meta webhook override set "
+                "(agent_id=%s phone_number_id=%s callback=%s). "
+                "Only this phone's jvconnect forward was replaced — message that "
+                "number, or re-register with the API key bound to each phone you use.",
                 agent_id,
+                phone or "(from key)",
                 callback,
             )
             stale_check = await self._meta_webhook_stale_check(callback, agent_id, wa)
@@ -1156,6 +1207,7 @@ class WhatsAppAction(Action):
                 "ok": True,
                 "callback_url": callback,
                 "agent_id": agent_id,
+                "phone_number_id": phone or None,
                 "expected_agent_id": agent_id,
                 "stale_callbacks": stale_check["stale_callbacks"],
                 "dashboard_action": stale_check["dashboard_action"],
