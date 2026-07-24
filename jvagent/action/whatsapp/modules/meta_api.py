@@ -935,6 +935,37 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
             self._messages_url(), method="POST", data=data, use_full_url=True
         )
 
+    async def send_cloud_message(
+        self,
+        phone: str,
+        message: Optional[Dict[str, Any]] = None,
+    ) -> dict:
+        """POST a raw Meta Cloud API message body (escape hatch for any type).
+
+        Fills ``messaging_product``, ``recipient_type``, and ``to`` when missing.
+        Does not invent type-specific fields — callers supply a valid Meta payload
+        (minus or including those envelope keys).
+        """
+        if not isinstance(message, dict) or not message:
+            return {"ok": False, "error": "message object is required"}
+        msg_type = message.get("type")
+        if not msg_type or not str(msg_type).strip():
+            return {"ok": False, "error": "message.type is required"}
+        to = self._normalize_recipient(phone)
+        if not to:
+            return {"ok": False, "error": "phone is required"}
+        data: Dict[str, Any] = dict(message)
+        data.setdefault("messaging_product", "whatsapp")
+        data.setdefault("recipient_type", "individual")
+        data["to"] = to
+        data["type"] = str(msg_type).strip()
+        result = await self.send_rest_request(
+            self._messages_url(), method="POST", data=data, use_full_url=True
+        )
+        if result.get("ok", True) and "error" not in result:
+            result["ok"] = True
+        return result
+
     async def send_image(
         self,
         phone: str,
@@ -987,7 +1018,11 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         if not media_id:
             return {"ok": False, "error": "Meta media upload failed"}
         result = await self._send_media_message(
-            phone, "document", media_id, caption=caption
+            phone,
+            "document",
+            media_id,
+            caption=caption,
+            extra_media_fields={"filename": fname},
         )
         if result.get("ok", True) and "error" not in result:
             result["ok"] = True

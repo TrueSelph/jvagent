@@ -226,6 +226,41 @@ class TestMetaWhatsAppSend:
         assert captured["data"]["text"]["body"] == "Hello there"
 
     @pytest.mark.asyncio
+    async def test_send_cloud_message_normalizes_envelope(self, meta_api):
+        captured = {}
+
+        async def fake_send(url, method="POST", data=None, **kwargs):
+            captured["data"] = data
+            return {"messaging_product": "whatsapp", "messages": [{"id": "wamid.raw"}]}
+
+        meta_api.send_rest_request = fake_send  # type: ignore[method-assign]
+
+        result = await meta_api.send_cloud_message(
+            "16505551234",
+            {
+                "type": "reaction",
+                "reaction": {
+                    "message_id": "wamid.prev",
+                    "emoji": "👍",
+                },
+            },
+        )
+        assert result.get("ok") is True
+        assert captured["data"]["messaging_product"] == "whatsapp"
+        assert captured["data"]["recipient_type"] == "individual"
+        assert captured["data"]["to"] == "16505551234"
+        assert captured["data"]["type"] == "reaction"
+        assert captured["data"]["reaction"]["emoji"] == "👍"
+
+    @pytest.mark.asyncio
+    async def test_send_cloud_message_requires_type(self, meta_api):
+        result = await meta_api.send_cloud_message(
+            "16505551234", {"sticker": {"id": "x"}}
+        )
+        assert result.get("ok") is False
+        assert "type" in result.get("error", "")
+
+    @pytest.mark.asyncio
     async def test_normalize_recipient_strips_suffix(self, meta_api):
         assert MetaWhatsAppAPI._normalize_recipient("15551234@c.us") == "15551234"
         assert MetaWhatsAppAPI._normalize_recipient("+15551234") == "+15551234"

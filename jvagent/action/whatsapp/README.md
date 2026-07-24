@@ -261,7 +261,42 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` **or*
 
 **Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same WhatsApp text/call gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
-**CTA URL buttons:** Meta/jvconnect providers also support `send_cta_url_message` (interactive `cta_url`) for mapping a long URL to a button label without pasting the raw link in the body.
+**CTA URL buttons:** Meta/jvconnect providers support `send_cta_url_message` (interactive `cta_url`). From the ResponseBus, publish with channel `whatsapp` and metadata:
+
+```python
+await response_bus.publish(
+    session_id=session_id,
+    content="Your quote is ready",  # button body text
+    channel="whatsapp",
+    user_id=phone,
+    metadata={
+        "cta_url": "https://pay.example/invoice/Z1",
+        "cta_display_text": "Pay now",  # max 20 chars
+        "cta_header": "Invoice Z1",     # optional
+        "cta_footer": "Zoon",           # optional
+        # "cta_body": "...",            # optional override of content
+    },
+)
+```
+
+**Raw Cloud API passthrough:** for any Meta service message type without a typed helper (sticker, contacts, reaction, list, reply buttons, address, etc.), publish a full Cloud API body (minus or including envelope keys) under `whatsapp_cloud_message`. The adapter fills `messaging_product`, `recipient_type`, and `to` when missing and POSTs via jvconnect:
+
+```python
+await response_bus.publish(
+    session_id=session_id,
+    content="",  # ignored when cloud message is set
+    channel="whatsapp",
+    user_id=phone,
+    metadata={
+        "whatsapp_cloud_message": {
+            "type": "reaction",
+            "reaction": {"message_id": "wamid....", "emoji": "👍"},
+        },
+    },
+)
+```
+
+Adapter precedence: `whatsapp_cloud_message` → `cta_url` → media (`media_url` + `media_type`) → text. Document sends should set `filename` in metadata (e.g. `quotation_Z1.pdf`); Meta/jvconnect include it on the outbound `document` object so WhatsApp does not show "Untitled".
 
 **Flow prefill (navigate):** pass `screen` plus `screen_data` (object of field keys → values) on `whatsapp__send_flow`. That maps to Meta `flow_action_payload.data`. Keys must match bindings in the published Flow JSON; not valid with `flow_action=data_exchange` (INIT path).
 
