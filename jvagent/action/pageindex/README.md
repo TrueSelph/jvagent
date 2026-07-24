@@ -80,6 +80,7 @@ Agents should include **`jvagent/pageindex`** (ingestion defaults, `search`, **j
 | `retrieval_excerpt_source` | str | summary | `summary` or `text` — see config table |
 | `include_references` | bool | true | Render numbered source references in directive; set false to save tokens |
 | `weight` | int | n/a | N/A — PageIndexAction is not an InteractAction; use Orchestrator tool surfacing |
+| `hidden_tools` | List[str] | `[]` | Tool names to omit from `get_tools()` / the orchestrator surface (e.g. `pageindex__assimilate`). Programmatic `assimilate()`, REST, and Drive sync are unaffected. |
 | `strategy` | str | "tree_search" | "tree_search", "direct", or "walker" |
 | `model` | Optional[str] | None | LLM for tree_search (else PAGEINDEX_TREE_SEARCH_MODEL or gpt-4o-mini) |
 | `model_action_type` | str | "OpenAILanguageModelAction" | LanguageModelAction for observability |

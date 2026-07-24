@@ -121,6 +121,14 @@ class PageIndexAction(Action):
         "When enabled, access is always granted to 'public' documents; additional groups "
         "are resolved from AccessControlAction.user_groups based on visitor identity.",
     )
+    hidden_tools: List[str] = attribute(
+        default=[],
+        description=(
+            "Tool names to omit from get_tools() / the orchestrator surface "
+            "(e.g. pageindex__assimilate). Programmatic assimilate(), REST, and "
+            "Drive sync are unaffected."
+        ),
+    )
     directive: str = attribute(
         default=DIRECTIVE_TEMPLATE.template,
         description="Template for formatting the directive. Placeholders: {results}, {references}",
@@ -569,6 +577,13 @@ class PageIndexAction(Action):
                 # deriver omits it from ``required``. The published contract
                 # still presents it as required, so re-assert that here.
                 t.parameters_schema["required"] = ["doc"]
+        hidden = {
+            n.strip()
+            for n in (self.hidden_tools or [])
+            if isinstance(n, str) and n.strip()
+        }
+        if hidden:
+            tools = [t for t in tools if getattr(t, "name", None) not in hidden]
         return tools
 
     # Aliases a model might use for doc_name instead of the canonical name.

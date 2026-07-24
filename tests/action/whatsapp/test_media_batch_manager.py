@@ -504,3 +504,51 @@ class TestDeferredMediaBatchCoalescing:
             second = mock_process2.call_args[0][1]
             assert len(second["media_items"]) == 1
             assert second["media_items"][0]["url"] == "http://example.com/b.jpg"
+
+
+class TestMediaBatchFilenamePreservation:
+    """Original Meta filenames must survive into visitor.data whatsapp_media."""
+
+    def test_media_item_copies_filename_from_payload(self):
+        from jvagent.action.whatsapp.utils.media_batch_manager import _media_item
+
+        item = _media_item(
+            "https://cdn.example/whatsapp_media/u/20260724_134410_c624a9f1.pdf",
+            "Which email?",
+            {
+                "whatsapp_payload": {
+                    "message_type": "document",
+                    "mime_type": "application/pdf",
+                    "filename": "report.pdf",
+                }
+            },
+        )
+        assert item["filename"] == "report.pdf"
+        assert item["mime_type"] == "application/pdf"
+        assert item["message_type"] == "document"
+
+    def test_batch_utterance_emits_whatsapp_media_dicts_with_filename(self):
+        from jvagent.action.whatsapp.utils.media_batch_manager import (
+            MediaBatchManager,
+        )
+
+        media_items = [
+            {
+                "url": "https://cdn.example/whatsapp_media/u/20260724_134410_c624a9f1.pdf",
+                "utterance": "Which email?",
+                "message_type": "document",
+                "mime_type": "application/pdf",
+                "filename": "report.pdf",
+            }
+        ]
+        utterance, all_media, image_urls = (
+            MediaBatchManager._batch_utterance_and_media_urls(media_items, {})
+        )
+        assert "Which email?" in utterance
+        assert image_urls == []
+        assert len(all_media) == 1
+        assert all_media[0] == {
+            "url": "https://cdn.example/whatsapp_media/u/20260724_134410_c624a9f1.pdf",
+            "filename": "report.pdf",
+            "mime_type": "application/pdf",
+        }

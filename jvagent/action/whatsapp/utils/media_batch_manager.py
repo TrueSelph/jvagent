@@ -93,6 +93,7 @@ def _media_item(
         "utterance": utterance,
         "message_type": payload.get("message_type"),
         "mime_type": payload.get("mime_type"),
+        "filename": str(payload.get("filename") or "").strip(),
     }
     if vision_base64:
         out["vision_base64"] = vision_base64
@@ -511,13 +512,28 @@ class MediaBatchManager:
     @staticmethod
     def _batch_utterance_and_media_urls(
         media_items: List[Dict[str, Any]], payload: Dict[str, Any]
-    ) -> Tuple[str, List[str], List[Any]]:
-        """Build combined utterance, media URL list, and vision inputs for visitor.data."""
+    ) -> Tuple[str, List[Dict[str, Any]], List[Any]]:
+        """Build combined utterance, media list, and vision inputs for visitor.data.
+
+        ``whatsapp_media`` entries are dicts with ``url``, ``filename``, and
+        ``mime_type`` so downstream upload collectors keep the Meta original name
+        instead of deriving a hash basename from the storage URL.
+        """
         from .endpoint_helpers import _build_utterance_with_quoted_context
 
-        all_media = [item["url"] for item in media_items]
+        all_media: List[Dict[str, Any]] = []
         whatsapp_image_urls: List[Any] = []
         for item in media_items:
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            all_media.append(
+                {
+                    "url": url,
+                    "filename": str(item.get("filename") or "").strip(),
+                    "mime_type": str(item.get("mime_type") or "").strip(),
+                }
+            )
             if not _is_vision_image(item):
                 continue
             b64 = item.get("vision_base64")
@@ -528,7 +544,7 @@ class MediaBatchManager:
                     spec["mime_type"] = mime
                 whatsapp_image_urls.append(spec)
             else:
-                whatsapp_image_urls.append({"url": item["url"]})
+                whatsapp_image_urls.append({"url": url})
 
         utterances = [
             item.get("utterance") for item in media_items if item.get("utterance")
