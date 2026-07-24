@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytest.importorskip("deepgram")  # optional provider SDK; skip when absent (CI)
+
 from jvagent.action.stt_action.deepgram.deepgram import DeepgramSTTAction
 
 _AUDIO_B64 = base64.b64encode(b"\x00" * 128).decode()
