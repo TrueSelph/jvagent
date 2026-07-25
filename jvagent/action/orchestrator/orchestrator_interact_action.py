@@ -111,6 +111,10 @@ from jvagent.action.orchestrator.constants import (
     DECISION_RESERVED_KEYS as _DECISION_RESERVED_KEYS,
 )
 from jvagent.action.orchestrator.constants import STEER_EXEMPT as _STEER_EXEMPT
+from jvagent.action.orchestrator.constants import (
+    STOPWORDS,
+    significant_tokens,
+)
 
 DEFAULT_ACTIVATION_BUDGET = 24
 
@@ -178,54 +182,10 @@ def _version_satisfies(version: str, constraint: str) -> bool:
 
 # Significant-token stopwords for the lightweight relevance gates (flow
 # anchoring + lean tool pre-surfacing). No model call — cheap token overlap.
-_STOPWORDS = frozenset(
-    {
-        "the",
-        "and",
-        "for",
-        "with",
-        "you",
-        "your",
-        "are",
-        "can",
-        "could",
-        "would",
-        "want",
-        "like",
-        "need",
-        "please",
-        "this",
-        "that",
-        "have",
-        "how",
-        "what",
-        "who",
-        "when",
-        "where",
-        "why",
-        "about",
-        "into",
-        "from",
-        "get",
-        "got",
-        "tell",
-        "let",
-        "all",
-        "any",
-        "out",
-        "use",
-        "now",
-    }
-)
-
-
-def _significant_tokens(s: str) -> set:
-    """Lowercase alnum tokens, len>2, minus stopwords — for relevance overlap."""
-    return {
-        w
-        for w in re.findall(r"[a-z0-9]+", (s or "").lower())
-        if len(w) > 2 and w not in _STOPWORDS
-    }
+# Relevance tokenizer — shared with the tool catalog (constants.py has no
+# intra-package imports, so find_tool can use it without a cycle).
+_STOPWORDS = STOPWORDS
+_significant_tokens = significant_tokens
 
 
 def _is_tool_chain_directive(directive: str) -> bool:

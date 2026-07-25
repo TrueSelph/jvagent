@@ -297,3 +297,67 @@ async def test_find_tool_without_truncation_says_nothing_extra():
     out = await cat["find_tool"].run({"query": "email"})
     assert "matches" not in out
     assert "Send an email." in out  # short descriptions survive intact
+
+
+# --- find_tool must match natural-language queries --------------------------
+#
+# Discovery matched the WHOLE query as a substring of "name + description", so
+# find_tool("knowledge base") worked and find_tool("add to knowledge base")
+# returned nothing -- and the second is the example the loop prompt gives the
+# model. Live, the model followed that instruction, got nothing, re-queried,
+# tripped the repeat-guard, and a turn that had already planned and fetched a
+# page died on "Sorry, I didn't quite catch that".
+
+
+def _catalog():
+    tools = {
+        "pageindex__assimilate": SkillTool(
+            "pageindex__assimilate",
+            "Ingest one document into the knowledge base so it can be searched "
+            "later with pageindex__search.",
+            run=None,  # type: ignore[arg-type]
+        ),
+        "file_interface__write_file": SkillTool(
+            "file_interface__write_file",
+            "Write a file to the per-user sandbox.",
+            run=None,  # type: ignore[arg-type]
+        ),
+        "web_search__search": SkillTool(
+            "web_search__search", "Search the public web.", run=None  # type: ignore[arg-type]
+        ),
+    }
+    return build_catalog_tools(tools, visible=set())
+
+
+async def test_the_prompts_own_example_queries_resolve():
+    """These exact strings are what render_tools_section tells the model to use."""
+    cat = _catalog()
+    for query, expected in (
+        ("add to knowledge base", "pageindex__assimilate"),
+        ("write file", "file_interface__write_file"),
+        ("write a file", "file_interface__write_file"),
+    ):
+        out = await cat["find_tool"].run({"query": query})
+        assert expected in out, f"{query!r} failed to surface {expected}"
+
+
+async def test_extra_words_do_not_break_a_match():
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "save the finished report to a file"})
+    assert "file_interface__write_file" in out
+
+
+async def test_best_match_is_ranked_first():
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "knowledge base document ingest"})
+    listed = [ln for ln in out.splitlines() if ln.startswith("- ")]
+    assert listed and "pageindex__assimilate" in listed[0]
+
+
+async def test_no_match_gives_a_way_forward_instead_of_a_dead_end():
+    """A bare "(no tools matched)" invites the re-query that kills the turn."""
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "send a fax to mars"})
+    assert "no tool matches" in out
+    assert "Do NOT repeat this search" in out
+    assert "pageindex" in out  # names the groups that DO exist

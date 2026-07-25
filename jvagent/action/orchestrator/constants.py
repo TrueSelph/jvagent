@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 # Keys the model commonly uses to carry user-facing text, in priority order.
 TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
 
@@ -107,3 +109,53 @@ _TEXT_KEYS = TEXT_KEYS
 _STEER_EXEMPT = STEER_EXEMPT
 _NON_SUBSTANTIVE_TOOLS = NON_SUBSTANTIVE_TOOLS
 _DECISION_RESERVED_KEYS = DECISION_RESERVED_KEYS
+
+
+STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "you",
+        "your",
+        "are",
+        "can",
+        "could",
+        "would",
+        "want",
+        "like",
+        "need",
+        "please",
+        "this",
+        "that",
+        "have",
+        "how",
+        "what",
+        "who",
+        "when",
+        "where",
+        "why",
+        "about",
+        "into",
+        "from",
+        "get",
+        "got",
+        "tell",
+        "let",
+        "all",
+        "any",
+        "out",
+        "use",
+        "now",
+    }
+)
+
+
+def significant_tokens(s: str) -> set:
+    """Lowercase alnum tokens, len>2, minus stopwords — for relevance overlap."""
+    return {
+        w
+        for w in re.findall(r"[a-z0-9]+", (s or "").lower())
+        if len(w) > 2 and w not in STOPWORDS
+    }

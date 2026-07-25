@@ -23,6 +23,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
+from jvagent.action.orchestrator.constants import significant_tokens
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
 
@@ -96,6 +97,41 @@ def _summarize(description: str, limit: int = FIND_TOOL_SUMMARY_CHARS) -> str:
     return clipped.rstrip(",;:.") + "…"
 
 
+def _rank_tools(query: str, all_tools: Dict[str, SkillTool]) -> List[SkillTool]:
+    """Tools matching *query*, best first.
+
+    Matching is per-token, not whole-string. The original implementation asked
+    whether the entire query appeared verbatim inside "name + description", so
+    ``find_tool("knowledge base")`` found ``pageindex__assimilate`` while
+    ``find_tool("add to knowledge base")`` found nothing at all -- and the latter
+    is the example the loop prompt itself gives the model. A natural-language
+    query is the normal case here; requiring it to be a literal substring made
+    discovery fail exactly when the model was following instructions.
+
+    An exact substring still wins (it is a strong signal), then token overlap.
+    """
+    if not query:
+        return list(all_tools.values())
+    tokens = significant_tokens(query)
+    scored: List[Tuple[int, str, SkillTool]] = []
+    for name, tool in all_tools.items():
+        haystack = f"{name} {tool.description or ''}".lower()
+        score = 0
+        if query in haystack:
+            score += 5
+        if tokens:
+            searchable = significant_tokens(
+                name.replace("__", " ").replace("_", " ")
+                + " "
+                + (tool.description or "")
+            )
+            score += len(tokens & searchable)
+        if score:
+            scored.append((score, name, tool))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [tool for _, _, tool in scored]
+
+
 def build_catalog_tools(
     all_tools: Dict[str, SkillTool], visible: Set[str]
 ) -> Dict[str, SkillTool]:
@@ -103,13 +139,25 @@ def build_catalog_tools(
 
     async def _find(args: Dict[str, Any]) -> str:
         q = ((args or {}).get("query") or "").strip().lower()
-        hits = [
-            t
-            for name, t in all_tools.items()
-            if not q or q in (name + " " + (t.description or "")).lower()
-        ]
+        hits = _rank_tools(q, all_tools)
         if not hits:
-            return "(no tools matched)"
+            # A bare "(no tools matched)" is a dead end: the model was told to
+            # call find_tool to locate a capability, so it re-queries, hits the
+            # repeat-guard and the whole turn is lost -- observed live on
+            # "research X, write a report, add it to your knowledge base".
+            # Say what to do next instead.
+            namespaces = sorted({n.split("__", 1)[0] for n in all_tools if "__" in n})
+            hint = (
+                f" Available tool groups: {', '.join(namespaces)}."
+                if namespaces
+                else ""
+            )
+            return (
+                f"(no tool matches {q!r}.{hint} Try ONE different keyword — the "
+                "single most distinctive noun for the capability. If nothing "
+                "fits, this agent cannot do that step: say so plainly and "
+                "deliver what you already have. Do NOT repeat this search.)"
+            )
         # Group by namespace prefix (``<ns>__tool``) so one find_tool call reveals
         # a whole integration compactly instead of scattered lines.
         groups: Dict[str, List[Any]] = {}

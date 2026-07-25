@@ -695,8 +695,15 @@ class OrchestratorLoopMixin:
                     repeats = repeats + 1 if sig == last_sig else 0
                     last_sig = sig
                     if repeats >= 2:
+                        # Break, don't return: the post-loop partial-compose
+                        # below is what turns gathered work into an answer. A
+                        # bare return skipped it, so a turn that had already
+                        # activated a skill, planned and fetched a page ended on
+                        # "Sorry, I didn't quite catch that" and threw all of it
+                        # away. Observed live on a research → report → assimilate
+                        # request.
                         ended_via = "repeat_guard"
-                        return
+                        break
                     if repeats == 1:
                         prior_errored = (
                             last_obs.startswith("(tool error:")
@@ -995,9 +1002,10 @@ class OrchestratorLoopMixin:
                         )
                         return
                     continue
-                # Unknown action — stop rather than loop.
+                # Unknown action — stop rather than loop, but still let the
+                # partial-compose below deliver whatever the turn gathered.
                 ended_via = "unknown"
-                return
+                break
 
             # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
             # finalize idle while runnable work remains. Drain non-skill runnable
@@ -1024,7 +1032,14 @@ class OrchestratorLoopMixin:
             # from what it gathered. Only when there's actual work to summarize.
             if (
                 not emitted
-                and ended_via in ("budget", "duration", "no_decision")
+                and ended_via
+                in (
+                    "budget",
+                    "duration",
+                    "no_decision",
+                    "repeat_guard",
+                    "unknown",
+                )
                 and observations
             ):
                 decision = await self._run_model(

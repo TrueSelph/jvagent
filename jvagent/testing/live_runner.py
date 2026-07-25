@@ -157,6 +157,11 @@ def build_visitor(
         conversation.get_interaction_history = get_interaction_history
 
     visitor = MagicMock()
+    # A MagicMock agent stringifies to "_MagicMock_name_mock._agent.id_id_<addr>",
+    # and per-user file storage builds a directory from it — so every scenario
+    # run left a fresh junk folder behind (84 of them after one A/B sweep).
+    # Pin a stable id so runs reuse one scope instead of littering.
+    visitor.agent_id = "n.Agent.cucs_live_runner"
     visitor.user_id = user_id
     visitor.channel = channel
     visitor.utterance = utterance
