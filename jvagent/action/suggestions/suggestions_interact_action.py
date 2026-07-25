@@ -38,13 +38,22 @@ _DEFAULT_SYSTEM = (
     "each as a brief first-person statement or question in the user's own voice "
     '— something they could send verbatim (e.g. "How much does it cost?", '
     '"I\'d like a demo", "Do you integrate with Salesforce?"). '
-    "Do NOT write UI labels or commands ('Pricing', 'Contact us'). "
-    "Never suggest a reply that asks the user to provide personal or contact "
-    "details (email, phone, name, address, payment) or that requires typing "
-    "specific data — a tapped chip sends its label verbatim and cannot carry "
-    "that data. Output ONLY a JSON array of {count} strings, each at most "
-    "{max_words} words, no numbering, no trailing period. Do not repeat what "
-    "was just said."
+    "Do NOT write UI labels or commands ('Pricing', 'Contact us').\n"
+    "A tapped chip sends its label EXACTLY as written, so every suggestion must "
+    "be true and complete for any user without editing. Therefore:\n"
+    "- Never suggest a reply carrying information only the user can supply — "
+    "their name, company, email, phone, address, budget, dates, order numbers.\n"
+    "- Never invent a specific value or use a placeholder. "
+    '"Company name is XYZ", "My budget is $500", "I need it by [date]" are all '
+    "wrong: the user would have to edit them, so they are useless as buttons.\n"
+    '- Prefer intent over data: "It\'s for my company" or "I\'d rather not say" '
+    'work as buttons; "My company is Acme" does not.\n'
+    "QUALITY OVER QUANTITY: return at most {count} suggestions, and return FEWER "
+    "— or an empty array [] — when the rest would be filler, redundant, or "
+    "guesswork. An empty array is a perfectly good answer, especially when the "
+    "assistant just asked for information only the user can give.\n"
+    "Output ONLY a JSON array of strings, each at most {max_words} words, no "
+    "numbering, no trailing period. Do not repeat what was just said."
 )
 
 # Suggestions asking the user to hand over personal/contact/account data cannot
@@ -62,6 +71,34 @@ _RE_MY_DATA = re.compile(rf"\bmy\b[\w'\s]*\b{_DATA_NOUNS}\b", re.I)
 _RE_PROVIDE_DATA = re.compile(rf"\b{_PROVIDE_VERBS}\b[\w'\s]*\b{_DATA_NOUNS}\b", re.I)
 
 
+# A chip whose label contains a placeholder or an invented specific is useless:
+# tapping it sends the placeholder verbatim ("Company name is XYZ"). These catch
+# the shapes models actually produce.
+_RE_BRACKET_PLACEHOLDER = re.compile(r"[\[\{<][^\]\}>]{1,40}[\]\}>]")
+_RE_BLANK_PLACEHOLDER = re.compile(r"_{2,}|\.{3,}\s*$")
+# Stand-in tokens (XYZ / ABC123 / "your company" / "e.g. ..."). No trailing \b on
+# the stand-ins so "ABC123" and "XYZ-1" are caught too.
+_RE_TOKEN_PLACEHOLDER = re.compile(
+    r"\b(xyz+|abc+|acme|foo|bar|lorem|tbd|n/?a|example\.com)"
+    r"|\be\.?g\.?\b"
+    r"|\byour\s+(company|business|name|email|budget|date)\b",
+    re.I,
+)
+# "<subject> is <value>" / "I need it by <value>" — declaring a specific the
+# model cannot know. Value-bearing prepositional declarations.
+_DECLARED_SUBJECTS = (
+    r"(company|business|budget|name|team\s*size|address|order|phone|email|"
+    r"deadline|date|timeline)"
+)
+# One optional intervening noun so "Order number is …" matches as well as
+# "Order is …".
+_RE_DECLARES_VALUE = re.compile(
+    rf"\b{_DECLARED_SUBJECTS}\b(\s+\w+)?\s+(is|are|:)\s+\S", re.I
+)
+# A bare currency/number specific the model invented, e.g. "My budget is $500".
+_RE_INVENTED_AMOUNT = re.compile(r"[$£€]\s?\d")
+
+
 def is_data_request(text: str) -> bool:
     """True if a suggestion asks the user to supply personal/contact data.
 
@@ -70,6 +107,25 @@ def is_data_request(text: str) -> bool:
     """
     s = text or ""
     return bool(_RE_MY_DATA.search(s) or _RE_PROVIDE_DATA.search(s))
+
+
+def needs_user_specifics(text: str) -> bool:
+    """True if a suggestion embeds a placeholder or a value only the user knows.
+
+    A tapped chip sends its label verbatim, so "Company name is XYZ" would send
+    the literal placeholder and "My budget is $500" would assert a number the
+    user never gave. Both are useless as buttons and are dropped.
+    """
+    s = (text or "").strip()
+    if not s:
+        return False
+    return bool(
+        _RE_BRACKET_PLACEHOLDER.search(s)
+        or _RE_BLANK_PLACEHOLDER.search(s)
+        or _RE_TOKEN_PLACEHOLDER.search(s)
+        or _RE_DECLARES_VALUE.search(s)
+        or _RE_INVENTED_AMOUNT.search(s)
+    )
 
 
 def parse_suggestions(text: str, count: int, max_words: int) -> List[str]:
@@ -214,7 +270,9 @@ class SuggestionsInteractAction(InteractAction):
                 "Latest exchange:\n"
                 f"User: {utterance}\n"
                 f"Assistant: {reply}\n\n"
-                f"Return {self.num_suggestions} quick replies as a JSON array of strings."
+                f"Return AT MOST {self.num_suggestions} quick replies as a JSON "
+                "array of strings — fewer, or [], if the rest would be filler or "
+                "would require information only the user can supply."
             )
             gen_kwargs: dict = {
                 "temperature": self.temperature,
@@ -229,15 +287,21 @@ class SuggestionsInteractAction(InteractAction):
                 calling_action_name=getattr(self, "name", None) or "suggestions",
                 **gen_kwargs,
             )
-            # Over-fetch candidates so dropping data-requests doesn't starve the
-            # count, then filter and cap to num_suggestions.
+            # Over-fetch candidates so filtering doesn't starve the count, then
+            # drop unusable ones and cap. Emitting nothing is a valid outcome —
+            # padding with filler is worse than no chips at all.
             candidates = parse_suggestions(
                 text, self.num_suggestions + 3, self.max_words
             )
             if self.avoid_data_requests:
-                candidates = [s for s in candidates if not is_data_request(s)]
+                candidates = [
+                    s
+                    for s in candidates
+                    if not is_data_request(s) and not needs_user_specifics(s)
+                ]
             suggestions = candidates[: self.num_suggestions]
             if not suggestions:
+                logger.debug("SuggestionsInteractAction: no usable suggestions")
                 await visitor.unrecord_action_execution()
                 return
 
