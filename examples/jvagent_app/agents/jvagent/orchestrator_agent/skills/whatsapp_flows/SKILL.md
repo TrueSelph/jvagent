@@ -6,6 +6,12 @@ description: >
   form". Refuses web/chat. For signup/signin or appointment booking intents,
   prefer whatsapp_service_flows.
 spec: jv
+# The SOP itself refuses web/chat, but the gate belongs here: without it the
+# skill is still listed (and its tools surfaced) on every web turn — dead prompt
+# tokens, and a misroute target for a weaker model.
+allowed-channels:
+  - whatsapp
+  - whatsapp_call
 requires-actions:
   - WhatsAppAction
 allowed-tools:
