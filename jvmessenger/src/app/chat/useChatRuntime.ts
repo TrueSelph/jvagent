@@ -17,6 +17,7 @@ import {
 import type { MessengerConfig } from "../../shared/config";
 import { streamInteract } from "../streaming/sseClient";
 import {
+  extractSuggestions,
   type MessageAction,
   type ResponseMessageData,
   type SSEChunk,
@@ -32,14 +33,18 @@ import {
 } from "../streaming/reducer";
 import {
   clearHistory,
+  clearSeenIds,
   clearSession,
   loadHistory,
+  loadSeenIds,
   loadSession,
   refreshSessionToken,
   saveHistory,
+  saveSeenIds,
   saveSession,
   type SessionState,
 } from "../streaming/session";
+import { openSessionChannel } from "../streaming/channelClient";
 import type { UploadedAttachment } from "../streaming/uploadClient";
 import { playChime, primeAudio } from "../streaming/sound";
 
@@ -110,12 +115,86 @@ export function useChatRuntime(config: MessengerConfig) {
   );
   const getToken = useCallback(() => session.current.sessionToken, []);
 
+  // Ids of messages already rendered, so the channel's backlog replay and the
+  // interact stream can't double-render the same message.
+  const seenIds = useRef<Set<string>>(new Set(loadSeenIds(config.agentId)));
+  const markSeen = useCallback(
+    (id: string): boolean => {
+      if (seenIds.current.has(id)) return false;
+      seenIds.current.add(id);
+      saveSeenIds(config.agentId, seenIds.current);
+      return true;
+    },
+    [config.agentId]
+  );
+  // Count of proactive messages that arrived while the panel was closed.
+  const [unread, setUnread] = useState(0);
+
   // Persist the thread whenever it changes so a page refresh keeps the history.
   useEffect(() => {
     if (messages.length) {
       saveHistory(config.agentId, session.current.sessionId, messages);
     }
   }, [config.agentId, messages]);
+
+  /**
+   * Persistent session channel: lets the agent speak between turns.
+   *
+   * Deliberately **suspended while a turn is running** — the same response bus
+   * feeds both this channel and the interact stream, so leaving it open would
+   * deliver every turn message twice (id-dedup is the safety net, but the race
+   * can still produce a stray bubble before the turn's own message exists).
+   */
+  useEffect(() => {
+    if (!config.proactive || isRunning) return;
+    const sessionId = session.current.sessionId;
+    if (!sessionId || !session.current.sessionToken) return;
+
+    const channel = openSessionChannel({
+      agentUrl: config.agentUrl,
+      agentId: config.agentId,
+      sessionId,
+      getToken: () => session.current.sessionToken,
+      refreshToken: async () => {
+        const tok = session.current.sessionToken;
+        if (!tok) return null;
+        const fresh = await refreshSessionToken(config.agentUrl, config.agentId, tok);
+        if (fresh) {
+          session.current = { ...session.current, sessionToken: fresh };
+          saveSession(config.agentId, session.current);
+        }
+        return fresh;
+      },
+      handlers: {
+        onMessage: (msg) => {
+          // Only finished, user-facing text — the channel also carries thought
+          // rows and stream chunks from any agentic proactive turn.
+          if (msg.category !== "user") return;
+          if (msg.message_type !== "adhoc" && msg.message_type !== "final") return;
+          const content = (msg.content ?? "").trim();
+          const id = msg.id;
+          if (!content || !id || !markSeen(id)) return;
+
+          setMessages((prev) => [
+            ...prev,
+            { id, role: "assistant", content: [{ type: "text", text: content }] },
+          ]);
+          const chips = extractSuggestions(msg.metadata);
+          if (chips.length) setSuggestions(chips);
+          setUnread((n) => n + 1);
+        },
+      },
+    });
+    return () => channel.close();
+  }, [
+    config.proactive,
+    config.agentUrl,
+    config.agentId,
+    isRunning,
+    markSeen,
+    // Re-open once a session exists (the first turn mints it).
+    messages.length > 0,
+  ]);
 
   const runTurn = useCallback(
     async (userText: string) => {
@@ -185,7 +264,11 @@ export function useChatRuntime(config: MessengerConfig) {
       const onMessage = (chunk: SSEChunk) => {
         const data = chunk.message;
         if (!data || typeof data === "string") return;
-        const next = reduceMessage(turn, data as ResponseMessageData);
+        const msg = data as ResponseMessageData;
+        // Claim the id here too: the session channel replays the same backlog,
+        // and without this a reconnect would re-render this turn's reply.
+        if (msg.id) markSeen(msg.id);
+        const next = reduceMessage(turn, msg);
         if (next === turn) return; // nothing changed — skip the re-render
         turn = next;
         setActivity(turn.activity);
@@ -261,7 +344,7 @@ export function useChatRuntime(config: MessengerConfig) {
         }
       }
     },
-    [config, isRunning, attachments]
+    [config, isRunning, attachments, markSeen]
   );
 
   const onNew = useCallback(
@@ -323,11 +406,17 @@ export function useChatRuntime(config: MessengerConfig) {
   const reset = useCallback(() => {
     clearHistory(config.agentId);
     clearSession(config.agentId);
+    clearSeenIds(config.agentId);
+    seenIds.current = new Set();
+    setUnread(0);
     session.current = {};
     setAttachments([]);
     setSuggestions([]);
     setMessages([]);
   }, [config.agentId]);
+
+  /** Zero the unread counter (the host badges the launcher from this). */
+  const clearUnread = useCallback(() => setUnread(0), []);
 
   const hasUserMessage = messages.some((m) => m.role === "user");
 
@@ -383,6 +472,8 @@ export function useChatRuntime(config: MessengerConfig) {
       activity,
       turnError,
       retry,
+      unread,
+      clearUnread,
       reset,
       hasUserMessage,
       downloadTranscript,
@@ -398,6 +489,8 @@ export function useChatRuntime(config: MessengerConfig) {
       activity,
       turnError,
       retry,
+      unread,
+      clearUnread,
       reset,
       hasUserMessage,
       downloadTranscript,

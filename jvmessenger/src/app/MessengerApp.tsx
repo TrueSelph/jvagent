@@ -141,6 +141,8 @@ function ChatSurface({
     activity,
     turnError,
     retry,
+    unread,
+    clearUnread,
     downloadTranscript,
   } = useChatRuntime(config);
   const profile = useResolvedProfile(config);
@@ -153,6 +155,19 @@ function ChatSurface({
     clearPrefill();
     void sendText(prefill);
   }, [prefill, clearPrefill, sendText]);
+
+  // Badge the launcher for proactive messages that land while the panel is
+  // closed, and clear it the moment the visitor opens the chat.
+  const bridgeOpen = bridge.open;
+  const { notify } = bridge;
+  useEffect(() => {
+    if (bridgeOpen) {
+      if (unread) clearUnread();
+      notify(0);
+    } else if (unread) {
+      notify(unread);
+    }
+  }, [bridgeOpen, unread, clearUnread, notify]);
 
   const shellConfig = useMemo(
     () => ({

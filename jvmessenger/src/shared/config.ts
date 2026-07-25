@@ -58,6 +58,13 @@ export interface MessengerConfig {
   teaserDelay: number;
   /** Days a dismissal suppresses the teaser for (0 = only this page view). */
   teaserCooldownDays: number;
+  /**
+   * Subscribe to the persistent session channel so the agent can push messages
+   * between turns (proactive follow-ups). Off by default: it holds an open SSE
+   * connection, and note that proactive delivery requires a single-worker
+   * deployment (the response bus is process-scoped).
+   */
+  proactive: boolean;
 }
 
 /** Defaults applied when a `data-*` attribute is absent. */
@@ -78,6 +85,7 @@ export const CONFIG_DEFAULTS: Omit<MessengerConfig, "agentUrl" | "agentId"> = {
   teaser: undefined,
   teaserDelay: 4000,
   teaserCooldownDays: 7,
+  proactive: false,
 };
 
 function asInt(value: string | undefined, fallback: number): number {
@@ -153,5 +161,6 @@ export function parseConfig(
       dataset.teaserCooldownDays,
       CONFIG_DEFAULTS.teaserCooldownDays
     ),
+    proactive: asBool(dataset.proactive, CONFIG_DEFAULTS.proactive),
   };
 }

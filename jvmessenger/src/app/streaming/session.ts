@@ -94,6 +94,48 @@ export function clearHistory(agentId: string): void {
   }
 }
 
+// --- Rendered-message ids (dedup for the persistent session channel) ---
+
+/**
+ * The subscribe stream replays its backlog on every reconnect and is never
+ * drained by streaming subscribers, so the same message arrives repeatedly —
+ * and the interact stream delivers turn messages a second time. Ids of anything
+ * already rendered are persisted so a reload doesn't resurrect them.
+ */
+const MAX_SEEN_IDS = 500;
+
+function seenKey(agentId: string): string {
+  return `jvmessenger:seen:${agentId}`;
+}
+
+export function loadSeenIds(agentId: string): string[] {
+  try {
+    const raw = localStorage.getItem(seenKey(agentId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSeenIds(agentId: string, ids: Iterable<string>): void {
+  try {
+    // Keep the most recent window; older ids can't reappear in a bounded replay.
+    const trimmed = Array.from(ids).slice(-MAX_SEEN_IDS);
+    localStorage.setItem(seenKey(agentId), JSON.stringify(trimmed));
+  } catch {
+    // Storage unavailable — dedup degrades to in-memory for this page view.
+  }
+}
+
+export function clearSeenIds(agentId: string): void {
+  try {
+    localStorage.removeItem(seenKey(agentId));
+  } catch {
+    // ignore
+  }
+}
+
 // --- Consent acceptance (per agent, keyed to the disclosure text) ---
 
 function consentKey(agentId: string): string {

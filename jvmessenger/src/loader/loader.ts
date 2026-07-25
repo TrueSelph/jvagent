@@ -99,13 +99,6 @@ function boot(): void {
     onTeaserDismiss: suppressTeaser,
   });
 
-  // Show the teaser after a beat, but never over an already-open panel.
-  if (config.teaser && !teaserSuppressed()) {
-    window.setTimeout(() => {
-      if (!bridge.isOpen()) launcher.showTeaser();
-    }, config.teaserDelay);
-  }
-
   const bridge = createHostBridge({
     mount: launcher.mount,
     iframeSrc,
@@ -116,6 +109,17 @@ function boot(): void {
       if (!bridge.isOpen()) launcher.setUnread(unread);
     },
   });
+
+  // With proactive on, boot the (hidden) iframe now so the app can subscribe to
+  // the session channel and receive agent-initiated messages while closed.
+  if (config.proactive) bridge.preload();
+
+  // Show the teaser after a beat, but never over an already-open panel.
+  if (config.teaser && !teaserSuppressed()) {
+    window.setTimeout(() => {
+      if (!bridge.isOpen()) launcher.showTeaser();
+    }, config.teaserDelay);
+  }
 }
 
 if (document.readyState === "loading") {

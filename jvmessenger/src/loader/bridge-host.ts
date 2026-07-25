@@ -18,6 +18,8 @@ export interface HostBridge {
   isOpen(): boolean;
   /** Hand text typed in the launcher teaser to the app to send as turn one. */
   prefill(text: string): void;
+  /** Create the iframe hidden so the app can run before the panel is opened. */
+  preload(): void;
   destroy(): void;
 }
 
@@ -97,6 +99,14 @@ export function createHostBridge(opts: {
           envelope({ type: "init", config: opts.config }),
           opts.iframeOrigin
         );
+        // State the current visibility explicitly. The app assumes it is
+        // visible until told otherwise, which is wrong on the `preload()` path
+        // (hidden iframe, never opened) — and that would make it clear the
+        // unread badge for proactive messages the visitor hasn't seen.
+        iframe.contentWindow?.postMessage(
+          envelope({ type: "visibility", open }),
+          opts.iframeOrigin
+        );
         // The teaser can be submitted before the app has booted, so any text
         // queued by `prefill()` is flushed once the app announces itself.
         if (pendingPrefill) {
@@ -157,6 +167,16 @@ export function createHostBridge(opts: {
     );
   }
 
+  /**
+   * Create the iframe up front, kept collapsed (`display:none`), so the app can
+   * subscribe to the session channel before the visitor ever opens the panel.
+   * Costs a bundle load on every page view — callers gate it on `data-proactive`.
+   */
+  function preload(): void {
+    ensureIframe();
+    applyMode("collapsed");
+  }
+
   function prefill(text: string): void {
     ensureIframe();
     if (appReady && iframe?.contentWindow) {
@@ -175,6 +195,7 @@ export function createHostBridge(opts: {
     close,
     isOpen: () => open,
     prefill,
+    preload,
     destroy() {
       window.removeEventListener("message", onMessage);
       iframe?.remove();
