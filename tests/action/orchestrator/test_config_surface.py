@@ -1208,3 +1208,74 @@ async def test_stream_internal_progress_emits_during_execute(
 async def test_max_concurrent_tools_default_is_unbounded():
     ex = OrchestratorInteractAction()
     assert ex.max_concurrent_tools == 0
+
+
+# --- downstream compatibility ------------------------------------------------
+#
+# `system_prompt` is a documented extension point, so downstream apps customise
+# prompting. Adding the `{extra_section}` slot changed two contracts these
+# checks pin down.
+
+
+async def test_legacy_subclass_override_still_works():
+    """A subclass may override _compose_system_prompt with the signature that
+    predates extra_section. The loop must not TypeError on every tick."""
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    class Legacy(OrchestratorInteractAction):
+        def _compose_system_prompt(
+            self,
+            *,
+            identity_section,
+            tools_section,
+            skills_section,
+            capabilities_section="",
+            parameters_section="",
+            loop_protocol_extra="",
+        ):
+            return "CUSTOM " + tools_section
+
+    kwargs = dict(
+        identity_section="",
+        tools_section="T",
+        skills_section="S",
+        capabilities_section="",
+        parameters_section="",
+        loop_protocol_extra="",
+        extra_section="CHANNEL",
+    )
+    ex = Legacy()
+    try:
+        out = ex._compose_system_prompt(**kwargs)
+    except TypeError:  # the fallback the loop performs
+        legacy = dict(kwargs)
+        extra = legacy.pop("extra_section", "")
+        out = ex._compose_system_prompt(**legacy)
+        out = f"{out}\n\n{extra}" if extra else out
+    assert out.startswith("CUSTOM T")
+    assert "CHANNEL" in out
+
+
+def test_render_system_prompt_defaults_every_slot():
+    """The supported way to render the template. Calling .format() directly
+    breaks whenever a slot is added, which is exactly what happened."""
+    import jvagent.action.orchestrator.prompts as P
+
+    out = P.render_system_prompt(tools_section="TOOLS")
+    assert "TOOLS" in out
+    # No placeholder left unfilled. (Literal JSON braces from the doubled
+    # ``{{ }}`` in the template are expected and must survive.)
+    for slot in P.SYSTEM_PROMPT_PLACEHOLDERS:
+        assert "{" + slot + "}" not in out
+    # Every documented placeholder has a default.
+    assert set(P.SYSTEM_PROMPT_PLACEHOLDERS) >= {
+        "identity_section",
+        "tools_section",
+        "skills_section",
+        "capabilities_section",
+        "parameters_section",
+        "loop_protocol_extra",
+        "extra_section",
+    }

@@ -3199,17 +3199,30 @@ class OrchestratorInteractAction(
             )
             tools_section = "(listed in the message below)"
             resolved_skills = "(listed in the message below)"
-        system_prompt = self._compose_system_prompt(
-            identity_section=prompt_cache.get("identity")
+        compose_kwargs: Dict[str, Any] = {
+            "identity_section": prompt_cache.get("identity")
             or await self._render_identity(),
-            tools_section=tools_section,
-            skills_section=resolved_skills,
-            capabilities_section=capabilities_section
+            "tools_section": tools_section,
+            "skills_section": resolved_skills,
+            "capabilities_section": capabilities_section
             or prompt_cache.get("capabilities", ""),
-            parameters_section=parameters_section or prompt_cache.get("parameters", ""),
-            loop_protocol_extra=loop_protocol_extra,
-            extra_section=channel_extra,
-        )
+            "parameters_section": parameters_section
+            or prompt_cache.get("parameters", ""),
+            "loop_protocol_extra": loop_protocol_extra,
+            "extra_section": channel_extra,
+        }
+        try:
+            system_prompt = self._compose_system_prompt(**compose_kwargs)
+        except TypeError:
+            # A subclass may override _compose_system_prompt with the signature
+            # that predates ``extra_section``. Fall back to the old call and
+            # append the channel extra the way it used to be appended, rather
+            # than failing every tick of every turn.
+            legacy = dict(compose_kwargs)
+            extra = legacy.pop("extra_section", "")
+            system_prompt = self._compose_system_prompt(**legacy)
+            if extra:
+                system_prompt = f"{system_prompt}\n\n{extra}"
         if flow_note:
             note = self._fmt(
                 self.flow_in_progress_prompt,

@@ -95,6 +95,30 @@ how you reason AND what you say in any reply you write yourself):
 # Alias — stable prefix ends before dynamic per-tick tail (flow notes, finalize).
 ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
 
+
+# Placeholders the built-in system-prompt template expects. Exposed with
+# defaults so callers can render it without knowing the current set: adding a
+# slot (``extra_section`` did this) breaks any code calling
+# ``ORCHESTRATOR_SYSTEM_PROMPT.format(...)`` with a fixed kwarg list, which is
+# an easy thing to reach for. Prefer this helper.
+SYSTEM_PROMPT_PLACEHOLDERS = {
+    "identity_section": "",
+    "tools_section": "",
+    "skills_section": "",
+    "capabilities_section": "",
+    "parameters_section": "",
+    "loop_protocol_extra": "",
+    "extra_section": "",
+}
+
+
+def render_system_prompt(template: Optional[str] = None, **sections: str) -> str:
+    """Render the orchestrator system prompt, defaulting any slot not supplied."""
+    values = dict(SYSTEM_PROMPT_PLACEHOLDERS)
+    values.update({k: v for k, v in sections.items() if v is not None})
+    return (template or ORCHESTRATOR_SYSTEM_PROMPT).format(**values)
+
+
 ORCHESTRATOR_USER_PROMPT_TEMPLATE = """\
 Current user message:
 {utterance}
@@ -271,6 +295,8 @@ def render_capabilities_section(capabilities: list) -> str:
 
 __all__ = [
     "ORCHESTRATOR_SYSTEM_PROMPT",
+    "SYSTEM_PROMPT_PLACEHOLDERS",
+    "render_system_prompt",
     "ORCHESTRATOR_USER_PROMPT_TEMPLATE",
     "TOOL_USE_POLICY",
     "PLANNING_PROMPT",
