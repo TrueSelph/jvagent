@@ -9,7 +9,6 @@ import pytest
 
 from jvagent.action.ui.ui_action import UI_CATALOG, UiAction, build_envelope
 
-
 # ── build_envelope ─────────────────────────────────────────────────────────
 
 
