@@ -83,6 +83,14 @@ actions:
     context:
       enabled: true
 
+  # ── Agent-driven UI components (core) — ui__render on the tool surface ──
+  # The messenger owns the catalog (card, choices); the model only picks one and
+  # supplies data. Staged during the loop, flushed at weight 90 so the component
+  # renders *under* the reply text.
+  - action: jvagent/ui
+    context:
+      enabled: true
+
   # ── Quick-reply suggestions (core) — LLM-generated messenger chips ──
   # After each reply, asks a light model for a few short follow-up quick replies
   # and publishes them as metadata.suggestions for the messenger's agent-driven

@@ -1,0 +1,17 @@
+package:
+  name: jvagent/ui
+  author: jvagent
+  archetype: UiAction
+  version: 0.0.1
+  meta:
+    title: Agent-driven UI Components
+    description: >-
+      Publishes the model-callable ui__render tool and flushes the staged
+      component envelopes as metadata.ui, which the embeddable messenger renders
+      from its own fixed catalog (card, choices). Streaming turns only.
+    group: core
+    type: action
+  config:
+    singleton: true
+  dependencies:
+    jvagent: ~0.0.1
