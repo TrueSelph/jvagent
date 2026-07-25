@@ -34,7 +34,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
-from jvagent.tooling.tool_decorator import tool
+from jvagent.tooling.tool_decorator import collect_tools, tool
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,17 @@ def build_envelope(
         )
     if not isinstance(props, dict):
         raise ValueError("props must be an object")
+    # Reject an empty shell: without real props the component renders as its
+    # fallback text, which is indistinguishable from just replying. Naming the
+    # missing key lets the model retry correctly instead of silently degrading.
+    if comp == "choices" and not props.get("options"):
+        raise ValueError(
+            "choices requires props.options: [{label, value, description?}]"
+        )
+    if comp == "card" and not any(
+        props.get(k) for k in ("title", "body", "fields", "image")
+    ):
+        raise ValueError("card requires at least props.title, body, fields or image")
     text = (fallback or "").strip()
     if not text:
         # Without this the component is invisible on non-web channels, in the
@@ -127,6 +138,17 @@ class UiAction(InteractAction):
         default=2,
         description="Cap on components rendered in a single turn.",
     )
+
+    async def get_tools(self) -> List[Any]:
+        """Publish the decorated ``ui__render`` tool.
+
+        ``InteractAction.get_tools()`` returns nothing for an ``always_execute``
+        action — that path exists to expose *routable* IAs as intent tools, which
+        is not what this is. We need both halves: the tool on the surface, and an
+        ``execute()`` that always runs to flush. So collect the decorated methods
+        directly instead of inheriting the routing behaviour.
+        """
+        return collect_tools(self)
 
     @tool(name="ui__render")
     async def render(

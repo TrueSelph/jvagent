@@ -30,6 +30,11 @@ actions:
         - product_faq             # answer common product questions (StorefrontAction)
         - product_search          # find / compare catalog products (StorefrontAction)
       lock_active_flow: false
+      # ui__render is long-tail, so lean surfacing (ADR-0018) hides it and the
+      # model can only reach it via find_tool. Pin it so components are callable
+      # on any turn without disabling lean for everything else.
+      pinned_tools:
+        - ui__render
       # Vision (ADR-0021): a pre-loop reflex interprets images in data.image_urls
       # (e.g. an attachment from the messenger), stores the description as a
       # conversation artifact, and seeds it into the reply. Requires jvagent/vision.

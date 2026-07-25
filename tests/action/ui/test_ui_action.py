@@ -23,25 +23,46 @@ def test_builds_a_valid_envelope():
 
 
 def test_component_name_is_normalized():
-    assert build_envelope(" Card ", {}, "x")["component"] == "card"
+    assert build_envelope(" Card ", {"title": "T"}, "x")["component"] == "card"
 
 
 @pytest.mark.parametrize("comp", ["hologram", "", "cardd"])
 def test_rejects_components_outside_the_catalog(comp):
     with pytest.raises(ValueError, match="unknown component"):
-        build_envelope(comp, {}, "x")
+        build_envelope(comp, {"title": "T"}, "x")
 
 
 def test_every_catalog_entry_is_accepted():
     for comp in UI_CATALOG:
-        assert build_envelope(comp, {}, "x")["component"] == comp
+        assert (
+            build_envelope(comp, {"title": "T", "options": [{"label": "a"}]}, "x")[
+                "component"
+            ]
+            == comp
+        )
 
 
 def test_fallback_is_required():
     # Without it the component is invisible off-web, in transcripts, and to
     # screen readers.
     with pytest.raises(ValueError, match="fallback"):
-        build_envelope("card", {}, "   ")
+        build_envelope("card", {"title": "T"}, "   ")
+
+
+def test_rejects_an_empty_choices_shell():
+    # Empty props render as fallback text, which is no better than replying.
+    with pytest.raises(ValueError, match="options"):
+        build_envelope("choices", {}, "x")
+
+
+def test_rejects_a_card_with_no_content():
+    with pytest.raises(ValueError, match="title"):
+        build_envelope("card", {}, "x")
+
+
+def test_accepts_a_card_with_any_one_content_key():
+    for key in ("title", "body", "fields", "image"):
+        assert build_envelope("card", {key: "v"}, "x")["component"] == "card"
 
 
 def test_rejects_non_object_props():
@@ -55,8 +76,8 @@ def test_rejects_an_oversized_payload():
 
 
 def test_ids_are_unique():
-    a = build_envelope("card", {}, "x")["id"]
-    b = build_envelope("card", {}, "x")["id"]
+    a = build_envelope("card", {"title": "T"}, "x")["id"]
+    b = build_envelope("card", {"title": "T"}, "x")["id"]
     assert a != b
 
 
@@ -120,7 +141,7 @@ async def test_flush_skips_non_streaming_channels(monkeypatch):
         called["n"] += 1
 
     monkeypatch.setattr(UiAction, "publish", fake_publish)
-    env = build_envelope("card", {}, "x")
+    env = build_envelope("card", {"title": "T"}, "x")
     await _flusher().execute(_Visitor(stream=False, staged=[env]))
     assert called["n"] == 0
 
@@ -131,7 +152,7 @@ async def test_flush_clears_the_queue_so_it_cannot_double_publish(monkeypatch):
         return None
 
     monkeypatch.setattr(UiAction, "publish", fake_publish)
-    visitor = _Visitor(staged=[build_envelope("card", {}, "x")])
+    visitor = _Visitor(staged=[build_envelope("card", {"title": "T"}, "x")])
     action = _flusher()
     await action.execute(visitor)
     assert getattr(visitor, "_jvagent_pending_ui") == []
