@@ -152,6 +152,26 @@ visible in the `model_call` event, and `estimate_cost` prices cached input at it
 real rate rather than the full input rate — OpenAI reads at ×0.5, Anthropic reads
 at ×0.1 with writes at a ×1.25 premium. Unknown providers claim no discount.
 
+**Egress adds a second model call on the compose paths.** `reply` normally takes
+ReplyAction's literal fast path — zero extra model calls. But the four
+`_send_reply(..., compose=True)` sites (`drain_reply`, `resume_reply`,
+`directive_reply`, and the budget-exhausted drain) go straight to
+`ReplyAction.respond()`, which is one more round-trip: measured at ~550 input
+tokens on the example agent. The tokens are minor; the cost is a *serial*
+round-trip sitting in front of a user-facing reply. It is not gratuitous — a
+directive may carry model-facing guidance (after `U+2063`) that must be rendered
+into the agent's voice rather than leaked verbatim. But those sites call
+`respond()` unconditionally, without checking whether guidance is actually
+present, so a bare relay directive with no shaping pays for a compose that would
+render it unchanged. Routing them through `gather()` (whose N=1 literal path
+already handles exactly that case) would skip the call — untested here, since it
+changes user-facing reply text and wants a live check.
+
+**Regression gate.** `scripts/bench_orchestrator.py --assert-max-tokens N
+--assert-min-cache-pct P` exits non-zero past either budget, and runs on every PR
+in `test-jvagent.yaml`. Counts are deterministic, so these are gates rather than
+thresholds.
+
 > **Prompt templates are persisted.** Every sub-prompt is an `attribute` default,
 > so an app graph bootstrapped against an older jvagent keeps *that* release's
 > prompts. Prompt improvements reach an existing deployment only via
