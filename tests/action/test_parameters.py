@@ -209,3 +209,45 @@ def test_vet_egress_drops_leak_line_but_keeps_surrounding_structure():
     assert "AI" not in out
     # the two surviving lines stay on separate lines
     assert "itinerary.\nEnjoy" in out
+
+
+# --- one greeting per message -----------------------------------------------
+#
+# A first-turn reply is composed from two sources that both want to open it: the
+# IntroInteractAction parameter ("introduce yourself") and the orchestrator's
+# reply directive, which often already starts with "Hi!". The compose model
+# satisfies both. Prompt wording could not settle it -- tightening it made the
+# model drop the introduction instead -- so the rule is enforced here.
+
+
+def test_second_greeting_is_collapsed_but_its_content_survives():
+    out = vet_egress("Hi! I'm Acme Support, I help with orders. Hi! How can I help?")
+    assert out == "Hi! I'm Acme Support, I help with orders. How can I help?"
+
+
+def test_first_greeting_is_untouched():
+    assert vet_egress("Hi! How can I help?") == "Hi! How can I help?"
+
+
+def test_varied_greeting_forms_are_collapsed():
+    out = vet_egress("Hi there — I help with billing. Hey! What do you need?")
+    assert out == "Hi there — I help with billing. What do you need?"
+    out = vet_egress("Hello, I'm Ada and I help with returns. Good morning! Ready?")
+    assert out == "Hello, I'm Ada and I help with returns. Ready?"
+
+
+def test_a_greeting_word_mid_sentence_is_not_touched():
+    """Only a sentence-leading greeting counts; the scrub must not maul prose."""
+    text = "The answer is 42. Hi is a greeting word used in English."
+    assert vet_egress(text) == text
+
+
+def test_a_sentence_that_is_only_a_repeat_greeting_is_dropped():
+    out = vet_egress("Hi! I'm Ada, I help with orders. Hello!")
+    assert "Hello" not in out
+    assert "I'm Ada" in out
+
+
+def test_no_greeting_anywhere_is_a_noop():
+    text = "Your order ships Tuesday. Tracking follows by email."
+    assert vet_egress(text) == text

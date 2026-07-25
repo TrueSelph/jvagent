@@ -97,8 +97,14 @@ export function Thread(props: ThreadServices) {
               components={{ UserMessage, AssistantMessage }}
             />
 
+            {/* Clearance for the sticky composer dock. The dock GROWS during a
+                run — the activity strip, suggestions and any error banner all
+                mount into it — and because it is sticky it then overlays the
+                message that was just laid out above it, so the newest turn sits
+                hidden behind the composer while the reply streams. A 1rem
+                spacer was not enough to clear a grown dock. */}
             <ThreadPrimitive.If empty={false}>
-              <div className="min-h-4 flex-grow" />
+              <div className="min-h-16 flex-grow" />
             </ThreadPrimitive.If>
 
             <div className="msgr-composer-dock sticky bottom-0 mt-3 flex w-full flex-col items-stretch gap-2 pb-3">

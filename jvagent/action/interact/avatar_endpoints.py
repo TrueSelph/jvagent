@@ -53,7 +53,15 @@ async def agent_profile_endpoint(request: Request, agent_id: str) -> Any:
     description: Optional[str] = None
     if agent is not None:
         name = _first_str(agent, "alias", "name")
-        description = _first_str(agent, "description")
+        # ``role`` before ``description``: this string is shown to end customers
+        # under the agent's name in an embedded chat header. ``role`` is the
+        # customer-facing half of the agent's identity (ADR-0014 — "You are
+        # {alias}, {role}"), whereas ``description`` is the operator's own note
+        # about the agent and is routinely architectural. The example agent's
+        # reads "Orchestrator-pattern agent. One orchestrator (-200) locks onto
+        # an active flow when present…", which is what a visitor to a customer
+        # site actually saw before this.
+        description = _first_str(agent, "role", "description")
         action = await resolve_agent_action(agent, "AvatarAction")
         if action is not None:
             try:

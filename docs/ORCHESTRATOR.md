@@ -202,10 +202,22 @@ opt-in rather than flipped:
 in `test-jvagent.yaml`. Counts are deterministic, so these are gates rather than
 thresholds.
 
-> **Prompt templates are persisted.** Every sub-prompt is an `attribute` default,
-> so an app graph bootstrapped against an older jvagent keeps *that* release's
-> prompts. Prompt improvements reach an existing deployment only via
-> `jvagent <app> --update --source`.
+> **Persisted config outruns your edits.** Every `attribute` — prompt templates,
+> `pinned_tools`, `channel_overrides`, `system_prompt_extra`, all of it — is
+> stored on the action node at bootstrap. An app graph keeps the values it was
+> bootstrapped with, so **editing `agent.yaml` changes nothing until you sync**:
+>
+> ```bash
+> jvagent <app> --update --source
+> ```
+>
+> This is easy to misread as a product bug. Live-testing the channel-gating work
+> produced an agent that called `whatsapp__send_flow` three times on a *web* turn
+> and dead-ended — because the running server still held the pre-edit config
+> (globally pinned WhatsApp tools and a `system_prompt_extra` that said
+> "IMMEDIATELY call whatsapp__send_flow"). The same request routed correctly the
+> moment the graph was synced. `scripts/bench_orchestrator.py` defaults to
+> `--update-mode source` for exactly this reason.
 
 ## Model floor (don't run the orchestrator on a weak model)
 

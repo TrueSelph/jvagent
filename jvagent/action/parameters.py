@@ -306,6 +306,55 @@ def _is_closer(sentence: str) -> bool:
     return any(p.search(sentence) for p in _CLOSER_PATTERNS)
 
 
+# A greeting opening a sentence: "Hi!", "Hello,", "Hey there —", "Good morning".
+_GREETING_RE = re.compile(
+    r"^\s*(?:hi|hello|hey)(?:\s+there)?\b[\s,!.\u2013\u2014-]*"
+    r"|^\s*good\s+(?:morning|afternoon|evening)\b[\s,!.\u2013\u2014-]*",
+    re.I,
+)
+
+
+def _collapse_repeat_greeting(sentences: list) -> list:
+    """Drop a second greeting when an earlier sentence already greeted.
+
+    First-turn replies are composed from two sources that both want to open the
+    message: the IntroInteractAction parameter ("introduce yourself") and the
+    orchestrator's own reply directive, which frequently already starts with
+    "Hi!". The compose model satisfies both and the visitor is greeted twice —
+    "Hi! I'm Acme Support, I help with orders. Hi! How can I help today?".
+
+    Two rounds of prompt wording did not fix this reliably: tightening it made
+    the model drop the introduction instead. The conflict is structural (a
+    MANDATORY directive versus an advisory shaping parameter), so it is settled
+    here, deterministically, the same way the leak and closer rules are.
+
+    Only the greeting *prefix* is removed, never the sentence — the rest carries
+    the actual content ("How can I help today?"). Conservative by construction:
+    it does nothing unless some earlier sentence already greeted.
+    """
+    out: list = []
+    greeted = False
+    for sentence in sentences:
+        if not sentence.strip():
+            out.append(sentence)
+            continue
+        match = _GREETING_RE.match(sentence)
+        if match and match.group(0).strip():
+            if greeted:
+                remainder = sentence[match.end() :]
+                if remainder.strip():
+                    # Re-capitalize so the sentence still reads as one.
+                    remainder = remainder.lstrip()
+                    leading = sentence[: len(sentence) - len(sentence.lstrip())]
+                    out.append(leading + remainder[0].upper() + remainder[1:])
+                    continue
+                # Nothing but a greeting — drop it entirely.
+                continue
+            greeted = True
+        out.append(sentence)
+    return out
+
+
 def vet_egress(text: str) -> str:
     """Scrub a reply before it reaches the user: drop AI/model/provider/​cutoff
     leak sentences (anywhere) and trailing invitation closers.
@@ -329,6 +378,9 @@ def vet_egress(text: str) -> str:
     # Pass 2: peel trailing generic closers (keep at least one sentence).
     while len(kept) > 1 and kept[-1].strip() and _is_closer(kept[-1]):
         kept.pop()
+
+    # Pass 3: one greeting per message.
+    kept = _collapse_repeat_greeting(kept)
 
     # No whitespace normalization. Downstream renderers own their spacing
     # (markdown→HTML collapses runs of spaces/blank lines; plain-text channels

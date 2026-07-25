@@ -87,3 +87,18 @@ async def test_healthcheck_requires_directive():
     action.directive = ""
     result = await action.healthcheck()
     assert isinstance(result, dict) and result.get("status") is False
+
+
+# --- greet exactly once -----------------------------------------------------
+
+
+def test_intro_directive_still_asks_for_the_introduction():
+    """Two rounds of tightening this wording to stop the double greeting made the
+    model drop the introduction instead (3 of 4 live runs). The wording stays as
+    the version that reliably introduces; the duplicate greeting is settled
+    deterministically in vet_egress instead."""
+    from jvagent.action.intro.intro_interact_action import IntroInteractAction
+
+    directive = IntroInteractAction().directive.lower()
+    assert "introducing yourself by name" in directive
+    assert "knowledge cutoff" in directive
