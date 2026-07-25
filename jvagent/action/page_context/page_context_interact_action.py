@@ -110,17 +110,25 @@ class PageContextInteractAction(InteractAction):
             if not line:
                 await visitor.unrecord_action_execution()
                 return
-            # `response` is the shaping-parameter key the responder consumes
-            # (same as IntroInteractAction) — any other key is silently ignored.
-            # A parameter (HOW), not a directive (WHAT): it colours the reply
-            # without mandating a separate section.
+            # Parameters are *conditional response rules* — the renderer emits
+            # them as "When <condition>: <rule>" (see render_parameters in
+            # jvagent/action/parameters.py). Supplying the context as a bare
+            # unconditional blob reads as a style note and gets ignored; scoping
+            # it to the case where it matters is both idiomatic and keeps this a
+            # HOW (parameter), never a WHAT (directive).
+            # Scope matters. Response-scoped params shape the *responder*, and
+            # the Orchestrator's literal `reply` path can skip that compose
+            # entirely — so the model never sees them while reasoning.
+            # Orchestration scope puts the context in the agentic loop prompt,
+            # which is where the model actually decides what to say.
             await visitor.add_parameter(
                 {
-                    "response": (
-                        f"Context about the visitor's current session: {line} "
-                        "Use it only if it is relevant to what they asked; do "
-                        "not recite it back verbatim."
-                    )
+                    "scope": "orchestration",
+                    "condition": (
+                        "the visitor refers to the page they are on, where they "
+                        "are, or what they are looking at"
+                    ),
+                    "response": line,
                 }
             )
         except Exception as exc:  # never break the turn over context

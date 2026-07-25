@@ -99,11 +99,16 @@ async def test_execute_adds_a_context_parameter():
     visitor = _Visitor({"page_context": {"title": "Pricing", "path": "/pricing"}})
     await action.execute(visitor)
     assert len(visitor.parameters) == 1
-    # Must use the `response` key — the responder ignores anything else.
     param = visitor.parameters[0]
-    assert set(param) == {"response"}
-    assert 'The visitor is currently on the page "Pricing" (/pricing).' in (
-        param["response"]
+    # Parameters are conditional response rules — an unconditional blob reads as
+    # a style note and is ignored (render_parameters emits "When <cond>: <rule>").
+    assert set(param) == {"scope", "condition", "response"}
+    # Orchestration scope: response-scoped params never reach the model
+    # while it reasons, and the literal `reply` path skips compose.
+    assert param["scope"] == "orchestration"
+    assert param["condition"]
+    assert param["response"] == (
+        'The visitor is currently on the page "Pricing" (/pricing).'
     )
 
 
