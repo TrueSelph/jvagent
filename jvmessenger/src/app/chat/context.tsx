@@ -7,6 +7,8 @@ import type { MessengerConfig } from "../../shared/config";
 export interface ChatServices {
   config: MessengerConfig;
   getToken: () => string | undefined;
+  /** Send a turn — used by agent-rendered component actions. */
+  sendText: (text: string) => void;
 }
 
 const Ctx = createContext<ChatServices | null>(null);

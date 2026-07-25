@@ -15,7 +15,13 @@
  *   list ("Searching products…") the UI can show even when reasoning is masked.
  */
 
-import { extractSuggestions, type MessageAction, type ResponseMessageData } from "./types";
+import {
+  extractSuggestions,
+  extractUiComponents,
+  type MessageAction,
+  type ResponseMessageData,
+  type UiEnvelope,
+} from "./types";
 
 /** One visible chunk of the answer, keyed by the server's `segment_id`. */
 export interface AnswerSegment {
@@ -36,6 +42,8 @@ export interface TurnState {
   reasoning: string;
   activity: ActivityEntry[];
   suggestions: MessageAction[];
+  /** Agent-rendered components for this turn, in arrival order. */
+  ui: UiEnvelope[];
   /** Set when the turn failed; rendered as a distinct part, never as answer text. */
   error?: string;
 }
@@ -44,7 +52,7 @@ export interface TurnState {
 const DEFAULT_SEGMENT = "_";
 
 export function emptyTurn(): TurnState {
-  return { segments: [], reasoning: "", activity: [], suggestions: [] };
+  return { segments: [], reasoning: "", activity: [], suggestions: [], ui: [] };
 }
 
 /** "storefront__search_products" → "search products" (for the activity label). */
@@ -160,6 +168,15 @@ export function reduceMessage(
   // Suggestions ride on any message; the last non-empty set for the turn wins.
   const suggestions = extractSuggestions(msg.metadata);
   if (suggestions.length) next = { ...next, suggestions };
+
+  // UI components accumulate (deduped by id) — unlike suggestions they are not
+  // replaced, since each is a distinct thing the agent chose to show.
+  const ui = extractUiComponents(msg.metadata);
+  if (ui.length) {
+    const known = new Set(next.ui.map((e) => e.id));
+    const fresh = ui.filter((e) => !known.has(e.id));
+    if (fresh.length) next = { ...next, ui: [...next.ui, ...fresh] };
+  }
 
   if (msg.category === "thought") return reduceThought(next, msg);
 

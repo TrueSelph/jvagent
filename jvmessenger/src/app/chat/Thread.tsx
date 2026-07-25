@@ -38,6 +38,7 @@ import { ChatServicesProvider, useChatServices } from "./context";
 import { MicButton } from "./MicButton";
 import { SpeakButton } from "./SpeakButton";
 import { AttachmentButton, AttachmentChips } from "./AttachmentBar";
+import { uiPartComponents } from "./UiComponents";
 
 export interface ThreadServices {
   config: MessengerConfig;
@@ -73,7 +74,7 @@ export function Thread(props: ThreadServices) {
   );
 
   return (
-    <ChatServicesProvider value={{ config, getToken }}>
+    <ChatServicesProvider value={{ config, getToken, sendText }}>
       <ThreadPrimitive.Root
         className="aui-root box-border flex h-full flex-col overflow-hidden bg-background"
         style={{ ["--thread-max-width" as string]: "100%" }}
@@ -401,12 +402,17 @@ const UserMessage: FC = () => (
 );
 
 const AssistantMessage: FC = () => {
-  const { config } = useChatServices();
+  const { config, sendText } = useChatServices();
   return (
     <MessagePrimitive.Root className="animate-in fade-in slide-in-from-bottom-1 relative flex w-full flex-col py-2">
       <div className="text-foreground max-w-full text-sm leading-7 break-words">
         <MessagePrimitive.Parts
-          components={{ Text: MarkdownText, Reasoning: ReasoningPart }}
+          components={{
+            Text: MarkdownText,
+            Reasoning: ReasoningPart,
+            // Agent-driven components; unknown ones fall back to their text.
+            tools: uiPartComponents(sendText),
+          }}
         />
       </div>
       <div className="text-muted-foreground mt-1 flex min-h-8 items-center gap-0.5">

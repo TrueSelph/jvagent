@@ -99,7 +99,22 @@ function assistantParts(
     showReasoning && turn.reasoning.trim()
       ? [{ type: "reasoning" as const, text: turn.reasoning }]
       : [];
-  return [...reason, { type: "text" as const, text: answerText(turn) }];
+  // Components render *after* the text — the server flushes them post-reply, so
+  // this is the reading order the agent intended.
+  const components = turn.ui.map((env) => ({
+    type: "tool-call" as const,
+    toolCallId: env.id,
+    toolName: `ui_${env.component}`,
+    // The envelope is plain JSON by construction; assistant-ui types `args` as
+    // ReadonlyJSONObject, which our generic Record shape can't prove.
+    args: env as unknown as Readonly<Record<string, never>>,
+    argsText: "",
+  }));
+  return [
+    ...reason,
+    { type: "text" as const, text: answerText(turn) },
+    ...components,
+  ] as ThreadMessageLike["content"];
 }
 
 export function useChatRuntime(
@@ -455,6 +470,11 @@ export function useChatRuntime(
           if (p.type === "text") return p.text ?? "";
           if (p.type === "image") return "[image]";
           if (p.type === "file") return `[file: ${p.filename ?? "attachment"}]`;
+          if (p.type === "tool-call") {
+            // Components carry their own plain-text rendering.
+            const env = (p as { args?: { fallback?: string } }).args;
+            return env?.fallback ? `[${env.fallback}]` : "";
+          }
           return "";
         })
         .filter(Boolean)
