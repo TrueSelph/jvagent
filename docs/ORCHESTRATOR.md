@@ -104,8 +104,8 @@ Two further knobs/notes:
 ## Prompt cost (what a turn actually bills)
 
 A turn is N model calls over the same assembled prompt, so the executive's cost
-is dominated by what gets *resent* rather than by any single call. Three
-properties govern it, and `scripts/bench_orchestrator.py` measures all three
+is dominated by what gets *resent* rather than by any single call. Four
+properties govern it, and `scripts/bench_orchestrator.py` measures them
 against a real app graph without needing an API key:
 
 **1. Section order is a cost decision.** Providers discount the request *prefix*
@@ -116,23 +116,41 @@ in. So the built-in system prompt puts every invariant section first — identit
 loop protocol, gated protocol extras, operating rules, `system_prompt_extra` —
 and the volatile listings last. Measured on the example agent, the reverse order
 left only 20% of a 3.4k-token system prompt reusable after the first skill
-activation; this order keeps ~54%, which is the ceiling while the listings
-themselves are ~46% of the prompt.
+activation; this order keeps ~54% of the system prompt, which is the ceiling
+while the listings themselves are ~46% of it.
 
 A custom `system_prompt` override controls its own ordering. Overrides that
 include the `{extra_section}` placeholder get `system_prompt_extra` (and the
 channel-scoped extra) placed there; overrides without it keep the legacy
 append-at-the-end behaviour.
 
+The request is `[system, *history, user]`, and a provider caches the *request*
+prefix — so conversation history is part of the cacheable span and is re-priced
+along with everything else downstream of the first changed byte. Counting it,
+the same turn reuses **44%** at `history_limit: 10`, not 54%. The gap is
+structural: the volatile listings close the system message, so history sits
+behind them. Moving those listings into a trailing message would pull history
+into the cacheable prefix (1,476 → 2,126 reusable tokens) — not done, because it
+takes the tool list out of the system role, which is a behavioural change on
+weaker models and needs its own measurement.
+
 **2. Observation replay is the quadratic term.** See the observation budget under
 [extended config](#extended-config-surface-adr-0015).
 
-**3. Anthropic caching is opt-in.** OpenAI caches long prefixes automatically;
-Anthropic caches only up to a `cache_control` marker. `AnthropicLanguageModelAction`
-sets one at the end of the system prompt by default (`prompt_caching`, skipped
-below `prompt_cache_min_chars` where the provider wouldn't cache anyway), and
-folds `cache_read_input_tokens` / `cache_creation_input_tokens` into the usage
-metrics so hit rate is visible in the `model_call` event.
+**3. History is charged on every tick.** It is resolved once per turn and resent
+with each model call, so `history_limit` is a per-tick multiplier, not a one-off:
+at the example agent's `10` it is ~650 tokens/tick, +23% on a 5-tick turn.
+`include_history_events` adds the `[EVENT]` lines on top. Bench a realistic turn
+with `--history N --history-events`.
+
+**4. Cache accounting.** OpenAI caches long prefixes automatically and reports
+hits in `usage.prompt_tokens_details.cached_tokens`; Anthropic caches only up to
+a `cache_control` marker, which `AnthropicLanguageModelAction` sets at the end of
+the system prompt by default (`prompt_caching`, skipped below
+`prompt_cache_min_chars`). Both surface their counters into usage, so hit rate is
+visible in the `model_call` event, and `estimate_cost` prices cached input at its
+real rate rather than the full input rate — OpenAI reads at ×0.5, Anthropic reads
+at ×0.1 with writes at a ×1.25 premium. Unknown providers claim no discount.
 
 > **Prompt templates are persisted.** Every sub-prompt is an `attribute` default,
 > so an app graph bootstrapped against an older jvagent keeps *that* release's
