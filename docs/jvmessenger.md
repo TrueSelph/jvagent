@@ -64,6 +64,14 @@ on the loader src.
 | `attachments` | `false` | Enable file uploads. |
 | `voice` | `false` | Enable mic (STT — real-time when supported, batch fallback) + read-aloud (TTS). |
 | `fullscreen` | `true` | Allow expanding to a centered fullscreen view. |
+| `sound` | `true` | Subtle chime when an assistant message arrives (synthesized, no asset). |
+| `teaser` | — | Greeting shown in the launcher teaser card, with an inline mini-composer, **before** the panel is opened. Empty disables the teaser. |
+| `teaser-delay` | `4000` | Milliseconds before the `delay` trigger fires. |
+| `teaser-cooldown-days` | `7` | How long a dismissal suppresses the teaser (per host origin). `0` = this page view only. |
+| `teaser-triggers` | `delay` | JSON array (or CSV) of `delay` / `scroll` / `exit` / `idle`. First match wins, once per page view. |
+| `teaser-scroll-percent` | `55` | Scroll depth (0-100) that fires the `scroll` trigger. |
+| `page-context` | `true` | Send host-page context (path, title, referrer origin, dwell, scroll depth, repeat visit) to the agent. See [Page context](#page-context). |
+| `proactive` | `false` | Subscribe to the persistent session channel so the agent can push messages between turns. See [Proactive messages](#proactive-messages) — **read the deployment caveat first**. |
 
 ¹ When `avatar` / `title` / `description` are not set, the messenger fetches the
 agent's public profile (`GET /agents/{id}/profile`) and uses its avatar (from a
@@ -127,6 +135,113 @@ to supply personal/contact data (e.g. "Share my email") — a tapped chip sends
 its label verbatim and can't carry that data. The leadgen reference agent
 enables it. Any action can alternatively attach `metadata.suggestions` /
 `metadata.actions` to its own published message.
+
+## Launcher teaser
+
+When `teaser` is set, the launcher shows a labelled pill, a dismissible greeting
+card, and an **inline mini-composer** — all rendered in the Shadow-DOM launcher,
+so they work before the chat iframe exists. Text typed there opens the panel and
+is sent as the first turn.
+
+Which trigger reveals it is controlled by `teaser-triggers`:
+
+| Trigger | Fires when |
+|---|---|
+| `delay` | `teaser-delay` ms have passed |
+| `scroll` | the visitor scrolls past `teaser-scroll-percent` |
+| `exit` | the pointer leaves through the top of the viewport (exit intent; no-op on touch) |
+| `idle` | as `delay`, for embeds that only want dwell-based engagement |
+
+First match wins, once per page view. It never fires while the visitor is typing
+in one of the host page's own form fields, never covers an already-open panel,
+and a dismissal is remembered for `teaser-cooldown-days` on the host origin.
+Entrance and attention animations are disabled under `prefers-reduced-motion`.
+
+## Page context
+
+With `page-context` on (the default), the loader — which runs in the host page —
+reports where the visitor actually is, and the app forwards it on each turn as
+`data.page_context`:
+
+```jsonc
+{ "origin": "https://acme.com", "path": "/pricing", "title": "Pricing",
+  "referrer": "https://google.com",        // origin only
+  "secondsOnPage": 95, "scrollDepth": 80,
+  "visitCount": 3, "returning": true }
+```
+
+**Privacy:** query strings and hashes are deliberately dropped — they routinely
+carry emails, tokens and order ids — and the referrer is reduced to its origin.
+
+`visitor.data` is never surfaced to the model on its own, so the core
+[`jvagent/page_context`](../jvagent/action/page_context/) action renders this as
+one factual line and contributes it as an **orchestration-scoped** parameter.
+That scope matters: response-scoped parameters shape the responder, and the
+Orchestrator's literal `reply` path can skip that compose entirely, so the model
+would never see them while reasoning. Enable it on the agent:
+
+```yaml
+- action: jvagent/page_context
+  context:
+    enabled: true
+```
+
+The action states facts only — it never suggests a next step, which would be
+turn-prep steering (`docs/thin-harness.md` invariant 3).
+
+## Proactive messages
+
+With `proactive` on, the app subscribes to
+`POST /agents/{id}/reply/subscribe?stream=true` (the same Mode B session token it
+already holds) so the agent can speak between turns — `Agent.send_proactive_message`
+or a `TaskMonitor` follow-up. Messages arriving while the panel is closed badge
+the launcher.
+
+**Off by default, for two reasons:**
+
+1. It creates the chat iframe hidden at boot so the app can subscribe before the
+   panel is ever opened — that loads the bundle on every page view.
+2. **Delivery requires a single-worker deployment.** `ResponseBus` is
+   process-scoped, so a proactive send in worker A is invisible to a subscriber
+   on worker B and is silently dropped. **Sticky sessions do not fix this** — the
+   publisher is a background scheduler, not the client. Run proactive-capable
+   deployments with `--workers 1`. The durable fix (a DB-backed catch-up poll) is
+   not built.
+
+The client dedups on server message id (persisted), because the subscribe
+backlog replays on every reconnect and is never drained by streaming
+subscribers; it also suspends the channel during a turn, since one bus feeds both
+transports.
+
+## Agent-driven UI components
+
+The messenger owns a fixed component catalog; the agent names a component and
+supplies data on `metadata.ui`. A model can never inject markup or layout — only
+fill in a shape the frontend defined.
+
+```jsonc
+"metadata": {
+  "ui": {
+    "v": 1,
+    "component": "card",              // card | choices
+    "id": "ui_ord1042",               // stable id (render dedup)
+    "fallback": "Order #1042 — shipped, arrives Fri Aug 1.",
+    "props": { "title": "Order #1042", "subtitle": "Shipped",
+               "fields": [{ "label": "Carrier", "value": "DHL" }],
+               "actions": [{ "label": "Track", "kind": "link",
+                             "href": "https://…" }] }
+  }
+}
+```
+
+`fallback` is required in practice: it renders on version skew, an unknown
+component, or a malformed payload, and it is what appears in the downloaded
+transcript. Malformed entries are dropped rather than thrown. Link `href`s are
+allowlisted to `https`/`mailto`/`tel`. `choices` sends the tapped label verbatim,
+the same contract as the suggestion chips.
+
+> **Status:** rendering is implemented; **no server-side emitter ships yet**, so
+> nothing populates `metadata.ui` today. Any action can attach it manually.
 
 ## Serving
 
