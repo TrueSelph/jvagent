@@ -29,6 +29,7 @@ import {
 import type { MessengerConfig } from "../../shared/config";
 import type { UploadedAttachment } from "../streaming/uploadClient";
 import type { MessageAction } from "../streaming/types";
+import type { ActivityEntry } from "../streaming/reducer";
 import { acceptConsent, hasAcceptedConsent } from "../streaming/session";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -37,6 +38,7 @@ import { ChatServicesProvider, useChatServices } from "./context";
 import { MicButton } from "./MicButton";
 import { SpeakButton } from "./SpeakButton";
 import { AttachmentButton, AttachmentChips } from "./AttachmentBar";
+import { uiPartComponents } from "./UiComponents";
 
 export interface ThreadServices {
   config: MessengerConfig;
@@ -46,6 +48,11 @@ export interface ThreadServices {
   addAttachment: (a: UploadedAttachment) => void;
   removeAttachment: (url: string) => void;
   suggestions: MessageAction[];
+  /** Live tool/status progress for the in-flight turn. */
+  activity: ActivityEntry[];
+  /** Ephemeral failure banner for the last turn (never part of history). */
+  turnError: string | null;
+  retry: () => void;
 }
 
 export function Thread(props: ThreadServices) {
@@ -57,6 +64,9 @@ export function Thread(props: ThreadServices) {
     addAttachment,
     removeAttachment,
     suggestions,
+    activity,
+    turnError,
+    retry,
   } = props;
 
   const [accepted, setAccepted] = useState(
@@ -64,7 +74,7 @@ export function Thread(props: ThreadServices) {
   );
 
   return (
-    <ChatServicesProvider value={{ config, getToken }}>
+    <ChatServicesProvider value={{ config, getToken, sendText }}>
       <ThreadPrimitive.Root
         className="aui-root box-border flex h-full flex-col overflow-hidden bg-background"
         style={{ ["--thread-max-width" as string]: "100%" }}
@@ -93,6 +103,10 @@ export function Thread(props: ThreadServices) {
 
             <div className="msgr-composer-dock sticky bottom-0 mt-3 flex w-full flex-col items-stretch gap-2 pb-3">
               <ThreadScrollToBottom />
+              <ThreadPrimitive.If running>
+                <ActivityStrip items={activity} />
+              </ThreadPrimitive.If>
+              {turnError && <ErrorBanner message={turnError} onRetry={retry} />}
               {suggestions.length > 0 && (
                 <Suggestions items={suggestions} onPick={sendText} />
               )}
@@ -166,6 +180,51 @@ const Suggestions: FC<{
         {s.label}
       </button>
     ))}
+  </div>
+);
+
+/**
+ * Live progress for the in-flight turn, derived from `thought_type` rows the
+ * client previously flattened and discarded. Visible even when reasoning is
+ * masked — it shows *that* the agent is working, never the private content.
+ */
+const ActivityStrip: FC<{ items: ActivityEntry[] }> = ({ items }) => {
+  // Show the newest still-running step; fall back to the last known step.
+  const current = [...items].reverse().find((a) => a.status === "running") ?? items.at(-1);
+  if (!current) return null;
+  return (
+    <div className="text-muted-foreground animate-in fade-in slide-in-from-bottom-1 flex items-center gap-2 px-1 text-xs">
+      <span className="relative flex size-1.5 shrink-0">
+        <span className="bg-muted-foreground/60 absolute inline-flex size-full animate-ping rounded-full" />
+        <span className="bg-muted-foreground relative inline-flex size-1.5 rounded-full" />
+      </span>
+      <span className="truncate">
+        {current.status === "error" ? "Something went wrong" : `${current.label}…`}
+      </span>
+    </div>
+  );
+};
+
+/**
+ * Failed-turn banner. Errors are deliberately NOT assistant message content —
+ * otherwise they persist into history and get read aloud by TTS.
+ */
+const ErrorBanner: FC<{ message: string; onRetry: () => void }> = ({
+  message,
+  onRetry,
+}) => (
+  <div
+    role="alert"
+    className="border-destructive/30 bg-destructive/10 text-foreground animate-in fade-in slide-in-from-bottom-1 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs"
+  >
+    <span className="min-w-0 truncate">{message}</span>
+    <button
+      type="button"
+      onClick={onRetry}
+      className="hover:bg-destructive/15 shrink-0 rounded-md px-2 py-1 font-medium underline-offset-2 hover:underline"
+    >
+      Retry
+    </button>
   </div>
 );
 
@@ -343,12 +402,17 @@ const UserMessage: FC = () => (
 );
 
 const AssistantMessage: FC = () => {
-  const { config } = useChatServices();
+  const { config, sendText } = useChatServices();
   return (
     <MessagePrimitive.Root className="animate-in fade-in slide-in-from-bottom-1 relative flex w-full flex-col py-2">
       <div className="text-foreground max-w-full text-sm leading-7 break-words">
         <MessagePrimitive.Parts
-          components={{ Text: MarkdownText, Reasoning: ReasoningPart }}
+          components={{
+            Text: MarkdownText,
+            Reasoning: ReasoningPart,
+            // Agent-driven components; unknown ones fall back to their text.
+            tools: uiPartComponents(sendText),
+          }}
         />
       </div>
       <div className="text-muted-foreground mt-1 flex min-h-8 items-center gap-0.5">

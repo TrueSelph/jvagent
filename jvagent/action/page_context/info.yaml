@@ -1,0 +1,28 @@
+package:
+  name: jvagent/page_context
+  author: jvagent
+  archetype: PageContextInteractAction
+  version: 0.0.1
+  meta:
+    title: Host Page Context
+    description: >-
+      Surfaces the embeddable messenger's host-page context (path, title,
+      referrer, dwell, scroll depth, repeat visit) to the model as a factual
+      response-shaping parameter. Without it the context reaches the server on
+      visitor.data but is never seen by the model.
+    group: core
+    type: interact_action
+  config:
+    singleton: true
+    order:
+      weight: -250
+  manifest:
+    purpose: "Tell the model where on the site the visitor currently is."
+    activates_on:
+      - "a web turn carrying data.page_context"
+    terminates_when:
+      - "the context parameter is added, or there is no usable context"
+    latency_class: instant
+    expected_duration_seconds: 0.01
+  dependencies:
+    jvagent: ~0.0.1

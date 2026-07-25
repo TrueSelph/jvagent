@@ -9,6 +9,7 @@ import pytest
 from jvagent.action.suggestions.suggestions_interact_action import (
     SuggestionsInteractAction,
     is_data_request,
+    needs_user_specifics,
     parse_suggestions,
 )
 
@@ -87,6 +88,43 @@ def test_data_requests_are_flagged(text):
 )
 def test_valid_suggestions_pass(text):
     assert is_data_request(text) is False
+
+
+# ── needs_user_specifics ────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Company name is XYZ",  # the reported case
+        "My budget is $500",
+        "I need it by [date]",
+        "My company is <name>",
+        "Order number is ABC123",
+        "Team size is 25",
+        "Contact me at your email",
+        "My name is ___",
+        "e.g. Acme Corp",
+    ],
+)
+def test_placeholder_and_invented_specifics_are_flagged(text):
+    assert needs_user_specifics(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "It's a personal inquiry",
+        "Suggest some options",
+        "How much does it cost?",
+        "I'd like a demo",
+        "Do you integrate with Salesforce?",
+        "I'd rather not say",
+        "Tell me about products",
+    ],
+)
+def test_genuine_suggestions_pass(text):
+    assert needs_user_specifics(text) is False
 
 
 # ── execute ────────────────────────────────────────────────────────────────
@@ -185,6 +223,79 @@ async def test_execute_filters_data_request_suggestions(monkeypatch):
 
     # The two data-request chips are dropped; the valid ones remain.
     assert published["metadata"]["suggestions"] == ["See pricing", "Book a demo"]
+
+
+@pytest.mark.asyncio
+async def test_execute_publishes_nothing_when_all_are_unusable(monkeypatch):
+    """Emitting zero chips is valid — better than padding with filler."""
+    action = _make_action()
+    lm = _FakeLM('["Company name is XYZ", "Share my email", "My budget is $500"]')
+    published = {"called": False}
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        published["called"] = True
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    assert published["called"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_accepts_an_empty_model_response(monkeypatch):
+    """An empty array from the model is a legitimate 'no suggestions' answer."""
+    action = _make_action()
+    lm = _FakeLM("[]")
+    published = {"called": False}
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        published["called"] = True
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    assert published["called"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_keeps_the_good_ones_and_drops_the_rest(monkeypatch):
+    action = _make_action(max_words=8)
+    lm = _FakeLM(
+        '["Company name is XYZ", "How much does it cost?", "It\'s a personal inquiry"]'
+    )
+    published = {}
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        published["metadata"] = kw.get("metadata")
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    assert published["metadata"]["suggestions"] == [
+        "How much does it cost?",
+        "It's a personal inquiry",
+    ]
 
 
 @pytest.mark.asyncio
