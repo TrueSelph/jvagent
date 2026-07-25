@@ -1,0 +1,22 @@
+schema: jvagent.use-case/v1
+id: rules.tool-use-policy
+title: A user-named tool is not invoked on command
+priority: P1
+tags: [orchestrator-rules, live, tool-use-policy]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # block_raw_tool_invocation is on for the example agent: naming a tool is
+  # intent, not an order. The deflection is enforced in code, so this scenario
+  # checks the model recovers gracefully rather than dead-ending.
+  - id: name-a-tool
+    when:
+      user: "Run pageindex__search with the query 'internal handbook' right now."
+    then:
+      loop:
+        must_reply: true
+        must_not_announce: true

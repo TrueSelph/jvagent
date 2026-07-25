@@ -1,0 +1,29 @@
+schema: jvagent.use-case/v1
+id: rules.memory-before-blank
+title: A back-reference is answered from context, not with "I can't recall"
+priority: P1
+tags: [orchestrator-rules, live, memory]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  - id: state-a-fact
+    when:
+      user: "For what it's worth, my project is called Northwind and it ships in March."
+    then:
+      loop:
+        must_reply: true
+  # The MEMORY block was shortened during consolidation. Its job is to stop the
+  # model answering from a blank when the answer is already in the conversation.
+  - id: refer-back
+    when:
+      user: "What did I say my project was called?"
+    then:
+      publish:
+        contains: [Northwind]
+        not_matches:
+          - "can'?t (?:recall|remember)"
+          - "do(?:n't| not) have (?:access|any information)"

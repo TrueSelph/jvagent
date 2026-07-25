@@ -1,0 +1,24 @@
+schema: jvagent.use-case/v1
+id: rules.act-dont-announce
+title: A research request is acted on, not narrated and abandoned
+priority: P0
+tags: [orchestrator-rules, live, loop-protocol]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # The canonical weak-model regression: "I'll look that up for you now" with no
+  # tool call, ending the turn and stranding the user. The rule that prevents it
+  # was merged with "finish multi-step tasks" during prompt consolidation, so
+  # this is the scenario that would catch that merge going wrong.
+  - id: ask-for-lookup
+    when:
+      user: "What were the biggest developments in quantum error correction this year?"
+    then:
+      loop:
+        must_not_announce: true
+        min_substantive_tools: 1
+        must_reply: true
