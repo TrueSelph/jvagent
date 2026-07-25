@@ -296,7 +296,8 @@ def instrument(orchestrator_cls: Any, script: List[Dict[str, Any]]) -> Dict[str,
     return sink
 
 
-def report(sink: Dict[str, Any], wall_ms: float) -> None:
+def report(sink: Dict[str, Any], wall_ms: float) -> Dict[str, float]:
+    """Print the measurement and return the headline figures for assertions."""
     ticks = sink["ticks"]
     print(
         f"\nturn wall-clock (model excluded): {wall_ms:.0f} ms over {len(ticks)} ticks"
@@ -322,6 +323,7 @@ def report(sink: Dict[str, Any], wall_ms: float) -> None:
         )
     print(f"  TOTAL INPUT TOKENS: {total:,}")
 
+    worst_reuse_pct = 100.0
     if len(ticks) > 1:
         # The provider caches the request PREFIX, and the request is
         # [system, *history, user] -- so this measures system+history, not the
@@ -332,10 +334,11 @@ def report(sink: Dict[str, Any], wall_ms: float) -> None:
         base_tokens = max(1, count_tokens(base))
         for index, tick in enumerate(ticks[1:], 1):
             shared = count_tokens(base[: common_prefix_len(base, tick["prefix"])])
-            print(
-                f"  tick{index}: {shared}/{base_tokens} tokens "
-                f"({100 * shared / base_tokens:.0f}% reusable)"
-            )
+            pct = 100 * shared / base_tokens
+            worst_reuse_pct = min(worst_reuse_pct, pct)
+            print(f"  tick{index}: {shared}/{base_tokens} tokens ({pct:.0f}% reusable)")
+
+    return {"total_tokens": float(total), "worst_reuse_pct": worst_reuse_pct}
 
 
 async def main() -> None:
@@ -353,6 +356,22 @@ async def main() -> None:
         help="Seed N prior conversation turns. History rides in every tick's "
         "request, so benchmarking at 0 (the default, for a first turn) "
         "understates a mid-conversation turn. Try the agent's history_limit.",
+    )
+    parser.add_argument(
+        "--assert-max-tokens",
+        type=int,
+        default=0,
+        help="Exit non-zero if the turn's total input tokens exceed N. Token "
+        "counts here are fully deterministic (no model call), so this is a "
+        "regression gate rather than a flaky threshold.",
+    )
+    parser.add_argument(
+        "--assert-min-cache-pct",
+        type=float,
+        default=0.0,
+        help="Exit non-zero if any tick reuses less than this percentage of the "
+        "tick-0 request prefix. Guards the prompt section order, which is easy "
+        "to undo by moving a volatile section back above the invariant ones.",
     )
     parser.add_argument(
         "--history-events",
@@ -401,7 +420,7 @@ async def main() -> None:
     )
     started = time.perf_counter()
     await orchestrator.execute(visitor)
-    report(sink, (time.perf_counter() - started) * 1000)
+    headline = report(sink, (time.perf_counter() - started) * 1000)
 
     if args.dump:
         os.makedirs(args.dump, exist_ok=True)
@@ -411,6 +430,25 @@ async def main() -> None:
             with open(f"{args.dump}/tick{index}_user.txt", "w") as handle:
                 handle.write(tick["user"])
         print(f"\nprompts written to {args.dump}")
+
+    failures: List[str] = []
+    if args.assert_max_tokens and headline["total_tokens"] > args.assert_max_tokens:
+        failures.append(
+            f"total input tokens {headline['total_tokens']:,.0f} exceeds budget "
+            f"{args.assert_max_tokens:,}"
+        )
+    if (
+        args.assert_min_cache_pct
+        and headline["worst_reuse_pct"] < args.assert_min_cache_pct
+    ):
+        failures.append(
+            f"worst prefix reuse {headline['worst_reuse_pct']:.0f}% is below "
+            f"{args.assert_min_cache_pct:.0f}%"
+        )
+    if failures:
+        for line in failures:
+            print(f"\nBUDGET FAILED: {line}")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
