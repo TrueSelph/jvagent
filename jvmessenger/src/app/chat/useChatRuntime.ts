@@ -17,11 +17,19 @@ import {
 import type { MessengerConfig } from "../../shared/config";
 import { streamInteract } from "../streaming/sseClient";
 import {
-  extractSuggestions,
   type MessageAction,
   type ResponseMessageData,
   type SSEChunk,
 } from "../streaming/types";
+import {
+  answerText,
+  emptyTurn,
+  hasAnswer,
+  reduceMessage,
+  withError,
+  type ActivityEntry,
+  type TurnState,
+} from "../streaming/reducer";
 import {
   clearHistory,
   clearSession,
@@ -66,15 +74,14 @@ function extractText(message: AppendMessage): string {
 }
 
 function assistantParts(
-  answer: string,
-  reasoning: string,
+  turn: TurnState,
   showReasoning: boolean
 ): ThreadMessageLike["content"] {
   const reason =
-    showReasoning && reasoning.trim()
-      ? [{ type: "reasoning" as const, text: reasoning }]
+    showReasoning && turn.reasoning.trim()
+      ? [{ type: "reasoning" as const, text: turn.reasoning }]
       : [];
-  return [...reason, { type: "text" as const, text: answer }];
+  return [...reason, { type: "text" as const, text: answerText(turn) }];
 }
 
 export function useChatRuntime(config: MessengerConfig) {
@@ -90,6 +97,17 @@ export function useChatRuntime(config: MessengerConfig) {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   // Agent-driven follow-up chips from the last turn's message metadata.
   const [suggestions, setSuggestions] = useState<MessageAction[]>([]);
+  // Live tool/status progress for the in-flight turn. Ephemeral by design — it
+  // is never persisted to history.
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  // Ephemeral failure banner for the last turn (kept out of the message list).
+  const [turnError, setTurnError] = useState<string | null>(null);
+  // Aborts the in-flight stream when the user hits Stop.
+  const abortRef = useRef<AbortController | null>(null);
+  // Last user utterance + attachments, so regenerate can replay the turn.
+  const lastTurnRef = useRef<{ text: string; attachments: UploadedAttachment[] } | null>(
+    null
+  );
   const getToken = useCallback(() => session.current.sessionToken, []);
 
   // Persist the thread whenever it changes so a page refresh keeps the history.
@@ -115,9 +133,11 @@ export function useChatRuntime(config: MessengerConfig) {
       const effectiveText =
         trimmed || turnAttachments.map((a) => a.filename).join(", ");
       if (turnAttachments.length) setAttachments([]);
-      // Clear last turn's suggestions; collect this turn's below.
+      // Clear last turn's suggestions + error banner; this turn's are collected below.
       setSuggestions([]);
-      let turnSuggestions: MessageAction[] = [];
+      setTurnError(null);
+      setActivity([]);
+      lastTurnRef.current = { text: userText, attachments: turnAttachments };
 
       // Render the sent attachments in the bubble: images as thumbnails, other
       // files as chips (assistant-ui image/file parts). The filename fallback is
@@ -151,16 +171,13 @@ export function useChatRuntime(config: MessengerConfig) {
       ]);
       setIsRunning(true);
 
-      let answer = "";
-      let reasoning = "";
+      // The whole turn folds into this pure state (see streaming/reducer.ts).
+      let turn = emptyTurn();
       const update = () =>
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? {
-                  ...m,
-                  content: assistantParts(answer, reasoning, config.showReasoning),
-                }
+              ? { ...m, content: assistantParts(turn, config.showReasoning) }
               : m
           )
         );
@@ -168,26 +185,16 @@ export function useChatRuntime(config: MessengerConfig) {
       const onMessage = (chunk: SSEChunk) => {
         const data = chunk.message;
         if (!data || typeof data === "string") return;
-        const msg = data as ResponseMessageData;
-        if (msg.category === "thought") {
-          // MASKED by default: only accumulate when reasoning is revealed.
-          if (config.showReasoning && msg.content) {
-            reasoning += (reasoning ? "\n" : "") + msg.content;
-            update();
-          }
-          return;
-        }
-        // Agent-driven follow-up chips ride on message metadata.
-        const s = extractSuggestions(msg.metadata);
-        if (s.length) turnSuggestions = s;
-        // category "user" → the visible answer.
-        if (msg.message_type === "stream_chunk" || msg.message_type === "adhoc") {
-          answer += msg.content ?? "";
-        } else if (!answer) {
-          answer = msg.content ?? "";
-        }
+        const next = reduceMessage(turn, data as ResponseMessageData);
+        if (next === turn) return; // nothing changed — skip the re-render
+        turn = next;
+        setActivity(turn.activity);
         update();
       };
+
+      // Real cancellation: sseClient honours `signal`, but nothing ever passed one.
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       try {
         await streamInteract(
@@ -201,6 +208,7 @@ export function useChatRuntime(config: MessengerConfig) {
               session_id: session.current.sessionId,
               data: attachmentsToData(turnAttachments),
             },
+            signal: controller.signal,
           },
           {
             onStart: (chunk) => {
@@ -213,19 +221,34 @@ export function useChatRuntime(config: MessengerConfig) {
             },
             onMessage,
             onError: (text) => {
-              answer = answer || `⚠️ ${text}`;
+              turn = withError(turn, text);
               update();
             },
           }
         );
-        // Subtle chime once the assistant reply has landed (skip on error).
-        if (config.sound && answer && !answer.startsWith("⚠️")) playChime();
-      } catch {
-        answer = answer || "⚠️ Connection error. Please try again.";
+        // Subtle chime once the assistant reply has actually landed.
+        if (config.sound && hasAnswer(turn) && !turn.error) playChime();
+      } catch (err) {
+        // A user-initiated abort is not an error — keep whatever streamed.
+        const aborted =
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError");
+        if (!aborted) {
+          turn = withError(turn, "Connection error. Please try again.");
+        }
         update();
       } finally {
+        abortRef.current = null;
         setIsRunning(false);
-        setSuggestions(turnSuggestions);
+        setActivity([]);
+        setSuggestions(turn.suggestions);
+        // Errors are surfaced as an ephemeral banner, never as assistant content:
+        // otherwise they persist into history and get read aloud by TTS.
+        setTurnError(turn.error ?? null);
+        if (turn.error && !hasAnswer(turn)) {
+          // Nothing streamed — drop the empty bubble rather than leaving a blank.
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        }
         // Proactively refresh the token for the next turn.
         const tok = session.current.sessionToken;
         if (tok) {
@@ -248,10 +271,41 @@ export function useChatRuntime(config: MessengerConfig) {
     [runTurn]
   );
 
+  /** Abort the in-flight stream (the Stop button). */
+  const onCancel = useCallback(async () => {
+    abortRef.current?.abort();
+  }, []);
+
+  /**
+   * Regenerate: drop the last assistant turn and replay the preceding user
+   * message. `ActionBarPrimitive.Reload` was rendered but inert without this.
+   */
+  const onReload = useCallback(async () => {
+    const last = lastTurnRef.current;
+    if (!last || isRunning) return;
+    setMessages((prev) => {
+      const idx = prev.map((m) => m.role).lastIndexOf("user");
+      return idx === -1 ? prev : prev.slice(0, idx);
+    });
+    setAttachments(last.attachments);
+    await runTurn(last.text);
+  }, [isRunning, runTurn]);
+
+  /** Retry after a failed turn (surfaced on the error banner). */
+  const retry = useCallback(async () => {
+    const last = lastTurnRef.current;
+    if (!last || isRunning) return;
+    setTurnError(null);
+    setAttachments(last.attachments);
+    await runTurn(last.text);
+  }, [isRunning, runTurn]);
+
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning,
     onNew,
+    onCancel,
+    onReload,
     convertMessage: (m: ThreadMessageLike) => m,
   });
 
@@ -326,6 +380,9 @@ export function useChatRuntime(config: MessengerConfig) {
       addAttachment,
       removeAttachment,
       suggestions,
+      activity,
+      turnError,
+      retry,
       reset,
       hasUserMessage,
       downloadTranscript,
@@ -338,6 +395,9 @@ export function useChatRuntime(config: MessengerConfig) {
       addAttachment,
       removeAttachment,
       suggestions,
+      activity,
+      turnError,
+      retry,
       reset,
       hasUserMessage,
       downloadTranscript,

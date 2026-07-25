@@ -16,6 +16,8 @@ export interface HostBridge {
   open(): void;
   close(): void;
   isOpen(): boolean;
+  /** Hand text typed in the launcher teaser to the app to send as turn one. */
+  prefill(text: string): void;
   destroy(): void;
 }
 
@@ -68,6 +70,9 @@ export function createHostBridge(opts: {
 }): HostBridge {
   let iframe: HTMLIFrameElement | null = null;
   let open = false;
+  // Text from the launcher teaser, held until the app posts `ready`.
+  let pendingPrefill: string | null = null;
+  let appReady = false;
 
   const applyMode = (mode: MessengerMode) => {
     if (!iframe) return;
@@ -92,6 +97,16 @@ export function createHostBridge(opts: {
           envelope({ type: "init", config: opts.config }),
           opts.iframeOrigin
         );
+        // The teaser can be submitted before the app has booted, so any text
+        // queued by `prefill()` is flushed once the app announces itself.
+        if (pendingPrefill) {
+          iframe.contentWindow?.postMessage(
+            envelope({ type: "prefill", text: pendingPrefill }),
+            opts.iframeOrigin
+          );
+          pendingPrefill = null;
+        }
+        appReady = true;
         break;
       case "resize":
         applyMode(msg.mode);
@@ -142,10 +157,24 @@ export function createHostBridge(opts: {
     );
   }
 
+  function prefill(text: string): void {
+    ensureIframe();
+    if (appReady && iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        envelope({ type: "prefill", text }),
+        opts.iframeOrigin
+      );
+    } else {
+      // App still booting — the `ready` handler flushes this.
+      pendingPrefill = text;
+    }
+  }
+
   return {
     open: open_,
     close,
     isOpen: () => open,
+    prefill,
     destroy() {
       window.removeEventListener("message", onMessage);
       iframe?.remove();

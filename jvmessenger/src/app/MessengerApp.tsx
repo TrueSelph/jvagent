@@ -138,9 +138,22 @@ function ChatSurface({
     addAttachment,
     removeAttachment,
     suggestions,
+    activity,
+    turnError,
+    retry,
     downloadTranscript,
   } = useChatRuntime(config);
   const profile = useResolvedProfile(config);
+
+  // A message typed into the launcher teaser becomes the first turn, once.
+  const prefill = bridge.prefill;
+  const { clearPrefill } = bridge;
+  useEffect(() => {
+    if (!prefill) return;
+    clearPrefill();
+    void sendText(prefill);
+  }, [prefill, clearPrefill, sendText]);
+
   const shellConfig = useMemo(
     () => ({
       ...config,
@@ -167,6 +180,9 @@ function ChatSurface({
           addAttachment={addAttachment}
           removeAttachment={removeAttachment}
           suggestions={suggestions}
+          activity={activity}
+          turnError={turnError}
+          retry={retry}
         />
       </Shell>
     </AssistantRuntimeProvider>

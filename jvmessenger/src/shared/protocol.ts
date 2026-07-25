@@ -35,7 +35,9 @@ export type IframeToHost =
 /** host → iframe messages. */
 export type HostToIframe =
   | { type: "init"; config: MessengerConfig }
-  | { type: "visibility"; open: boolean };
+  | { type: "visibility"; open: boolean }
+  /** Text typed into the launcher teaser, to be sent as the first turn. */
+  | { type: "prefill"; text: string };
 
 type AnyMessage = IframeToHost | HostToIframe;
 
