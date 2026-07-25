@@ -50,6 +50,7 @@ def test_digest_slots_into_system_prompt():
         capabilities_section=cap,
         parameters_section="(rules)",
         loop_protocol_extra="",
+        extra_section="",
     )
     assert "Sign users up for training" in prompt
     assert "WHAT YOU CAN DO" in prompt

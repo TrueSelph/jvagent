@@ -124,21 +124,71 @@ def render_tools_section(tools: List[Any], *, lean: bool = False) -> str:
 # Cap replay into the model prompt — unbounded observations blow context.
 MAX_OBSERVATIONS_IN_PROMPT = 12
 
+# Size caps for the observation replay. The count cap above bounds HOW MANY
+# results are replayed; these bound how BIG each one is. Without them the
+# per-turn input cost is quadratic in tick count: every tick re-sends every
+# prior result in full, so an 8-tick research turn over 8 KB page fetches bills
+# ~70k input tokens and a 20-tick one ~325k (measured on the example agent).
+#
+# The most recent results are kept near-verbatim (the model is usually acting on
+# what it just fetched); older ones are elided hard, since by then their value is
+# "what happened", not the payload. Elision is middle-out and always marked, so
+# the model can see it was trimmed and re-run the tool if it truly needs the body.
+DEFAULT_OBSERVATION_MAX_CHARS = 4000
+DEFAULT_STALE_OBSERVATION_MAX_CHARS = 600
+DEFAULT_OBSERVATION_FULL_RECENT = 3
+DEFAULT_OBSERVATION_ARGS_MAX_CHARS = 400
 
-def render_observations_section(observations: List[Dict[str, Any]]) -> str:
+
+def elide_middle(text: str, limit: int) -> str:
+    """Middle-out elide *text* to ``limit`` characters, marking what was cut.
+
+    Head-and-tail is kept (not a prefix) because a tool result's tail often
+    carries the part that matters — a closing status line, the last rows of a
+    listing, a trailing error. ``limit <= 0`` disables elision.
+    """
+    if limit <= 0 or not text or len(text) <= limit:
+        return text
+    dropped = len(text) - limit
+    # Single-line marker: the renderer emits one line per tool result, and a
+    # marker carrying newlines would fabricate structure inside a payload.
+    marker = f" …[{dropped} chars elided — re-run the tool if you need the rest]… "
+    keep = max(0, limit - len(marker))
+    head = (keep * 3) // 4
+    tail = keep - head
+    return text[:head] + marker + (text[-tail:] if tail else "")
+
+
+def render_observations_section(
+    observations: List[Dict[str, Any]],
+    *,
+    max_chars: int = DEFAULT_OBSERVATION_MAX_CHARS,
+    stale_max_chars: int = DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+    full_recent: int = DEFAULT_OBSERVATION_FULL_RECENT,
+    args_max_chars: int = DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+) -> str:
+    """Render this turn's tool results for the loop prompt, size-bounded.
+
+    The last ``full_recent`` results are elided at ``max_chars``; everything
+    older at ``stale_max_chars``. Arguments are elided at ``args_max_chars`` —
+    a write-file call carries its whole payload in ``args``, which would
+    otherwise be replayed verbatim on every remaining tick. Any cap set to 0
+    disables that particular limit.
+    """
     if not observations:
         return "(none yet)"
     lines: List[str] = []
-    truncated = 0
     view = observations
     if len(view) > MAX_OBSERVATIONS_IN_PROMPT:
         truncated = len(view) - MAX_OBSERVATIONS_IN_PROMPT
         view = view[-MAX_OBSERVATIONS_IN_PROMPT:]
         lines.append(f"(…{truncated} earlier tool results omitted)")
-    for obs in view:
+    recent_from = len(view) - full_recent if full_recent > 0 else 0
+    for index, obs in enumerate(view):
         tool = obs.get("tool", "")
-        args = obs.get("args", {})
-        result = obs.get("observation", "")
+        args = elide_middle(str(obs.get("args", {})), args_max_chars)
+        limit = max_chars if index >= recent_from else stale_max_chars
+        result = elide_middle(str(obs.get("observation", "")), limit)
         lines.append(f"TOOL {tool}({args}) → {result}")
     return "\n".join(lines)
 
@@ -173,5 +223,11 @@ __all__ = [
     "wrap_action_tool",
     "render_tools_section",
     "render_observations_section",
+    "elide_middle",
     "parse_json_object",
+    "MAX_OBSERVATIONS_IN_PROMPT",
+    "DEFAULT_OBSERVATION_MAX_CHARS",
+    "DEFAULT_STALE_OBSERVATION_MAX_CHARS",
+    "DEFAULT_OBSERVATION_FULL_RECENT",
+    "DEFAULT_OBSERVATION_ARGS_MAX_CHARS",
 ]

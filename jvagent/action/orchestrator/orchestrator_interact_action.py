@@ -84,12 +84,17 @@ from jvagent.action.orchestrator.prompts import (
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
 from jvagent.action.orchestrator.tools import (
+    DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+    DEFAULT_OBSERVATION_FULL_RECENT,
+    DEFAULT_OBSERVATION_MAX_CHARS,
+    DEFAULT_STALE_OBSERVATION_MAX_CHARS,
     SkillTool,
     parse_json_object,
     render_observations_section,
     render_tools_section,
     wrap_action_tool,
 )
+from jvagent.action.orchestrator.turn_cache import bind_turn_cache, get_turn_cache
 from jvagent.action.parameters import (
     accumulate_action_parameters,
     orchestrator_core_parameters,
@@ -382,6 +387,33 @@ class OrchestratorInteractAction(
         default=True,
         description="Include interaction [EVENT] lines in loop history.",
     )
+
+    # -- Observation replay budget. Every tick re-sends this turn's prior tool
+    # results, so without size caps the per-turn input cost grows quadratically
+    # in tick count. The count cap (MAX_OBSERVATIONS_IN_PROMPT) bounds how many
+    # are replayed; these bound how big each one is.
+    observation_max_chars: int = attribute(
+        default=DEFAULT_OBSERVATION_MAX_CHARS,
+        description="Max characters of a RECENT tool result replayed into the "
+        "loop prompt (middle-out elided, and marked). 0 disables the cap.",
+    )
+    stale_observation_max_chars: int = attribute(
+        default=DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+        description="Max characters of an OLDER tool result (beyond "
+        "observation_full_recent) replayed into the loop prompt. Older results "
+        "matter as 'what happened', not as payload. 0 disables the cap.",
+    )
+    observation_full_recent: int = attribute(
+        default=DEFAULT_OBSERVATION_FULL_RECENT,
+        description="How many of the most recent tool results are replayed at "
+        "observation_max_chars rather than stale_observation_max_chars.",
+    )
+    observation_args_max_chars: int = attribute(
+        default=DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+        description="Max characters of a tool call's ARGUMENTS replayed into "
+        "the loop prompt. A write-file call carries its whole payload here, "
+        "which would otherwise be re-sent every remaining tick. 0 disables.",
+    )
     clarify_text: str = attribute(
         default="Sorry, I didn't quite catch that — could you rephrase?",
     )
@@ -590,7 +622,9 @@ class OrchestratorInteractAction(
         description="Per-channel loop-knob overrides, keyed by visitor.channel "
         "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
         "activation_budget, max_duration_seconds, tool_call_timeout, "
-        "max_statement_length, first_emit_timeout_ms, ack_statements, and "
+        "max_statement_length, first_emit_timeout_ms, ack_statements, "
+        "pinned_tools (REPLACES the action-level pin list on that channel, so a "
+        "channel-specific capability isn't pinned onto every other channel), and "
         "system_prompt_extra (APPENDED after the base extra for that channel "
         "only). Lets a voice channel run a tighter/faster loop with its own "
         "spoken filler than chat without a second agent.",
@@ -671,7 +705,10 @@ class OrchestratorInteractAction(
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
+        with bind_turn_cache():
+            await self._execute_turn(visitor)
 
+    async def _execute_turn(self, visitor: "InteractWalker") -> None:
         # Curate the remaining walk path: routable IAs (exposed as tools) must
         # NOT also self-execute as weight-chain members — they are reached only
         # by the model selecting their tool. Keep self + always_execute IAs +
@@ -1177,8 +1214,15 @@ class OrchestratorInteractAction(
         #   2. ``always-active: true`` skills, whose ``allowed-tools`` are pinned
         #      every turn (skill-native; mirrors use_skill surfacing without an
         #      activation round-trip).
-        if self.pinned_tools:
-            visible |= self._match_tool_globs(self.pinned_tools, set(tools.keys()))
+        # Pins are channel-scopable. A pin exists to make one capability callable
+        # turn-1, and that is usually a per-channel claim — pinning a WhatsApp
+        # Flow send is right on a WhatsApp turn and is dead weight (plus a
+        # misroute target for a weak model) on web. ``channel_overrides`` can
+        # therefore narrow or replace the pin set per channel; without an
+        # override the action-level list applies everywhere, as before.
+        pinned_tools = self._channel_cfg(visitor, "pinned_tools", self.pinned_tools)
+        if pinned_tools:
+            visible |= self._match_tool_globs(list(pinned_tools), set(tools.keys()))
         for d in docs:
             if getattr(d, "always_active", False):
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
@@ -2861,11 +2905,30 @@ class OrchestratorInteractAction(
         capabilities_section: str = "",
         parameters_section: str = "",
         loop_protocol_extra: str = "",
+        extra_section: str = "",
     ) -> str:
         """Build the base system prompt from the (overridable) ``system_prompt``
-        template, then append ``system_prompt_extra`` if set."""
+        template, then place ``system_prompt_extra`` (plus any caller-supplied
+        ``extra_section``).
+
+        The built-in template carries an ``{extra_section}`` slot positioned
+        with the other invariant text — ahead of the per-tick tool/skill
+        listings — so operator instructions stay inside the cacheable prefix.
+        A custom ``system_prompt`` override that predates that slot has no
+        placeholder to fill, so the extras are appended at the end as before.
+        """
+        extras = "\n\n".join(
+            part
+            for part in (
+                (self.system_prompt_extra or "").strip(),
+                extra_section.strip(),
+            )
+            if part
+        )
+        template = self.system_prompt
+        inline = "{extra_section}" in template
         base = self._fmt(
-            self.system_prompt,
+            template,
             ORCHESTRATOR_SYSTEM_PROMPT,
             identity_section=identity_section,
             tools_section=tools_section,
@@ -2873,10 +2936,10 @@ class OrchestratorInteractAction(
             capabilities_section=capabilities_section,
             parameters_section=parameters_section,
             loop_protocol_extra=loop_protocol_extra,
+            extra_section=(f"\n{extras}\n" if (inline and extras) else ""),
         )
-        extra = (self.system_prompt_extra or "").strip()
-        if extra:
-            base = f"{base}\n\n{extra}"
+        if extras and not inline:
+            base = f"{base}\n\n{extras}"
         return base
 
     async def _routable_flow_tool_names(self) -> Set[str]:
@@ -2911,10 +2974,19 @@ class OrchestratorInteractAction(
         if agent is None:
             self._actions_enum_failed = False
             return []
+        # Memoized for the turn: this is a per-node database walk, and four
+        # independent call sites want the same answer within one turn.
+        turn_cache = get_turn_cache()
+        cache_key = f"enabled_actions:{getattr(agent, 'id', None) or id(agent)}"
+        if turn_cache is not None and cache_key in turn_cache:
+            self._actions_enum_failed = False
+            return turn_cache[cache_key]
         try:
             mgr = await agent.get_actions_manager()
             actions = await mgr.get_all_actions(enabled_only=True) if mgr else []
             self._actions_enum_failed = False
+            if turn_cache is not None:
+                turn_cache[cache_key] = actions
             return actions
         except Exception as exc:
             # Signal loop to skip orphan-flow cancel — a partial/empty tool
@@ -3100,6 +3172,12 @@ class OrchestratorInteractAction(
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
         prompt_cache = getattr(self, "_turn_prompt_cache", None) or {}
+        # Channel-scoped extra instructions are invariant for the whole turn, so
+        # they compose into the prompt's stable region rather than trailing after
+        # the per-tick tool listing.
+        channel_extra = str(
+            self._channel_cfg(visitor, "system_prompt_extra", "") or ""
+        ).strip()
         system_prompt = self._compose_system_prompt(
             identity_section=prompt_cache.get("identity")
             or await self._render_identity(),
@@ -3111,12 +3189,8 @@ class OrchestratorInteractAction(
             or prompt_cache.get("capabilities", ""),
             parameters_section=parameters_section or prompt_cache.get("parameters", ""),
             loop_protocol_extra=loop_protocol_extra,
+            extra_section=channel_extra,
         )
-        channel_extra = str(
-            self._channel_cfg(visitor, "system_prompt_extra", "") or ""
-        ).strip()
-        if channel_extra:
-            system_prompt = f"{system_prompt}\n\n{channel_extra}"
         if flow_note:
             note = self._fmt(
                 self.flow_in_progress_prompt,
@@ -3148,7 +3222,13 @@ class OrchestratorInteractAction(
             ORCHESTRATOR_USER_PROMPT_TEMPLATE,
             history_section="",
             utterance=utterance or "(no message)",
-            observations_section=render_observations_section(observations),
+            observations_section=render_observations_section(
+                observations,
+                max_chars=int(self.observation_max_chars),
+                stale_max_chars=int(self.stale_observation_max_chars),
+                full_recent=int(self.observation_full_recent),
+                args_max_chars=int(self.observation_args_max_chars),
+            ),
         )
         # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the
         # user turn (the slot the model weights most), so a weak model actually

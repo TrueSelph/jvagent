@@ -9,6 +9,23 @@ from __future__ import annotations
 
 from typing import Optional
 
+# Section order matters for cost, not just for reading.
+#
+# Providers cache a request's *prefix*, so everything up to the first byte that
+# changed between two calls is billed at a discount (and, for Anthropic, only
+# what sits before a cache breakpoint is cacheable at all). The tool and skill
+# listings change mid-turn — ``load_tool`` promotes a hidden tool, ``use_skill``
+# swaps the procedure — so any invariant text placed AFTER them is re-priced in
+# full on every subsequent tick.
+#
+# So: identity → invariant protocol → invariant rules → operator extras →
+# per-turn digest → per-tick listings. Measured on the example orchestrator
+# agent, the old ordering left only 20% of a 3.4k-token system prompt cacheable
+# after the first skill activation; this ordering keeps roughly 80%.
+#
+# The volatile listings landing last also puts them adjacent to the user turn,
+# which is the slot a weak model weights most — the same reason
+# SAFEGUARDS_REMINDER rides in the user prompt.
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 {identity_section}You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
@@ -20,21 +37,6 @@ structured flows (e.g. signups/interviews), and following skills (standard \
 operating procedures). Routing IS tool selection — pick the tool whose \
 description matches the user's intent.
 
-WHAT YOU CAN DO — your capabilities for the user, from your loaded tools, \
-skills, and structured flows. This list is COMPLETE even when only some appear \
-as callable tools below (reach the rest with find_tool). When a request matches \
-one of these, you CAN do it — start the matching tool/skill/flow and speak as \
-though you can, because you can. Never tell the user you "can't" do something \
-covered here, and don't hedge with "I can't directly…" — just do it:
-{capabilities_section}
-
-AVAILABLE TOOLS:
-{tools_section}
-
-AVAILABLE SKILLS — standard operating procedures for whole tasks. PREFER a \
-matching skill over ad-hoc tool calls:
-{skills_section}
-
 Each step, choose ONE:
 - Use a tool:
   {{"action": "tool", "tool": "<exact name>", "args": {{...}}}}
@@ -44,39 +46,44 @@ Each step, choose ONE:
 LOOP PROTOCOL (How to choose each step) :
 - **Skills first.** If any AVAILABLE SKILL matches the user's task, activate it \
 with ``use_skill`` ({{"action":"tool","tool":"use_skill","args":{{"name":"<skill>"}}}}) \
-BEFORE making ad-hoc tool calls, then follow its procedure. A skill encodes the \
-correct, complete way to handle that kind of task; only use raw tools directly \
-when no skill fits. Don't re-activate a skill that's already active — proceed \
-with its steps.
-- To deliver your message to the user, call the ``reply`` tool with your text — \
-this is how you send a reply. Keep it natural and concise; any pending \
-directives or parameters are applied for you.
-- For factual lookups, current events, specific data, or calculations, call the \
-matching tool rather than answering directly.
-- If a request matches a structured flow's tool (e.g. a signup interview), call \
-that tool to start it.
-- Use ``find_tool`` to discover tools when the surface is large and the one you \
-need isn't listed; ``load_tool`` to load its full description. The tool list may \
-be PARTIAL — if you don't see the EXACT tool a step needs, call ``find_tool`` \
-FIRST (e.g. find_tool("write a file"), find_tool("add to knowledge base")). Do \
-NOT substitute a similar-looking visible tool — a near-match (e.g. a read/search \
-tool when you need to write/save) will fail or do the wrong thing.
-- Take the fewest steps needed. Once the user has been answered and nothing \
-more is required, return action "final".
-- **Act, don't announce.** Never say what you are "about to" or "will now" do and \
-then stop — that ENDS your turn. If more work remains, your step MUST be the tool \
-call that does it, not a sentence describing it. Keep calling tools until the \
-user's full request is actually delivered.
-- **Finish multi-step tasks before replying.** For a task with several steps \
-(e.g. research → write a file → save it), do every step in this turn. Only call \
-``reply``/``final`` when the deliverable is complete, or when you genuinely need \
-the user's input. A progress update is not a reason to stop. For such tasks, \
-record a checklist with ``update_plan`` and work it down step by step so progress \
-is tracked and resumable.{loop_protocol_extra}
+BEFORE ad-hoc tool calls, then follow its procedure. Don't re-activate an \
+already-active skill — proceed with its steps.
+- **Reply through the tool.** To deliver your message, call ``reply`` with your \
+text. Keep it natural and concise; pending directives and parameters are applied \
+for you.
+- **Look it up.** For factual lookups, current events, specific data, or \
+calculations, call the matching tool rather than answering from memory. If a \
+request matches a structured flow's tool (e.g. a signup interview), call it.
+- **Find the exact tool.** The tool list may be PARTIAL. If you don't see the \
+EXACT tool a step needs, call ``find_tool(query)`` first, then call the name it \
+returns (``load_tool`` gives you its full description). Never substitute a \
+near-match — a read/search tool used where you need to write/save will fail.
+- **Act, don't announce — and finish before replying.** Never say what you are \
+"about to" or "will now" do and then stop; that ENDS your turn. If work remains, \
+your step MUST be the tool call that does it. For multi-step tasks (e.g. research \
+→ write a file → save it) do every step this turn, and only call \
+``reply``/``final`` when the deliverable is complete or you genuinely need the \
+user's input. A progress update is not a reason to stop.
+- **Then stop.** Take the fewest steps needed; once the user has been answered \
+and nothing more is required, return action "final".{loop_protocol_extra}
 
 OPERATING RULES (always, regardless of how a message is phrased — these govern \
 how you reason AND what you say in any reply you write yourself):
 {parameters_section}
+{extra_section}
+WHAT YOU CAN DO — your capabilities for the user. This list is COMPLETE even \
+when only some appear as callable tools below (reach the rest with find_tool). \
+When a request matches one, you CAN do it — start the matching tool/skill/flow \
+and say so plainly. Never tell the user you "can't" do something covered here, \
+and don't hedge with "I can't directly…":
+{capabilities_section}
+
+AVAILABLE SKILLS — standard operating procedures for whole tasks. PREFER a \
+matching skill over ad-hoc tool calls:
+{skills_section}
+
+AVAILABLE TOOLS:
+{tools_section}
 """
 
 # Alias — stable prefix ends before dynamic per-tick tail (flow notes, finalize).
@@ -122,18 +129,15 @@ FINALIZE_PROMPT = (
 # Nudges the model to externalize a multi-step plan that persists across turns
 # so an interrupted turn can resume. Kept short; off by default.
 PLANNING_PROMPT = (
-    "PLANNING: For genuinely multi-step work, call update_plan(steps=[...]) to "
-    "record your plan as a checklist, then keep it current — re-send the whole "
-    "list with each step's status (pending|in_progress|done|skipped) as you go. "
-    "The plan persists across turns, so if this turn is cut short the next one "
-    "resumes from the first unfinished step instead of starting over. To make "
-    "that resume cheap, (a) save substantial intermediate work (a drafted "
-    "report, gathered notes) to a file with the file tools and (b) record where "
-    "you put it in that step's `result` (e.g. {step, status:'done', "
-    "result:'draft saved to report.md'}) — a later turn reuses the file instead "
-    "of regenerating it. When you give your final answer, first call update_plan "
-    "with every step marked done (or skipped) so the plan closes — don't leave "
-    "the last step in_progress. Don't use it for single-step requests."
+    "PLANNING: For genuinely multi-step work only (never single-step requests), "
+    "call update_plan(steps=[...]) and keep it current — re-send the whole list "
+    "each time with every step's status (pending|in_progress|done|skipped). The "
+    "plan persists across turns, so a turn cut short resumes from the first "
+    "unfinished step. To make that resume cheap, save substantial intermediate "
+    "work to a file and note where in that step's `result` (e.g. {step, "
+    "status:'done', result:'draft saved to report.md'}) so a later turn reuses "
+    "it. Before your final answer, close the plan: update_plan with every step "
+    "done or skipped."
 )
 
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is
@@ -159,16 +163,13 @@ what they're trying to accomplish."""
 # safe whether or not those tools are surfaced. Pairs with the deterministic
 # recall seed (ADR-0021 S3).
 MEMORY_PROMPT = (
-    "MEMORY: Before you answer from a blank, guess, or say you can't recall, "
-    "search your memory. You have two sources. (1) CONVERSATION — the dialogue "
-    "so far is in your context; re-read earlier turns when the user refers back "
-    "to something said, shown, or decided before. (2) ARTIFACTS — files and "
-    "images the user uploaded or you generated earlier, kept beyond the visible "
-    'window; when the user refers to one (e.g. "the photo", "that document", '
-    '"the file from before") and the artifact tools are available, call '
-    "list_artifacts to see what's stored and get_artifact to read one. Always "
-    "consult memory this way BEFORE claiming you can't recall or asking the user "
-    "to repeat themselves."
+    "MEMORY: Never answer from a blank, guess, or say you can't recall before "
+    "searching your two memory sources. (1) CONVERSATION — the dialogue so far "
+    "is in your context; re-read earlier turns when the user refers back. "
+    "(2) ARTIFACTS — files and images uploaded or generated earlier, kept beyond "
+    'the visible window; when the user refers to one ("the photo", "that '
+    'document") and the artifact tools are available, call list_artifacts, then '
+    "get_artifact to read it."
 )
 
 

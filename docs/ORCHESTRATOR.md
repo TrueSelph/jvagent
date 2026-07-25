@@ -101,6 +101,44 @@ Two further knobs/notes:
 - **Naming a hidden tool just runs it.** If the model names a tool that's real but lean-hidden, the loop auto-promotes it to visible and dispatches it (an implicit `load_tool`) rather than rejecting it — hiding is a prompt-size optimization, not a capability gate. `find_tool` is for *discovering* a tool whose exact name you don't know; an unknown/hallucinated name is bounced there with examples.
 - **Tolerant decision parsing.** The loop normalizer salvages the common malformed shapes a model emits so a step isn't wasted: text in `answer`/`content` instead of `args.text`; a skill addressed as if it were a tool (`{"tool":"research"}` → `use_skill`); and a **flattened** call where tool args sit at the decision top level instead of under `args` (`{"tool":"update_plan","steps":[...]}`) — when no `args` object is supplied, the non-reserved top-level keys are folded in. `update_plan` additionally accepts its list under many key aliases / a bare string / a single inline step.
 
+## Prompt cost (what a turn actually bills)
+
+A turn is N model calls over the same assembled prompt, so the executive's cost
+is dominated by what gets *resent* rather than by any single call. Three
+properties govern it, and `scripts/bench_orchestrator.py` measures all three
+against a real app graph without needing an API key:
+
+**1. Section order is a cost decision.** Providers discount the request *prefix*
+up to the first byte that changed (Anthropic only up to an explicit
+`cache_control` breakpoint — see below). The tool and skill listings change
+mid-turn: `load_tool` promotes a hidden tool, `use_skill` swaps the procedure
+in. So the built-in system prompt puts every invariant section first — identity,
+loop protocol, gated protocol extras, operating rules, `system_prompt_extra` —
+and the volatile listings last. Measured on the example agent, the reverse order
+left only 20% of a 3.4k-token system prompt reusable after the first skill
+activation; this order keeps ~54%, which is the ceiling while the listings
+themselves are ~46% of the prompt.
+
+A custom `system_prompt` override controls its own ordering. Overrides that
+include the `{extra_section}` placeholder get `system_prompt_extra` (and the
+channel-scoped extra) placed there; overrides without it keep the legacy
+append-at-the-end behaviour.
+
+**2. Observation replay is the quadratic term.** See the observation budget under
+[extended config](#extended-config-surface-adr-0015).
+
+**3. Anthropic caching is opt-in.** OpenAI caches long prefixes automatically;
+Anthropic caches only up to a `cache_control` marker. `AnthropicLanguageModelAction`
+sets one at the end of the system prompt by default (`prompt_caching`, skipped
+below `prompt_cache_min_chars` where the provider wouldn't cache anyway), and
+folds `cache_read_input_tokens` / `cache_creation_input_tokens` into the usage
+metrics so hit rate is visible in the `model_call` event.
+
+> **Prompt templates are persisted.** Every sub-prompt is an `attribute` default,
+> so an app graph bootstrapped against an older jvagent keeps *that* release's
+> prompts. Prompt improvements reach an existing deployment only via
+> `jvagent <app> --update --source`.
+
 ## Model floor (don't run the orchestrator on a weak model)
 
 The orchestrator is **model-mediated** ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)): continuation across the think-act-observe loop depends on the model reliably emitting a tool call each step until the task is done. Weak/cheap completion models (`gpt-4o-mini`-class) tend to **narrate then stop** — "I'll now write the report" with no tool call — which ends the turn mid-task and needs a user nudge. Stronger models (gpt-4.1, Claude Opus/Sonnet) hold the loop.
@@ -214,6 +252,7 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 - **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
 - **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **4096** — the orchestrator is agentic (each tick emits reasoning plus an action, often the substantive answer, and thinking models spend completion tokens on reasoning), so it carries more headroom than a single-shot responder; raise further for long-form replies. `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`), `include_history_events` (prior `[EVENT]` lines in loop history, default on). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback.
+- **Observation budget**: every tick resends this turn's prior tool results, so *unbounded* results make the per-turn input cost grow with the square of the tick count — an 8-tick research turn over 8 KB page fetches billed ~70k input tokens, a 20-tick one ~325k. `MAX_OBSERVATIONS_IN_PROMPT` bounds how *many* results replay; `observation_max_chars` (default 4000) and `stale_observation_max_chars` (default 600) bound how *big* each one is, with the most recent `observation_full_recent` (default 3) getting the generous budget. `observation_args_max_chars` (default 400) caps the arguments — a write-file call carries its whole payload there. Elision is middle-out and marked, so the model can re-run the tool if it truly needs the body; set any cap to `0` to disable it.
 - **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
 - **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` is reserved for future parallel tool batches (the loop executes one tool per tick today).
 

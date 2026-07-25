@@ -205,6 +205,31 @@ async def test_pinned_tools_survive_lean(make_orchestrator, make_visitor):
     assert "misc__tool00" not in visible
 
 
+async def test_pins_are_channel_scopable(make_orchestrator, make_visitor):
+    """A pin is usually a per-channel claim. Pinning a channel-specific tool
+    globally puts an unusable tool in every other channel's prompt — wasted
+    tokens, and a misroute target for a weak model."""
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.pinned_tools = ["weather__*"]
+    ex.channel_overrides = {"voice": {"pinned_tools": ["calendar__*"]}}
+
+    v = make_visitor(utterance="hello", channel="voice")
+    visible: set = set()
+    await ex._assemble_tools(v, [], visible, None, "hello", None, {})
+    assert "calendar__create_event" in visible  # the channel's own pin
+    assert "weather__current" not in visible  # the global pin does not leak in
+
+    # A channel with no override still gets the action-level pins.
+    v2 = make_visitor(utterance="hello", channel="web")
+    visible2: set = set()
+    await ex._assemble_tools(v2, [], visible2, None, "hello", None, {})
+    assert "weather__current" in visible2
+    assert "calendar__create_event" not in visible2
+
+
 async def test_always_active_skill_pins_its_tools(
     make_orchestrator, make_visitor, monkeypatch
 ):

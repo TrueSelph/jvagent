@@ -289,6 +289,7 @@ async def test_system_prompt_lists_skills_and_priority_rule():
             + reply_core_parameters()
         ),
         loop_protocol_extra="",
+        extra_section="",
     )
     assert "You are Executive Agent, a helpful guide." in sp  # identity injected
     assert "AVAILABLE SKILLS" in sp  # skills listed inline, not just behind find_skill

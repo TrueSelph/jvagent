@@ -247,6 +247,10 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `lean_tool_threshold` | `15` | lean tool surfacing (ADR-0018): when the count of hideable capability tools (action + MCP) exceeds this, the long tail is kept off the prompt and reached via `find_tool`. `0` disables (always list every tool). Egress/meta/core/active-flow tools are always visible |
 | `lean_presurface_k` | `6` | in lean mode, how many capability tools to pre-surface each turn by relevance to the user's message (token overlap, no model call), so common single-intent turns need no `find_tool` round-trip. **`0` = essentials-only** (see recipe below) |
 | `pinned_tools` | `[]` | tool-name globs (e.g. `["filing__*", "case__create"]`) kept **visible every turn even under lean** — for capabilities that must be callable turn-1 regardless of phrasing, without disabling lean for the rest. Skill-native equivalent: a `SKILL.md` with `always-active: true` pins its `allowed-tools` |
+| `observation_max_chars` | `4000` | max characters of a **recent** tool result replayed into the loop prompt (middle-out elided, and marked). `0` disables |
+| `stale_observation_max_chars` | `600` | max characters of an **older** result (beyond `observation_full_recent`). Older results matter as "what happened", not as payload. `0` disables |
+| `observation_full_recent` | `3` | how many of the most recent results get `observation_max_chars` rather than the stale cap |
+| `observation_args_max_chars` | `400` | max characters of a tool call's **arguments** in the replay — a write-file call carries its whole payload there. `0` disables |
 
 **Lean tool surfacing — recipes.** Capability tools = action `get_tools()` tools
 + MCP tools. The hideable long tail is what's gated; egress (`reply`/`respond`),

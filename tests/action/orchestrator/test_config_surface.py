@@ -32,11 +32,39 @@ async def test_system_prompt_default_is_builtin():
     assert "AVAILABLE TOOLS:" in out  # built-in body present
 
 
-async def test_system_prompt_extra_is_appended():
+async def test_system_prompt_extra_lands_in_the_stable_region():
+    """The built-in template has an ``{extra_section}`` slot ahead of the
+    per-tick tool/skill listings, so operator instructions stay inside the
+    cacheable prefix instead of trailing the volatile tail."""
     ex = OrchestratorInteractAction()
     ex.system_prompt_extra = "HOUSE RULE: always greet in French."
     out = _compose(ex)
     assert "AVAILABLE TOOLS:" in out  # built-in still there
+    assert "HOUSE RULE: always greet in French." in out
+    assert out.index("HOUSE RULE") < out.index("AVAILABLE TOOLS:")
+    assert out.count("HOUSE RULE") == 1  # placed, not also appended
+
+
+async def test_channel_extra_composes_after_the_action_extra():
+    ex = OrchestratorInteractAction()
+    ex.system_prompt_extra = "HOUSE RULE: be brief."
+    out = ex._compose_system_prompt(
+        identity_section="You are Ada.\n\n",
+        tools_section="- reply: say something",
+        skills_section="- research: investigate",
+        extra_section="CHANNEL RULE: speak, don't type.",
+    )
+    assert out.index("HOUSE RULE: be brief.") < out.index("CHANNEL RULE")
+    assert out.index("CHANNEL RULE") < out.index("AVAILABLE TOOLS:")
+
+
+async def test_legacy_override_without_slot_still_gets_the_extra():
+    """A custom ``system_prompt`` predating the ``{extra_section}`` slot has no
+    placeholder to fill, so the extras append at the end as they used to."""
+    ex = OrchestratorInteractAction()
+    ex.system_prompt = "{identity_section}CUSTOM {tools_section} // {skills_section}"
+    ex.system_prompt_extra = "HOUSE RULE: always greet in French."
+    out = _compose(ex)
     assert out.rstrip().endswith("HOUSE RULE: always greet in French.")
 
 
