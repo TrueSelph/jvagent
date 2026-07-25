@@ -5,6 +5,7 @@
  */
 
 import type { MessengerConfig } from "../shared/config";
+import type { PageContext } from "./pageContext";
 import {
   type IframeToHost,
   type MessengerMode,
@@ -20,6 +21,8 @@ export interface HostBridge {
   prefill(text: string): void;
   /** Create the iframe hidden so the app can run before the panel is opened. */
   preload(): void;
+  /** Push a fresh host-page context snapshot to the app. */
+  sendContext(context: PageContext): void;
   destroy(): void;
 }
 
@@ -74,6 +77,8 @@ export function createHostBridge(opts: {
   let open = false;
   // Text from the launcher teaser, held until the app posts `ready`.
   let pendingPrefill: string | null = null;
+  // Latest context snapshot, replayed on `ready` so a late-booting app gets it.
+  let lastContext: PageContext | null = null;
   let appReady = false;
 
   const applyMode = (mode: MessengerMode) => {
@@ -115,6 +120,12 @@ export function createHostBridge(opts: {
             opts.iframeOrigin
           );
           pendingPrefill = null;
+        }
+        if (lastContext) {
+          iframe.contentWindow?.postMessage(
+            envelope({ type: "context", context: lastContext }),
+            opts.iframeOrigin
+          );
         }
         appReady = true;
         break;
@@ -177,6 +188,16 @@ export function createHostBridge(opts: {
     applyMode("collapsed");
   }
 
+  function sendContext(context: PageContext): void {
+    lastContext = context;
+    if (appReady && iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        envelope({ type: "context", context }),
+        opts.iframeOrigin
+      );
+    }
+  }
+
   function prefill(text: string): void {
     ensureIframe();
     if (appReady && iframe?.contentWindow) {
@@ -196,6 +217,7 @@ export function createHostBridge(opts: {
     isOpen: () => open,
     prefill,
     preload,
+    sendContext,
     destroy() {
       window.removeEventListener("message", onMessage);
       iframe?.remove();

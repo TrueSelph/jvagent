@@ -13,6 +13,7 @@
 import { parseConfig } from "../shared/config";
 import { createHostBridge } from "./bridge-host";
 import { createLauncher } from "./launcher";
+import { watchPage, type TriggerKind } from "./pageContext";
 
 function boot(): void {
   // `document.currentScript` is valid while this IIFE executes synchronously.
@@ -114,11 +115,30 @@ function boot(): void {
   // the session channel and receive agent-initiated messages while closed.
   if (config.proactive) bridge.preload();
 
-  // Show the teaser after a beat, but never over an already-open panel.
-  if (config.teaser && !teaserSuppressed()) {
-    window.setTimeout(() => {
-      if (!bridge.isOpen()) launcher.showTeaser();
-    }, config.teaserDelay);
+  // Watch the host page: context for the agent, behaviour for the teaser.
+  const teaserWanted = !!config.teaser && !teaserSuppressed();
+  const triggers = (
+    config.teaserTriggers.length
+      ? config.teaserTriggers
+      : teaserWanted
+        ? ["delay"]
+        : []
+  ) as TriggerKind[];
+
+  const page = watchPage({
+    agentId: config.agentId,
+    triggers,
+    delaySeconds: config.teaserDelay / 1000,
+    scrollPercent: config.teaserScrollPercent,
+    onTrigger: () => {
+      if (teaserWanted && !bridge.isOpen()) launcher.showTeaser();
+    },
+  });
+
+  if (config.pageContext) {
+    // Send once now and refresh on open, so the agent sees current dwell/scroll.
+    bridge.sendContext(page.snapshot());
+    window.setInterval(() => bridge.sendContext(page.snapshot()), 15000);
   }
 }
 

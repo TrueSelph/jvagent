@@ -65,6 +65,19 @@ function attachmentsToData(
   return data;
 }
 
+/**
+ * Attach the host-page context to a turn's structured `data` payload. The agent
+ * decides what to do with it — the client deliberately draws no conclusions
+ * (thin-harness: no client-side intent classification).
+ */
+function withPageContext(
+  data: Record<string, unknown> | undefined,
+  pageContext: unknown | null
+): Record<string, unknown> | undefined {
+  if (!pageContext) return data;
+  return { ...(data ?? {}), page_context: pageContext };
+}
+
 let _id = 0;
 // Include a random suffix so ids don't collide with those restored from a
 // previous session after a page reload (the counter resets on reload).
@@ -89,7 +102,10 @@ function assistantParts(
   return [...reason, { type: "text" as const, text: answerText(turn) }];
 }
 
-export function useChatRuntime(config: MessengerConfig) {
+export function useChatRuntime(
+  config: MessengerConfig,
+  pageContext?: unknown | null
+) {
   const session = useRef<SessionState>(loadSession(config.agentId));
   // Restore prior messages on mount, but only when they belong to the still-active
   // session (else start clean). Greeting stays on the welcome screen, so an empty
@@ -114,6 +130,10 @@ export function useChatRuntime(config: MessengerConfig) {
     null
   );
   const getToken = useCallback(() => session.current.sessionToken, []);
+  // Latest host-page context, refreshed by the loader. Held in a ref so a new
+  // snapshot doesn't re-create runTurn mid-conversation.
+  const pageContextRef = useRef<unknown | null>(pageContext ?? null);
+  pageContextRef.current = pageContext ?? pageContextRef.current;
 
   // Ids of messages already rendered, so the channel's backlog replay and the
   // interact stream can't double-render the same message.
@@ -289,7 +309,10 @@ export function useChatRuntime(config: MessengerConfig) {
               utterance: effectiveText,
               user_id: session.current.userId,
               session_id: session.current.sessionId,
-              data: attachmentsToData(turnAttachments),
+              data: withPageContext(
+                attachmentsToData(turnAttachments),
+                pageContextRef.current
+              ),
             },
             signal: controller.signal,
           },

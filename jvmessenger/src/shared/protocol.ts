@@ -15,6 +15,7 @@
  */
 
 import type { MessengerConfig } from "./config";
+import type { PageContext } from "../loader/pageContext";
 
 /** Marker identifying our messages amid other postMessage traffic. */
 export const PROTOCOL_SOURCE = "jvmessenger" as const;
@@ -37,7 +38,9 @@ export type HostToIframe =
   | { type: "init"; config: MessengerConfig }
   | { type: "visibility"; open: boolean }
   /** Text typed into the launcher teaser, to be sent as the first turn. */
-  | { type: "prefill"; text: string };
+  | { type: "prefill"; text: string }
+  /** Host-page context + behaviour, refreshed by the loader. */
+  | { type: "context"; context: PageContext };
 
 type AnyMessage = IframeToHost | HostToIframe;
 

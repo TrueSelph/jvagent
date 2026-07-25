@@ -76,6 +76,13 @@ actions:
     context:
       enabled: true
 
+  # ── Host page context (core) — tells the model where the visitor is ──
+  # The messenger sends data.page_context; nothing else surfaces visitor.data to
+  # the model, so this contributes it as a factual response-shaping parameter.
+  - action: jvagent/page_context
+    context:
+      enabled: true
+
   # ── Quick-reply suggestions (core) — LLM-generated messenger chips ──
   # After each reply, asks a light model for a few short follow-up quick replies
   # and publishes them as metadata.suggestions for the messenger's agent-driven

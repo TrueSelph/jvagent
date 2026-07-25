@@ -65,6 +65,15 @@ export interface MessengerConfig {
    * deployment (the response bus is process-scoped).
    */
   proactive: boolean;
+  /**
+   * Behavioural triggers that may reveal the teaser: any of
+   * `delay | scroll | exit | idle`. Empty keeps the plain delay behaviour.
+   */
+  teaserTriggers: string[];
+  /** Scroll percentage (0-100) that fires the `scroll` trigger. */
+  teaserScrollPercent: number;
+  /** Send host-page context (path, title, referrer, dwell) to the agent. */
+  pageContext: boolean;
 }
 
 /** Defaults applied when a `data-*` attribute is absent. */
@@ -86,6 +95,9 @@ export const CONFIG_DEFAULTS: Omit<MessengerConfig, "agentUrl" | "agentId"> = {
   teaserDelay: 4000,
   teaserCooldownDays: 7,
   proactive: false,
+  teaserTriggers: [],
+  teaserScrollPercent: 55,
+  pageContext: true,
 };
 
 function asInt(value: string | undefined, fallback: number): number {
@@ -162,5 +174,11 @@ export function parseConfig(
       CONFIG_DEFAULTS.teaserCooldownDays
     ),
     proactive: asBool(dataset.proactive, CONFIG_DEFAULTS.proactive),
+    teaserTriggers: asStringArray(dataset.teaserTriggers),
+    teaserScrollPercent: asInt(
+      dataset.teaserScrollPercent,
+      CONFIG_DEFAULTS.teaserScrollPercent
+    ),
+    pageContext: asBool(dataset.pageContext, CONFIG_DEFAULTS.pageContext),
   };
 }

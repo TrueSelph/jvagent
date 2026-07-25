@@ -144,7 +144,7 @@ function ChatSurface({
     unread,
     clearUnread,
     downloadTranscript,
-  } = useChatRuntime(config);
+  } = useChatRuntime(config, bridge.pageContext);
   const profile = useResolvedProfile(config);
 
   // A message typed into the launcher teaser becomes the first turn, once.
