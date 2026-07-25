@@ -298,3 +298,86 @@ def test_anthropic_exports_available():
 
     assert TopLevelExport is AnthropicLanguageModelAction
     assert LmExport is AnthropicLanguageModelAction
+
+
+# --- prompt caching --------------------------------------------------------
+#
+# Unlike OpenAI's automatic prefix caching, Anthropic caches only up to an
+# explicit ``cache_control`` breakpoint. An agentic caller resends a large,
+# stable system prompt on every tick, so the breakpoint is what makes those
+# resends cheap.
+
+
+def _big_system(n: int = 6000) -> str:
+    return "You are precise. " * (n // 17)
+
+
+@pytest.mark.asyncio
+async def test_large_system_prompt_gets_a_cache_breakpoint():
+    action = AnthropicLanguageModelAction()
+    action._http_client = _MockHttpClient(
+        post_response=_MockResponse(
+            {"content": [], "usage": {"input_tokens": 1, "output_tokens": 1}}
+        )
+    )
+    system = _big_system()
+
+    await action.query_sync("hi", system=system)
+
+    blocks = action._http_client.last_post_json["system"]
+    assert isinstance(blocks, list)
+    assert blocks[0]["text"] == system
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_small_system_prompt_is_left_as_a_plain_string():
+    """Below the provider's cacheable minimum a breakpoint buys nothing, so the
+    payload shape stays exactly as it was."""
+    action = AnthropicLanguageModelAction()
+    action._http_client = _MockHttpClient(
+        post_response=_MockResponse(
+            {"content": [], "usage": {"input_tokens": 1, "output_tokens": 1}}
+        )
+    )
+
+    await action.query_sync("hi", system="You are precise.")
+
+    assert action._http_client.last_post_json["system"] == "You are precise."
+
+
+@pytest.mark.asyncio
+async def test_prompt_caching_can_be_switched_off():
+    action = AnthropicLanguageModelAction()
+    action.prompt_caching = False
+    action._http_client = _MockHttpClient(
+        post_response=_MockResponse(
+            {"content": [], "usage": {"input_tokens": 1, "output_tokens": 1}}
+        )
+    )
+    system = _big_system()
+
+    await action.query_sync("hi", system=system)
+
+    assert action._http_client.last_post_json["system"] == system
+
+
+def test_cached_input_is_folded_into_prompt_tokens_and_kept_visible():
+    """Anthropic reports cached input separately and excludes it from
+    ``input_tokens``; totals must stay comparable across providers while the
+    split stays observable."""
+    action = AnthropicLanguageModelAction()
+    usage = action._extract_usage(
+        {
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_read_input_tokens": 3000,
+                "cache_creation_input_tokens": 400,
+            }
+        }
+    )
+    assert usage["prompt_tokens"] == 3500
+    assert usage["total_tokens"] == 3520
+    assert usage["cache_read_input_tokens"] == 3000
+    assert usage["cache_creation_input_tokens"] == 400
