@@ -102,3 +102,52 @@ async def test_runner_restores_patched_methods(make_orchestrator, monkeypatch):
     await LiveScenarioRunner(orchestrator).run(scenario)
 
     assert OrchestratorInteractAction._record_orchestrator_activation is before_record
+
+
+async def test_multi_turn_scenario_carries_history(make_orchestrator, monkeypatch):
+    """A later turn must see the earlier ones. With an empty history a recall
+    scenario fails for a harness reason and reads as an agent bug -- which is
+    exactly what happened before this was wired up."""
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    seen: list = []
+    reply = ReplyAction()
+
+    orchestrator = make_orchestrator(
+        actions=[reply],
+        decisions=[
+            {"action": "tool", "tool": "reply", "args": {"text": "Noted."}},
+            {"action": "final", "answer": ""},
+            {
+                "action": "tool",
+                "tool": "reply",
+                "args": {"text": "You said Northwind."},
+            },
+            {"action": "final", "answer": ""},
+        ],
+    )
+
+    original_history = type(orchestrator)._history
+
+    async def capture_history(self, visitor):
+        history = await original_history(self, visitor)
+        seen.append(list(history))
+        return history
+
+    monkeypatch.setattr(type(orchestrator), "_history", capture_history)
+
+    scenario = {
+        "schema": "jvagent.use-case/v1",
+        "id": "test.multiturn",
+        "title": "history carries",
+        "given": {"channel": "web"},
+        "turns": [
+            {"id": "state", "when": {"user": "My project is Northwind."}},
+            {"id": "recall", "when": {"user": "What is my project called?"}},
+        ],
+    }
+
+    await LiveScenarioRunner(orchestrator).run(scenario)
+
+    assert seen[0] == []  # first turn has no prior context
+    assert any("Northwind" in m.get("content", "") for m in seen[1])

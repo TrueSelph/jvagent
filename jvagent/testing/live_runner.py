@@ -145,7 +145,16 @@ def build_visitor(
         conversation.context = dict(context or {})
         conversation.tasks = []
         conversation.save = AsyncMock()
-        conversation.get_interaction_history = AsyncMock(return_value=[])
+        # Prior turns, in the shape get_interaction_history(formatted=True)
+        # returns. A multi-turn scenario is meaningless without it: with an empty
+        # history the agent genuinely cannot recall turn 1 on turn 2, so a recall
+        # scenario fails for a harness reason and reads as an agent bug.
+        conversation.cucs_history = []
+
+        async def get_interaction_history(**_kw):
+            return list(conversation.cucs_history)
+
+        conversation.get_interaction_history = get_interaction_history
 
     visitor = MagicMock()
     visitor.user_id = user_id
@@ -228,6 +237,14 @@ class LiveScenarioRunner:
                 observation.reply = (visitor.interaction.response or "").strip()
                 result.turns.append(observation)
 
+                history = getattr(conversation, "cucs_history", None)
+                if history is not None:
+                    history.append({"role": "user", "content": utterance})
+                    if observation.reply:
+                        history.append(
+                            {"role": "assistant", "content": observation.reply}
+                        )
+
                 result.failures.extend(
                     f"[{observation.turn_id}] {msg}"
                     for msg in evaluate_turn(turn.get("then") or {}, observation)
@@ -251,6 +268,26 @@ def evaluate_turn(then: Dict[str, Any], observed: TurnObservation) -> List[str]:
     failures: List[str] = []
     if observed.error:
         failures.append(f"turn raised {observed.error}")
+
+    # A dead turn must never satisfy a negative assertion. "The reply must not
+    # say X" is trivially true of an empty reply, so a turn where the model call
+    # failed -- a bad key, a timeout, a rate limit -- would otherwise score as a
+    # clean pass on exactly the scenarios that assert what the agent must NOT
+    # say. That turns an outage into a green A/B run, which is worse than no
+    # measurement at all.
+    if not observed.reply and not observed.tools_invoked:
+        failures.append(
+            "turn produced no reply and invoked no tools — the model call "
+            f"likely failed (ended_via={observed.ended_via!r}); "
+            "treating as inconclusive, not as a pass"
+        )
+        return failures
+    if observed.ended_via == "no_decision":
+        failures.append(
+            "loop ended via 'no_decision' — the model returned nothing "
+            "parseable; treating as inconclusive, not as a pass"
+        )
+        return failures
 
     loop = then.get("loop") or {}
     called = observed.tools_invoked

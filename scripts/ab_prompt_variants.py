@@ -82,8 +82,14 @@ def apply_variant(orchestrator: Any, constants: Optional[Dict[str, str]]) -> Non
 
 async def resolve_orchestrator(app_root: str, agent_hint: str) -> Any:
     from jvagent.cli.bootstrap import bootstrap_application_graph
+    from jvagent.cli.server import load_app_env
     from jvagent.core.agents import Agents
 
+    # The CLI loads the app-root .env before anything touches a provider; a
+    # script that bootstraps the graph directly skips that and every model call
+    # goes out with an empty bearer token. Reuse the CLI's loader rather than
+    # reimplementing its precedence (operator env wins over .env).
+    load_app_env(app_root)
     await bootstrap_application_graph(update_mode="source", app_root=app_root)
     agents = await (await Agents.get()).get_connected_agents()
     agent = next(
@@ -114,7 +120,9 @@ def summarize(results: Dict[str, Dict[str, List[bool]]], runs: int) -> None:
         }
         delta = rates.get("after", 0.0) - rates.get("before", 0.0)
         cells = "  ".join(f"{arm}={rates[arm]:5.1f}%" for arm in arms)
-        rows.append((delta, scenario, f"  {scenario:<{width}}  {cells}  Δ={delta:+.1f}pp"))
+        rows.append(
+            (delta, scenario, f"  {scenario:<{width}}  {cells}  Δ={delta:+.1f}pp")
+        )
 
     print(f"\n=== per-scenario pass rate over {runs} run(s) ===")
     for _, _, line in sorted(rows):
@@ -124,7 +132,9 @@ def summarize(results: Dict[str, Dict[str, List[bool]]], runs: int) -> None:
     for arm in arms:
         flat = [ok for s in results[arm].values() for ok in s]
         rate = 100.0 * sum(flat) / max(1, len(flat))
-        print(f"  {arm:<7} {rate:5.1f}%  ({sum(flat)}/{len(flat)} scenario runs passed)")
+        print(
+            f"  {arm:<7} {rate:5.1f}%  ({sum(flat)}/{len(flat)} scenario runs passed)"
+        )
 
     if len(arms) == 2 and runs > 1:
         deltas = [d for d, _, _ in rows]
@@ -143,7 +153,9 @@ async def main() -> None:
     parser.add_argument("app_root", nargs="?", default="examples/jvagent_app")
     parser.add_argument("--agent", default="orchestrator")
     parser.add_argument(
-        "--use-cases", default="use-cases/orchestrator-rules", help="relative to app_root"
+        "--use-cases",
+        default="use-cases/orchestrator-rules",
+        help="relative to app_root",
     )
     parser.add_argument("--runs", type=int, default=3, help="runs per arm per scenario")
     parser.add_argument("--model", default="", help="override the heavy model id")
@@ -173,7 +185,9 @@ async def main() -> None:
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
     turns = sum(len(s.get("turns") or []) for s in scenarios)
 
-    print(f"scenarios: {len(scenarios)}  turns: {turns}  arms: {arms}  runs: {args.runs}")
+    print(
+        f"scenarios: {len(scenarios)}  turns: {turns}  arms: {arms}  runs: {args.runs}"
+    )
     total_turns = turns * len(arms) * args.runs
     print(
         f"total live turns: {total_turns}  "
@@ -188,6 +202,15 @@ async def main() -> None:
     from jvagent.testing.live_runner import LiveScenarioRunner
 
     orchestrator = await resolve_orchestrator(app_root, args.agent)
+    model_action = await orchestrator.get_model_action(required=False)
+    if model_action is not None and not model_action.api_key_from_context(
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY"
+    ):
+        raise SystemExit(
+            "no API key resolved for the orchestrator's model action — check "
+            f"{os.path.join(app_root, '.env')}. Refusing to run: every turn "
+            "would fail with an empty bearer token."
+        )
     if args.model:
         orchestrator.model = args.model
     if args.light_model:
@@ -203,9 +226,7 @@ async def main() -> None:
     runner = LiveScenarioRunner(orchestrator)
 
     for arm in arms:
-        apply_variant(
-            orchestrator, before_constants if arm == "before" else None
-        )
+        apply_variant(orchestrator, before_constants if arm == "before" else None)
         if arm != "before":  # restore working-tree defaults
             for attr, value in baseline.items():
                 setattr(orchestrator, attr, value)

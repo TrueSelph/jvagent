@@ -108,3 +108,30 @@ def test_deterministic_namespaces_are_ignored_not_silently_passed():
 
 def test_a_raised_turn_is_a_failure():
     assert evaluate_turn({}, _obs(error="RuntimeError: boom"))
+
+
+# --- a broken run must not look like a clean one ----------------------------
+#
+# Negative assertions ("the reply must not say X") are trivially satisfied by an
+# empty reply. Without this guard an outage -- bad key, timeout, rate limit --
+# scores as a green A/B run on exactly the scenarios that assert what the agent
+# must NOT say, which is worse than having no measurement.
+
+
+def test_dead_turn_fails_instead_of_passing_vacuously():
+    dead = _obs(reply="", tools_invoked=[], ended_via="no_decision")
+    failures = evaluate_turn({"publish": {"not_matches": ["I can'?t"]}}, dead)
+    assert failures
+    assert any("inconclusive" in f for f in failures)
+
+
+def test_no_decision_is_inconclusive_even_with_a_reply():
+    stalled = _obs(reply="", tools_invoked=["reply"], ended_via="no_decision")
+    assert any("inconclusive" in f for f in evaluate_turn({}, stalled))
+
+
+def test_a_real_turn_still_passes_its_negative_assertion():
+    live = _obs(
+        reply="Sure, here's the answer.", tools_invoked=["reply"], ended_via="reply"
+    )
+    assert evaluate_turn({"publish": {"not_matches": ["I can'?t"]}}, live) == []
