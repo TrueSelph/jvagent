@@ -75,6 +75,27 @@ def invalidate_tool_surface_cache(agent_id: Optional[str] = None) -> None:
         _TOOL_SURFACE_CACHE.pop(agent_id, None)
 
 
+# One-line summary length for a ``find_tool`` hit. Discovery only needs enough
+# to pick the right name — ``load_tool`` is what returns the full description,
+# and that split is the whole point of the two-tool catalog. Echoing every hit's
+# full description made find_tool the most expensive observation in a discovery
+# turn (some tool descriptions run several hundred tokens on their own) and left
+# load_tool with nothing to add.
+FIND_TOOL_SUMMARY_CHARS = 140
+
+
+def _summarize(description: str, limit: int = FIND_TOOL_SUMMARY_CHARS) -> str:
+    """First line of *description*, clipped to *limit* on a word boundary."""
+    one = (description or "").strip().splitlines()[0].strip() if description else ""
+    if len(one) <= limit:
+        return one
+    clipped = one[:limit].rstrip()
+    cut = clipped.rfind(" ")
+    if cut > limit // 2:
+        clipped = clipped[:cut]
+    return clipped.rstrip(",;:.") + "…"
+
+
 def build_catalog_tools(
     all_tools: Dict[str, SkillTool], visible: Set[str]
 ) -> Dict[str, SkillTool]:
@@ -92,16 +113,30 @@ def build_catalog_tools(
         # Group by namespace prefix (``<ns>__tool``) so one find_tool call reveals
         # a whole integration compactly instead of scattered lines.
         groups: Dict[str, List[Any]] = {}
-        for t in hits[:30]:
+        shown = hits[:30]
+        for t in shown:
             ns = t.name.split("__", 1)[0] if "__" in t.name else ""
             groups.setdefault(ns, []).append(t)
         lines: List[str] = []
+        listed = 0
         for ns in sorted(groups):
             if ns:
                 lines.append(f"[{ns}]")
             for t in groups[ns][:15]:
-                lines.append(f"- {t.name}: {t.description}")
-        return "Matching tools (call load_tool to surface one):\n" + "\n".join(lines)
+                listed += 1
+                summary = _summarize(t.description)
+                lines.append(f"- {t.name}: {summary}" if summary else f"- {t.name}")
+        # Never let a cap silently masquerade as the whole answer: a model that
+        # can't see it was truncated will conclude the tool it needs doesn't
+        # exist and give up instead of searching more specifically.
+        if listed < len(hits):
+            lines.append(
+                f"(showing {listed} of {len(hits)} matches — narrow the query to see others)"
+            )
+        return (
+            "Matching tools (call load_tool for a tool's full description):\n"
+            + "\n".join(lines)
+        )
 
     async def _load(args: Dict[str, Any]) -> str:
         name = ((args or {}).get("name") or "").strip()

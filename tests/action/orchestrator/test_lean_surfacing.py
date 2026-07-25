@@ -257,3 +257,43 @@ async def test_always_active_skill_pins_its_tools(
     await ex._assemble_tools(v, [], visible, None, "hello", None, meta)
     assert meta["lean"] is True
     assert "weather__current" in visible  # pinned by the always-active skill
+
+
+# --- find_tool result size --------------------------------------------------
+
+
+async def test_find_tool_summarizes_rather_than_dumping_descriptions():
+    """find_tool is a discovery aid; load_tool is what returns the full text.
+    Echoing every hit's full description made find_tool the most expensive
+    observation of a discovery turn and left load_tool with nothing to add."""
+    long_desc = "Record or update your multi-step plan as a checklist. " * 20
+    all_tools = {"plan__update": SkillTool("plan__update", long_desc, run=None)}
+    cat = build_catalog_tools(all_tools, visible=set())
+
+    found = await cat["find_tool"].run({"query": "plan"})
+    assert len(found) < 400  # summarized
+    assert "…" in found
+
+    loaded = await cat["load_tool"].run({"name": "plan__update"})
+    assert long_desc.strip() in loaded  # full text still reachable
+
+
+async def test_find_tool_reports_when_matches_are_capped():
+    """A cap that looks like the whole answer makes the model conclude the tool
+    doesn't exist instead of narrowing its query."""
+    all_tools = {
+        f"misc__tool{i:03d}": SkillTool(f"misc__tool{i:03d}", "A capability.", run=None)
+        for i in range(50)
+    }
+    cat = build_catalog_tools(all_tools, visible=set())
+    out = await cat["find_tool"].run({"query": "capability"})
+    assert "of 50 matches" in out
+    assert "narrow the query" in out
+
+
+async def test_find_tool_without_truncation_says_nothing_extra():
+    all_tools = {"email__send": SkillTool("email__send", "Send an email.", run=None)}
+    cat = build_catalog_tools(all_tools, visible=set())
+    out = await cat["find_tool"].run({"query": "email"})
+    assert "matches" not in out
+    assert "Send an email." in out  # short descriptions survive intact

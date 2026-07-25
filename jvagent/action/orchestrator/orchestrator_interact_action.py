@@ -88,6 +88,7 @@ from jvagent.action.orchestrator.tools import (
     DEFAULT_OBSERVATION_FULL_RECENT,
     DEFAULT_OBSERVATION_MAX_CHARS,
     DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+    MAX_OBSERVATIONS_IN_PROMPT,
     SkillTool,
     parse_json_object,
     render_observations_section,
@@ -389,9 +390,16 @@ class OrchestratorInteractAction(
     )
 
     # -- Observation replay budget. Every tick re-sends this turn's prior tool
-    # results, so without size caps the per-turn input cost grows quadratically
-    # in tick count. The count cap (MAX_OBSERVATIONS_IN_PROMPT) bounds how many
-    # are replayed; these bound how big each one is.
+    # results, so without caps the per-turn input cost grows quadratically in
+    # tick count. ``max_observations_in_prompt`` bounds how MANY replay; the
+    # rest bound how BIG each one is.
+    max_observations_in_prompt: int = attribute(
+        default=MAX_OBSERVATIONS_IN_PROMPT,
+        description="How many of this turn's tool results replay into the loop "
+        "prompt (most recent first). Raise it for long agentic turns whose "
+        "later steps depend on early findings; lower it to cut prompt size. "
+        "0 replays all of them (size caps still apply).",
+    )
     observation_max_chars: int = attribute(
         default=DEFAULT_OBSERVATION_MAX_CHARS,
         description="Max characters of a RECENT tool result replayed into the "
@@ -3228,6 +3236,7 @@ class OrchestratorInteractAction(
                 stale_max_chars=int(self.stale_observation_max_chars),
                 full_recent=int(self.observation_full_recent),
                 args_max_chars=int(self.observation_args_max_chars),
+                max_observations=int(self.max_observations_in_prompt),
             ),
         )
         # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the

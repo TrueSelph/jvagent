@@ -166,22 +166,24 @@ def render_observations_section(
     stale_max_chars: int = DEFAULT_STALE_OBSERVATION_MAX_CHARS,
     full_recent: int = DEFAULT_OBSERVATION_FULL_RECENT,
     args_max_chars: int = DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+    max_observations: int = MAX_OBSERVATIONS_IN_PROMPT,
 ) -> str:
     """Render this turn's tool results for the loop prompt, size-bounded.
 
-    The last ``full_recent`` results are elided at ``max_chars``; everything
-    older at ``stale_max_chars``. Arguments are elided at ``args_max_chars`` —
-    a write-file call carries its whole payload in ``args``, which would
-    otherwise be replayed verbatim on every remaining tick. Any cap set to 0
-    disables that particular limit.
+    ``max_observations`` bounds how many results replay; the last
+    ``full_recent`` of those are elided at ``max_chars`` and everything older at
+    ``stale_max_chars``. Arguments are elided at ``args_max_chars`` — a
+    write-file call carries its whole payload in ``args``, which would otherwise
+    be replayed verbatim on every remaining tick. Any cap set to 0 disables that
+    particular limit.
     """
     if not observations:
         return "(none yet)"
     lines: List[str] = []
     view = observations
-    if len(view) > MAX_OBSERVATIONS_IN_PROMPT:
-        truncated = len(view) - MAX_OBSERVATIONS_IN_PROMPT
-        view = view[-MAX_OBSERVATIONS_IN_PROMPT:]
+    if max_observations > 0 and len(view) > max_observations:
+        truncated = len(view) - max_observations
+        view = view[-max_observations:]
         lines.append(f"(…{truncated} earlier tool results omitted)")
     recent_from = len(view) - full_recent if full_recent > 0 else 0
     for index, obs in enumerate(view):

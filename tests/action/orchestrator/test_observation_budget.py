@@ -88,3 +88,20 @@ def test_defaults_are_exposed_as_configuration():
     assert ex.observation_max_chars > ex.stale_observation_max_chars > 0
     assert ex.observation_full_recent >= 1
     assert ex.observation_args_max_chars > 0
+
+
+def test_observation_count_cap_is_configurable():
+    """The count cap was the one observation knob left as a module constant
+    while its siblings became attributes."""
+    obs = [{"tool": f"t{i}", "args": {}, "observation": f"r{i}"} for i in range(20)]
+    out = render_observations_section(obs, max_observations=3)
+    assert out.count("TOOL ") == 3
+    assert "17 earlier tool results omitted" in out
+    assert OrchestratorInteractAction().max_observations_in_prompt > 0
+
+
+def test_observation_count_cap_zero_replays_all():
+    obs = [{"tool": f"t{i}", "args": {}, "observation": f"r{i}"} for i in range(40)]
+    out = render_observations_section(obs, max_observations=0)
+    assert out.count("TOOL ") == 40
+    assert "omitted" not in out
