@@ -220,6 +220,53 @@ then:
     includes: [use_skill, interview__set_fields, interview__next_field]
 ```
 
+### `loop` — live runs only (phase 2)
+
+Every namespace above asserts orchestrator plumbing with the model canned out via
+`harness.decisions`. That is the right shape for testing the harness and the
+wrong one for testing the *prompt*: a canned decision cannot tell you whether the
+model would have made it.
+
+A scenario that **omits `harness`** runs against a real model instead
+([`jvagent/testing/live_runner.py`](../../jvagent/testing/live_runner.py)), and
+`then.loop` asserts what the loop actually did. Use it to measure a prompt change
+— run the same scenarios against two prompt variants and compare compliance
+(`scripts/ab_prompt_variants.py`).
+
+| Key | Type | Semantics |
+|-----|------|-----------|
+| `tools_called` | list | Tool names that must appear in this turn's invocations |
+| `tools_not_called` | list | Tool names that must **not** be invoked |
+| `skills_activated` | list | Skill names that must activate this turn |
+| `ended_via` | string | Required loop exit reason (`reply`, `final`, `ia_tool`, …) |
+| `min_substantive_tools` | int | Minimum non-egress, non-meta tool calls |
+| `must_not_announce` | bool | Fail if the reply states an intention to act and no substantive tool ran |
+| `must_reply` | bool | Fail if the turn produced no user-facing reply |
+
+`publish.not_matches` (regex list) pairs with these: a behavioural regression
+usually shows up as something the agent should *not* have said — a capability
+denial, an internals dump, an "I can't recall" over context it was given.
+
+```yaml
+turns:
+  - id: ask-for-lookup
+    when:
+      user: "What shipped in quantum error correction this year?"
+    then:                      # no `harness` — the real model decides
+      loop:
+        must_not_announce: true
+        min_substantive_tools: 1
+      publish:
+        not_matches: ["I can'?t (?:browse|search)"]
+```
+
+> **Live scenarios cost money and are not part of the test suite.** The runner
+> itself is covered by mocked-model tests (`tests/testing/test_live_runner.py`,
+> `tests/action/orchestrator/test_live_runner_e2e.py`), which run for free.
+
+Deterministic namespaces (`task_graph`, `session`) are **ignored** on a live run
+rather than reported as passing — a live turn cannot observe them.
+
 ---
 
 ## 8. Extension namespaces (app-owned)
