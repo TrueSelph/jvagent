@@ -30,7 +30,7 @@ import sys
 import time
 from collections import defaultdict
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 # A turn that exercises the paths that actually cost something: a core tool, a
@@ -57,7 +57,49 @@ except Exception:  # pragma: no cover - tiktoken is optional
         return len(text or "") // 4
 
 
-def make_visitor(utterance: str, channel: str) -> Any:
+def synthetic_history(turns: int, with_events: bool) -> List[Dict[str, str]]:
+    """Prior conversation in the shape ``get_interaction_history(formatted=True)``
+    returns it: alternating user/assistant messages, optionally with the
+    ``[EVENT]`` system lines that ``include_history_events`` adds.
+
+    Benchmarking against an empty history flatters the result -- history rides
+    in every tick's request, between the system prompt and the user turn, and a
+    real agent runs history_limit at 4-10 turns.
+    """
+    out: List[Dict[str, str]] = []
+    for i in range(turns):
+        out.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Question {i} about the current project status, roughly the "
+                    "length of a real chat message rather than one word."
+                ),
+            }
+        )
+        if with_events:
+            out.append(
+                {
+                    "role": "system",
+                    "content": f"[EVENT] tool_call web_search__search #{i}",
+                }
+            )
+        out.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"Answer {i}. A couple of sentences of substantive reply, "
+                    "with enough detail to resemble what the agent actually "
+                    "sends back to a user on a normal turn."
+                ),
+            }
+        )
+    return out
+
+
+def make_visitor(
+    utterance: str, channel: str, history: Optional[List[Dict[str, str]]] = None
+) -> Any:
     """A walker stand-in shaped like the one the interact pipeline builds.
 
     Mirrors ``tests/action/orchestrator/conftest.py``: enough of the interaction
@@ -89,7 +131,7 @@ def make_visitor(utterance: str, channel: str) -> Any:
     conversation.context = {}
     conversation.tasks = []
     conversation.save = AsyncMock()
-    conversation.get_interaction_history = AsyncMock(return_value=[])
+    conversation.get_interaction_history = AsyncMock(return_value=list(history or []))
 
     visitor = MagicMock()
     visitor.user_id = "bench_user"
@@ -200,6 +242,13 @@ def instrument(orchestrator_cls: Any, script: List[Dict[str, Any]]) -> Dict[str,
                     captured.get("prompt_for_observability", "")
                 ),
                 "history_tokens": count_tokens(history_text),
+                # What the provider actually caches is the request PREFIX, and
+                # the request is [system, *history, user] -- so history is part
+                # of the cacheable span, not a separate bucket. Measuring the
+                # system prompt alone understates what a volatile section costs:
+                # anything downstream of the first changed byte is re-priced,
+                # history included.
+                "prefix": captured.get("system", "") + "\n" + history_text,
                 "build_ms": (time.perf_counter() - started) * 1000,
             }
         )
@@ -274,11 +323,15 @@ def report(sink: Dict[str, Any], wall_ms: float) -> None:
     print(f"  TOTAL INPUT TOKENS: {total:,}")
 
     if len(ticks) > 1:
-        print("\nprompt-cache prefix stability (system prompt vs tick0):")
-        base = ticks[0]["system"]
-        base_tokens = max(1, ticks[0]["system_tokens"])
+        # The provider caches the request PREFIX, and the request is
+        # [system, *history, user] -- so this measures system+history, not the
+        # system prompt alone. Anything downstream of the first changed byte is
+        # re-priced, which includes history when a tool listing shifts.
+        print("\nprompt-cache prefix stability (system + history vs tick0):")
+        base = ticks[0]["prefix"]
+        base_tokens = max(1, count_tokens(base))
         for index, tick in enumerate(ticks[1:], 1):
-            shared = count_tokens(base[: common_prefix_len(base, tick["system"])])
+            shared = count_tokens(base[: common_prefix_len(base, tick["prefix"])])
             print(
                 f"  tick{index}: {shared}/{base_tokens} tokens "
                 f"({100 * shared / base_tokens:.0f}% reusable)"
@@ -293,6 +346,20 @@ async def main() -> None:
     )
     parser.add_argument("--utterance", default="research the topic and save a report")
     parser.add_argument("--channel", default="web")
+    parser.add_argument(
+        "--history",
+        type=int,
+        default=0,
+        help="Seed N prior conversation turns. History rides in every tick's "
+        "request, so benchmarking at 0 (the default, for a first turn) "
+        "understates a mid-conversation turn. Try the agent's history_limit.",
+    )
+    parser.add_argument(
+        "--history-events",
+        action="store_true",
+        help="Include [EVENT] lines, as include_history_events does (default on "
+        "in the action).",
+    )
     parser.add_argument(
         "--dump", default="", help="directory to write each tick's prompts"
     )
@@ -327,7 +394,11 @@ async def main() -> None:
     script = json.loads(args.script) if args.script else DEFAULT_SCRIPT
     sink = instrument(OrchestratorInteractAction, script)
 
-    visitor = make_visitor(args.utterance, args.channel)
+    visitor = make_visitor(
+        args.utterance,
+        args.channel,
+        synthetic_history(args.history, args.history_events),
+    )
     started = time.perf_counter()
     await orchestrator.execute(visitor)
     report(sink, (time.perf_counter() - started) * 1000)
