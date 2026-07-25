@@ -76,6 +76,23 @@ class OrchestratorEgressMixin:
             except Exception:
                 pass
         responder = await self.get_responder()
+        # A compose is a second, SERIAL model call in front of a user-facing
+        # reply (~550 input tokens, measured). It earns that when the directive
+        # carries model-facing guidance to voice, or when queued parameters /
+        # channel formatting have to be applied. It earns nothing for a bare
+        # relay directive with no shaping — ReplyAction.gather()'s N=1 literal
+        # path renders that unchanged, without a model.
+        #
+        # Guarded by skip_compose_without_guidance because it changes
+        # user-facing reply text; A/B it before turning it on.
+        if (
+            compose
+            and responder is not None
+            and self.skip_compose_without_guidance
+            and "\u2063" not in raw
+            and not self._compose_shaping_pending(responder, interaction, visitor)
+        ):
+            compose = False
         if compose and responder is not None:
             respond = getattr(responder, "respond", None)
             if callable(respond):
@@ -115,6 +132,33 @@ class OrchestratorEgressMixin:
                         )
         if user_facing:
             await self.publish(visitor=visitor, content=user_facing)
+
+    @staticmethod
+    def _compose_shaping_pending(
+        responder: Any, interaction: Any, visitor: Any
+    ) -> bool:
+        """True when a compose would actually change the output.
+
+        Mirrors the conditions ReplyAction.gather() uses to choose composing over
+        its literal fast path: contributed (non-ambient) response parameters, a
+        channel format, or more than one queued directive. Defensive — if any of
+        it can't be resolved, assume shaping is pending and compose, since an
+        unvoiced directive reaching the user verbatim is the worse failure.
+        """
+        try:
+            from jvagent.action.reply.reply_action import ReplyAction
+
+            if ReplyAction._collect_parameters(None, interaction).strip():
+                return True
+            channel = getattr(visitor, "channel", "default") or "default"
+            if getattr(
+                responder, "apply_channel_format", False
+            ) and responder.get_channel_format(channel):
+                return True
+            queued = ReplyAction._directive_items(interaction)
+            return len(queued) > 1
+        except Exception:
+            return True
 
     async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
         if not (text or "").strip():

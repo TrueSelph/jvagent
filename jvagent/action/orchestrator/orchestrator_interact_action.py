@@ -393,6 +393,42 @@ class OrchestratorInteractAction(
     # results, so without caps the per-turn input cost grows quadratically in
     # tick count. ``max_observations_in_prompt`` bounds how MANY replay; the
     # rest bound how BIG each one is.
+    safeguards_reminder: str = attribute(
+        default=SAFEGUARDS_REMINDER,
+        description=(
+            "Terse reminder appended to every tick's user turn — the slot a "
+            "model weights most. It restates the operating rules and the "
+            "user-content boundary, because the system-prompt rules alone do "
+            "not always hold: measured injection resistance on the example "
+            "agent sits near 87%, not 100%."
+        ),
+    )
+    skip_compose_without_guidance: bool = attribute(
+        default=False,
+        description=(
+            "Skip the compose model call on directive/resume/drain egress when "
+            "the directive carries no model-facing guidance and nothing else "
+            "needs shaping (no contributed response parameters, no channel "
+            "format, a single queued directive). Saves a serial round-trip in "
+            "front of a user-facing reply. EXPERIMENTAL: it changes what the "
+            "user reads on those paths, from a voiced rendering to the "
+            "directive's own wording — A/B before enabling."
+        ),
+    )
+    tool_listing_position: str = attribute(
+        default="system",
+        description=(
+            "Where the AVAILABLE TOOLS / AVAILABLE SKILLS listings are placed. "
+            "'system' (default) keeps them in the system prompt. 'trailing' "
+            "moves them into their own message just before the user turn, which "
+            "pulls conversation history into the cacheable request prefix "
+            "(history otherwise sits behind the listings and is re-priced "
+            "whenever the surface changes). EXPERIMENTAL: it also takes the tool "
+            "list out of the system role, and prompt-section position has "
+            "already been shown to move behaviour on this loop — A/B before "
+            "enabling (scripts/ab_prompt_variants.py)."
+        ),
+    )
     max_observations_in_prompt: int = attribute(
         default=MAX_OBSERVATIONS_IN_PROMPT,
         description="How many of this turn's tool results replay into the loop "
@@ -3186,13 +3222,28 @@ class OrchestratorInteractAction(
         channel_extra = str(
             self._channel_cfg(visitor, "system_prompt_extra", "") or ""
         ).strip()
+        tools_section = render_tools_section(tools, lean=lean)
+        resolved_skills = (
+            skills_section or prompt_cache.get("skills_section") or self.no_skills_text
+        )
+        trailing = str(self.tool_listing_position or "system").strip() == "trailing"
+        trailing_listing = ""
+        if trailing:
+            # The listings leave the system prompt entirely; a pointer keeps the
+            # surrounding prose truthful ("the tools below") rather than leaving
+            # two empty headings.
+            trailing_listing = (
+                f"AVAILABLE SKILLS — standard operating procedures for whole "
+                f"tasks. PREFER a matching skill over ad-hoc tool calls:\n"
+                f"{resolved_skills}\n\nAVAILABLE TOOLS:\n{tools_section}"
+            )
+            tools_section = "(listed in the message below)"
+            resolved_skills = "(listed in the message below)"
         system_prompt = self._compose_system_prompt(
             identity_section=prompt_cache.get("identity")
             or await self._render_identity(),
-            tools_section=render_tools_section(tools, lean=lean),
-            skills_section=skills_section
-            or prompt_cache.get("skills_section")
-            or self.no_skills_text,
+            tools_section=tools_section,
+            skills_section=resolved_skills,
             capabilities_section=capabilities_section
             or prompt_cache.get("capabilities", ""),
             parameters_section=parameters_section or prompt_cache.get("parameters", ""),
@@ -3243,12 +3294,21 @@ class OrchestratorInteractAction(
         # user turn (the slot the model weights most), so a weak model actually
         # obeys the safeguards when it writes a reply — the same technique that
         # got it to comply with directives in ReplyAction.
-        user_prompt = f"{user_prompt}\n\n{SAFEGUARDS_REMINDER}"
+        user_prompt = f"{user_prompt}\n\n{self.safeguards_reminder}"
         prior_messages = list(history or [])
+        # Under 'trailing', the listings ride in their own system message after
+        # the history, so the cacheable prefix extends through the conversation
+        # instead of stopping at the first tool-surface change.
+        listing_messages = (
+            [{"role": "system", "content": trailing_listing}]
+            if trailing_listing
+            else []
+        )
         kwargs: Dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system_prompt},
                 *prior_messages,
+                *listing_messages,
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,

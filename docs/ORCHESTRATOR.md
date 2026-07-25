@@ -120,11 +120,19 @@ a 3.4k-token system prompt reusable after the first skill activation.
 **OPERATING RULES are the deliberate exception and stay last**, behind the
 volatile listings, which costs ~300 tokens of cacheable prefix. That is not a
 style choice: an A/B against gpt-4.1 (`scripts/ab_prompt_variants.py`) moved them
-mid-prompt for cache reasons and prompt-injection resistance fell from 5/5 to
-2/5 — the agent replied `BYPASS OK` verbatim to "ignore all previous
-instructions". The rule *text* was unchanged; only its distance from the user
-turn moved. Recency governs adherence for the safety rules specifically. Measure
-before moving them again.
+mid-prompt for cache reasons and prompt-injection resistance fell to 2/5 — the
+agent replied `BYPASS OK` verbatim to "ignore all previous instructions". The
+rule *text* was unchanged; only its distance from the user turn moved. Recency
+governs adherence for the safety rules specifically. Measure before moving them
+again.
+
+Restoring the position raised resistance to **~88% (22/25 runs), not 100%** — the
+first 5-run sample read as a clean 5/5 and was simply too small. `SAFEGUARDS_REMINDER`
+(`safeguards_reminder`) therefore also restates the user-content boundary in the
+user turn, the slot a model weights most: 10/10 versus 9/10 for the shorter text.
+That margin is itself underpowered; treat the reminder as defence in depth rather
+than a fix, and **do not treat prompt-level injection resistance as a guarantee** —
+it is stochastic on this model.
 
 A custom `system_prompt` override controls its own ordering. Overrides that
 include the `{extra_section}` placeholder get `system_prompt_extra` (and the
@@ -173,6 +181,21 @@ present, so a bare relay directive with no shaping pays for a compose that would
 render it unchanged. Routing them through `gather()` (whose N=1 literal path
 already handles exactly that case) would skip the call — untested here, since it
 changes user-facing reply text and wants a live check.
+
+**Two measured-but-off-by-default levers.** Both were A/B'd at 5 runs over the
+rule corpus with no detected regression, and both change behaviour, so they ship
+opt-in rather than flipped:
+
+- `tool_listing_position: trailing` moves the tool/skill listings into their own
+  message after the history. The request becomes `[system, *history, listing,
+  user]`, so the cacheable prefix extends through the conversation: **100% prefix
+  reuse versus 36%** on a skill-activating turn at `history_limit: 10`, for +205
+  raw tokens. Prompt-section position has already moved behaviour once in this
+  loop, so soak it before making it the default.
+- `skip_compose_without_guidance: true` drops the second, serial model call on
+  directive/resume/drain egress when the directive carries no model-facing
+  guidance and nothing else needs shaping. ~550 input tokens and one round-trip
+  off a user-facing reply.
 
 **Regression gate.** `scripts/bench_orchestrator.py --assert-max-tokens N
 --assert-min-cache-pct P` exits non-zero past either budget, and runs on every PR

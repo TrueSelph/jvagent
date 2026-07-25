@@ -230,6 +230,16 @@ def instrument(orchestrator_cls: Any, script: List[Dict[str, Any]]) -> Dict[str,
         history_text = "\n".join(
             str(m.get("content", "")) for m in (captured.get("history") or [])
         )
+        # Token totals come from the WIRE payload (`messages`), not from the
+        # observability fields. Those fields carry the system prompt, the history
+        # and the user turn -- but a caller may put content in additional
+        # messages (the trailing tool-listing variant does exactly that), and
+        # summing the observability fields would silently undercount it and
+        # report a saving that is really just content the bench stopped looking
+        # at.
+        wire_text = "\n".join(
+            str(m.get("content", "")) for m in (captured.get("messages") or [])
+        )
         sink["ticks"].append(
             {
                 "gear": kwargs.get("gear", "heavy"),
@@ -242,6 +252,7 @@ def instrument(orchestrator_cls: Any, script: List[Dict[str, Any]]) -> Dict[str,
                     captured.get("prompt_for_observability", "")
                 ),
                 "history_tokens": count_tokens(history_text),
+                "wire_tokens": count_tokens(wire_text),
                 # What the provider actually caches is the request PREFIX, and
                 # the request is [system, *history, user] -- so history is part
                 # of the cacheable span, not a separate bucket. Measuring the
@@ -311,9 +322,7 @@ def report(sink: Dict[str, Any], wall_ms: float) -> Dict[str, float]:
     print("\nper-tick input tokens:")
     total = 0
     for index, tick in enumerate(ticks):
-        tick_total = (
-            tick["system_tokens"] + tick["user_tokens"] + tick["history_tokens"]
-        )
+        tick_total = tick["wire_tokens"]
         total += tick_total
         print(
             f"  tick{index} gear={tick['gear']:<5} tools={tick['tools']:<3} "
@@ -325,10 +334,10 @@ def report(sink: Dict[str, Any], wall_ms: float) -> Dict[str, float]:
 
     worst_reuse_pct = 100.0
     if len(ticks) > 1:
-        # The provider caches the request PREFIX, and the request is
-        # [system, *history, user] -- so this measures system+history, not the
-        # system prompt alone. Anything downstream of the first changed byte is
-        # re-priced, which includes history when a tool listing shifts.
+        # The provider caches the request PREFIX. The request is normally
+        # [system, *history, user], so this measures system+history rather than
+        # the system prompt alone: anything downstream of the first changed byte
+        # is re-priced, history included.
         print("\nprompt-cache prefix stability (system + history vs tick0):")
         base = ticks[0]["prefix"]
         base_tokens = max(1, count_tokens(base))
@@ -392,6 +401,14 @@ async def main() -> None:
         "'source' (the default here) to benchmark the code in this checkout.",
     )
     parser.add_argument(
+        "--tool-listing",
+        default="",
+        choices=("", "system", "trailing"),
+        help="Override tool_listing_position. 'trailing' moves the tool/skill "
+        "listings into their own message after the history, which pulls the "
+        "conversation into the cacheable request prefix.",
+    )
+    parser.add_argument(
         "--script",
         default="",
         help="JSON list of model decisions to drive the turn (default: a "
@@ -410,6 +427,8 @@ async def main() -> None:
     orchestrator = await resolve_orchestrator(
         app_root, args.agent, None if args.update_mode == "none" else args.update_mode
     )
+    if args.tool_listing:
+        orchestrator.tool_listing_position = args.tool_listing
     script = json.loads(args.script) if args.script else DEFAULT_SCRIPT
     sink = instrument(OrchestratorInteractAction, script)
 

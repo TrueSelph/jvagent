@@ -70,6 +70,29 @@ def load_prior_prompt_constants(commit: str) -> Dict[str, str]:
     return {name: namespace[name] for _, name in VARIANT_ATTRS if name in namespace}
 
 
+# Arms beyond the prompt-consolidation pair. Each is a plain attribute override
+# applied on top of the working-tree defaults, so any config-shaped hypothesis
+# can be measured with the same corpus rather than argued about.
+ATTRIBUTE_ARMS: Dict[str, Dict[str, Any]] = {
+    "listing-system": {"tool_listing_position": "system"},
+    "listing-trailing": {"tool_listing_position": "trailing"},
+    "compose-always": {"skip_compose_without_guidance": False},
+    "compose-skip": {"skip_compose_without_guidance": True},
+}
+
+
+def _register_reminder_arms() -> None:
+    """Arms for the user-turn safeguards reminder (injection resistance)."""
+    from jvagent.action.orchestrator import prompts
+
+    ATTRIBUTE_ARMS["reminder-basic"] = {
+        "safeguards_reminder": prompts.SAFEGUARDS_REMINDER_BASIC
+    }
+    ATTRIBUTE_ARMS["reminder-hardened"] = {
+        "safeguards_reminder": prompts.SAFEGUARDS_REMINDER
+    }
+
+
 def apply_variant(orchestrator: Any, constants: Optional[Dict[str, str]]) -> None:
     """Point the orchestrator's prompt attributes at *constants*, or leave the
     working-tree defaults in place when None."""
@@ -163,7 +186,7 @@ async def main() -> None:
     parser.add_argument(
         "--arms",
         default="before,after",
-        help="comma-separated: before (pre-consolidation prompts) and/or after",
+        help="comma-separated arms: before | after | listing-system | listing-trailing",
     )
     parser.add_argument(
         "--dry-run",
@@ -177,6 +200,8 @@ async def main() -> None:
     sys.path.insert(0, app_root)
 
     from jvagent.testing.use_case_loader import discover_use_cases, load_use_case
+
+    _register_reminder_arms()
 
     paths = discover_use_cases(args.use_cases)
     scenarios = [load_use_case(p) for p in paths]
@@ -217,6 +242,19 @@ async def main() -> None:
         orchestrator.light_model = args.light_model
 
     baseline = {attr: getattr(orchestrator, attr) for attr, _ in VARIANT_ATTRS}
+    attribute_baseline = {
+        attr: getattr(orchestrator, attr, None)
+        for overrides in ATTRIBUTE_ARMS.values()
+        for attr in overrides
+    }
+    unknown = [
+        a for a in arms if a not in ("before", "after") and a not in ATTRIBUTE_ARMS
+    ]
+    if unknown:
+        raise SystemExit(
+            f"unknown arm(s) {unknown}; known: before, after, "
+            f"{', '.join(sorted(ATTRIBUTE_ARMS))}"
+        )
     before_constants = load_prior_prompt_constants(CONSOLIDATION_COMMIT)
     missing = [n for _, n in VARIANT_ATTRS if n not in before_constants]
     if missing:
@@ -226,10 +264,16 @@ async def main() -> None:
     runner = LiveScenarioRunner(orchestrator)
 
     for arm in arms:
-        apply_variant(orchestrator, before_constants if arm == "before" else None)
-        if arm != "before":  # restore working-tree defaults
-            for attr, value in baseline.items():
-                setattr(orchestrator, attr, value)
+        # Always start each arm from the working-tree defaults so arms cannot
+        # contaminate each other, then apply exactly that arm's override.
+        for attr, value in baseline.items():
+            setattr(orchestrator, attr, value)
+        for attr, value in attribute_baseline.items():
+            setattr(orchestrator, attr, value)
+        if arm == "before":
+            apply_variant(orchestrator, before_constants)
+        for attr, value in ATTRIBUTE_ARMS.get(arm, {}).items():
+            setattr(orchestrator, attr, value)
         print(f"\n--- arm: {arm} ---")
         for run in range(args.runs):
             for scenario in scenarios:
@@ -241,6 +285,8 @@ async def main() -> None:
                     print(f"        {failure}")
 
     for attr, value in baseline.items():
+        setattr(orchestrator, attr, value)
+    for attr, value in attribute_baseline.items():
         setattr(orchestrator, attr, value)
     summarize({a: dict(results[a]) for a in arms}, args.runs)
 
