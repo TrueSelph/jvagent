@@ -132,3 +132,25 @@ async def test_a_correction_re_presents_the_updated_summary(monkeypatch):
 
     assert payload.get("already_presented") is None
     assert "UPDATED" in payload["response_directive"]
+
+
+async def test_legacy_session_without_a_fingerprint_is_still_guarded(monkeypatch):
+    """A session whose review was presented by a build predating the fingerprint
+    has no stored value. Reading that absence as "changed" disabled the guard for
+    every in-flight interview — which is how the bare "Confirm" reached a user a
+    second time, after the first fix was already live."""
+    import jvagent.action.interview.engine as engine
+
+    async def _keys(*a, **k):
+        return ["user_name"]
+
+    monkeypatch.setattr(engine, "compute_review_field_keys", _keys)
+    monkeypatch.setattr(engine, "build_review_summary", lambda *a, **k: "SUMMARY")
+
+    session = _Session(marker="interaction-1")
+    session.context.pop(engine.REVIEW_PRESENTED_FIELDS_KEY, None)  # legacy stamp
+    out = await handle_review(_Action(session), _visitor("interaction-2"))
+    payload = json.loads(out)
+
+    assert payload["already_presented"] is True
+    assert "interview__complete" in payload["response_directive"]

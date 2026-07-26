@@ -1925,8 +1925,15 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     if spec.confirm != "auto" and session.status == InterviewStatus.REVIEW:
         marker = _interaction_marker(visitor)
         stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
-        unchanged = str(session.context.get(REVIEW_PRESENTED_FIELDS_KEY) or "") == (
-            _fields_fingerprint(collected)
+        stored_fields = session.context.get(REVIEW_PRESENTED_FIELDS_KEY)
+        # Absent (not merely different) means the summary was stamped by a build
+        # that predates the fingerprint, or by a path that doesn't record one.
+        # Treat that as unchanged and fall back to the marker alone — reading
+        # absence as "something changed" silently disables the guard for every
+        # in-flight session, which is exactly how the echo reached a user again
+        # after the first fix shipped.
+        unchanged = stored_fields is None or str(stored_fields) == _fields_fingerprint(
+            collected
         )
         if stamped and marker and stamped != marker and unchanged:
             return interview_tool_response(
