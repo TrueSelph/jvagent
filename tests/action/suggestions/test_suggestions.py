@@ -198,7 +198,7 @@ async def test_execute_publishes_suggestions_on_streaming_turn(monkeypatch):
         "Talk to sales",
     ]
     # System prompt placeholders were filled.
-    assert lm.calls[0]["system"] == "Give 3 of at most 4 words."
+    assert lm.calls[0]["system"].startswith("Give 3 of at most 4 words.")
 
 
 @pytest.mark.asyncio
@@ -339,3 +339,93 @@ async def test_execute_noop_without_model(monkeypatch):
     await action.execute(_Visitor(stream=True))
 
     assert published["called"] is False
+
+
+# ── governance (ADR-0037 §2.3) ─────────────────────────────────────────────
+#
+# Chips are user-facing text the agent puts in the user's mouth, but they ride
+# in `metadata` rather than in `content`, so publish()'s scrub never sees them.
+# They were the last model-generated output reaching a user with no rule
+# applied. Both halves are covered here: the rules go INTO the prompt, and a
+# deterministic scrub catches what the prompt does not.
+
+
+@pytest.mark.asyncio
+async def test_response_rules_are_rendered_into_the_suggestion_prompt(monkeypatch):
+    action = _make_action()
+    lm = _FakeLM('["See pricing"]')
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        return object()
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    system = lm.calls[0]["system"]
+    assert "govern the suggestions you write" in system
+    # the identity rule in particular — a chip is a thing the agent offers to say
+    assert "language model" in system
+
+
+@pytest.mark.asyncio
+async def test_a_rule_breaking_chip_is_scrubbed_before_it_reaches_the_user(
+    monkeypatch,
+):
+    """The prompt is probabilistic; this is the deterministic backstop."""
+    action = _make_action(num_suggestions=2)
+    lm = _FakeLM('["I am an AI", "See pricing", "Book a demo"]')
+    published = {}
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        published["metadata"] = kw.get("metadata")
+        return object()
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    chips = published["metadata"]["suggestions"]
+    assert "I am an AI" not in chips
+    # scrubbing happens BEFORE the cap, so the row is still full
+    assert chips == ["See pricing", "Book a demo"]
+
+
+@pytest.mark.asyncio
+async def test_ordinary_chips_survive_the_scrub(monkeypatch):
+    """Two-direction check: the scrub must leave legitimate chips alone."""
+    action = _make_action()
+    lm = _FakeLM('["See pricing", "Book a demo", "Talk to sales"]')
+    published = {}
+
+    async def fake_get_model_action(self, required=False):
+        return lm
+
+    async def fake_publish(self, visitor, content, **kw):
+        published["metadata"] = kw.get("metadata")
+        return object()
+
+    monkeypatch.setattr(
+        SuggestionsInteractAction, "get_model_action", fake_get_model_action
+    )
+    monkeypatch.setattr(SuggestionsInteractAction, "publish", fake_publish)
+
+    await action.execute(_Visitor(stream=True))
+
+    assert published["metadata"]["suggestions"] == [
+        "See pricing",
+        "Book a demo",
+        "Talk to sales",
+    ]

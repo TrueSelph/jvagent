@@ -190,7 +190,7 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         "key": "identity.self_disclosure",
         "inviolable": True,
         "enforcement": ENFORCEMENT_SCRUB,
-        "detector": "drop_leak_sentences",
+        "detector": "drop_self_disclosure",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Speak and act as this agent. Never say or imply you are an AI, a "
@@ -202,7 +202,7 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         "key": "identity.cutoff",
         "inviolable": True,
         "enforcement": ENFORCEMENT_SCRUB,
-        "detector": "drop_leak_sentences",
+        "detector": "drop_cutoff_claims",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Never state, hint at, or volunteer a knowledge or training cutoff "
@@ -671,12 +671,19 @@ def render_parameters(parameters: Optional[List[Any]]) -> str:
 #      too, not just on compose). Only trailing + only generic templates, so a
 #      specific ask ("let me know your email") is preserved.
 # Conservative by design — when in doubt, keep the sentence.
-_LEAK_PATTERNS = [
+# Split by the rule that owns each family: one detector per parameter, so
+# deleting a parameter actually removes its scrub. A single shared detector made
+# `identity.cutoff` silently keep enforcing `identity.self_disclosure` after the
+# latter was removed, which would have made ADR-0037's central claim false.
+_CUTOFF_PATTERNS = [
     # Knowledge / training cutoff (inherently self-referential).
     re.compile(r"\b(knowledge|training)[\s-]*cut[\s-]?off\b", re.I),
     re.compile(r"\bmy training data\b", re.I),
     re.compile(r"\btrained\b[^.!?]{0,60}\bup to\b", re.I),
     re.compile(r"\bas of my (last|latest|most recent)\b", re.I),
+]
+
+_SELF_DISCLOSURE_PATTERNS = [
     # Self-identifying as an AI / model.
     re.compile(r"\b(i\s+am|i'?m|as)\s+(an?\s+)?(ai|artificial intelligence)\b", re.I),
     re.compile(r"\b(i\s+am|i'?m)\s+(a\s+)?(large\s+)?(ai\s+)?language\s+model\b", re.I),
@@ -688,6 +695,10 @@ _LEAK_PATTERNS = [
         re.I,
     ),
 ]
+
+# Union, kept under the original name: it is the registered `drop_leak_sentences`
+# detector and a config may name it directly.
+_LEAK_PATTERNS = _CUTOFF_PATTERNS + _SELF_DISCLOSURE_PATTERNS
 
 # Generic invitation-closer templates (a *trailing* sentence matching one is a
 # sign-off, not substance). Specific asks ("let me know your email") carry an
@@ -725,6 +736,18 @@ _SENTENCE_RE = re.compile(r"[^.!?]*[.!?]+|[^.!?]+", re.S)
 
 def _is_leak(sentence: str) -> bool:
     return any(p.search(sentence) for p in _LEAK_PATTERNS)
+
+
+def _drop_matching(text: str, patterns: List[Any]) -> str:
+    """Drop whole sentences matching *patterns*, keeping all of them if that
+    would blank the text (see vet_egress's ``allow_empty`` for why)."""
+    sentences = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
+    kept = [
+        s for s in sentences if not (s.strip() and any(p.search(s) for p in patterns))
+    ]
+    if not "".join(kept).strip():
+        kept = sentences
+    return "".join(kept)
 
 
 def _is_closer(sentence: str) -> bool:
@@ -781,14 +804,20 @@ def _collapse_repeat_greeting(sentences: list) -> list:
 
 
 def _detect_drop_leak_sentences(text: str) -> str:
-    """Scrub detector for ``identity.self_disclosure`` / ``identity.cutoff``."""
-    sentences = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
-    kept = [s for s in sentences if not (s.strip() and _is_leak(s))]
-    if not "".join(kept).strip():
-        # Don't blank a reply that is *only* a leak — a silent turn is worse
-        # than a bad one, and that pathological case is the prompt layer's job.
-        kept = sentences
-    return "".join(kept)
+    """Both identity families at once. Kept for configs that name it directly;
+    the core rules use the per-rule detectors below so that deleting one rule
+    does not leave the other still enforcing it."""
+    return _drop_matching(text, _LEAK_PATTERNS)
+
+
+def _detect_drop_self_disclosure(text: str) -> str:
+    """Scrub detector for ``identity.self_disclosure``."""
+    return _drop_matching(text, _SELF_DISCLOSURE_PATTERNS)
+
+
+def _detect_drop_cutoff_claims(text: str) -> str:
+    """Scrub detector for ``identity.cutoff``."""
+    return _drop_matching(text, _CUTOFF_PATTERNS)
 
 
 def _detect_peel_closers(text: str) -> str:
@@ -807,11 +836,24 @@ def _detect_collapse_repeat_greeting(text: str) -> str:
 
 
 register_scrub_detector("drop_leak_sentences", _detect_drop_leak_sentences)
+register_scrub_detector("drop_self_disclosure", _detect_drop_self_disclosure)
+register_scrub_detector("drop_cutoff_claims", _detect_drop_cutoff_claims)
 register_scrub_detector("peel_closers", _detect_peel_closers)
 register_scrub_detector("collapse_repeat_greeting", _detect_collapse_repeat_greeting)
 
 
-def vet_egress(text: str, parameters: Optional[List[Any]] = None) -> str:
+# Neutral probe sentence used to ask a detector "was the WHOLE text a
+# violation?". Prepended, not appended, because the closer detector only fires
+# on a trailing sentence.
+_EGRESS_PROBE = "Noted."
+
+
+def vet_egress(
+    text: str,
+    parameters: Optional[List[Any]] = None,
+    *,
+    allow_empty: bool = False,
+) -> str:
     """Apply every ``enforcement: scrub`` response rule to *text*.
 
     Runs on EVERY non-streaming egress, so the machine-checkable response rules
@@ -827,6 +869,13 @@ def vet_egress(text: str, parameters: Optional[List[Any]] = None) -> str:
     No whitespace normalization: downstream renderers own their spacing, so a
     server-side collapse changes nothing visible and only risks mangling
     intentional structure (indented code blocks, nested list items).
+
+    ``allow_empty`` inverts one deliberate piece of conservatism. For a REPLY, a
+    message that is entirely a rule-break is still returned, because a silent
+    turn is worse than a bad one. For a fragment that is one of several — a
+    quick-reply chip — that reasoning does not hold: dropping it costs a chip,
+    not the turn. Pass ``allow_empty=True`` there and a wholly-violating
+    fragment scrubs to ``""``.
     """
     if not text or not text.strip():
         return text
@@ -845,6 +894,21 @@ def vet_egress(text: str, parameters: Optional[List[Any]] = None) -> str:
                     exc,
                 )
     cleaned = cleaned.strip()
+    if allow_empty and cleaned == text.strip():
+        # Nothing was removed — but a detector that refuses to blank its input
+        # looks identical to one that found nothing. Re-ask with a neutral
+        # sentence in front: if only the probe survives, the whole fragment was
+        # the violation. This keeps the call site free of any rule knowledge.
+        for param in response_parameters(resolve_parameters(pool)):
+            if enforcement_of(param) != ENFORCEMENT_SCRUB:
+                continue
+            for detector in detectors_for(param, ENFORCEMENT_SCRUB):
+                try:
+                    probed = detector(f"{_EGRESS_PROBE} {text.strip()}")
+                except Exception:  # pragma: no cover - defensive
+                    continue
+                if probed.strip() == _EGRESS_PROBE:
+                    return ""
     return cleaned or text
 
 

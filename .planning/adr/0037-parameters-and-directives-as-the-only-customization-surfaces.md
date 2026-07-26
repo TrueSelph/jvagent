@@ -1,6 +1,6 @@
 # ADR-0037 — Parameters and directives are the only customization surfaces
 
-- **Status:** Accepted (steps 1-6 implemented; step 7 outstanding)
+- **Status:** Accepted (implemented)
 - **Date:** 2026-07-25
 - **Relates to:** [ADR-0012](0012-skill-executive-architecture.md) (orchestrator), [ADR-0015](0015-skill-executive-configuration-surface.md) (config surface), [ADR-0024](0024-single-per-turn-egress.md) (single per-turn egress), [ADR-0025](0025-replyaction-single-output-contract.md) (ReplyAction output contract)
 - **Supersedes in part:** ADR-0015's premise that behaviour is tuned through per-action prompt attributes
@@ -228,9 +228,19 @@ parameters keep working untouched (`enforcement` defaults to `prompt`), but the
 orchestrator loses six config attributes, which is a breaking change for anyone
 setting them — they move onto the parameters that own those rules.
 
-**Not solved.** Streaming egress still cannot be scrubbed (tokens have left).
-`SuggestionsInteractAction` generates its own text with no parameters applied;
-under this ADR that becomes a defect to fix, not an exception to tolerate.
+**Not solved.** Streaming egress still cannot be scrubbed — by the time a rule
+could fire, the tokens have left. This is a property of the transport, not of
+the design, and is the one place where `prompt` enforcement is the only
+enforcement available. `SuggestionsInteractAction` **is** now fixed: the
+response rules render into its prompt and each chip is scrubbed before publish
+(chips ride in `metadata`, so `publish()`'s scrub of `content` never saw them).
+
+**A detector must be no coarser than the rule that owns it.** `identity.cutoff`
+and `identity.self_disclosure` initially shared one detector, so deleting either
+rule left the other still enforcing both — which would have made this ADR's
+central promise false in exactly the case an operator would test. They now have
+one detector each. Any future rule pair that shares a detector inherits the same
+defect.
 
 **Risk.** `scrub` and `guard` are deterministic and can therefore be *wrong*
 deterministically. A detector with a false positive blocks legitimate replies on
@@ -256,8 +266,8 @@ kind `unsupported_specifics` has (it flags "University of Toronto" and leaves
    `ack_statements` are emitted text, not behaviour — see §2.1.)
 6. Replace `safeguards_reminder`'s behavioural half with `placement: user_turn`,
    leaving a mechanics-only template.
-7. Close the ungoverned paths: suggestions, and streaming (or document it as a
-   known limit of the transport).
+7. Close the ungoverned paths: suggestions **(done)**; streaming is documented
+   as a known limit of the transport (§3).
 
 Steps 1–2 are additive and safe to land alone. Steps 3–6 are the breaking ones
 and should land together with a CHANGELOG note.

@@ -29,6 +29,12 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.parameters import (
+    render_parameters,
+    reply_core_parameters,
+    response_parameters,
+    vet_egress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -263,9 +269,22 @@ class SuggestionsInteractAction(InteractAction):
                 await visitor.unrecord_action_execution()
                 return
 
+            # Chips are user-facing text the agent puts in the user's mouth, so
+            # they are governed by the same response rules as a reply (ADR-0037
+            # §2.3). Without this the model could offer "Are you an AI?" or a
+            # closer the voice rules forbid — text that never passed a rule
+            # because it rides in metadata rather than in the reply body.
+            pool = list(getattr(interaction, "parameters", None) or [])
+            pool += reply_core_parameters()
+            rules = render_parameters(response_parameters(pool))
             system = self.system_prompt.format(
                 count=self.num_suggestions, max_words=self.max_words
             )
+            if rules:
+                system = (
+                    f"{system}\n\nThese rules govern the suggestions you "
+                    f"write, exactly as they govern the agent's replies:\n{rules}"
+                )
             prompt = (
                 "Latest exchange:\n"
                 f"User: {utterance}\n"
@@ -299,7 +318,16 @@ class SuggestionsInteractAction(InteractAction):
                     for s in candidates
                     if not is_data_request(s) and not needs_user_specifics(s)
                 ]
-            suggestions = candidates[: self.num_suggestions]
+            # Deterministic backstop for the same rules. publish() scrubs
+            # `content`, and these ride in metadata, so they would otherwise
+            # reach the user unscrubbed. Scrub BEFORE capping so a dropped chip
+            # is replaced by the next candidate instead of shrinking the row.
+            scrubbed: List[str] = []
+            for candidate in candidates:
+                cleaned = (vet_egress(candidate, pool, allow_empty=True) or "").strip()
+                if cleaned:
+                    scrubbed.append(cleaned)
+            suggestions = scrubbed[: self.num_suggestions]
             if not suggestions:
                 logger.debug("SuggestionsInteractAction: no usable suggestions")
                 await visitor.unrecord_action_execution()

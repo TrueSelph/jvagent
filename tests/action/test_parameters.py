@@ -263,3 +263,48 @@ def test_a_sentence_that_is_only_a_repeat_greeting_is_dropped():
 def test_no_greeting_anywhere_is_a_noop():
     text = "Your order ships Tuesday. Tracking follows by email."
     assert vet_egress(text) == text
+
+
+# ── vet_egress(allow_empty=) — ADR-0037 §2.3 ───────────────────────────────
+
+
+def test_a_reply_that_is_only_a_leak_is_still_returned():
+    """Deliberate conservatism for replies: a silent turn is worse than a bad
+    one, so the whole-text case is left to the prompt layer."""
+    from jvagent.action.parameters import reply_core_parameters, vet_egress
+
+    pool = reply_core_parameters()
+    assert vet_egress("I am an AI", pool) == "I am an AI"
+
+
+def test_a_fragment_that_is_only_a_leak_scrubs_to_empty():
+    """That reasoning inverts for a fragment that is one of several — dropping
+    a quick-reply chip costs a chip, not the turn."""
+    from jvagent.action.parameters import reply_core_parameters, vet_egress
+
+    pool = reply_core_parameters()
+    assert vet_egress("I am an AI", pool, allow_empty=True) == ""
+    assert (
+        vet_egress("Let me know if you need anything else", pool, allow_empty=True)
+        == ""
+    )
+
+
+def test_allow_empty_leaves_legitimate_fragments_alone():
+    """The other direction — a deterministic drop must not eat ordinary text,
+    including text that mentions a model without the agent claiming to be one."""
+    from jvagent.action.parameters import reply_core_parameters, vet_egress
+
+    pool = reply_core_parameters()
+    for good in ("See pricing", "Book a demo", "What is a language model?"):
+        assert vet_egress(good, pool, allow_empty=True) == good
+
+
+def test_allow_empty_respects_a_deleted_rule():
+    """Scrubbing follows the parameter, so removing the rule removes the drop."""
+    from jvagent.action.parameters import reply_core_parameters, vet_egress
+
+    without = [
+        p for p in reply_core_parameters() if p.get("key") != "identity.self_disclosure"
+    ]
+    assert vet_egress("I am an AI", without, allow_empty=True) == "I am an AI"

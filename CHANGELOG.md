@@ -18,6 +18,22 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   Existing parameters are unaffected — every new field defaults to today's
   behaviour.
 
+### Fixed
+
+- **Quick-reply chips were ungoverned.** `SuggestionsInteractAction` generates
+  user-facing text with a language model but publishes it in `metadata`, where
+  `publish()`'s egress scrub never looked, and it rendered no response rules
+  into its prompt. Both halves are closed: the rules go into the prompt, and
+  each chip is scrubbed before publish.
+- **`vet_egress` gained `allow_empty=`.** For a reply, text that is entirely a
+  rule-break is still returned — a silent turn is worse than a bad one. For a
+  fragment that is one of several (a chip), that inverts, and it now scrubs to
+  empty.
+- **`identity.cutoff` and `identity.self_disclosure` shared one scrub
+  detector**, so deleting either rule left the other enforcing both. They now
+  have one detector each (`drop_cutoff_claims`, `drop_self_disclosure`);
+  `drop_leak_sentences` remains registered as the union.
+
 ### Removed
 
 - **BREAKING — five orchestrator attributes.** `enforce_grounded_claims`,
