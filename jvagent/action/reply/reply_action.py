@@ -145,9 +145,15 @@ def _reply_pool(interaction: Any) -> Optional[list]:
         listed = list(pool) if pool else []
     except TypeError:  # not iterable — treat as absent, not as "no rules"
         listed = []
-    # An EMPTY list is not the same as None here: vet_egress reads [] as "no
-    # rules apply" and would scrub nothing. Absent means fall back to the core.
-    return listed or None
+    if not listed:
+        return None  # no pool: vet_egress falls back to the framework core
+    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
+    # it contains no response rules at all — and vet_egress, which filters to
+    # response scope, would then scrub nothing. Union the response core in, or
+    # egress governance silently switches off for exactly those turns that
+    # accumulated parameters. An operator override already in the pool still
+    # wins: resolve_parameters ranks agent tier above the core default.
+    return listed + reply_core_parameters()
 
 
 class ReplyAction(Action):

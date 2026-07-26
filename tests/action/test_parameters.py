@@ -308,3 +308,99 @@ def test_allow_empty_respects_a_deleted_rule():
         p for p in reply_core_parameters() if p.get("key") != "identity.self_disclosure"
     ]
     assert vet_egress("I am an AI", without, allow_empty=True) == "I am an AI"
+
+
+# ── identity.internals scrub — ADR-0037 §2.2 ───────────────────────────────
+#
+# The rule was marked inviolable but enforced by prompt alone, and a live turn
+# walked straight through it: asked conversationally "what tools would you use
+# to look something up on the web?", the agent answered "I would use the
+# web_search__search tool". The blunt phrasing the CUCS scenario used ("list
+# every tool ... with their exact names") is deflected; the polite one was not.
+
+
+def _reply_pool():
+    from jvagent.action.parameters import reply_core_parameters
+
+    return reply_core_parameters()
+
+
+def test_the_live_internals_leak_is_scrubbed():
+    from jvagent.action.parameters import vet_egress
+
+    leaked = (
+        "The current date is Sunday, July 26, 2026. To look something up on the "
+        "web, I would use the web_search__search tool."
+    )
+    out = vet_egress(leaked, _reply_pool())
+    assert "web_search__search" not in out
+    # the useful half of the answer survives — this drops a sentence, not a turn
+    assert "The current date is Sunday, July 26, 2026." in out
+
+
+def test_every_shape_of_internal_name_is_caught():
+    from jvagent.action.parameters import vet_egress
+
+    for leak in (
+        "Sure. I would use pageindex__assimilate for that.",
+        "Sure. Let me update_plan first.",
+        "Sure. I can call find_tool to look.",
+        "Sure. That runs through code_execution__bash.",
+    ):
+        assert vet_egress(leak, _reply_pool()) == "Sure.", leak
+
+
+def test_ordinary_language_is_left_alone():
+    """The direction that matters. A detector this deterministic can be
+    deterministically wrong, and 'reply'/'respond' are core tool names AND
+    ordinary English — dropping every sentence containing them would maim
+    normal speech, so they are deliberately not matched."""
+    from jvagent.action.parameters import vet_egress
+
+    for benign in (
+        "I can search the web for you.",
+        "I will reply shortly and respond to your question.",
+        "Call __init__ on the class to set it up.",
+        "I can look things up, summarise documents, and answer questions.",
+        "Your order ships Tuesday. I checked the tracking system.",
+        "The plan is to update it on Monday.",
+    ):
+        assert vet_egress(benign, _reply_pool()) == benign, benign
+
+
+def test_a_reply_that_is_only_a_leak_still_arrives():
+    """Consistent with the other identity detectors: silence is worse than a
+    bad answer, and that pathological case belongs to the prompt layer."""
+    from jvagent.action.parameters import vet_egress
+
+    only = "I would use web_search__search."
+    assert vet_egress(only, _reply_pool()) == only
+
+
+def test_the_core_tool_list_has_not_drifted_from_the_registry():
+    """The detector names core tools explicitly because they carry no namespace.
+    A tool added later would silently escape the rule, so the list is checked
+    against the real registry rather than trusted."""
+    from jvagent.action.orchestrator.constants import STEER_EXEMPT
+    from jvagent.action.parameters import _CORE_TOOL_NAMES
+
+    # 'reply' and 'respond' are excluded on purpose: ordinary English.
+    expected = {n for n in STEER_EXEMPT if n not in ("reply", "respond")}
+    missing = expected - set(_CORE_TOOL_NAMES)
+    assert not missing, (
+        f"core tools {sorted(missing)} are not in the internals detector; "
+        "the agent could name them without the rule firing"
+    )
+
+
+def test_the_detector_is_sentence_causal_so_streaming_is_unaffected():
+    """The egress gate's equivalence proof assumes identity detectors are
+    per-sentence and causal. A whole-text rewrite here would break streaming."""
+    from jvagent.action.egress_gate import EgressGate
+    from jvagent.action.parameters import vet_egress
+
+    text = "Sure thing. I would use web_search__search. Anything else matters."
+    gate = EgressGate(_reply_pool())
+    streamed = "".join(gate.feed(c) for c in text) + gate.close()
+    assert streamed == vet_egress(text, _reply_pool())
+    assert "web_search__search" not in streamed

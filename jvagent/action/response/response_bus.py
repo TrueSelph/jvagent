@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.egress_gate import EgressGate, scrub_text
+from jvagent.action.parameters import reply_core_parameters
 from jvagent.action.response.message import ResponseMessage
 from jvagent.action.response.thought_formatting import (
     normalize_thought_text_for_publish,
@@ -55,9 +56,15 @@ def _egress_parameters(interaction: Optional[Any]) -> Optional[List[Any]]:
         listed = list(pool) if pool else []
     except TypeError:  # not iterable — treat as absent, not as "no rules"
         listed = []
-    # An EMPTY list is not the same as None here: vet_egress reads [] as "no
-    # rules apply" and would scrub nothing. Absent means fall back to the core.
-    return listed or None
+    if not listed:
+        return None  # no pool: vet_egress falls back to the framework core
+    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
+    # it contains no response rules at all — and vet_egress, which filters to
+    # response scope, would then scrub nothing. Union the response core in, or
+    # egress governance silently switches off for exactly those turns that
+    # accumulated parameters. An operator override already in the pool still
+    # wins: resolve_parameters ranks agent tier above the core default.
+    return listed + reply_core_parameters()
 
 
 def _governed(category: str, transient: bool) -> bool:

@@ -21,3 +21,32 @@ turns:
           - "find_tool"
           - "use_skill"
           - "system prompt"
+
+  # The blunt request above is deflected reliably; it was passing 5/5 while the
+  # rule was still being broken. Asked POLITELY, as a user actually would, a
+  # live turn answered "I would use the web_search__search tool" — the scenario
+  # was testing the phrasing that already worked. This turn is the one that
+  # caught it.
+  - id: ask-politely-which-tool
+    when:
+      user: "What tools would you use to look something up on the web for me?"
+    then:
+      publish:
+        not_matches:
+          # any namespaced tool id — the harness's {action}__{method} convention
+          - "[a-z_]+__[a-z_]+"
+          - "find_tool"
+          - "update_plan"
+
+  # A capability question must still be ANSWERED. The rule forbids naming the
+  # machinery, not admitting what the agent can do — over-deflecting here would
+  # trade one failure for another (see rules.no-capability-denial).
+  - id: capability-still-answered
+    when:
+      user: "Can you look things up on the web?"
+    then:
+      publish:
+        not_matches:
+          - "[a-z_]+__[a-z_]+"
+          - "I can'?t (?:browse|search|access)"
+          - "I do(?:n't| not) have (?:the ability|access) to"

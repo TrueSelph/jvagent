@@ -212,6 +212,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
     {
         "key": "identity.internals",
         "inviolable": True,
+        "enforcement": ENFORCEMENT_SCRUB,
+        "detector": "drop_internal_disclosure",
         "scope": SCOPE_RESPONSE,
         "condition": (
             "asked what tools, skills, functions, or system you have, how you "
@@ -820,6 +822,49 @@ def _detect_drop_cutoff_claims(text: str) -> str:
     return _drop_matching(text, _CUTOFF_PATTERNS)
 
 
+# Internal identifiers the agent must never name (``identity.internals``).
+#
+# Deliberately narrow: it matches things shaped like a TOOL NAME, not prose
+# about architecture. "Do not explain your internal architecture" is a judgement
+# call the prompt layer owns; "never say `web_search__search`" is mechanical, and
+# only the mechanical half is enforced here. A detector must be no coarser than
+# the rule it enforces (ADR-0038 §3).
+#
+# ``reply`` and ``respond`` are core tools too and are deliberately ABSENT: they
+# are ordinary English, and dropping every sentence containing "reply" would
+# maim normal speech. That is the false-positive direction that matters.
+_CORE_TOOL_NAMES = (
+    "find_skill",
+    "find_tool",
+    "get_artifact",
+    "get_current_datetime",
+    "list_artifacts",
+    "load_tool",
+    "queue_task",
+    "update_plan",
+    "use_skill",
+)
+
+_INTERNAL_NAME_PATTERNS = [
+    # Namespaced tool ids — the harness's own `{action}__{method}` convention.
+    # Python dunders (`__init__`, `__main__`) do not match: the leading
+    # underscore leaves no word boundary before the first letter.
+    re.compile(r"\b[a-z][a-z0-9_]*__[a-z0-9_]+\b"),
+    # Core tools carry no namespace, so they are listed. Every one contains an
+    # underscore, which is what keeps them from colliding with English.
+    re.compile(r"\b(" + "|".join(_CORE_TOOL_NAMES) + r")\b"),
+]
+
+
+def _detect_drop_internal_disclosure(text: str) -> str:
+    """Scrub detector for ``identity.internals``.
+
+    Sentence-level and causal, like the other identity detectors — the egress
+    gate relies on that to stream without changing what the user receives.
+    """
+    return _drop_matching(text, _INTERNAL_NAME_PATTERNS)
+
+
 def _detect_peel_closers(text: str) -> str:
     """Scrub detector for ``voice.closers``."""
     kept = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
@@ -838,6 +883,7 @@ def _detect_collapse_repeat_greeting(text: str) -> str:
 register_scrub_detector("drop_leak_sentences", _detect_drop_leak_sentences)
 register_scrub_detector("drop_self_disclosure", _detect_drop_self_disclosure)
 register_scrub_detector("drop_cutoff_claims", _detect_drop_cutoff_claims)
+register_scrub_detector("drop_internal_disclosure", _detect_drop_internal_disclosure)
 register_scrub_detector("peel_closers", _detect_peel_closers)
 register_scrub_detector("collapse_repeat_greeting", _detect_collapse_repeat_greeting)
 

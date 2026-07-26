@@ -209,3 +209,73 @@ def test_pending_check_never_breaks_egress():
     OrchestratorInteractAction._shaping_or_directives_pending(
         responder, broken, visitor
     )
+
+
+# --- the pool asymmetry that switched governance off ------------------------
+
+
+async def test_scrub_still_applies_when_the_interaction_carries_a_pool():
+    """The bug this exists for: every ADR-0038 test passed an EMPTY parameter
+    pool, so the bus fell back to the framework core and scrubbed correctly.
+
+    A real turn accumulates parameters, and the interaction pool is
+    orchestration-scoped by construction — it contains no response rules at all.
+    vet_egress filters to response scope, found nothing, and scrubbed nothing.
+    Governance therefore switched itself off for precisely the turns that had
+    configuration, which is the opposite of what a pool is for. Caught live, not
+    by the suite.
+    """
+    from jvagent.action.parameters import orchestrator_core_parameters
+    from jvagent.action.response.response_bus import ResponseBus
+
+    bus = ResponseBus()
+    interaction = MagicMock()
+    interaction.id = "i1"
+    interaction.response = None
+    # what a real turn looks like: an orchestration-scoped pool, no response rules
+    interaction.parameters = orchestrator_core_parameters()
+    interaction.set_response = MagicMock(return_value=True)
+    interaction.save = AsyncMock()
+
+    leak = "The date is Sunday. I would use the web_search__search tool."
+    await bus.publish(
+        session_id="s1",
+        content=leak,
+        channel="default",
+        stream=False,
+        interaction_id="i1",
+        interaction=interaction,
+        user_id="u1",
+    )
+    published = "".join(
+        m.content for m in bus._message_buffers.get("i1", []) if m.content
+    )
+    assert "web_search__search" not in published
+    assert "The date is Sunday." in published
+
+
+async def test_an_operator_override_in_the_pool_still_wins_over_the_core():
+    """Unioning the core back in must not trample a rule the operator set."""
+    from jvagent.action.parameters import (
+        orchestrator_core_parameters,
+        resolve_parameters,
+        vet_egress,
+    )
+    from jvagent.action.response.response_bus import _egress_parameters
+
+    override = {
+        "key": "voice.closers",
+        "scope": "response",
+        "tier": "agent",
+        "response": "Closers are fine here.",
+    }
+    interaction = MagicMock()
+    interaction.parameters = orchestrator_core_parameters() + [override]
+    pool = _egress_parameters(interaction)
+    winner = [p for p in resolve_parameters(pool) if p.get("key") == "voice.closers"]
+    assert len(winner) == 1
+    assert winner[0]["response"] == "Closers are fine here."
+    # and the core identity rules are present again, which was the whole fix
+    assert "web_search__search" not in vet_egress(
+        "Sure. I would use web_search__search.", pool
+    )
