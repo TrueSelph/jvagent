@@ -104,8 +104,8 @@ actions:
 
       # -- Prompt surface: every sub-prompt defaults to its constant in
       # jvagent/action/orchestrator/prompts.py and is overridable here
-      # (system_prompt, user_prompt, tool_use_policy_prompt, flow_in_progress_prompt,
-      # length_limit_prompt, finalize_prompt, no_skills_text). They are str.format
+      # (system_prompt, user_prompt, flow_in_progress_prompt, finalize_prompt,
+      # no_skills_text). They are str.format
       # templates — keep the placeholders and double literal { } as {{ }}. The
       # simplest, safe knob is additive extra instructions:
       # Only what applies on EVERY channel lives here. The WhatsApp Flow rules

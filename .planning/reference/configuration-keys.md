@@ -201,13 +201,26 @@ piece and logs a warning, so a bad string never breaks a turn.
 | `system_prompt` | `{identity_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` | the main system-prompt body (identity → capabilities → tools → skills → step JSON → LOOP PROTOCOL → OPERATING RULES) |
 | `system_prompt_extra` | — | extra text appended after the base body (safe additive; no placeholders needed) |
 | `user_prompt` | `{utterance}` `{observations_section}` (`{history_section}` accepted but rendered empty — history rides the structured-message channel) | the per-tick user prompt; the `SAFEGUARDS_REMINDER` (peak-attention OPERATING-RULES reminder) is appended to it each step |
-| `parameters` | — | scoped behavioural rules `{scope, condition?, response}` (the **common parameter subsystem**, on the `Action` base). `scope: orchestration` rules render in the LOOP PROTOCOL; `scope: response` (default when unspecified) render in the reply compose; the executive natively owns the orchestration core, the ReplyAction the response core, and every action's params are pooled onto the interaction each turn |
-| `memory_prompt` | — | the standing memory-access protocol rendered in the LOOP PROTOCOL (search the conversation in context + saved artifacts before claiming you can't recall); set empty to omit |
-| `tool_use_policy_prompt` | — | rendered in the LOOP PROTOCOL when `block_raw_tool_invocation` is on |
+| `parameters` | — | scoped behavioural rules `{scope, condition?, response, enforcement?, detector?, placement?, key?, tier?}` (the **common parameter subsystem**, on the `Action` base). `scope: orchestration` rules render in the LOOP PROTOCOL; `scope: response` (default when unspecified) render in the reply compose; the executive natively owns the orchestration core, the ReplyAction the response core, and every action's params are pooled onto the interaction each turn |
 | `flow_in_progress_prompt` | `{flow_note}` | appended while a flow is active |
-| `length_limit_prompt` | `{max_chars}` | appended when `max_statement_length` is set |
 | `finalize_prompt` | — | appended on the partial-compose finalize tick |
 | `no_skills_text` | — | shown in the AVAILABLE SKILLS slot when none load |
+
+**Removed in ADR-0037** (breaking): `memory_prompt`, `tool_use_policy_prompt`,
+`length_limit_prompt`, `enforce_grounded_claims`, `enforce_grounded_specifics`.
+Each rule is now a parameter, overridden by `key` from `agent.yaml` rather than
+by setting an attribute:
+
+| Was | Now override the parameter | Rendered |
+|---|---|---|
+| `memory_prompt` | `memory.search_first` | LOOP PROTOCOL (`placement: inline`) |
+| `tool_use_policy_prompt` | `tools.selection` | LOOP PROTOCOL when `block_raw_tool_invocation` is on |
+| `length_limit_prompt` | `voice.length` (keeps `{max_chars}`) | appended when `max_statement_length` is set |
+| `enforce_grounded_*` | `grounding.verified_claims` (`enforcement: guard`) | OPERATING RULES + a bounded loop deflection |
+
+To change one, add a parameter with the same `key` and `tier: agent`. Deleting
+the rule removes its prompt text, its scrub and its guard together. Text and
+prompt position are unchanged from the attribute era.
 
 (The agent's identity comes from the Agent's `alias` + `role` (ADR-0014), not
 from these keys.)
