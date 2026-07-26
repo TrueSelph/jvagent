@@ -24,6 +24,7 @@ from jvagent.action.orchestrator.prompts import (
     render_skills_section,
 )
 from jvagent.action.parameters import (
+    accumulate_skill_parameters,
     orchestration_parameters,
     render_parameters,
     reply_core_parameters,
@@ -104,6 +105,38 @@ class OrchestratorLoopMixin:
                 "verified.)"
             ),
         }
+
+    async def _absorb_skill_parameters(self, visitor, docs) -> str:
+        """Pool an in-force skill's parameters and re-render the loop section.
+
+        Response-scoped rules reach the reply compose on their own, because that
+        reads the interaction pool at compose time. Orchestration-scoped ones
+        would not: the loop's parameters_section is rendered once at turn start,
+        so a skill activating mid-turn would have its rules ignored for the rest
+        of that turn. Re-rendering keeps both scopes honest.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None or not docs:
+            return ""
+        try:
+            changed = await accumulate_skill_parameters(interaction, docs)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("orchestrator: skill parameter accumulation failed: %s", exc)
+            return ""
+        if not changed:
+            return ""
+        try:
+            await interaction.save()
+        except Exception:
+            pass
+        pool = getattr(interaction, "parameters", None) or self.parameters
+        section = render_parameters(
+            orchestration_parameters(pool) + reply_core_parameters()
+        )
+        cache = getattr(self, "_turn_prompt_cache", None)
+        if isinstance(cache, dict):
+            cache["parameters"] = section
+        return section
 
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         loop_t0 = time.perf_counter()
@@ -365,6 +398,14 @@ class OrchestratorLoopMixin:
                     if getattr(doc, "task_lock", False) and doc.name in activated:
                         active_skill_doc = doc
                         break
+
+        in_force = [d for d in skill_docs if getattr(d, "always_active", False)]
+        if active_skill_doc is not None and active_skill_doc not in in_force:
+            in_force.append(active_skill_doc)
+
+        refreshed = await self._absorb_skill_parameters(visitor, in_force)
+        if refreshed:
+            parameters_section = refreshed
 
         if active_skill_doc is not None:
             prep_obs_before = len(observations)
@@ -936,6 +977,11 @@ class OrchestratorLoopMixin:
                         )
                         if locked_doc is not None:
                             active_skill_doc = locked_doc
+                            refreshed = await self._absorb_skill_parameters(
+                                visitor, [locked_doc]
+                            )
+                            if refreshed:
+                                parameters_section = refreshed
                             if new_section:
                                 skills_section = new_section
                             await self._emit_server_prep_tool_thoughts(

@@ -205,6 +205,42 @@ async def accumulate_action_parameters(interaction: Any, actions: List[Any]) -> 
     return changed
 
 
+async def accumulate_skill_parameters(interaction: Any, docs: List[Any]) -> bool:
+    """Queue an activated skill's parameters onto ``interaction.parameters``.
+
+    The skill-side twin of :func:`accumulate_action_parameters` (ADR-0037). An
+    Action contributes standing rules programmatically; a skill contributes the
+    rules that hold while it is driving the turn, declared in its SKILL.md
+    frontmatter. Both land in the same pool, in the same shape, attributed to
+    their source — so the loop prompt and the reply compose pick a skill's rules
+    up exactly as they pick up an action's, with no second read path.
+
+    Only called for skills that are actually in force (always-active, the active
+    task-lock, or one activated this turn). A skill that is merely *available*
+    contributes nothing, or every listed skill would shape every turn.
+    """
+    if interaction is None:
+        return False
+    changed = False
+    for doc in docs or []:
+        scoped: List[Dict[str, Any]] = []
+        for p in getattr(doc, "parameters", None) or []:
+            if not isinstance(p, dict):
+                continue
+            entry = dict(p)
+            entry["scope"] = _scope_of(p)
+            scoped.append(entry)
+        if not scoped:
+            continue
+        name = str(getattr(doc, "name", "") or "skill")
+        try:
+            if interaction.add_parameters(scoped, name):
+                changed = True
+        except Exception:
+            continue
+    return changed
+
+
 def render_parameters(parameters: Optional[List[Any]]) -> str:
     """Render parameters as a deduped bullet list, or '' when none.
 
@@ -403,6 +439,7 @@ __all__ = [
     "response_parameters",
     "orchestration_parameters",
     "accumulate_action_parameters",
+    "accumulate_skill_parameters",
     "render_parameters",
     "vet_egress",
 ]

@@ -178,9 +178,14 @@ and should land together with a CHANGELOG note.
 
 ## 5. Open questions
 
-- **Do skills get parameters?** A SKILL.md SOP shapes behaviour for the duration
-  of a skill. Either it declares parameters (consistent) or SOP prose remains a
-  third surface (inconsistent). Leaning toward the former; not settled here.
+- ~~**Do skills get parameters?**~~ **Settled — yes, implemented.** A SKILL.md
+  declares `parameters:` in frontmatter, in the same `{scope?, condition?,
+  response}` shape an Action declares programmatically. Both routes pool onto the
+  same interaction, so there is one read path. Contributed only while the skill is
+  in force (always-active, the active task-lock, or activated this turn) — a
+  merely available skill shapes nothing. Activating mid-turn re-renders the loop's
+  parameter section so an orchestration-scoped rule applies for the rest of that
+  turn.
 - **Conditional enforcement.** `condition` today is prose the model evaluates. A
   `guard`-enforced conditional rule needs the condition to be machine-evaluable,
   or the guard must run unconditionally and rely on the detector for precision.

@@ -50,6 +50,9 @@ class SkillDoc:
     # restrict where the skill is surfaced; ``deny_access_directive`` is the
     # message the orchestrator relays to the user when the skill is hidden on
     # the current channel. Empty tuples = no channel restriction.
+    # Standing behavioural rules contributed while this skill drives the turn
+    # (ADR-0037) — same shape an Action declares programmatically.
+    parameters: Tuple[dict, ...] = ()
     allowed_channels: Tuple[str, ...] = ()
     denied_channels: Tuple[str, ...] = ()
     deny_access_directive: str = ""
@@ -183,6 +186,7 @@ def discover_skill_docs(
                     bundle.get("requires_tasks") or bundle.get("requires-tasks")
                 ),
                 extends=bundle.get("extends") or None,
+                parameters=tuple(bundle.get("parameters") or ()),
                 allowed_channels=tuple(bundle.get("allowed_channels") or ()),
                 denied_channels=tuple(bundle.get("denied_channels") or ()),
                 deny_access_directive=str(bundle.get("deny_access_directive") or ""),

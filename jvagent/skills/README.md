@@ -100,6 +100,7 @@ metadata:
 | `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. When `extends: action:…` is set, that action ref is also the **preferred lifecycle binder** for skill hooks (`on_skill_activate`, `prepare_task_lock_turn`, `resolve_task_lock_skill`, etc.). |
 | `allowed-channels` | both | List of canonical channel names the skill is surfaced on (e.g. `[whatsapp]`). Empty/absent = all channels. Channel is normalized via `normalize_channel` (`web`→`default`). |
 | `denied-channels` | both | List of canonical channel names the skill is hidden from. Subtracted from `allowed-channels` when both are set. |
+| `parameters` | both | Standing behavioural rules that apply **while this skill is driving the turn** (ADR-0037). Same `{scope?, condition?, response}` shape an Action declares programmatically, pooled onto the same interaction so the loop prompt and the reply compose read them through one path. `scope` is `response` (default) or `orchestration`. A bare string is an unconditional rule. Contributed only when the skill is **in force** — `always-active`, the active task-lock, or activated this turn — never merely because it is listed. |
 | `deny-access-directive` | both | Message the model relays verbatim when the user asks for the skill on a non-allowed channel (the skill is hidden; this note is surfaced in `skills_section`). |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
@@ -186,6 +187,35 @@ lock-companions:
 `agent.yaml` action list order does **not** affect binding. List API or helper
 actions in `requires-actions` when the skill depends on their tools; use
 `extends: action:…` on interview skills so `InterviewAction` keeps hook ownership.
+
+
+### Behavioural parameters
+
+A skill can state the rules that hold while it runs, instead of burying them in
+SOP prose the model may or may not follow:
+
+```yaml
+---
+name: research
+description: Investigate a topic with evidence-first synthesis.
+parameters:
+  - Always cite a source for a factual claim.
+  - scope: orchestration
+    response: Search before answering; do not answer from memory.
+  - condition: the user asks for an opinion
+    response: Say plainly that it is an opinion.
+---
+```
+
+These are pooled onto the interaction exactly like an Action's `parameters`, so
+they reach the loop prompt (orchestration scope) and the reply compose (response
+scope) with no separate read path. They apply **only while the skill is in
+force**; a skill that is merely available on the agent contributes nothing, or
+every listed skill would shape every turn.
+
+Activating a skill mid-turn re-renders the loop's parameter section, so an
+orchestration-scoped rule takes effect for the rest of that same turn.
+
 
 ## JV skills — coordinate existing tools
 
