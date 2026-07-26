@@ -73,3 +73,47 @@ def unsupported_source_claim(text: str) -> str:
             if pattern.search(sentence):
                 return sentence.strip()
     return ""
+
+
+# A specific worth checking: a multi-word proper noun ("University of Toronto",
+# "New York") or a year. Single capitalised words are deliberately excluded —
+# sentence starts, the agent's own name and ordinary title-case make them far too
+# noisy to gate on.
+_PROPER_NOUN_RE = re.compile(
+    r"\b[A-Z][a-z]{2,}(?:\s+(?:of|the|for|and|de|van|von|da)\s+[A-Z][a-z]{2,}"
+    r"|\s+[A-Z][a-z]{2,})+\b"
+)
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _normalise(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).lower()
+
+
+def unsupported_specifics(text: str, corpus: str) -> str:
+    """The first concrete specific in *text* that appears nowhere in *corpus*.
+
+    Used only when the turn made ZERO substantive tool calls. In that case every
+    factual specific must already be present in what the agent can actually see —
+    the user's message, the conversation, this turn's tool results. Anything else
+    was invented.
+
+    A live turn answered "where did he teach?" with "Eldon Marks taught at the
+    University of Toronto" after retrieving nothing; the knowledge base never
+    mentioned Toronto. That reply makes no source claim, so the claim-detector
+    could not see it, but the fabricated specific is plainly checkable.
+
+    Deliberately narrow — multi-word proper nouns and years only. Paraphrase,
+    reasoning and summary from context stay untouched, which is what makes it
+    safe to gate on.
+    """
+    haystack = _normalise(corpus)
+    if not haystack:
+        return ""
+    for match in _PROPER_NOUN_RE.findall(text or ""):
+        if _normalise(match) not in haystack:
+            return match
+    for year in _YEAR_RE.findall(text or ""):
+        if year not in haystack:
+            return year
+    return ""

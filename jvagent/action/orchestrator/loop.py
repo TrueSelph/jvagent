@@ -15,7 +15,10 @@ from jvagent.action.orchestrator.constants import (
     is_untrusted_directive_source,
 )
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
-from jvagent.action.orchestrator.loop_helpers import unsupported_source_claim
+from jvagent.action.orchestrator.loop_helpers import (
+    unsupported_source_claim,
+    unsupported_specifics,
+)
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
@@ -40,7 +43,25 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
-    def _grounding_deflection(self, text: str, substantive_tool_calls: int):
+    @staticmethod
+    def _grounding_corpus(
+        utterance: str,
+        history: List[Dict[str, str]],
+        observations: List[Dict[str, Any]],
+    ) -> str:
+        """Everything the agent can legitimately answer from this turn: the user's
+        message, the conversation so far, and this turn's tool results."""
+        parts: List[str] = [utterance or ""]
+        for message in history or []:
+            parts.append(str(message.get("content", "")))
+        for obs in observations or []:
+            parts.append(str(obs.get("observation", "")))
+            parts.append(str(obs.get("args", "")))
+        return "\n".join(parts)
+
+    def _grounding_deflection(
+        self, text: str, substantive_tool_calls: int, corpus: str = ""
+    ):
         """Guard observation when a reply claims a source nothing looked at.
 
         The response parameters already say "don't state facts you haven't
@@ -53,17 +74,34 @@ class OrchestratorLoopMixin:
         if not self.enforce_grounded_claims or substantive_tool_calls:
             return None
         claim = unsupported_source_claim(text)
-        if not claim:
+        if claim:
+            return {
+                "tool": "(guard)",
+                "args": {},
+                "observation": (
+                    f"(You have not called ANY tool this turn, so this claim is "
+                    f"not true: {claim!r}. Either call the tool that actually "
+                    "retrieves the information and answer from its result, or "
+                    "drop the claim and say plainly that you have not checked. "
+                    "Never tell the user something came from a source you did "
+                    "not consult.)"
+                ),
+            }
+        if not self.enforce_grounded_specifics:
+            return None
+        invented = unsupported_specifics(text, corpus)
+        if not invented:
             return None
         return {
             "tool": "(guard)",
             "args": {},
             "observation": (
-                f"(You have not called ANY tool this turn, so this claim is not "
-                f"true: {claim!r}. Either call the tool that actually retrieves "
-                "the information and answer from its result, or drop the claim "
-                "and say plainly that you have not checked. Never tell the user "
-                "something came from a source you did not consult.)"
+                f"({invented!r} does not appear anywhere in this conversation or "
+                "in any tool result, and you have called no tool this turn — so "
+                "you do not actually know it. Look it up with the appropriate "
+                "tool and answer from what it returns, or tell the user you "
+                "don't have that detail. Do not state specifics you have not "
+                "verified.)"
             ),
         }
 
@@ -579,7 +617,9 @@ class OrchestratorLoopMixin:
                         self.grounding_max_deflections
                     ):
                         nudge = self._grounding_deflection(
-                            answer, substantive_tool_calls
+                            answer,
+                            substantive_tool_calls,
+                            self._grounding_corpus(utterance, history, observations),
                         )
                         if nudge is not None:
                             grounding_deflections += 1
@@ -641,6 +681,7 @@ class OrchestratorLoopMixin:
                                 (args or {}).get("text") or _text_candidate(args or {})
                             ),
                             substantive_tool_calls,
+                            self._grounding_corpus(utterance, history, observations),
                         )
                         if nudge is not None:
                             grounding_deflections += 1

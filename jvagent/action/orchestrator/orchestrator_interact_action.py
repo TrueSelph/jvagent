@@ -400,6 +400,18 @@ class OrchestratorInteractAction(
             "model on the light gear ignores the prose."
         ),
     )
+    enforce_grounded_specifics: bool = attribute(
+        default=True,
+        description=(
+            "Also deflect a reply that states a concrete specific — a multi-word "
+            "proper noun or a year — appearing nowhere in the conversation, the "
+            "user's message or this turn's tool results, when the turn called no "
+            "tool. Catches the fabrication the source-claim check cannot see: a "
+            "live turn answered 'where did he teach?' with 'the University of "
+            "Toronto' having retrieved nothing. Narrow by construction; "
+            "paraphrase and summary from context are untouched."
+        ),
+    )
     grounding_max_deflections: int = attribute(
         default=2,
         description=(
