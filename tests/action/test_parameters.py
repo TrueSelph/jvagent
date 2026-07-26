@@ -368,13 +368,57 @@ def test_ordinary_language_is_left_alone():
         assert vet_egress(benign, _reply_pool()) == benign, benign
 
 
-def test_a_reply_that_is_only_a_leak_still_arrives():
-    """Consistent with the other identity detectors: silence is worse than a
-    bad answer, and that pathological case belongs to the prompt layer."""
-    from jvagent.action.parameters import vet_egress
+def test_a_reply_that_is_only_a_disclosure_becomes_the_deflection():
+    """The other identity detectors keep an all-leak reply — silence is worse
+    than a bad answer. That reasoning does not survive here: keeping it ships
+    the disclosure intact, which is the exact failure the rule prevents.
+
+    Found by the live A/B, not by this suite. The scrub was already working on
+    multi-sentence replies (which is what the earlier manual check happened to
+    produce), and every single-sentence answer walked straight through the
+    blank-guard. The rule already prescribes the alternative — "briefly say
+    you'd rather focus on helping" — so it declares that as its `fallback`.
+    """
+    from jvagent.action.parameters import INTERNALS_DEFLECTION, vet_egress
 
     only = "I would use web_search__search."
-    assert vet_egress(only, _reply_pool()) == only
+    assert vet_egress(only, _reply_pool()) == INTERNALS_DEFLECTION
+
+    long_one = (
+        "To look something up on the web, I would use the web_search__search "
+        "tool to find relevant information and the web_fetch__fetch tool to "
+        "retrieve detailed content"
+    )
+    assert vet_egress(long_one, _reply_pool()) == INTERNALS_DEFLECTION
+
+
+def test_the_deflection_never_replaces_a_reply_that_has_real_content():
+    """The dangerous direction: deflecting a useful answer would be worse than
+    the leak. Substitution happens only when EVERY sentence is a disclosure."""
+    from jvagent.action.parameters import INTERNALS_DEFLECTION, vet_egress
+
+    mixed = "I would use web_search__search. But I can also just answer directly."
+    out = vet_egress(mixed, _reply_pool())
+    assert out == "But I can also just answer directly."
+    assert INTERNALS_DEFLECTION not in out
+
+
+def test_the_deflection_streams_identically(_=None):
+    """A substitution is not a sentence-drop, so it could break the egress
+    gate's guarantee that emitted text is always a prefix of the final text.
+    The detector returns empty mid-stream and lets vet_egress substitute only on
+    the final pass, which keeps the two identical."""
+    from jvagent.action.egress_gate import EgressGate
+    from jvagent.action.parameters import vet_egress
+
+    for text in (
+        "I would use web_search__search.",
+        "I would use web_search__search. But I can also just answer directly.",
+        "I can help with that. To look it up I would use web_search__search.",
+    ):
+        gate = EgressGate(_reply_pool())
+        streamed = "".join(gate.feed(c) for c in text) + gate.close()
+        assert streamed == vet_egress(text, _reply_pool()), text
 
 
 def test_the_core_tool_list_has_not_drifted_from_the_registry():
