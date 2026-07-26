@@ -74,7 +74,10 @@ class OrchestratorEgressMixin:
             try:
                 interaction.add_directive(framed, self.get_class_name())
             except Exception:
-                pass
+                logger.debug(
+                    "orchestrator: could not queue the framed directive; the turn continues without it",
+                    exc_info=True,
+                )
         responder = await self.get_responder()
         # A compose is a second, SERIAL model call in front of a user-facing
         # reply (~550 input tokens, measured). It earns that when the directive

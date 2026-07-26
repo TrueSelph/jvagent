@@ -144,7 +144,10 @@ class OrchestratorLoopMixin:
         try:
             await interaction.save()
         except Exception:
-            pass
+            logger.debug(
+                "orchestrator: interaction save failed while absorbing skill parameters; they apply this turn but are not persisted",
+                exc_info=True,
+            )
         pool = self._parameter_pool(visitor)
         section = render_parameters(
             orchestration_parameters(pool) + reply_core_parameters()

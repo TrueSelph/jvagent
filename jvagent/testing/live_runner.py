@@ -116,7 +116,8 @@ def build_visitor(
     interaction.utterance = utterance
     interaction.response = ""
     interaction.directives = directives
-    interaction.parameters = []
+    parameters: List[Dict[str, Any]] = []
+    interaction.parameters = parameters
     interaction.has_emitted = lambda: bool((interaction.response or "").strip())
 
     def add_directive(content: str, action_name: str = "ReplyAction") -> bool:
@@ -129,7 +130,38 @@ def build_visitor(
     interaction.get_unexecuted_directives = lambda: [
         d for d in directives if not d.get("executed")
     ]
-    interaction.get_unexecuted_parameters = lambda: []
+
+    # Parameters accumulate the way they do in production. This used to be a
+    # no-op MagicMock with a permanently empty pool, which made every CUCS run
+    # exercise a configuration that no real turn has: an empty pool falls back
+    # to the framework core, and the core always works. Two egress bugs on this
+    # branch survived the A/B for exactly that reason — the pool is
+    # orchestration-scoped, and code that read it without unioning the response
+    # core silently governed nothing.
+    def add_parameter(parameter: Dict[str, Any], action_name: str = "") -> bool:
+        if not isinstance(parameter, dict) or not parameter:
+            return False
+        entry = dict(parameter)
+        entry.setdefault("action_name", action_name)
+        if entry in parameters:
+            return False
+        parameters.append(entry)
+        return True
+
+    def add_parameters(params: List[Dict[str, Any]], action_name: str = "") -> bool:
+        # Every parameter must be offered. A generator inside any() would
+        # short-circuit on the first success and silently drop the rest.
+        added = False
+        for parameter in params or []:
+            if add_parameter(parameter, action_name):
+                added = True
+        return added
+
+    interaction.add_parameter = add_parameter
+    interaction.add_parameters = add_parameters
+    interaction.get_unexecuted_parameters = lambda: [
+        p for p in parameters if not p.get("executed")
+    ]
     interaction.set_to_executed = lambda directives=None, parameters=None: None
 
     def set_response(text: str) -> bool:

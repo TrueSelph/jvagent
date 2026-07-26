@@ -102,7 +102,7 @@ def _action_class_name(action: Any) -> str:
             if name:
                 return name
         except Exception:
-            pass
+            logger.debug("skill_tasks: could not resolve a task name", exc_info=True)
     return type(action).__name__
 
 
@@ -474,7 +474,10 @@ async def push_unmet_prerequisites(
             try:
                 await gated.set_seed({**(gated.seed or {}), **seed})
             except Exception:
-                pass
+                logger.debug(
+                    "skill_tasks: seeding the gated task failed; it starts unseeded",
+                    exc_info=True,
+                )
         try:
             prereq = await store.create(
                 title=push,
@@ -728,7 +731,9 @@ async def ensure_task_lock_session(
                 if await ready_fn(doc.name, visitor):
                     return note
             except Exception:
-                pass
+                logger.debug(
+                    "skill_tasks: could not build the flow note", exc_info=True
+                )
         if needs:
             logger.warning(
                 "skill_tasks: task-lock skill %r runtime not ready after bootstrap",

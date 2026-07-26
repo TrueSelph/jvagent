@@ -218,7 +218,10 @@ def _append_directive_hint(directive: str, hint: str) -> str:
         if appended != directive:
             return appended
     except Exception:  # pragma: no cover - defensive
-        pass
+        logger.debug(
+            "orchestrator: appending the upload note failed; the turn proceeds without it",
+            exc_info=True,
+        )
     return f"{directive}\n({hint})"
 
 

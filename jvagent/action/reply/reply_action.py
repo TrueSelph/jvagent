@@ -276,7 +276,7 @@ class ReplyAction(Action):
                     if action is not None:
                         return action
                 except Exception:
-                    pass
+                    logger.debug("reply: action lookup failed", exc_info=True)
         return await self.get_model_action(required=False)
 
     # ------------------------------------------------------------------
@@ -491,7 +491,10 @@ class ReplyAction(Action):
                 try:
                     interaction.set_to_executed(directives=[first], parameters=[])
                 except Exception:
-                    pass
+                    logger.debug(
+                        "reply: marking directives/parameters executed failed; they may be replayed next turn",
+                        exc_info=True,
+                    )
             return await self.publish(literal or content, visitor)
         return bool(await self.respond(interaction, visitor=visitor))
 
@@ -675,7 +678,7 @@ class ReplyAction(Action):
             try:
                 await self.publish(fallback, visitor, transient=transient)
             except Exception:
-                pass
+                logger.debug("reply: publishing the fallback failed", exc_info=True)
             return fallback
 
         if response and response.strip():
@@ -692,7 +695,7 @@ class ReplyAction(Action):
                         parameters=interaction.get_unexecuted_parameters(),
                     )
                 except Exception:
-                    pass
+                    logger.debug("reply: best-effort egress step failed", exc_info=True)
         return response or ""
 
     @staticmethod

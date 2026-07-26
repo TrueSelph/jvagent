@@ -900,7 +900,10 @@ class ResponseBus:
 
                     interaction._graph_context = get_default_context()
                 except Exception:
-                    pass
+                    logger.debug(
+                        "response bus: could not attach a graph context to the interaction before saving",
+                        exc_info=True,
+                    )
             await interaction.save()
 
     async def _append_to_interaction_agent_trace_impl(
@@ -941,7 +944,10 @@ class ResponseBus:
 
                     interaction._graph_context = get_default_context()
                 except Exception:
-                    pass
+                    logger.debug(
+                        "response bus: could not attach a graph context to the interaction before saving",
+                        exc_info=True,
+                    )
             await interaction.save()
 
     async def _send_to_adapter(
