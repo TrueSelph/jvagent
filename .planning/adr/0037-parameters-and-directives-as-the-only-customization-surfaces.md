@@ -127,6 +127,65 @@ just as a parameter is the only way to shape standing behaviour. Anything that
 today reaches the user without passing through one of the two — a bare
 `publish()`, a canned fallback string — is a defect, not a design.
 
+
+### 2.4 Conflict resolution
+
+Prose conflict is undecidable — nothing can tell that *"be concise"* and *"give
+complete detail"* collide. Precedence is therefore **declared, not inferred**.
+
+**C1 — Conflict is only decidable between rules sharing a `key`, within one
+`scope`.** An unkeyed rule is additive and never conflicts, which is every
+parameter that exists today, so the constraint is opt-in and backward compatible.
+
+**C2 — Tier order derives from source, never hand-set:**
+
+| Rank | Source | Rationale |
+|---|---|---|
+| 0 | `action` | a capability's own default |
+| 1 | `skill` | narrower and transient, so it outranks a capability default |
+| 2 | `core` (default) | the framework's opinion, e.g. voice |
+| 3 | `agent` | the operator — outranks the framework's *opinion* |
+| — | `core` + `inviolable` | the framework's *floor*; outside the ladder |
+
+Numeric priorities were rejected: they invite the arms race where every author
+writes `999`. Order derived from source cannot be gamed by the rule's own text.
+
+`tier: agent` is declarable because `agent.yaml` sets the same attribute a plugin
+sets programmatically — the code cannot distinguish operator intent without being
+told. `tier: core` is ignored, or any config could claim the floor and then
+override it.
+
+**C3 — An `inviolable` core rule wins its group outright**, regardless of tier.
+The challenger is dropped and the attempt logged once, with its source. A
+customization surface that lets a skill quietly disable injection resistance is
+worse than no surface. Marked inviolable today: `identity.self_disclosure`,
+`identity.cutoff`, `identity.internals`, `grounding.verified_claims`,
+`safety.injection`. `voice.closers` is deliberately *not* — it is an opinion, and
+an operator may replace it.
+
+**C4 — Conflict is per scope.** An `orchestration` and a `response` rule sharing
+a key are injected into different prompts; both are legitimate.
+
+**C5 — A conditional rule never suppresses an unconditional one.** It refines.
+Overriding needs the same key *and* explicit intent — otherwise `when X: be
+brief` silently becomes a global.
+
+**C6 — Prose conditions are prompt-only; deterministic enforcement carries its
+condition in the detector.** The loop cannot evaluate *"when the user asks about
+pricing"*. So the detector owns applicability (`unsupported_specifics` already
+encodes "only when no tool ran") and the prose `condition` renders into the
+prompt as it does now. A parameter may carry both; they operate at different
+layers and need not agree. **This settles the conditional-enforcement question.**
+
+**C7 — Enforcement only ratchets up.** A lower tier may raise `prompt → scrub →
+guard`, never lower it. Without this, writing a weaker duplicate becomes a way to
+disable a safety guard.
+
+**Rejected: automatic semantic conflict detection** (an LLM pass, or embedding
+similarity over rule text). Non-deterministic, unexplainable when it fires, and a
+plausible-but-wrong match would silently drop a rule an operator wrote. Keys are
+duller and correct.
+
 ---
 
 ## 3. Consequences
@@ -186,9 +245,6 @@ and should land together with a CHANGELOG note.
   merely available skill shapes nothing. Activating mid-turn re-renders the loop's
   parameter section so an orchestration-scoped rule applies for the rest of that
   turn.
-- **Conditional enforcement.** `condition` today is prose the model evaluates. A
-  `guard`-enforced conditional rule needs the condition to be machine-evaluable,
-  or the guard must run unconditionally and rely on the detector for precision.
-- **Precedence.** When an action-contributed parameter contradicts a core one,
-  today's dedupe keeps both. Under stricter enforcement they can genuinely
-  conflict, so precedence has to be defined.
+- ~~**Conditional enforcement.**~~ **Settled — §2.4 C6.**
+- ~~**Precedence.**~~ **Settled — §2.4 C1-C4, implemented.** C5 and C7 depend on
+  the `enforcement` field from §2.2 and remain unbuilt.

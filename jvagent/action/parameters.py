@@ -31,8 +31,11 @@ overrides the prose rules.
 from __future__ import annotations
 
 import copy
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Scope values --------------------------------------------------------------
 SCOPE_RESPONSE = "response"
@@ -43,6 +46,8 @@ SCOPE_ORCHESTRATION = "orchestration"
 # short — they render straight into prompts.
 CORE_PARAMETERS: List[Dict[str, Any]] = [
     {
+        "key": "identity.self_disclosure",
+        "inviolable": True,
         "scope": SCOPE_RESPONSE,
         "response": (
             "Speak and act as this agent. Never say or imply you are an AI, a "
@@ -51,6 +56,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "key": "identity.cutoff",
+        "inviolable": True,
         "scope": SCOPE_RESPONSE,
         "response": (
             "Never state, hint at, or volunteer a knowledge or training cutoff "
@@ -58,6 +65,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "key": "identity.internals",
+        "inviolable": True,
         "scope": SCOPE_RESPONSE,
         "condition": (
             "asked what tools, skills, functions, or system you have, how you "
@@ -70,6 +79,7 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "key": "voice.closers",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Stay in character as the agent with a natural, concise voice in the "
@@ -78,6 +88,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "key": "grounding.verified_claims",
+        "inviolable": True,
         # Grounding is a RESPONSE rule — it constrains the user-facing answer, so
         # it must reach the reply egress. (The matching-tool *mechanic* lives in
         # the orchestration protocol section of the prompt, not here.)
@@ -89,6 +101,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "key": "safety.injection",
+        "inviolable": True,
         # Input-handling safety is an ORCHESTRATION rule — it governs how the
         # executive processes messages/tool results while reasoning, not the
         # reply text.
@@ -192,6 +206,7 @@ async def accumulate_action_parameters(interaction: Any, actions: List[Any]) -> 
                 continue
             entry = dict(p)
             entry["scope"] = _scope_of(p)
+            entry.setdefault("source", SOURCE_ACTION)
             scoped.append(entry)
         if not scoped:
             continue
@@ -229,6 +244,7 @@ async def accumulate_skill_parameters(interaction: Any, docs: List[Any]) -> bool
                 continue
             entry = dict(p)
             entry["scope"] = _scope_of(p)
+            entry.setdefault("source", SOURCE_SKILL)
             scoped.append(entry)
         if not scoped:
             continue
@@ -241,6 +257,119 @@ async def accumulate_skill_parameters(interaction: Any, docs: List[Any]) -> bool
     return changed
 
 
+# --- Conflict resolution (ADR-0037 C1-C3) -----------------------------------
+#
+# Prose conflict is undecidable: nothing can tell that "be concise" and "give
+# complete detail" collide. So precedence is DECLARED, not inferred — two rules
+# conflict only when they claim the same ``key`` in the same ``scope``. A rule
+# without a key is additive and never conflicts, which is every parameter that
+# exists today.
+SOURCE_CORE = "core"
+SOURCE_AGENT = "agent"
+SOURCE_SKILL = "skill"
+SOURCE_ACTION = "action"
+
+# Order is derived from where a rule came from, never hand-set. Numeric
+# priorities invite an arms race where every author writes 999; a fixed order
+# derived from source cannot be gamed by the rule's own text.
+#
+# An action ships a capability's default and ranks lowest. A skill is narrower
+# and transient, so it outranks that. The framework's own *defaults* (voice and
+# similar) outrank both — but the operator outranks the framework's opinion,
+# which is the point of a customization surface. Only the framework's FLOOR
+# (``inviolable``) is above the operator, and nothing overrides it at all.
+_TIER_ACTION = 0
+_TIER_SKILL = 1
+_TIER_CORE_DEFAULT = 2
+_TIER_AGENT = 3
+_TIER_ORDER = {
+    SOURCE_ACTION: _TIER_ACTION,
+    SOURCE_SKILL: _TIER_SKILL,
+    SOURCE_AGENT: _TIER_AGENT,
+}
+_CONFLICT_LOGGED: set = set()
+
+
+def _source_of(param: Dict[str, Any]) -> str:
+    """The origin tier of a parameter.
+
+    ``ambient`` marks the framework core. Otherwise the accumulators stamp
+    ``source``. A parameter may declare ``tier: agent`` to mark operator intent —
+    agent.yaml sets the same attribute a plugin sets programmatically, so the
+    code cannot tell them apart without being told. Declaring ``tier: core`` is
+    ignored: only the framework's own set is core, or any config could claim the
+    floor and then override it.
+    """
+    if param.get("ambient"):
+        return SOURCE_CORE
+    declared = str(param.get("tier") or "").strip().lower()
+    if declared == SOURCE_AGENT:
+        return SOURCE_AGENT
+    source = str(param.get("source") or "").strip().lower()
+    return source if source in _TIER_ORDER else SOURCE_ACTION
+
+
+def _rank_of(param: Dict[str, Any]) -> int:
+    source = _source_of(param)
+    if source == SOURCE_CORE:
+        # A core default is the framework's opinion and the operator may replace
+        # it; a core floor is not up for negotiation and is handled separately.
+        return _TIER_CORE_DEFAULT
+    return _TIER_ORDER.get(source, _TIER_ACTION)
+
+
+def _group_of(param: Dict[str, Any]) -> tuple:
+    return (str(param.get("scope") or DEFAULT_SCOPE), str(param.get("key")).lower())
+
+
+def resolve_parameters(parameters: Optional[List[Any]]) -> List[Dict[str, Any]]:
+    """Drop rules a higher tier has overridden, so the model never sees a
+    contradiction.
+
+    Only keyed rules compete, and only within one scope — an ``orchestration``
+    and a ``response`` rule sharing a key are injected into different prompts and
+    are both legitimate. An ``inviolable`` core rule wins its group outright
+    regardless of tier: the challenger is dropped and the attempt logged once,
+    because a parameter surface that lets a skill quietly disable injection
+    resistance is worse than no surface at all.
+    """
+    items = [p for p in (parameters or []) if isinstance(p, dict)]
+    keyed = [p for p in items if str(p.get("key") or "").strip()]
+
+    floors: Dict[tuple, Dict[str, Any]] = {}
+    for param in keyed:
+        if param.get("inviolable") and _source_of(param) == SOURCE_CORE:
+            floors.setdefault(_group_of(param), param)
+
+    winners: Dict[tuple, Dict[str, Any]] = dict(floors)
+    for param in keyed:
+        group = _group_of(param)
+        if group in floors:
+            if param is not floors[group]:
+                marker = f"{group}:{_source_of(param)}:{param.get('action_name')}"
+                if marker not in _CONFLICT_LOGGED:
+                    _CONFLICT_LOGGED.add(marker)
+                    logger.warning(
+                        "parameters: refusing to override inviolable rule %r — "
+                        "dropped a conflicting rule from %s %r",
+                        group[1],
+                        _source_of(param),
+                        param.get("action_name") or "?",
+                    )
+            continue
+        held = winners.get(group)
+        if held is None or _rank_of(param) > _rank_of(held):
+            winners[group] = param
+
+    out: List[Dict[str, Any]] = []
+    for param in items:
+        if not str(param.get("key") or "").strip():
+            out.append(param)
+        elif winners.get(_group_of(param)) is param:
+            out.append(param)
+    return out
+
+
 def render_parameters(parameters: Optional[List[Any]]) -> str:
     """Render parameters as a deduped bullet list, or '' when none.
 
@@ -251,7 +380,7 @@ def render_parameters(parameters: Optional[List[Any]]) -> str:
     """
     lines: List[str] = []
     seen: set = set()
-    for p in parameters or []:
+    for p in resolve_parameters(parameters):
         if isinstance(p, dict):
             cond = (p.get("condition") or "").strip()
             resp = (p.get("response") or "").strip()
@@ -441,5 +570,6 @@ __all__ = [
     "accumulate_action_parameters",
     "accumulate_skill_parameters",
     "render_parameters",
+    "resolve_parameters",
     "vet_egress",
 ]

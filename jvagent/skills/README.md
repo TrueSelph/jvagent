@@ -216,6 +216,22 @@ every listed skill would shape every turn.
 Activating a skill mid-turn re-renders the loop's parameter section, so an
 orchestration-scoped rule takes effect for the rest of that same turn.
 
+Add a `key` to make a rule *replace* rather than accumulate. Rules sharing a key
+in the same scope compete, and the highest tier wins — action < skill < core
+default < agent (ADR-0037 §2.4). A skill rule therefore overrides a capability's
+default but not the operator's `agent.yaml`. Rules without a key are additive and
+never conflict.
+
+```yaml
+parameters:
+  - key: voice.verbosity
+    response: Give complete detail; this skill produces reports.
+```
+
+The framework's safety floor — identity, cutoff, internals, grounded claims,
+injection resistance — is marked `inviolable` and cannot be overridden by any
+key. An attempt is dropped and logged with its source.
+
 
 ## JV skills — coordinate existing tools
 
