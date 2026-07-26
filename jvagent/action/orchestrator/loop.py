@@ -15,6 +15,7 @@ from jvagent.action.orchestrator.constants import (
     is_untrusted_directive_source,
 )
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
+from jvagent.action.orchestrator.loop_helpers import unsupported_source_claim
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
@@ -39,6 +40,33 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
+    def _grounding_deflection(self, text: str, substantive_tool_calls: int):
+        """Guard observation when a reply claims a source nothing looked at.
+
+        The response parameters already say "don't state facts you haven't
+        verified", but a weaker model on the light gear ignores it: a live turn
+        answered a factual question with no tool call, then answered "was this
+        from the knowledge base?" with "yes, retrieved from the knowledge base"
+        — a false claim about its own provenance, which is worse than the guess
+        that preceded it. The loop knows nothing ran, so it can say so.
+        """
+        if not self.enforce_grounded_claims or substantive_tool_calls:
+            return None
+        claim = unsupported_source_claim(text)
+        if not claim:
+            return None
+        return {
+            "tool": "(guard)",
+            "args": {},
+            "observation": (
+                f"(You have not called ANY tool this turn, so this claim is not "
+                f"true: {claim!r}. Either call the tool that actually retrieves "
+                "the information and answer from its result, or drop the claim "
+                "and say plainly that you have not checked. Never tell the user "
+                "something came from a source you did not consult.)"
+            ),
+        }
+
     async def _run_loop(self, visitor: "InteractWalker") -> None:
         loop_t0 = time.perf_counter()
         tool_timings: List[Dict[str, Any]] = []
@@ -372,6 +400,10 @@ class OrchestratorLoopMixin:
         # going instead of ending the turn mid-task. Bounded so a deliberate
         # reply/finish is never blocked for long.
         plan_deflections = 0
+        # Grounding guard: a reply claiming it consulted a source while the
+        # turn ran NO substantive tool is false by construction. Bounded so a
+        # genuine reply is never blocked for long.
+        grounding_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -543,6 +575,16 @@ class OrchestratorLoopMixin:
                             observations.append(self._plan_drain_nudge(open_steps))
                             continue
                     answer = _text_candidate(decision)
+                    if answer and grounding_deflections < int(
+                        self.grounding_max_deflections
+                    ):
+                        nudge = self._grounding_deflection(
+                            answer, substantive_tool_calls
+                        )
+                        if nudge is not None:
+                            grounding_deflections += 1
+                            observations.append(nudge)
+                            continue
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
                     ended_via = "final"
@@ -590,6 +632,20 @@ class OrchestratorLoopMixin:
                             }
                         )
                         continue
+                    if tool_name in (
+                        "reply",
+                        "respond",
+                    ) and grounding_deflections < int(self.grounding_max_deflections):
+                        nudge = self._grounding_deflection(
+                            str(
+                                (args or {}).get("text") or _text_candidate(args or {})
+                            ),
+                            substantive_tool_calls,
+                        )
+                        if nudge is not None:
+                            grounding_deflections += 1
+                            observations.append(nudge)
+                            continue
                     if tool_name in ("reply", "respond") and plan_deflections < int(
                         self.plan_completion_max_deflections
                     ):

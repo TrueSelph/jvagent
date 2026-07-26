@@ -389,6 +389,25 @@ class OrchestratorInteractAction(
             "enabling (scripts/ab_prompt_variants.py)."
         ),
     )
+    enforce_grounded_claims: bool = attribute(
+        default=True,
+        description=(
+            "Deflect a reply that claims it consulted a source (knowledge base, "
+            "documents, a search) when the turn made NO substantive tool call — "
+            "such a claim is false by construction and the loop can prove it. "
+            "The response parameters already forbid unverified statements; this "
+            "enforces the one case that is machine-checkable, because a weaker "
+            "model on the light gear ignores the prose."
+        ),
+    )
+    grounding_max_deflections: int = attribute(
+        default=2,
+        description=(
+            "How many times a turn may be deflected for an unsupported source "
+            "claim before the reply is allowed through, so a genuine reply is "
+            "never blocked forever. 0 disables the guard."
+        ),
+    )
     max_observations_in_prompt: int = attribute(
         default=MAX_OBSERVATIONS_IN_PROMPT,
         description="How many of this turn's tool results replay into the loop "
