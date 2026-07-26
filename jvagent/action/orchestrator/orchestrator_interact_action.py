@@ -389,29 +389,6 @@ class OrchestratorInteractAction(
             "enabling (scripts/ab_prompt_variants.py)."
         ),
     )
-    enforce_grounded_claims: bool = attribute(
-        default=True,
-        description=(
-            "Deflect a reply that claims it consulted a source (knowledge base, "
-            "documents, a search) when the turn made NO substantive tool call — "
-            "such a claim is false by construction and the loop can prove it. "
-            "The response parameters already forbid unverified statements; this "
-            "enforces the one case that is machine-checkable, because a weaker "
-            "model on the light gear ignores the prose."
-        ),
-    )
-    enforce_grounded_specifics: bool = attribute(
-        default=True,
-        description=(
-            "Also deflect a reply that states a concrete specific — a multi-word "
-            "proper noun or a year — appearing nowhere in the conversation, the "
-            "user's message or this turn's tool results, when the turn called no "
-            "tool. Catches the fabrication the source-claim check cannot see: a "
-            "live turn answered 'where did he teach?' with 'the University of "
-            "Toronto' having retrieved nothing. Narrow by construction; "
-            "paraphrase and summary from context are untouched."
-        ),
-    )
     grounding_max_deflections: int = attribute(
         default=2,
         description=(

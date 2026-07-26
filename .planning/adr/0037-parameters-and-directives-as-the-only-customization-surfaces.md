@@ -159,9 +159,15 @@ override it.
 The challenger is dropped and the attempt logged once, with its source. A
 customization surface that lets a skill quietly disable injection resistance is
 worse than no surface. Marked inviolable today: `identity.self_disclosure`,
-`identity.cutoff`, `identity.internals`, `grounding.verified_claims`,
-`safety.injection`. `voice.closers` is deliberately *not* — it is an opinion, and
-an operator may replace it.
+`identity.cutoff`, `identity.internals`, `safety.injection` — identity and
+safety, the things an agent must not be talked out of.
+
+`grounding.verified_claims` and `voice.closers` are deliberately *not*
+inviolable. They are the framework's strong opinions, and an operator may
+replace them. Grounding in particular carries a `guard` detector, and a
+deterministic detector can be wrong deterministically (§3, Risk) — a rule whose
+false positives cannot be corrected through the customization surface is not
+customizable, which would defeat the ADR.
 
 **C4 — Conflict is per scope.** An `orchestration` and a `response` rule sharing
 a key are injected into different prompts; both are legitimate.
@@ -177,9 +183,12 @@ encodes "only when no tool ran") and the prose `condition` renders into the
 prompt as it does now. A parameter may carry both; they operate at different
 layers and need not agree. **This settles the conditional-enforcement question.**
 
-**C7 — Enforcement only ratchets up.** A lower tier may raise `prompt → scrub →
-guard`, never lower it. Without this, writing a weaker duplicate becomes a way to
-disable a safety guard.
+**C7 — Enforcement ratchets up within an inviolable group.** For a group with an
+`inviolable` core rule, a lower tier may raise `prompt → scrub → guard` but never
+lower it — otherwise writing a weaker duplicate is a way to switch a safety floor
+off. For every other group the winning rule's own `enforcement` stands, including
+downward, which is what lets an operator relax a misfiring detector. C7 protects
+floors; it does not freeze opinions.
 
 **Rejected: automatic semantic conflict detection** (an LLM pass, or embedding
 similarity over rule text). Non-deterministic, unexplainable when it fires, and a

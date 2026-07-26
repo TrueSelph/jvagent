@@ -24,20 +24,32 @@ from jvagent.action.parameters import (
 def test_core_has_both_scopes_and_is_copied():
     caps = core_parameters()
     # response: identity, cutoff, no-internal-reveal, character/closers, grounding
-    assert len(response_parameters(caps)) == 5
+    assert len(response_parameters(caps)) == sum(
+        1 for p in caps if p["scope"] == "response"
+    )
     # orchestration: untrusted-input handling
-    assert len(orchestration_parameters(caps)) == 1
+    assert len(orchestration_parameters(caps)) == sum(
+        1 for p in caps if p["scope"] == "orchestration"
+    )
     # default factory hands out independent copies (safe as an attribute default)
     caps[0]["response"] = "mutated"
     assert CORE_PARAMETERS[0]["response"] != "mutated"
 
 
 def test_native_core_split():
-    # the two native owners take their own scope's subset
-    assert len(orchestrator_core_parameters()) == 1  # orchestration
+    # The two native owners take their own scope's subset. Asserted by scope
+    # rather than a magic count so adding a core rule does not break this.
+    core = core_parameters()
+    assert orchestrator_core_parameters()
     assert all(p["scope"] == "orchestration" for p in orchestrator_core_parameters())
-    assert len(reply_core_parameters()) == 5  # response
+    assert len(orchestrator_core_parameters()) == sum(
+        1 for p in core if p["scope"] == "orchestration"
+    )
+    assert reply_core_parameters()
     assert all(p["scope"] == "response" for p in reply_core_parameters())
+    assert len(reply_core_parameters()) == sum(
+        1 for p in core if p["scope"] == "response"
+    )
 
 
 def test_core_params_are_ambient():

@@ -15,10 +15,6 @@ from jvagent.action.orchestrator.constants import (
     is_untrusted_directive_source,
 )
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
-from jvagent.action.orchestrator.loop_helpers import (
-    unsupported_source_claim,
-    unsupported_specifics,
-)
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
@@ -61,50 +57,53 @@ class OrchestratorLoopMixin:
         return "\n".join(parts)
 
     def _grounding_deflection(
-        self, text: str, substantive_tool_calls: int, corpus: str = ""
+        self, text: str, substantive_tool_calls: int, corpus: str = "", visitor=None
     ):
-        """Guard observation when a reply claims a source nothing looked at.
+        """Guard observation from any ``enforcement: guard`` parameter in force.
 
-        The response parameters already say "don't state facts you haven't
-        verified", but a weaker model on the light gear ignores it: a live turn
-        answered a factual question with no tool call, then answered "was this
-        from the knowledge base?" with "yes, retrieved from the knowledge base"
-        — a false claim about its own provenance, which is worse than the guess
-        that preceded it. The loop knows nothing ran, so it can say so.
+        The rule and its enforcement now live together (ADR-0037 §2.2): the
+        parameter that says "don't state facts you haven't verified" is the same
+        object that names the detectors proving it. Previously the loop carried
+        hardcoded flags beside the rule, so editing the parameter changed the
+        prompt and nothing else.
         """
-        if not self.enforce_grounded_claims or substantive_tool_calls:
-            return None
-        claim = unsupported_source_claim(text)
-        if claim:
-            return {
-                "tool": "(guard)",
-                "args": {},
-                "observation": (
-                    f"(You have not called ANY tool this turn, so this claim is "
-                    f"not true: {claim!r}. Either call the tool that actually "
-                    "retrieves the information and answer from its result, or "
-                    "drop the claim and say plainly that you have not checked. "
-                    "Never tell the user something came from a source you did "
-                    "not consult.)"
-                ),
-            }
-        if not self.enforce_grounded_specifics:
-            return None
-        invented = unsupported_specifics(text, corpus)
-        if not invented:
-            return None
-        return {
-            "tool": "(guard)",
-            "args": {},
-            "observation": (
-                f"({invented!r} does not appear anywhere in this conversation or "
-                "in any tool result, and you have called no tool this turn — so "
-                "you do not actually know it. Look it up with the appropriate "
-                "tool and answer from what it returns, or tell the user you "
-                "don't have that detail. Do not state specifics you have not "
-                "verified.)"
-            ),
+        from jvagent.action.parameters import (
+            ENFORCEMENT_GUARD,
+            detectors_for,
+            parameters_with_enforcement,
+        )
+
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        # Without an interaction pool, fall back to this action's own params PLUS
+        # the response core — the same union the loop prompt renders. The
+        # orchestrator's native set is orchestration-scoped only, and the
+        # grounding rule is response-scoped (ReplyAction owns it), so the
+        # orchestrator's list alone would never contain the rule it is enforcing.
+        pool = (getattr(interaction, "parameters", None) if interaction else None) or (
+            list(self.parameters or []) + reply_core_parameters()
+        )
+        context = {
+            "substantive_tool_calls": substantive_tool_calls,
+            "corpus": corpus,
         }
+        for param in parameters_with_enforcement(pool, ENFORCEMENT_GUARD):
+            for detector in detectors_for(param, ENFORCEMENT_GUARD):
+                try:
+                    violation = detector(text, context)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        "orchestrator: guard detector for %r failed: %s",
+                        param.get("key"),
+                        exc,
+                    )
+                    continue
+                if violation:
+                    return {
+                        "tool": "(guard)",
+                        "args": {},
+                        "observation": f"({violation})",
+                    }
+        return None
 
     async def _absorb_skill_parameters(self, visitor, docs) -> str:
         """Pool an in-force skill's parameters and re-render the loop section.
@@ -661,6 +660,7 @@ class OrchestratorLoopMixin:
                             answer,
                             substantive_tool_calls,
                             self._grounding_corpus(utterance, history, observations),
+                            visitor,
                         )
                         if nudge is not None:
                             grounding_deflections += 1
@@ -723,6 +723,7 @@ class OrchestratorLoopMixin:
                             ),
                             substantive_tool_calls,
                             self._grounding_corpus(utterance, history, observations),
+                            visitor,
                         )
                         if nudge is not None:
                             grounding_deflections += 1

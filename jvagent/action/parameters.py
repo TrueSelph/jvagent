@@ -41,6 +41,90 @@ logger = logging.getLogger(__name__)
 SCOPE_RESPONSE = "response"
 SCOPE_ORCHESTRATION = "orchestration"
 
+# --- Enforcement (ADR-0037 §2.2) --------------------------------------------
+#
+# A parameter declares how strictly it is applied, instead of strictness being
+# hardcoded beside it. ``prompt`` is the default and is exactly today's
+# behaviour, so every existing parameter is unaffected.
+ENFORCEMENT_PROMPT = "prompt"
+ENFORCEMENT_SCRUB = "scrub"
+ENFORCEMENT_GUARD = "guard"
+_ENFORCEMENT_RANK = {
+    ENFORCEMENT_PROMPT: 0,
+    ENFORCEMENT_SCRUB: 1,
+    ENFORCEMENT_GUARD: 2,
+}
+
+# Detectors are registered by key so a parameter names a strategy rather than
+# embedding logic — config stays declarative and the implementation stays in
+# code where it can be tested.
+_SCRUB_DETECTORS: Dict[str, Any] = {}
+_GUARD_DETECTORS: Dict[str, Any] = {}
+_MISSING_DETECTOR_LOGGED: set = set()
+
+
+def register_scrub_detector(key: str, fn: Any) -> None:
+    """Register ``fn(text) -> text`` for an ``enforcement: scrub`` parameter."""
+    _SCRUB_DETECTORS[key] = fn
+
+
+def register_guard_detector(key: str, fn: Any) -> None:
+    """Register ``fn(text, context) -> violation_or_empty`` for a ``guard``."""
+    _GUARD_DETECTORS[key] = fn
+
+
+def _detector_names(param: Dict[str, Any]) -> List[str]:
+    raw = param.get("detector") or param.get("detectors")
+    if not raw:
+        return []
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    return [str(x).strip() for x in items if str(x).strip()]
+
+
+def enforcement_of(param: Dict[str, Any]) -> str:
+    """The enforcement mode of a parameter, degraded when unsatisfiable.
+
+    A ``scrub`` or ``guard`` parameter needs a registered detector; the loop
+    cannot evaluate prose. An unknown detector degrades the rule to ``prompt``
+    and logs once, so a config-only deployment stays safe and the failure is
+    visible rather than a rule that silently does nothing.
+    """
+    mode = str(param.get("enforcement") or ENFORCEMENT_PROMPT).strip().lower()
+    if mode not in _ENFORCEMENT_RANK:
+        return ENFORCEMENT_PROMPT
+    if mode == ENFORCEMENT_PROMPT:
+        return ENFORCEMENT_PROMPT
+    table = _SCRUB_DETECTORS if mode == ENFORCEMENT_SCRUB else _GUARD_DETECTORS
+    names = _detector_names(param)
+    known = [n for n in names if n in table]
+    if not known:
+        marker = f"{param.get('key')}:{mode}:{','.join(names) or '-'}"
+        if marker not in _MISSING_DETECTOR_LOGGED:
+            _MISSING_DETECTOR_LOGGED.add(marker)
+            logger.warning(
+                "parameters: rule %r asks for enforcement=%s but no detector "
+                "%r is registered — falling back to prompt-only",
+                param.get("key") or param.get("response", "")[:40],
+                mode,
+                names or None,
+            )
+        return ENFORCEMENT_PROMPT
+    return mode
+
+
+def detectors_for(param: Dict[str, Any], mode: str) -> List[Any]:
+    """Registered detector callables for *param* at *mode*."""
+    table = _SCRUB_DETECTORS if mode == ENFORCEMENT_SCRUB else _GUARD_DETECTORS
+    return [table[n] for n in _detector_names(param) if n in table]
+
+
+def parameters_with_enforcement(
+    parameters: Optional[List[Any]], mode: str
+) -> List[Dict[str, Any]]:
+    """Resolved parameters whose effective enforcement is *mode*."""
+    return [p for p in resolve_parameters(parameters) if enforcement_of(p) == mode]
+
+
 # Canonical hardening parameters. Response-scoped rules govern what the agent
 # *says*; orchestration-scoped rules govern how the executive *reasons*. Kept
 # short — they render straight into prompts.
@@ -48,6 +132,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
     {
         "key": "identity.self_disclosure",
         "inviolable": True,
+        "enforcement": ENFORCEMENT_SCRUB,
+        "detector": "drop_leak_sentences",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Speak and act as this agent. Never say or imply you are an AI, a "
@@ -58,6 +144,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
     {
         "key": "identity.cutoff",
         "inviolable": True,
+        "enforcement": ENFORCEMENT_SCRUB,
+        "detector": "drop_leak_sentences",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Never state, hint at, or volunteer a knowledge or training cutoff "
@@ -79,7 +167,22 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         ),
     },
     {
+        # The duplicate-greeting rule. It was pass 3 of vet_egress with no
+        # parameter behind it — invisible to an operator reading the rule list,
+        # and impossible to override. Now it is a rule like any other.
+        "key": "voice.single_greeting",
+        "enforcement": ENFORCEMENT_SCRUB,
+        "detector": "collapse_repeat_greeting",
+        "scope": SCOPE_RESPONSE,
+        "response": (
+            "Greet the user at most once in a message; never open with a second "
+            "greeting after an introduction."
+        ),
+    },
+    {
         "key": "voice.closers",
+        "enforcement": ENFORCEMENT_SCRUB,
+        "detector": "peel_closers",
         "scope": SCOPE_RESPONSE,
         "response": (
             "Stay in character as the agent with a natural, concise voice in the "
@@ -89,7 +192,8 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
     },
     {
         "key": "grounding.verified_claims",
-        "inviolable": True,
+        "enforcement": ENFORCEMENT_GUARD,
+        "detectors": ["unsupported_source_claim", "unsupported_specifics"],
         # Grounding is a RESPONSE rule — it constrains the user-facing answer, so
         # it must reach the reply egress. (The matching-tool *mechanic* lives in
         # the orchestration protocol section of the prompt, not here.)
@@ -335,6 +439,8 @@ def resolve_parameters(parameters: Optional[List[Any]]) -> List[Dict[str, Any]]:
     """
     items = [p for p in (parameters or []) if isinstance(p, dict)]
     keyed = [p for p in items if str(p.get("key") or "").strip()]
+    refinements: Dict[tuple, List[Dict[str, Any]]] = {}
+    _RATCHETED: Dict[int, Dict[str, Any]] = {}
 
     floors: Dict[tuple, Dict[str, Any]] = {}
     for param in keyed:
@@ -357,15 +463,54 @@ def resolve_parameters(parameters: Optional[List[Any]]) -> List[Dict[str, Any]]:
                         param.get("action_name") or "?",
                     )
             continue
+        # C5: a conditional rule refines, it does not replace. Without this,
+        # "when X: be brief" silently becomes a global and kills the
+        # unconditional rule it was only meant to qualify. Overriding takes the
+        # same key AND explicit intent.
+        if str(param.get("condition") or "").strip() and not param.get("override"):
+            refinements.setdefault(group, []).append(param)
+            continue
         held = winners.get(group)
         if held is None or _rank_of(param) > _rank_of(held):
             winners[group] = param
 
+    # C7: enforcement ratchets up for INVIOLABLE groups only. Writing a weaker
+    # duplicate must not switch a safety floor off — but a deterministic
+    # detector can be wrong deterministically, so an operator has to be able to
+    # tune a non-floor rule back down. A rule that cannot be corrected through
+    # the customization surface is not customizable.
+    for group, winner in winners.items():
+        if group not in floors:
+            continue
+        strongest = winner
+        for param in keyed:
+            if _group_of(param) != group:
+                continue
+            if _ENFORCEMENT_RANK.get(
+                str(param.get("enforcement") or ENFORCEMENT_PROMPT), 0
+            ) > _ENFORCEMENT_RANK.get(
+                str(strongest.get("enforcement") or ENFORCEMENT_PROMPT), 0
+            ):
+                strongest = param
+        if strongest is not winner:
+            merged = dict(winner)
+            merged["enforcement"] = strongest.get("enforcement")
+            for field in ("detector", "detectors"):
+                if strongest.get(field) and not merged.get(field):
+                    merged[field] = strongest[field]
+            winners[group] = merged
+            _RATCHETED[id(winner)] = merged
+
     out: List[Dict[str, Any]] = []
     for param in items:
+        group = _group_of(param)
         if not str(param.get("key") or "").strip():
             out.append(param)
-        elif winners.get(_group_of(param)) is param:
+        elif winners.get(group) is param:
+            out.append(param)
+        elif id(param) in _RATCHETED and winners.get(group) is _RATCHETED[id(param)]:
+            out.append(_RATCHETED[id(param)])
+        elif param in refinements.get(group, []):
             out.append(param)
     return out
 
@@ -520,40 +665,71 @@ def _collapse_repeat_greeting(sentences: list) -> list:
     return out
 
 
-def vet_egress(text: str) -> str:
-    """Scrub a reply before it reaches the user: drop AI/model/provider/​cutoff
-    leak sentences (anywhere) and trailing invitation closers.
+def _detect_drop_leak_sentences(text: str) -> str:
+    """Scrub detector for ``identity.self_disclosure`` / ``identity.cutoff``."""
+    sentences = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
+    kept = [s for s in sentences if not (s.strip() and _is_leak(s))]
+    if not "".join(kept).strip():
+        # Don't blank a reply that is *only* a leak — a silent turn is worse
+        # than a bad one, and that pathological case is the prompt layer's job.
+        kept = sentences
+    return "".join(kept)
 
-    Runs on EVERY non-streaming egress — fast literal publish and composed
-    reply alike — so the no-self-disclosure / no-cutoff / no-closer response
-    rules hold even when the model ignores the prose. If the leak pass would
-    remove everything (a reply that is *only* a leak), the original sentences
-    are kept rather than going silent — that pathological case is the prompt/
-    parameter layer's job.
+
+def _detect_peel_closers(text: str) -> str:
+    """Scrub detector for ``voice.closers``."""
+    kept = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
+    while len(kept) > 1 and kept[-1].strip() and _is_closer(kept[-1]):
+        kept.pop()
+    return "".join(kept)
+
+
+def _detect_collapse_repeat_greeting(text: str) -> str:
+    """Scrub detector for ``voice.single_greeting``."""
+    return "".join(
+        _collapse_repeat_greeting([m.group(0) for m in _SENTENCE_RE.finditer(text)])
+    )
+
+
+register_scrub_detector("drop_leak_sentences", _detect_drop_leak_sentences)
+register_scrub_detector("peel_closers", _detect_peel_closers)
+register_scrub_detector("collapse_repeat_greeting", _detect_collapse_repeat_greeting)
+
+
+def vet_egress(text: str, parameters: Optional[List[Any]] = None) -> str:
+    """Apply every ``enforcement: scrub`` response rule to *text*.
+
+    Runs on EVERY non-streaming egress, so the machine-checkable response rules
+    hold even when the model ignores the prose. Which rules apply is no longer
+    hardcoded here: it is the resolved set of response parameters marked
+    ``scrub`` (ADR-0037 §2.2), so deleting or overriding a parameter removes its
+    scrub with it.
+
+    ``parameters`` defaults to the framework core, which is exactly the previous
+    behaviour — callers that have the interaction's pooled set should pass it so
+    an operator's or a skill's scrub rules apply too.
+
+    No whitespace normalization: downstream renderers own their spacing, so a
+    server-side collapse changes nothing visible and only risks mangling
+    intentional structure (indented code blocks, nested list items).
     """
     if not text or not text.strip():
         return text
-    sentences = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
-
-    # Pass 1: drop leak sentences anywhere.
-    kept = [s for s in sentences if not (s.strip() and _is_leak(s))]
-    if not "".join(kept).strip():
-        kept = sentences  # don't blank a pure-leak reply
-
-    # Pass 2: peel trailing generic closers (keep at least one sentence).
-    while len(kept) > 1 and kept[-1].strip() and _is_closer(kept[-1]):
-        kept.pop()
-
-    # Pass 3: one greeting per message.
-    kept = _collapse_repeat_greeting(kept)
-
-    # No whitespace normalization. Downstream renderers own their spacing
-    # (markdown→HTML collapses runs of spaces/blank lines; plain-text channels
-    # keep the model's layout), so a server-side collapse changes nothing
-    # visible and only risks mangling intentional structure — indented code
-    # blocks, nested list items. Keep the model's layout verbatim; only trim
-    # leading/trailing blank space from the rejoin.
-    cleaned = "".join(kept).strip()
+    pool = parameters if parameters is not None else core_parameters()
+    cleaned = text
+    for param in response_parameters(resolve_parameters(pool)):
+        if enforcement_of(param) != ENFORCEMENT_SCRUB:
+            continue
+        for detector in detectors_for(param, ENFORCEMENT_SCRUB):
+            try:
+                cleaned = detector(cleaned)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "parameters: scrub detector for %r failed: %s",
+                    param.get("key"),
+                    exc,
+                )
+    cleaned = cleaned.strip()
     return cleaned or text
 
 
@@ -570,6 +746,14 @@ __all__ = [
     "accumulate_action_parameters",
     "accumulate_skill_parameters",
     "render_parameters",
+    "ENFORCEMENT_PROMPT",
+    "ENFORCEMENT_SCRUB",
+    "ENFORCEMENT_GUARD",
+    "register_scrub_detector",
+    "register_guard_detector",
+    "enforcement_of",
+    "detectors_for",
+    "parameters_with_enforcement",
     "resolve_parameters",
     "vet_egress",
 ]

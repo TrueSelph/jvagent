@@ -117,3 +117,52 @@ def unsupported_specifics(text: str, corpus: str) -> str:
         if year not in haystack:
             return year
     return ""
+
+
+# --- guard detectors (ADR-0037 §2.2) ----------------------------------------
+#
+# Registered so the parameter that states the grounding rule owns its own
+# enforcement, instead of the loop carrying hardcoded flags beside it. Both take
+# the reply text plus the turn context and return a violation description, or ""
+# when the rule is satisfied.
+
+
+def _guard_unsupported_source_claim(text: str, context: dict) -> str:
+    if context.get("substantive_tool_calls"):
+        return ""
+    claim = unsupported_source_claim(text)
+    if not claim:
+        return ""
+    return (
+        f"You have not called ANY tool this turn, so this claim is not true: "
+        f"{claim!r}. Either call the tool that actually retrieves the "
+        "information and answer from its result, or drop the claim and say "
+        "plainly that you have not checked. Never tell the user something came "
+        "from a source you did not consult."
+    )
+
+
+def _guard_unsupported_specifics(text: str, context: dict) -> str:
+    if context.get("substantive_tool_calls"):
+        return ""
+    invented = unsupported_specifics(text, context.get("corpus", ""))
+    if not invented:
+        return ""
+    return (
+        f"{invented!r} does not appear anywhere in this conversation or in any "
+        "tool result, and you have called no tool this turn — so you do not "
+        "actually know it. Look it up with the appropriate tool and answer from "
+        "what it returns, or tell the user you don't have that detail. Do not "
+        "state specifics you have not verified."
+    )
+
+
+def register_orchestrator_guard_detectors() -> None:
+    """Register the loop's guard detectors with the parameter subsystem."""
+    from jvagent.action.parameters import register_guard_detector
+
+    register_guard_detector("unsupported_source_claim", _guard_unsupported_source_claim)
+    register_guard_detector("unsupported_specifics", _guard_unsupported_specifics)
+
+
+register_orchestrator_guard_detectors()
