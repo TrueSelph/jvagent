@@ -20,6 +20,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **A rule could hold on one transport and not another (ADR-0038).** Response
+  rules were applied by callers, and the streaming path had no caller that did
+  — so the same reply came out clean over REST and unscrubbed over the
+  messenger, which streams. Observed live as a duplicate greeting that
+  `voice.single_greeting` should have removed. The `ResponseBus` is now the
+  single egress gate; `EgressGate` is the one implementation, and non-streaming
+  scrubbing is the degenerate case of it. Equivalence is asserted over every
+  chunk split point rather than argued.
+- **`commit_pending_adhoc` was a second, ungoverned exit** from the streaming
+  accumulator; it dropped text the gate was holding. It now ends the message the
+  same way `publish()` does.
+
 - **Quick-reply chips were ungoverned.** `SuggestionsInteractAction` generates
   user-facing text with a language model but publishes it in `metadata`, where
   `publish()`'s egress scrub never looked, and it rendered no response rules

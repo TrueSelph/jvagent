@@ -29,11 +29,11 @@ from typing import Any, Dict, List, Optional
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
+from jvagent.action.egress_gate import scrub_text
 from jvagent.action.parameters import (
     render_parameters,
     reply_core_parameters,
     response_parameters,
-    vet_egress,
 )
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,18 @@ CHANNEL_FORMATS: Dict[str, str] = {
     "linkedin": "Professional tone; light formatting; raw URLs.",
     "email": "Clear paragraphs; simple structure suitable for HTML rendering.",
 }
+
+
+def _reply_pool(interaction: Any) -> Optional[list]:
+    """Rules governing this reply: the interaction's pool, else the core."""
+    pool = getattr(interaction, "parameters", None) if interaction is not None else None
+    try:
+        listed = list(pool) if pool else []
+    except TypeError:  # not iterable — treat as absent, not as "no rules"
+        listed = []
+    # An EMPTY list is not the same as None here: vet_egress reads [] as "no
+    # rules apply" and would scrub nothing. Absent means fall back to the core.
+    return listed or None
 
 
 class ReplyAction(Action):
@@ -339,16 +351,15 @@ class ReplyAction(Action):
         no-op (the model already published). Bus + non-streaming → publish once.
         Returns True when something was emitted/persisted.
 
-        Every non-streaming egress — fast literal publish AND composed reply —
-        passes through here, so the deterministic ``vet_egress`` scrub runs once,
-        at the single choke point, dropping the catastrophic leak classes (self-
-        identifying as an AI/model/provider, stating a knowledge cutoff) the
-        prompt layer might miss. Streaming replies already left via the bus
-        token-by-token, so they rely on the prompt/parameter hardening alone.
+        The response rules are NOT applied here. They are applied by the
+        ResponseBus, which every transport exits through, so a streamed reply
+        and a non-streamed one are governed identically (see
+        ``jvagent/action/egress_gate.py``). This method used to scrub, which
+        made governance a property of the caller and left the streaming path —
+        the one the messenger uses — with none.
         """
         if not content:
             return False
-        content = vet_egress(content)
         response_bus = getattr(visitor, "response_bus", None) if visitor else None
         has_bus = bool(
             response_bus and visitor and getattr(visitor, "session_id", None)
@@ -357,6 +368,11 @@ class ReplyAction(Action):
         if not has_bus:
             if transient or interaction is None:
                 return True
+            # No bus means THIS is the egress — the text goes straight into
+            # interaction.response, which is what the caller returns and what
+            # replays as history. The gate still has to run; it is the same
+            # gate, invoked here because there is no bus to invoke it.
+            content = scrub_text(content, _reply_pool(interaction))
             current = interaction.response or ""
             if current and current.strip() and current != content:
                 changed = interaction.set_response(f"{current}\n\n{content}")

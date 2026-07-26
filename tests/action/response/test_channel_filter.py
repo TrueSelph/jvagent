@@ -427,5 +427,27 @@ class TestResponseBusFilterIntegration:
             user_id="test_user",
             streaming_complete=False,
         )
-        assert message.content == "**Bold** text"
+        # Incremental chunks now leave through the egress gate, which releases
+        # text only once a later chunk can no longer change it. "**Bold** text"
+        # ends no sentence, so it is withheld here and arrives at end-of-stream.
+        # What this test is really about — no filter and no adapter call on an
+        # incremental chunk — is unchanged.
+        assert message.content == ""
         mock_adapter.send.assert_not_called()
+
+        final = await bus.publish(
+            session_id="test_session",
+            content="",
+            channel="whatsapp",
+            stream=True,
+            interaction_id="i1",
+            user_id="test_user",
+            streaming_complete=True,
+        )
+        assert final.message_type == "final"
+        streamed = "".join(
+            m.content
+            for m in bus._message_buffers.get("i1", [])
+            if m.message_type == "stream_chunk"
+        )
+        assert streamed == "**Bold** text"

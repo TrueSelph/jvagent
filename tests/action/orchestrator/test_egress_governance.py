@@ -20,34 +20,111 @@ from jvagent.action.parameters import vet_egress
 
 async def test_publish_scrubs_user_facing_content(monkeypatch):
     """A direct publish — an egress fallback, or an action emitting its own
-    text — still meets the core response rules."""
+    text — still meets the core response rules.
+
+    Exercised against a REAL ResponseBus, because that is now where governance
+    lives. A stub bus would pass this test while proving nothing: the whole
+    point of moving the scrub to the bus is that the bus is the one thing every
+    transport goes through.
+    """
     from jvagent.action.interact.base import InteractAction
+    from jvagent.action.response.response_bus import ResponseBus
 
     class _Concrete(InteractAction):
         async def execute(self, visitor):  # pragma: no cover - unused
             return None
 
-    sent = {}
-
-    class _Bus:
-        async def publish(self, **kw):
-            sent.update(kw)
-            return True
+    bus = ResponseBus()
+    interaction = MagicMock()
+    interaction.id = "i1"
+    interaction.user_id = "u1"
+    interaction.response = None
+    interaction.parameters = []
+    interaction.set_response = MagicMock(return_value=True)
+    interaction.save = AsyncMock()
 
     visitor = MagicMock()
-    visitor.response_bus = _Bus()
+    visitor.response_bus = bus
     visitor.session_id = "s1"
     visitor.stream = False
-    visitor.interaction = MagicMock()
+    visitor.channel = "default"
+    visitor.data = {}
+    visitor.interaction = interaction
 
     action = _Concrete()
     leak = "I am an AI language model. Your order ships Tuesday."
     await action.publish(visitor, content=leak, stream=False)
 
-    published = str(sent.get("content", ""))
+    published = "".join(
+        m.content for m in bus._message_buffers.get("i1", []) if m.content
+    )
     assert "language model" not in published.lower()
     assert "order ships Tuesday" in published
     assert published == vet_egress(leak)
+
+
+async def test_streamed_and_non_streamed_replies_are_governed_identically():
+    """The defect this redesign exists for: the same text came out clean over
+    REST and dirty over the messenger, because only one path scrubbed."""
+    from jvagent.action.response.response_bus import ResponseBus
+
+    text = (
+        "Hello! I am Orchestrator Agent, here to help you with your needs. "
+        "Hello! How can I assist you today?"
+    )
+
+    async def _run(stream: bool) -> str:
+        bus = ResponseBus()
+        interaction = MagicMock()
+        interaction.id = "i1"
+        interaction.response = None
+        interaction.parameters = []
+        interaction.set_response = MagicMock(return_value=True)
+        interaction.save = AsyncMock()
+        if stream:
+            for ch in text:
+                await bus.publish(
+                    session_id="s1",
+                    content=ch,
+                    channel="default",
+                    stream=True,
+                    interaction_id="i1",
+                    interaction=interaction,
+                    user_id="u1",
+                    streaming_complete=False,
+                )
+            await bus.publish(
+                session_id="s1",
+                content="",
+                channel="default",
+                stream=True,
+                interaction_id="i1",
+                interaction=interaction,
+                user_id="u1",
+                streaming_complete=True,
+            )
+            return "".join(
+                m.content
+                for m in bus._message_buffers.get("i1", [])
+                if m.message_type == "stream_chunk"
+            )
+        await bus.publish(
+            session_id="s1",
+            content=text,
+            channel="default",
+            stream=False,
+            interaction_id="i1",
+            interaction=interaction,
+            user_id="u1",
+        )
+        return "".join(
+            m.content for m in bus._message_buffers.get("i1", []) if m.content
+        )
+
+    streamed = await _run(True)
+    plain = await _run(False)
+    assert streamed == plain == vet_egress(text)
+    assert streamed.count("Hello") == 1
 
 
 async def test_publish_leaves_thoughts_alone():

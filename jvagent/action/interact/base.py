@@ -330,23 +330,12 @@ class InteractAction(Action, ABC):
         Returns:
             ResponseMessage from ResponseBus.publish, or None if not published.
         """
-        if content and category == "user":
-            # Governance invariant, not a convention. publish() is the raw bus
-            # primitive, so any caller that reaches it directly — an action
-            # emitting its own text, or an egress fallback taken when the
-            # responder is unavailable — would otherwise ship output that never
-            # met the response rules. Routing through ReplyAction is the
-            # governed path; this makes the deterministic subset (AI/provider
-            # self-identification, knowledge-cutoff claims, invitation closers,
-            # duplicate greetings) hold even when something skips it.
-            #
-            # Only category="user" is scrubbed: thoughts and reasoning traces are
-            # internal, and rewriting them would corrupt what the UI shows about
-            # how the turn ran. Re-scrubbing already-clean text is a no-op, so a
-            # governed caller passing through here is unaffected.
-            from jvagent.action.parameters import vet_egress
-
-            content = vet_egress(content)
+        # No scrub here. The ResponseBus is the single egress gate (see
+        # jvagent/action/egress_gate.py): every transport, streaming or not,
+        # leaves through it, so governance no longer depends on which caller
+        # remembered to apply it. Scrubbing here as well would be a second
+        # implementation to keep in sync — the exact arrangement that let a
+        # streamed reply out ungoverned.
         if not content and not allow_empty:
             logger.error("InteractAction.publish: content is required")
             return None
