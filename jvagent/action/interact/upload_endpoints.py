@@ -30,11 +30,20 @@ from jvagent.core.public_url import get_public_base_url
 
 logger = logging.getLogger(__name__)
 
-# Accepted upload MIME types (images the vision pipeline understands + common
-# documents customers attach). Kept conservative; widen via config if needed.
-_ALLOWED_MIME_PREFIXES = ("image/",)
+# Accepted upload MIME types (raster images the vision pipeline understands +
+# common documents). Explicit allowlist — never ``image/*``: ``image/svg+xml``
+# (and other XML image subtypes) would be stored and served, enabling XSS when
+# the messenger opens the URL.
 _ALLOWED_MIME_EXACT = frozenset(
     {
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/x-icon",
+        "image/vnd.microsoft.icon",
         "application/pdf",
         "text/plain",
         "text/csv",
@@ -44,6 +53,7 @@ _ALLOWED_MIME_EXACT = frozenset(
 )
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_READ_CHUNK = 64 * 1024
 
 
 def _safe_filename(name: str) -> str:
@@ -53,9 +63,25 @@ def _safe_filename(name: str) -> str:
 
 def _mime_allowed(mime: str) -> bool:
     mime = (mime or "").split(";", 1)[0].strip().lower()
-    if mime in _ALLOWED_MIME_EXACT:
-        return True
-    return any(mime.startswith(p) for p in _ALLOWED_MIME_PREFIXES)
+    return mime in _ALLOWED_MIME_EXACT
+
+
+async def _read_capped(upload: Any, max_bytes: int) -> bytes:
+    """Read an UploadFile without buffering more than ``max_bytes`` + one chunk."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(_READ_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValidationError(
+                message="File exceeds the maximum allowed size.",
+                details={"max_bytes": max_bytes, "size": total},
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @endpoint(
@@ -89,15 +115,10 @@ async def upload_endpoint(request: Request, agent_id: str) -> Any:
             details={"mime_type": mime},
         )
 
-    content = await upload.read()
+    content = await _read_capped(upload, DEFAULT_MAX_UPLOAD_ITEM_BYTES)
     size = len(content)
     if size == 0:
         raise ValidationError(message="Uploaded file is empty.")
-    if size > DEFAULT_MAX_UPLOAD_ITEM_BYTES:
-        raise ValidationError(
-            message="File exceeds the maximum allowed size.",
-            details={"max_bytes": DEFAULT_MAX_UPLOAD_ITEM_BYTES, "size": size},
-        )
 
     filename = _safe_filename(getattr(upload, "filename", "") or "upload")
     path = f"messenger_uploads/{agent_id}/{session_id}/{uuid.uuid4().hex}_{filename}"

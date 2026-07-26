@@ -268,7 +268,8 @@ interact stream plus a small public surface:
 | `POST /api/agents/{id}/interact/session/refresh` | — | Renew the session token. |
 | `GET  /api/agents/{id}/profile` | none | Agent avatar + name + description (public branding). |
 | `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip, batch (reuses `BaseSTTAction`). |
-| `WS   /api/agents/{id}/voice/stt/stream` | **token query param required** | Real-time STT: stream mic audio → interim + final transcripts. |
+| `POST /api/agents/{id}/voice/stt/stream/ticket` | **X-Session-Token required** | Mint a short-lived WebSocket ticket (`?ticket=`). |
+| `WS   /api/agents/{id}/voice/stt/stream` | **ticket query param required** (legacy `token` accepted) | Real-time STT: stream mic audio → interim + final transcripts. |
 | `POST /api/agents/{id}/voice/tts` | **X-Session-Token required** | Synthesize speech (reuses `BaseTTSAction`). |
 | `POST /api/agents/{id}/uploads` | **X-Session-Token required** | Multipart upload → URL for the next interact `data`. |
 
@@ -292,10 +293,14 @@ browser can't stream (no `MediaRecorder`, mic denied, socket refused, or the STT
 provider has no `stream_transcribe`), the mic **falls back** to the batch
 `POST /voice/stt` path automatically — no config needed.
 
-Because browsers can't set custom headers on a WebSocket handshake, the session
-token rides as the `?token=` query param (verified the same way as the header on
-the POST routes). **Serve over `wss://` in production** so the token isn't exposed
-in plaintext. The WS route is registered by wrapping the server's app factory
+Because browsers can't set custom headers on a WebSocket handshake, the messenger
+first `POST`s `/voice/stt/stream/ticket` with `X-Session-Token` (same header gate
+as the other voice routes) and opens the socket with the short-lived `?ticket=`
+query param — so the long-lived session capability token never lands in access
+logs or Referer chains. Older clients that still send `?token=` (the full session
+token) are accepted for compatibility. **Serve over `wss://` in production** so
+the credential isn't exposed in plaintext. The WS route is registered by wrapping
+the server's app factory
 ([`register_voice_ws_routes`](../jvagent/action/interact/voice_stream_endpoints.py)),
 because jvspatial's `@endpoint` is HTTP-only and app rebuilds replay only HTTP
 routes — the wrapper puts the route on every built app so it survives rebuilds.
@@ -307,9 +312,11 @@ routes — the wrapper puts the route on every built app so it survives rebuilds
   In dev, serve the messenger on an already-allowlisted origin (e.g. `:3000`) or
   add its origin to the list — otherwise the interact preflight fails with `400`.
 - **CORS headers:** the client sends the `X-Session-Token` header on resume /
-  voice / upload calls, so it must be in the allowed CORS headers. It is **not**
-  in the default set — add it via `JVSPATIAL_CORS_HEADERS` (include the defaults
-  too), e.g.
+  voice / upload calls. jvagent **auto-allowlists** that header when building the
+  server CORS config (`_ensure_session_token_header` in
+  [`server_config.py`](../jvagent/cli/server_config.py)), so you do not need to
+  add it manually via `JVSPATIAL_CORS_HEADERS` unless you are overriding the
+  header list yourself — in that case include it with the defaults, e.g.
   `JVSPATIAL_CORS_HEADERS="Accept,Authorization,Content-Type,X-API-Key,X-Session-Token"`.
   Symptom when missing: the first turn works but the next turn (which carries the
   token) fails the preflight and the client shows "Could not reach the agent."

@@ -1,8 +1,8 @@
 """Tests for the real-time STT WebSocket (``/agents/{id}/voice/stt/stream``).
 
-Covers the session-token gate (query param), the audio→transcript bridge, and
-that :func:`register_voice_ws_routes` adds a route that survives app rebuilds
-(it wraps the factory, not the built app).
+Covers the session-token / ticket gate (query param), the audio→transcript
+bridge, and that :func:`register_voice_ws_routes` adds a route that survives
+app rebuilds (it wraps the factory, not the built app).
 """
 
 import json
@@ -30,6 +30,11 @@ def _patch_valid_session(monkeypatch, stt=_FakeSTT()):
     monkeypatch.setattr(
         vs,
         "verify_session_token",
+        lambda tok, expected_agent_id: ({"session_id": "s1"}, None),
+    )
+    monkeypatch.setattr(
+        vs,
+        "verify_stt_stream_ticket",
         lambda tok, expected_agent_id: ({"session_id": "s1"}, None),
     )
     monkeypatch.setattr(vs, "_load_conversation", _async_return(object()))
@@ -61,6 +66,9 @@ def test_missing_token_is_rejected(monkeypatch):
     monkeypatch.setattr(
         vs, "verify_session_token", lambda tok, expected_agent_id: (None, "missing")
     )
+    monkeypatch.setattr(
+        vs, "verify_stt_stream_ticket", lambda tok, expected_agent_id: (None, "missing")
+    )
     client = TestClient(_app())
     # A pre-accept close surfaces to the TestClient as WebSocketDisconnect.
     with (
@@ -83,6 +91,17 @@ def test_stream_bridges_audio_to_transcripts(monkeypatch):
         assert ws.receive_json() == {"type": "final", "transcript": "hello world"}
 
 
+def test_stream_accepts_short_lived_ticket(monkeypatch):
+    _patch_valid_session(monkeypatch)
+    client = TestClient(_app())
+    with client.websocket_connect(
+        "/api/agents/n.Agent.1/voice/stt/stream?ticket=short"
+    ) as ws:
+        assert ws.receive_json() == {"type": "ready"}
+        ws.send_text(json.dumps({"type": "stop"}))
+        assert ws.receive_json() == {"type": "interim", "transcript": "hello"}
+
+
 def test_provider_without_streaming_reports_unavailable(monkeypatch):
     class _NoStream:
         pass
@@ -96,6 +115,25 @@ def test_provider_without_streaming_reports_unavailable(monkeypatch):
             "type": "error",
             "message": "stt_streaming_unavailable",
         }
+
+
+async def test_ticket_endpoint_mints_from_session(monkeypatch):
+    async def _gate(request, agent_id):
+        return object(), {
+            "session_id": "s1",
+            "user_id": "u1",
+            "cs": "secret",
+        }
+
+    monkeypatch.setattr(vs, "require_messenger_session", _gate)
+    monkeypatch.setattr(vs, "mint_stt_stream_ticket", lambda **kw: "ticket-abc")
+    monkeypatch.setattr(vs, "stt_stream_ticket_ttl_seconds", lambda: 60)
+
+    class _Req:
+        pass
+
+    out = await vs.stt_stream_ticket_endpoint(_Req(), "agent-1")
+    assert out == {"ticket": "ticket-abc", "expires_in": 60}
 
 
 def test_register_voice_ws_routes_adds_route_to_every_built_app():

@@ -92,32 +92,36 @@ export function MicButton() {
     prefixRef.current = existing ? existing + " " : "";
     committedRef.current = "";
 
-    // Try real-time streaming first.
-    const controller = await startLiveTranscription(
-      config.agentUrl,
-      config.agentId,
-      token,
-      {
-        onInterim: (t) => renderLive(t),
-        onFinal: (t) => {
-          committedRef.current += t.trim() + " ";
-          renderLive("");
-        },
-        onReady: () => setRecording(true),
-        onError: () => {
-          liveRef.current = null;
-          setRecording(false);
-        },
-      }
-    );
+    setBusy(true);
+    try {
+      // Await ready/fail inside startLiveTranscription — null means fall back.
+      const controller = await startLiveTranscription(
+        config.agentUrl,
+        config.agentId,
+        token,
+        {
+          onInterim: (t) => renderLive(t),
+          onFinal: (t) => {
+            committedRef.current += t.trim() + " ";
+            renderLive("");
+          },
+          onReady: () => setRecording(true),
+          onError: () => {
+            liveRef.current = null;
+            setRecording(false);
+          },
+        }
+      );
 
-    if (controller) {
-      liveRef.current = controller;
-      setRecording(true);
-      return;
+      if (controller) {
+        liveRef.current = controller;
+        setRecording(true);
+        return;
+      }
+      await startBatch(token);
+    } finally {
+      setBusy(false);
     }
-    // Fall back to record-then-transcribe.
-    await startBatch(token);
   }, [config, getToken, composer, renderLive, startBatch]);
 
   const stop = useCallback(() => {
@@ -137,7 +141,9 @@ export function MicButton() {
     <TooltipIconButton
       tooltip={
         disabled
-          ? "Send a message first to enable voice"
+          ? busy
+            ? "Starting voice…"
+            : "Send a message first to enable voice"
           : recording
             ? "Stop recording"
             : "Record voice"
