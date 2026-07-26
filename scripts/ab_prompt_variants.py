@@ -43,14 +43,46 @@ from typing import Any, Dict, List, Optional, Tuple
 CONSOLIDATION_COMMIT = "4beccab7"
 
 # Prompt attributes the consolidation touched, mapped to the module constant
-# that supplies each default. Restoring these four reproduces the "before" arm
+# that supplies each default. Restoring these reproduces the "before" arm
 # without checking out the old tree.
 VARIANT_ATTRS: Tuple[Tuple[str, str], ...] = (
     ("system_prompt", "ORCHESTRATOR_STABLE_SYSTEM_PROMPT"),
     ("planning_prompt", "PLANNING_PROMPT"),
-    ("memory_prompt", "MEMORY_PROMPT"),
-    ("tool_use_policy_prompt", "TOOL_USE_POLICY"),
 )
+
+# The other two blocks stopped being attributes in ADR-0037 — their text is now
+# owned by the parameter that states the rule, so an arm swaps the parameter's
+# `response` rather than an attribute. Same text on the wire, same comparison;
+# only the surface it is set through changed.
+VARIANT_PARAMS: Tuple[Tuple[str, str], ...] = (
+    ("memory.search_first", "MEMORY_PROMPT"),
+    ("tools.selection", "TOOL_USE_POLICY"),
+)
+
+ALL_VARIANT_CONSTANTS: Tuple[str, ...] = tuple(
+    name for _, name in VARIANT_ATTRS + VARIANT_PARAMS
+)
+
+
+def _param_responses(orchestrator: Any) -> Dict[str, str]:
+    """Current `response` text of each parameter an arm can swap."""
+    out: Dict[str, str] = {}
+    for param in orchestrator.parameters or []:
+        if isinstance(param, dict) and param.get("key") in dict(VARIANT_PARAMS):
+            out[param["key"]] = param.get("response", "")
+    return out
+
+
+def _set_param_responses(orchestrator: Any, values: Dict[str, str]) -> None:
+    """Rewrite those parameters in place, preserving every other field."""
+    if not values:
+        return
+    updated = []
+    for param in orchestrator.parameters or []:
+        if isinstance(param, dict) and param.get("key") in values:
+            param = {**param, "response": values[param["key"]]}
+        updated.append(param)
+    orchestrator.parameters = updated
 
 
 def load_prior_prompt_constants(commit: str) -> Dict[str, str]:
@@ -67,7 +99,7 @@ def load_prior_prompt_constants(commit: str) -> Dict[str, str]:
     ).stdout
     namespace: Dict[str, Any] = {"__name__": "prompts_before"}
     exec(compile(source, "<prompts@before>", "exec"), namespace)  # noqa: S102
-    return {name: namespace[name] for _, name in VARIANT_ATTRS if name in namespace}
+    return {n: namespace[n] for n in ALL_VARIANT_CONSTANTS if n in namespace}
 
 
 # Arms beyond the prompt-consolidation pair. Each is a plain attribute override
@@ -101,6 +133,14 @@ def apply_variant(orchestrator: Any, constants: Optional[Dict[str, str]]) -> Non
     for attr, const_name in VARIANT_ATTRS:
         if const_name in constants:
             setattr(orchestrator, attr, constants[const_name])
+    _set_param_responses(
+        orchestrator,
+        {
+            key: constants[const_name]
+            for key, const_name in VARIANT_PARAMS
+            if const_name in constants
+        },
+    )
 
 
 async def resolve_orchestrator(app_root: str, agent_hint: str) -> Any:
@@ -242,6 +282,7 @@ async def main() -> None:
         orchestrator.light_model = args.light_model
 
     baseline = {attr: getattr(orchestrator, attr) for attr, _ in VARIANT_ATTRS}
+    param_baseline = _param_responses(orchestrator)
     attribute_baseline = {
         attr: getattr(orchestrator, attr, None)
         for overrides in ATTRIBUTE_ARMS.values()
@@ -256,7 +297,14 @@ async def main() -> None:
             f"{', '.join(sorted(ATTRIBUTE_ARMS))}"
         )
     before_constants = load_prior_prompt_constants(CONSOLIDATION_COMMIT)
-    missing = [n for _, n in VARIANT_ATTRS if n not in before_constants]
+    missing = [n for n in ALL_VARIANT_CONSTANTS if n not in before_constants]
+    absent = [k for k, _ in VARIANT_PARAMS if k not in param_baseline]
+    if absent:
+        raise SystemExit(
+            f"parameters {absent} are not on the orchestrator; the 'before' arm "
+            "cannot restore text it has nowhere to put. Re-bootstrap the app "
+            "with --update --source so the graph matches the current code."
+        )
     if missing:
         print(f"  note: no pre-consolidation text for {missing} — arm uses current")
 
@@ -268,6 +316,7 @@ async def main() -> None:
         # contaminate each other, then apply exactly that arm's override.
         for attr, value in baseline.items():
             setattr(orchestrator, attr, value)
+        _set_param_responses(orchestrator, param_baseline)
         for attr, value in attribute_baseline.items():
             setattr(orchestrator, attr, value)
         if arm == "before":
