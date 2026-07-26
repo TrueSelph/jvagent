@@ -19,6 +19,7 @@ from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
 )
+from jvagent.action.orchestrator.turn_state import TurnState
 from jvagent.action.parameters import (
     accumulate_skill_parameters,
     orchestration_parameters,
@@ -153,7 +154,14 @@ class OrchestratorLoopMixin:
             cache["parameters"] = section
         return section
 
-    async def _run_loop(self, visitor: "InteractWalker") -> None:
+    async def _prepare_turn(self, visitor: "InteractWalker") -> Optional[TurnState]:
+        """Everything the turn needs before the first tick.
+
+        Split out of ``_run_loop`` so the boundary between deciding *what this
+        turn is* and *stepping it* is explicit and typed rather than implied by
+        390 lines of shared scope. Returns ``None`` when the turn is already
+        finished here — a locked flow that ran, or a drained task that replied.
+        """
         loop_t0 = time.perf_counter()
         tool_timings: List[Dict[str, Any]] = []
         activated: List[str] = []
@@ -304,7 +312,7 @@ class OrchestratorLoopMixin:
                 tool_timings=tool_timings,
             )
             await self._finalize_plan(visitor)
-            return
+            return None
 
         if flow_owner and flow_owner not in tools:
             # Locked-in skill tasks use the skill name as owner_action — they
@@ -541,7 +549,112 @@ class OrchestratorLoopMixin:
         if drain_directive:
             await self._send_reply(visitor, drain_directive, compose=True)
             ended_via = "drain_reply"
-            return
+            return None
+
+        return TurnState(
+            ack_started=ack_started,
+            ack_task=ack_task,
+            activated=activated,
+            active_skill_doc=active_skill_doc,
+            agent=agent,
+            budget=budget,
+            capabilities_section=capabilities_section,
+            chain_deflections=chain_deflections,
+            deadline=deadline,
+            deflected_named=deflected_named,
+            drain_directive=drain_directive,
+            ended_via=ended_via,
+            flow_note=flow_note,
+            flow_owner=flow_owner,
+            grounding_deflections=grounding_deflections,
+            history=history,
+            interaction=interaction,
+            last_obs=last_obs,
+            last_sig=last_sig,
+            lean_surface=lean_surface,
+            locked_companion_skill_names=locked_companion_skill_names,
+            locked_companion_tools=locked_companion_tools,
+            loop_actions=loop_actions,
+            loop_t0=loop_t0,
+            nd_streak=nd_streak,
+            observations=observations,
+            parameters_section=parameters_section,
+            pending_chain=pending_chain,
+            plan_deflections=plan_deflections,
+            plan_note=plan_note,
+            refreshed=refreshed,
+            repeats=repeats,
+            skill_docs=skill_docs,
+            skill_names=skill_names,
+            skills_section=skills_section,
+            soft_abandon_evaluated=soft_abandon_evaluated,
+            soft_abandon_streak=soft_abandon_streak,
+            soft_abandon_title=soft_abandon_title,
+            substantive_tool_calls=substantive_tool_calls,
+            ticks=ticks,
+            ticks_heavy=ticks_heavy,
+            ticks_light=ticks_light,
+            tool_timings=tool_timings,
+            tools=tools,
+            user_named_tools=user_named_tools,
+            utterance=utterance,
+            visible=visible,
+        )
+
+    async def _run_loop(self, visitor: "InteractWalker") -> None:
+        state = await self._prepare_turn(visitor)
+        if state is None:
+            return  # the turn was completed during preparation
+        # The 47 names below are the entire interface between preparation and
+        # the tick loop. Unpacked rather than used as `state.x` so the loop body
+        # is unchanged by this split; shrinking this list is the next step.
+        ack_started = state.ack_started
+        ack_task = state.ack_task
+        activated = state.activated
+        active_skill_doc = state.active_skill_doc
+        agent = state.agent
+        budget = state.budget
+        capabilities_section = state.capabilities_section
+        chain_deflections = state.chain_deflections
+        deadline = state.deadline
+        deflected_named = state.deflected_named
+        drain_directive = state.drain_directive
+        ended_via = state.ended_via
+        flow_note = state.flow_note
+        flow_owner = state.flow_owner
+        grounding_deflections = state.grounding_deflections
+        history = state.history
+        interaction = state.interaction
+        last_obs = state.last_obs
+        last_sig = state.last_sig
+        lean_surface = state.lean_surface
+        locked_companion_skill_names = state.locked_companion_skill_names
+        locked_companion_tools = state.locked_companion_tools
+        loop_actions = state.loop_actions
+        loop_t0 = state.loop_t0
+        nd_streak = state.nd_streak
+        observations = state.observations
+        parameters_section = state.parameters_section
+        pending_chain = state.pending_chain
+        plan_deflections = state.plan_deflections
+        plan_note = state.plan_note
+        refreshed = state.refreshed
+        repeats = state.repeats
+        skill_docs = state.skill_docs
+        skill_names = state.skill_names
+        skills_section = state.skills_section
+        soft_abandon_evaluated = state.soft_abandon_evaluated
+        soft_abandon_streak = state.soft_abandon_streak
+        soft_abandon_title = state.soft_abandon_title
+        substantive_tool_calls = state.substantive_tool_calls
+        ticks = state.ticks
+        ticks_heavy = state.ticks_heavy
+        ticks_light = state.ticks_light
+        tool_timings = state.tool_timings
+        tools = state.tools
+        user_named_tools = state.user_named_tools
+        utterance = state.utterance
+        visible = state.visible
 
         try:
             while budget > 0:

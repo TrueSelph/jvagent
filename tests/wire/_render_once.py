@@ -17,7 +17,6 @@ import sys
 
 async def main(app_root: str) -> int:
     from jvagent.core.app_context import set_app_root
-
     from tests.wire._probe import WireProbe, load_orchestrator
 
     set_app_root(app_root)

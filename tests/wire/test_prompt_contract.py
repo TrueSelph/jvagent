@@ -102,7 +102,7 @@ async def test_no_unfilled_template_slot_reaches_the_model(wire):
 
 
 async def test_deleting_a_rule_removes_its_text_from_the_wire(wire):
-    """"Delete the parameter and its prompt text goes with it" is the whole
+    """ "Delete the parameter and its prompt text goes with it" is the whole
     promise of the parameter surface. Tested here against the real prompt
     rather than against `parameter_text()`, because the helper being right is
     not the same as the render site calling it."""
@@ -143,8 +143,6 @@ async def test_an_operator_override_replaces_the_core_text_on_the_wire(wire):
             "response": "REMEMBER THINGS PLEASE.",
         }
     ]
-    cap = await wire.capture(
-        "hi", parameters=override, block_raw_tool_invocation=True
-    )
+    cap = await wire.capture("hi", parameters=override, block_raw_tool_invocation=True)
     assert "REMEMBER THINGS PLEASE." in cap.system
     assert MEMORY_PROMPT not in cap.system
