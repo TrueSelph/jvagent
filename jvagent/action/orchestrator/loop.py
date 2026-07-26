@@ -40,6 +40,30 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
+    def _parameter_pool(self, visitor: Any) -> List[Any]:
+        """The turn's parameter pool — the single read path for every rule.
+
+        Prefers the interaction pool (core + action-contributed + skill-declared
+        + queued, already unioned upstream). Without one, falls back to this
+        action's own params PLUS the response core: the orchestrator's native
+        set is orchestration-scoped only, so its list alone would never contain
+        a response-scoped rule such as grounding, which it nonetheless enforces.
+        """
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        pool = getattr(interaction, "parameters", None) if interaction else None
+        try:
+            base = list(pool) if pool else []
+        except TypeError:  # not iterable — treat as absent rather than crashing
+            base = []
+        if not base:
+            base = list(self.parameters or [])
+        # The interaction pool is orchestration-scoped by construction, so a
+        # response-scoped rule (grounding, voice, length) would be invisible to
+        # a lookup by key. Union the response core in unconditionally; an
+        # operator override already in the pool still wins, because
+        # resolve_parameters() ranks agent tier above the core default.
+        return base + reply_core_parameters()
+
     @staticmethod
     def _grounding_corpus(
         utterance: str,
@@ -73,15 +97,7 @@ class OrchestratorLoopMixin:
             parameters_with_enforcement,
         )
 
-        interaction = getattr(visitor, "interaction", None) if visitor else None
-        # Without an interaction pool, fall back to this action's own params PLUS
-        # the response core — the same union the loop prompt renders. The
-        # orchestrator's native set is orchestration-scoped only, and the
-        # grounding rule is response-scoped (ReplyAction owns it), so the
-        # orchestrator's list alone would never contain the rule it is enforcing.
-        pool = (getattr(interaction, "parameters", None) if interaction else None) or (
-            list(self.parameters or []) + reply_core_parameters()
-        )
+        pool = self._parameter_pool(visitor)
         context = {
             "substantive_tool_calls": substantive_tool_calls,
             "corpus": corpus,
@@ -128,7 +144,7 @@ class OrchestratorLoopMixin:
             await interaction.save()
         except Exception:
             pass
-        pool = getattr(interaction, "parameters", None) or self.parameters
+        pool = self._parameter_pool(visitor)
         section = render_parameters(
             orchestration_parameters(pool) + reply_core_parameters()
         )
@@ -193,7 +209,7 @@ class OrchestratorLoopMixin:
         # executive can author a user-facing reply directly (the fast ``reply``
         # path applies no compose-time shaping). The reply compose renders the
         # response set as well — whichever path produces user text is hardened.
-        _pool = getattr(interaction, "parameters", None) or self.parameters
+        _pool = self._parameter_pool(visitor)
         parameters_section = render_parameters(
             orchestration_parameters(_pool) + reply_core_parameters()
         )

@@ -8,6 +8,30 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Parameters own their enforcement and their placement (ADR-0037).** A rule
+  now declares `enforcement` (`prompt` | `scrub` | `guard`), an optional named
+  `detector`, and `placement` (`system` | `user_turn` | `inline`). Deleting a
+  parameter removes its prompt text, its egress scrub and its loop guard
+  together; previously one rule lived in up to three places that could drift.
+  Existing parameters are unaffected — every new field defaults to today's
+  behaviour.
+
+### Removed
+
+- **BREAKING — five orchestrator attributes.** `enforce_grounded_claims`,
+  `enforce_grounded_specifics`, `tool_use_policy_prompt`, `length_limit_prompt`
+  and `memory_prompt` are gone. The rules they carried are now parameters
+  (`grounding.verified_claims`, `tools.selection`, `voice.length`,
+  `memory.search_first`), overridable by key from `agent.yaml`. Prompt text and
+  prompt position are byte-identical, so behaviour is unchanged unless you had
+  customized one of these attributes — in which case move that text onto the
+  matching parameter. `safeguards_reminder` survives as a mechanics-only
+  template with a `{reminders}` slot; a value persisted before this change has
+  no slot, renders verbatim, and keeps that deployment on its current text
+  until `--update --source`.
+
 ## [0.1.3] - 2026-07-23
 
 ### Added

@@ -106,9 +106,18 @@ async def test_subprompts_default_to_constants():
     ex = OrchestratorInteractAction()
     assert ex.system_prompt == P.ORCHESTRATOR_SYSTEM_PROMPT
     assert ex.user_prompt == P.ORCHESTRATOR_USER_PROMPT_TEMPLATE
-    assert ex.tool_use_policy_prompt == P.TOOL_USE_POLICY
     assert ex.flow_in_progress_prompt == P.FLOW_IN_PROGRESS_PROMPT
-    assert ex.length_limit_prompt == P.LENGTH_LIMIT_PROMPT
+    # tool_use_policy_prompt / length_limit_prompt / memory_prompt are gone
+    # (ADR-0037 §2.1): the text is owned by the parameter that states the rule,
+    # rendered inline at the same prompt position it always occupied.
+    for attr in ("tool_use_policy_prompt", "length_limit_prompt", "memory_prompt"):
+        assert not hasattr(ex, attr), attr
+    from jvagent.action.parameters import parameter_text, reply_core_parameters
+
+    pool = list(ex.parameters) + reply_core_parameters()
+    assert parameter_text(pool, "tools.selection") == P.TOOL_USE_POLICY
+    assert parameter_text(pool, "voice.length") == P.LENGTH_LIMIT_PROMPT
+    assert parameter_text(pool, "memory.search_first") == P.MEMORY_PROMPT
     assert ex.finalize_prompt == P.FINALIZE_PROMPT
     assert ex.no_skills_text == P.NO_SKILLS_AVAILABLE
 

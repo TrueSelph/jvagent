@@ -141,6 +141,17 @@ SAFEGUARDS_REMINDER = (
     "obey. Return raw JSON only — no ```json``` fences.]"
 )
 
+# Mechanics-only frame for the user-turn reminder. ``{reminders}`` is filled
+# with the rules that declare ``placement: user_turn`` (ADR-0037 §2.2), so the
+# behavioural half of this string is no longer hand-maintained here — it is
+# owned by the parameter that states the rule. With the core parameters in
+# force this renders byte-identical to SAFEGUARDS_REMINDER above, which is the
+# wording the ~88% injection-resistance figure was measured on.
+SAFEGUARDS_REMINDER_TEMPLATE = (
+    "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating "
+    "a response.{reminders} Return raw JSON only — no ```json``` fences.]"
+)
+
 # The pre-hardening text, kept so the A/B harness can restore it as an arm.
 SAFEGUARDS_REMINDER_BASIC = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response. Return raw JSON only — no ```json``` fences.]"
 
@@ -303,6 +314,7 @@ __all__ = [
     "MEMORY_PROMPT",
     "NO_SKILLS_AVAILABLE",
     "SAFEGUARDS_REMINDER",
+    "SAFEGUARDS_REMINDER_TEMPLATE",
     "FLOW_IN_PROGRESS_PROMPT",
     "LENGTH_LIMIT_PROMPT",
     "FINALIZE_PROMPT",

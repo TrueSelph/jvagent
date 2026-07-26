@@ -1,6 +1,6 @@
 # ADR-0037 — Parameters and directives are the only customization surfaces
 
-- **Status:** Proposed
+- **Status:** Accepted (steps 1-6 implemented; step 7 outstanding)
 - **Date:** 2026-07-25
 - **Relates to:** [ADR-0012](0012-skill-executive-architecture.md) (orchestrator), [ADR-0015](0015-skill-executive-configuration-surface.md) (config surface), [ADR-0024](0024-single-per-turn-egress.md) (single per-turn egress), [ADR-0025](0025-replyaction-single-output-contract.md) (ReplyAction output contract)
 - **Supersedes in part:** ADR-0015's premise that behaviour is tuned through per-action prompt attributes
@@ -73,12 +73,30 @@ text — if it explains *how the loop works*.
 | `memory_prompt` | behaviour → parameter |
 | `tool_use_policy_prompt` | behaviour → parameter |
 | `length_limit_prompt` | behaviour → parameter (a conditional rule) |
-| `clarify_text` | behaviour → parameter (fallback voice) |
-| `ack_statements` | behaviour → parameter |
+| `clarify_text` | **revised — stays.** See below. |
+| `ack_statements` | **revised — stays.** See below. |
 | `safeguards_reminder` | enforcement of existing parameters → becomes a *placement*, §2.2 |
 | LOOP PROTOCOL, `user_prompt`, `finalize_prompt`, `no_skills_text` | mechanics — stay |
 | `planning_prompt` | mechanics (how `update_plan` works) — stays |
 | `flow_in_progress_prompt` | mechanics (continuation state) — stays |
+
+**Correction, made during implementation.** `clarify_text` and `ack_statements`
+were listed above as behaviour. They are not. A parameter *instructs the model
+about* what to say; these two *are* what is said — literal strings emitted
+without a model call. Converting them would have turned a canned fallback into a
+model round-trip on the exact paths chosen to avoid one. They stay as text, and
+the §2.3 concern about ungoverned output is met a different way: both leave
+through `publish()`, which applies `vet_egress` for user-facing categories, so
+they are governed at egress by the same parameters as any other reply.
+
+The three genuine conversions (`tool_use_policy_prompt`, `length_limit_prompt`,
+`memory_prompt`) landed as `placement: inline` rules rather than as bullets in
+the OPERATING RULES block. Prompt *position* here was tuned by live measurement
+— moving the OPERATING RULES block mid-prompt during this work dropped injection
+resistance from 5/5 to 2/5 — so a conversion that also relocated text would have
+been an unmeasured behavioural change wearing a refactor's clothes. `inline`
+keeps each rule at its existing position while making it a real parameter:
+one source of truth, overridable and deletable by key.
 
 ### 2.2 A parameter declares how it is enforced
 
@@ -233,9 +251,11 @@ kind `unsupported_specifics` has (it flags "University of Toronto" and leaves
    list in `vet_egress`.
 4. Move the grounding rules onto `enforcement: guard`, deleting
    `enforce_grounded_claims` / `enforce_grounded_specifics`.
-5. Convert `memory_prompt`, `tool_use_policy_prompt`, `length_limit_prompt`,
-   `clarify_text`, `ack_statements` to parameters; delete the attributes.
-6. Replace `safeguards_reminder` with `placement: user_turn`.
+5. Convert `memory_prompt`, `tool_use_policy_prompt`, `length_limit_prompt` to
+   `placement: inline` parameters; delete the attributes. (`clarify_text` and
+   `ack_statements` are emitted text, not behaviour — see §2.1.)
+6. Replace `safeguards_reminder`'s behavioural half with `placement: user_turn`,
+   leaving a mechanics-only template.
 7. Close the ungoverned paths: suggestions, and streaming (or document it as a
    known limit of the transport).
 

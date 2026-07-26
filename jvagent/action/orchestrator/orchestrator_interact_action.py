@@ -73,13 +73,11 @@ from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
     LENGTH_LIMIT_PROMPT,
-    MEMORY_PROMPT,
     NO_SKILLS_AVAILABLE,
     ORCHESTRATOR_SYSTEM_PROMPT,
     ORCHESTRATOR_USER_PROMPT_TEMPLATE,
     PLANNING_PROMPT,
-    SAFEGUARDS_REMINDER,
-    TOOL_USE_POLICY,
+    SAFEGUARDS_REMINDER_TEMPLATE,
     render_identity_section,
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
@@ -99,6 +97,8 @@ from jvagent.action.orchestrator.turn_cache import bind_turn_cache, get_turn_cac
 from jvagent.action.parameters import (
     accumulate_action_parameters,
     orchestrator_core_parameters,
+    parameter_text,
+    render_user_turn_reminders,
 )
 from jvagent.tooling.tool_executor import bind_dispatch_context
 
@@ -354,13 +354,19 @@ class OrchestratorInteractAction(
     # tick count. ``max_observations_in_prompt`` bounds how MANY replay; the
     # rest bound how BIG each one is.
     safeguards_reminder: str = attribute(
-        default=SAFEGUARDS_REMINDER,
+        default=SAFEGUARDS_REMINDER_TEMPLATE,
         description=(
-            "Terse reminder appended to every tick's user turn — the slot a "
-            "model weights most. It restates the operating rules and the "
-            "user-content boundary, because the system-prompt rules alone do "
-            "not always hold: measured injection resistance on the example "
-            "agent sits near 87%, not 100%."
+            "Mechanics frame for the reminder appended to every tick's user "
+            "turn — the slot a model weights most. The reminder exists because "
+            "the system-prompt rules alone do not always hold: measured "
+            "injection resistance on the example agent sits near 88%, not "
+            "100%. The BEHAVIOURAL half is not written here: '{reminders}' is "
+            "filled with the rules that declare 'placement: user_turn' "
+            "(ADR-0037 §2.2), so a rule is edited in one place and both slots "
+            "follow. With the core parameters in force this renders "
+            "byte-identical to the pre-ADR string. A value persisted before "
+            "this change has no '{reminders}' slot and renders verbatim, which "
+            "keeps that deployment on exactly its current text."
         ),
     )
     skip_compose_without_guidance: bool = attribute(
@@ -472,17 +478,9 @@ class OrchestratorInteractAction(
             "placeholder is still accepted but rendered empty.)"
         ),
     )
-    tool_use_policy_prompt: str = attribute(
-        default=TOOL_USE_POLICY,
-        description="Appended when block_raw_tool_invocation is on.",
-    )
     flow_in_progress_prompt: str = attribute(
         default=FLOW_IN_PROGRESS_PROMPT,
         description="Appended while a flow is active. Placeholder: {flow_note}.",
-    )
-    length_limit_prompt: str = attribute(
-        default=LENGTH_LIMIT_PROMPT,
-        description="Appended when max_statement_length is set. Placeholder: {max_chars}.",
     )
     finalize_prompt: str = attribute(
         default=FINALIZE_PROMPT,
@@ -508,12 +506,6 @@ class OrchestratorInteractAction(
             "mid-plan question to the user isn't blocked forever). 0 disables "
             "the drain guard."
         ),
-    )
-    memory_prompt: str = attribute(
-        default=MEMORY_PROMPT,
-        description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
-        "memory (the conversation in context + saved artifacts) before answering "
-        "from a blank or claiming you can't recall. Set empty to omit.",
     )
     lock_active_flow: bool = attribute(
         default=True,
@@ -3164,6 +3156,7 @@ class OrchestratorInteractAction(
         # system prompt (not trailing after the rules): planning, the tool-use
         # policy, and the upload-memory affordance are all about how to run the
         # loop. Each is gated; ordered planning → tool-use → memory.
+        pool = self._parameter_pool(visitor)
         loop_extra: List[str] = []
         # Planning (ADR-0019): nudge update_plan for multi-step work; re-surface
         # an unfinished prior plan so the turn resumes. Off on the finalize tick.
@@ -3173,14 +3166,19 @@ class OrchestratorInteractAction(
                 loop_extra.append(plan_note)
         # Tool-use policy: tool selection is the agent's job, not the user's to
         # dictate (gated by block_raw_tool_invocation).
+        # Text owned by the `tools.selection` parameter; the flag still gates it
+        # because it also gates real code (raw-invocation blocking).
         if self.block_raw_tool_invocation:
-            loop_extra.append(self.tool_use_policy_prompt)
+            policy = parameter_text(pool, "tools.selection")
+            if policy:
+                loop_extra.append(policy)
         # Memory-access protocol: search memory (the conversation in context +
         # saved artifacts) before answering from a blank or claiming you can't
         # recall. A standing protocol — not vision-gated; the artifact-tool part
         # is phrased conditionally so it's safe when those tools aren't surfaced.
-        if self.memory_prompt:
-            loop_extra.append(self.memory_prompt)
+        memory_rule = parameter_text(pool, "memory.search_first")
+        if memory_rule:
+            loop_extra.append(memory_rule)
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
         prompt_cache = getattr(self, "_turn_prompt_cache", None) or {}
@@ -3242,12 +3240,14 @@ class OrchestratorInteractAction(
             visitor, "max_statement_length", self.max_statement_length
         )
         if max_statement_length and int(max_statement_length) > 0:
-            limit = self._fmt(
-                self.length_limit_prompt,
-                LENGTH_LIMIT_PROMPT,
-                max_chars=int(max_statement_length),
-            )
-            system_prompt = f"{system_prompt}\n\n{limit}"
+            length_rule = parameter_text(pool, "voice.length")
+            if length_rule:
+                limit = self._fmt(
+                    length_rule,
+                    LENGTH_LIMIT_PROMPT,
+                    max_chars=int(max_statement_length),
+                )
+                system_prompt = f"{system_prompt}\n\n{limit}"
         if finalize:
             system_prompt = f"{system_prompt}\n\n{self.finalize_prompt}"
         # Conversation history travels as structured prior messages — the
@@ -3275,7 +3275,22 @@ class OrchestratorInteractAction(
         # user turn (the slot the model weights most), so a weak model actually
         # obeys the safeguards when it writes a reply — the same technique that
         # got it to comply with directives in ReplyAction.
-        user_prompt = f"{user_prompt}\n\n{self.safeguards_reminder}"
+        #
+        # The behavioural half is no longer a hand-maintained restatement: rules
+        # that declare ``placement: user_turn`` render themselves here (ADR-0037
+        # §2.2), so deleting or editing such a rule updates both slots at once.
+        # Only the mechanics frame is template text. A ``safeguards_reminder``
+        # persisted before this change has no ``{reminders}`` slot, so it
+        # renders verbatim and that deployment keeps exactly today's string.
+        reminders = render_user_turn_reminders(self._parameter_pool(visitor))
+        user_prompt = "{0}\n\n{1}".format(
+            user_prompt,
+            self._fmt(
+                self.safeguards_reminder,
+                SAFEGUARDS_REMINDER_TEMPLATE,
+                reminders=(" " + reminders) if reminders else "",
+            ),
+        )
         prior_messages = list(history or [])
         # Under 'trailing', the listings ride in their own system message after
         # the history, so the cacheable prefix extends through the conversation
