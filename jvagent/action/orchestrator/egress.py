@@ -111,16 +111,14 @@ class OrchestratorEgressMixin:
                     return
             except Exception as exc:
                 logger.warning("orchestrator: responder.gather failed: %s", exc)
-        if (
-            responder is not None
-            and interaction is not None
-            and not user_facing
-            and not compose
-        ):
-            from jvagent.action.reply.reply_action import ReplyAction
-
-            has_params = bool(ReplyAction._collect_parameters(None, interaction))
-            if has_params:
+        # Last resort. respond()/gather() were unavailable or raised — but
+        # directives and parameters are the agent's behavioural contract, not a
+        # nicety, and dropping them because the responder misbehaved ships
+        # ungoverned text. Previously this only re-tried when there was no text
+        # of our own (``not user_facing``), so a reply WITH text and queued
+        # shaping fell straight through to a raw publish.
+        if responder is not None and interaction is not None:
+            if self._shaping_or_directives_pending(responder, interaction, visitor):
                 respond = getattr(responder, "respond", None)
                 if callable(respond):
                     try:
@@ -131,7 +129,23 @@ class OrchestratorEgressMixin:
                             "orchestrator: responder.respond failed: %s", exc
                         )
         if user_facing:
+            # publish() applies the deterministic egress scrub, so even this
+            # path meets the core response rules.
             await self.publish(visitor=visitor, content=user_facing)
+
+    @classmethod
+    def _shaping_or_directives_pending(
+        cls, responder: Any, interaction: Any, visitor: Any
+    ) -> bool:
+        """True when a compose is still owed: parameters, channel format, or any
+        queued directive that has not been rendered yet."""
+        if cls._compose_shaping_pending(responder, interaction, visitor):
+            return True
+        try:
+            getter = getattr(interaction, "get_unexecuted_directives", None)
+            return bool(getter()) if callable(getter) else False
+        except Exception:  # pragma: no cover - defensive
+            return False
 
     @staticmethod
     def _compose_shaping_pending(
