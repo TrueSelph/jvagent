@@ -631,19 +631,22 @@ async def generate_summaries_for_structure(structure, model=None):
     return structure
 
 
+_MAX_TEXT_FOR_DESCRIPTION = 500
+
+
 def create_clean_structure_for_description(structure):
     """
     Create a clean structure for document description generation,
-    excluding unnecessary fields like 'text'.
+    including truncated text so the description reflects actual content.
     """
     if isinstance(structure, dict):
         clean_node = {}
-        # Only include essential fields for description
         for key in ["title", "node_id", "summary", "prefix_summary"]:
             if key in structure:
                 clean_node[key] = structure[key]
-
-        # Recursively process child nodes
+        text = structure.get("text")
+        if text and isinstance(text, str) and text.strip():
+            clean_node["text"] = text.strip()[:_MAX_TEXT_FOR_DESCRIPTION]
         if "nodes" in structure and structure["nodes"]:
             clean_node["nodes"] = create_clean_structure_for_description(
                 structure["nodes"]
@@ -657,13 +660,12 @@ def create_clean_structure_for_description(structure):
 
 
 def generate_doc_description(structure, model=None):
-    prompt = f"""Your are an expert in generating descriptions for a document.
-    You are given a structure of a document. Your task is to generate a one-sentence description for the document, which makes it easy to distinguish the document from other documents.
+    prompt = f"""You are an expert in generating descriptions for a document.
+You are given a structure of a document including its text content and summaries. Your task is to generate a one-sentence description of what the document is about, based on its actual content.
 
-    Document Structure: {structure}
+Document Structure: {structure}
 
-    Directly return the description, do not include any other text.
-    """
+Directly return the description, do not include any other text."""
     response = llm_completion(model, prompt)
     return response
 

@@ -254,7 +254,7 @@ def _pdf_page_index_worker(
     if_add_node_id: str,
     if_add_node_text: str,
     if_add_node_summary: str,
-    if_add_doc_description: str,
+    generate_description: bool,
 ) -> Dict[str, Any]:
     """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge).
 
@@ -277,7 +277,7 @@ def _pdf_page_index_worker(
             if_add_node_id=if_add_node_id,
             if_add_node_text=if_add_node_text,
             if_add_node_summary=if_add_node_summary,
-            if_add_doc_description=if_add_doc_description,
+            generate_description=generate_description,
         )
     finally:
         try:
@@ -400,7 +400,7 @@ async def assimilate_document(
     if_add_node_id: str = "yes",
     if_add_node_text: str = "yes",
     if_add_node_summary: Optional[str] = None,
-    if_add_doc_description: str = "no",
+    if_add_doc_description: Optional[bool] = None,
     toc_check_page_num: Optional[int] = None,
     max_page_num_each_node: Optional[int] = None,
     max_token_num_each_node: Optional[int] = None,
@@ -427,7 +427,7 @@ async def assimilate_document(
         if_add_node_id: Add node_id to structure
         if_add_node_text: Add text to nodes
         if_add_node_summary: Add summaries (None = use action config via get_pageindex_node_summary)
-        if_add_doc_description: Add doc description
+        if_add_doc_description: Add doc description (None = use action config via get_pageindex_doc_description)
         toc_check_page_num: Pages to check for TOC (PDF)
         max_page_num_each_node: Max pages per node (PDF)
         max_token_num_each_node: Max tokens per node (PDF)
@@ -454,9 +454,7 @@ async def assimilate_document(
     # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
     if_add_node_summary = _to_yes_no(if_add_node_summary, get_pageindex_node_summary())
     if_add_node_text = _to_yes_no(if_add_node_text, get_pageindex_node_text())
-    if_add_doc_description = _to_yes_no(
-        if_add_doc_description, get_pageindex_doc_description()
-    )
+    generate_description = if_add_doc_description if if_add_doc_description is not None else get_pageindex_doc_description()
     if max_token_num_each_node is None:
         max_token_num_each_node = get_pageindex_max_token_num_each_node()
     if summary_token_threshold is None:
@@ -630,7 +628,7 @@ async def assimilate_document(
                     if_add_node_id=if_add_node_id,
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
-                    if_add_doc_description=if_add_doc_description,
+                    generate_description=generate_description,
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
@@ -664,7 +662,7 @@ async def assimilate_document(
                 if_add_node_id=if_add_node_id,
                 if_add_node_text=if_add_node_text,
                 if_add_node_summary=if_add_node_summary,
-                if_add_doc_description=if_add_doc_description,
+                generate_description=generate_description,
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
             )

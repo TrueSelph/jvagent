@@ -135,6 +135,7 @@ def _jvforge_form_data(
     ocr: bool,
     docling_ocr_engine: Optional[str] = None,
     normalize_bold_headings: bool,
+    generate_description: bool = True,
     llm_webhook_url: str,
     file_url: Optional[str] = None,
     notification_url: Optional[str] = None,
@@ -148,6 +149,7 @@ def _jvforge_form_data(
         "convert_to_markdown": "yes" if convert_to_markdown else "no",
         "ocr": "yes" if ocr else "no",
         "normalize_bold_headings": "yes" if normalize_bold_headings else "no",
+        "generate_description": "true" if generate_description else "false",
     }
     if docling_ocr_engine:
         data["docling_ocr_engine"] = docling_ocr_engine
@@ -199,6 +201,7 @@ async def assimilate_via_jvforge(
     ocr: bool,
     docling_ocr_engine: Optional[str] = None,
     normalize_bold_headings: bool = False,
+    generate_description: bool = True,
     llm_webhook_url: str,
     filename: Optional[str] = None,
     content: Optional[bytes] = None,
@@ -233,6 +236,7 @@ async def assimilate_via_jvforge(
         ocr=ocr,
         docling_ocr_engine=docling_ocr_engine,
         normalize_bold_headings=normalize_bold_headings,
+        generate_description=generate_description,
         llm_webhook_url=llm_webhook_url,
         file_url=fu or None,
     )
@@ -343,6 +347,7 @@ async def assimilate_via_jvforge_async(
     ocr: bool,
     docling_ocr_engine: Optional[str] = None,
     normalize_bold_headings: bool = False,
+    generate_description: bool = True,
     llm_webhook_url: str,
     emergency: bool = False,
     filename: Optional[str] = None,
@@ -385,6 +390,7 @@ async def assimilate_via_jvforge_async(
         ocr=ocr,
         docling_ocr_engine=docling_ocr_engine,
         normalize_bold_headings=normalize_bold_headings,
+        generate_description=generate_description,
         llm_webhook_url=llm_webhook_url,
         file_url=fu or None,
         notification_url=notification_url,

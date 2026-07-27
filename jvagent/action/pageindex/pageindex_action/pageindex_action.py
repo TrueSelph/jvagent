@@ -518,6 +518,7 @@ class PageIndexAction(Action):
         convert_to_markdown: bool = False,
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
+        generate_description: bool = True,
     ) -> Dict[str, Any]:
         from ..documents import assimilate_document
         from ..llm_bridge import (
@@ -546,6 +547,7 @@ class PageIndexAction(Action):
                 convert_to_markdown=convert_to_markdown,
                 ocr=ocr,
                 docling_ocr_engine=docling_ocr_engine,
+                if_add_doc_description=generate_description,
             )
         finally:
             if model_action:

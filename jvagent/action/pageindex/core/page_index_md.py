@@ -261,7 +261,7 @@ async def md_to_tree(
     if_add_node_summary="no",
     summary_token_threshold=None,
     model=None,
-    if_add_doc_description="no",
+    generate_description: bool = False,
     if_add_node_text="no",
     if_add_node_id="yes",
 ):
@@ -330,7 +330,7 @@ async def md_to_tree(
                 ],
             )
 
-        if if_add_doc_description == "yes":
+        if generate_description:
             print(f"Generating document description...")
             # Create a clean structure without unnecessary fields for description generation
             clean_structure = create_clean_structure_for_description(tree_structure)
