@@ -91,6 +91,10 @@ class WhatsAppAdapter(ChannelAdapter):
 
         media_url = message.metadata.get("media_url")
         media_type = message.metadata.get("media_type")
+        cloud_message = message.metadata.get("whatsapp_cloud_message")
+        cta_url = message.metadata.get("cta_url")
+        has_cloud = isinstance(cloud_message, dict) and bool(cloud_message)
+        has_cta = isinstance(cta_url, str) and bool(cta_url.strip())
 
         # Ensure relative URLs (e.g. from TTS /api/files/...) are absolute for fetch
         if media_url and media_url.startswith("/"):
@@ -98,7 +102,12 @@ class WhatsAppAdapter(ChannelAdapter):
             if base:
                 media_url = f"{base.rstrip('/')}{media_url}"
 
-        if not media_url and (not message.content or not message.content.strip()):
+        if (
+            not media_url
+            and not has_cloud
+            and not has_cta
+            and (not message.content or not message.content.strip())
+        ):
             logger.debug(
                 f"WhatsAppAdapter: Skipping empty message {message.id} for user {message.user_id}"
             )
@@ -115,6 +124,77 @@ class WhatsAppAdapter(ChannelAdapter):
         is_group = whatsapp_payload.get("isGroup", False)
         if is_group is None and len(message.user_id) > 10:
             is_group = True
+
+        # Raw Meta Cloud API payload (escape hatch for any message type)
+        if has_cloud:
+            send_fn = getattr(api, "send_cloud_message", None)
+            if not callable(send_fn):
+                logger.error(
+                    "WhatsAppAdapter: whatsapp_cloud_message unsupported for this provider"
+                )
+                return False
+            try:
+                send_result = await send_fn(message.user_id, cloud_message)
+                if send_result.get("ok", True) and "error" not in send_result:
+                    await self._clear_typing_status(api, message.user_id, is_group)
+                    return True
+                error_msg = send_result.get("error", "Unknown error")
+                logger.error(
+                    f"WhatsAppAdapter: Cloud message send failed for "
+                    f"{message.user_id}: {error_msg}"
+                )
+                await self._clear_typing_status(api, message.user_id, is_group)
+                return False
+            except Exception as e:
+                logger.error(
+                    f"WhatsAppAdapter: Exception sending cloud message to "
+                    f"{message.user_id}: {e}",
+                    exc_info=True,
+                )
+                await self._clear_typing_status(api, message.user_id, is_group)
+                return False
+
+        # Interactive CTA URL button (typed convenience over cloud passthrough)
+        if has_cta:
+            send_fn = getattr(api, "send_cta_url_message", None)
+            if not callable(send_fn):
+                logger.error("WhatsAppAdapter: cta_url unsupported for this provider")
+                return False
+            cta_body = message.metadata.get("cta_body")
+            if not isinstance(cta_body, str) or not cta_body.strip():
+                cta_body = message.content or ""
+            display_text = message.metadata.get("cta_display_text") or "Open"
+            header = message.metadata.get("cta_header") or ""
+            footer = message.metadata.get("cta_footer") or ""
+            try:
+                send_result = await send_fn(
+                    message.user_id,
+                    url=cta_url.strip(),
+                    body=cta_body,
+                    display_text=(
+                        display_text if isinstance(display_text, str) else "Open"
+                    ),
+                    header=header if isinstance(header, str) else "",
+                    footer=footer if isinstance(footer, str) else "",
+                )
+                if send_result.get("ok", True) and "error" not in send_result:
+                    await self._clear_typing_status(api, message.user_id, is_group)
+                    return True
+                error_msg = send_result.get("error", "Unknown error")
+                logger.error(
+                    f"WhatsAppAdapter: CTA URL send failed for "
+                    f"{message.user_id}: {error_msg}"
+                )
+                await self._clear_typing_status(api, message.user_id, is_group)
+                return False
+            except Exception as e:
+                logger.error(
+                    f"WhatsAppAdapter: Exception sending CTA URL to "
+                    f"{message.user_id}: {e}",
+                    exc_info=True,
+                )
+                await self._clear_typing_status(api, message.user_id, is_group)
+                return False
 
         # Handle media messages
         if media_url and media_type:
