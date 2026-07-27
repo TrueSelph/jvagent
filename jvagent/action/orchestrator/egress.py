@@ -84,14 +84,10 @@ class OrchestratorEgressMixin:
         # carries model-facing guidance to voice, or when queued parameters /
         # channel formatting have to be applied. It earns nothing for a bare
         # relay directive with no shaping — ReplyAction.gather()'s N=1 literal
-        # path renders that unchanged, without a model.
-        #
-        # Guarded by skip_compose_without_guidance because it changes
-        # user-facing reply text; A/B it before turning it on.
+        # path renders that unchanged, without a model (ADR-0041: always skip).
         if (
             compose
             and responder is not None
-            and self.skip_compose_without_guidance
             and "\u2063" not in raw
             and not self._compose_shaping_pending(responder, interaction, visitor)
         ):

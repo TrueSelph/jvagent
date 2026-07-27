@@ -157,6 +157,68 @@ def _guard_unsupported_specifics(text: str, context: dict) -> str:
     )
 
 
+def salvage_partial_answer(observations: Any) -> str:
+    """Build a user-facing fallback when partial-compose finalize yields no text.
+
+    Live failure: repeat_guard → finalize returns another tool call → empty
+    ``_text_candidate`` → clarify_text despite fetches/plan results already in
+    observations. Prefer plan step ``result`` strings, then short tool snippets.
+    """
+    chunks: list[str] = []
+    tools_touched: list[str] = []
+    for row in observations or []:
+        if not isinstance(row, dict):
+            continue
+        tool = str(row.get("tool") or "").strip()
+        if not tool or tool in ("(guard)",):
+            continue
+        tools_touched.append(tool)
+        args = row.get("args") if isinstance(row.get("args"), dict) else {}
+        if tool == "update_plan":
+            steps = args.get("steps") if isinstance(args.get("steps"), list) else []
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                result = step.get("result")
+                if isinstance(result, str) and result.strip():
+                    chunks.append(result.strip())
+            continue
+        if tool in ("find_tool", "load_tool", "use_skill", "update_plan"):
+            continue
+        obs = row.get("observation")
+        if not isinstance(obs, str):
+            continue
+        text = obs.strip()
+        if not text or text.startswith("("):
+            continue
+        # Keep salvage short — full page bodies belong in tools, not clarify.
+        if len(text) > 600:
+            text = text[:600].rstrip() + "…"
+        chunks.append(text)
+    if chunks:
+        body = "\n\n".join(chunks[:4])
+        return (
+            "I made progress on this but hit a loop before finishing every step. "
+            "Here is what I gathered so far:\n\n"
+            f"{body}\n\n"
+            "Ask me to continue and I will finish from here."
+        )
+    substantive = (
+        "find_tool",
+        "load_tool",
+        "use_skill",
+        "reply",
+        "respond",
+    )
+    if any(t not in substantive for t in tools_touched):
+        return (
+            "I started on this request and gathered material, but I got stuck "
+            "repeating a step and could not finish cleanly. Please ask me to "
+            "continue — I will pick up from the work already done."
+        )
+    return ""
+
+
 def register_orchestrator_guard_detectors() -> None:
     """Register the loop's guard detectors with the parameter subsystem."""
     from jvagent.action.parameters import register_guard_detector

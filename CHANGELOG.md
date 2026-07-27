@@ -10,6 +10,29 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **SESSION CONTEXT in Orchestrator system prompt (ADR-0042).** Each turn
+  injects authoritative date/time (`App.now()`) and channel into
+  `{session_context_section}` after identity so relative time (“this year”)
+  does not fall back to training cutoff. `get_current_datetime` remains for
+  mid-turn refresh. No new YAML knobs.
+
+- **Gearing and cost policy baked into Orchestrator core (ADR-0041).** Removed
+  Unreleased knobs `escalate_after_tool_calls`, `escalate_on_skill`,
+  `escalate_on_planning`, `sticky_finalize_gear`, `skip_compose_without_guidance`,
+  `include_history_events`, and `history_max_statement_length`. Fixed law: skill /
+  `planning` / ≥1 substantive tool → heavy; finalize keeps `last_gear`; bare
+  egress skips compose; loop history untruncated and omits `[EVENT]` lines.
+  Product surface stays `light_model*` + `planning` + sizing (`history_limit`,
+  `max_statement_length`).
+
+- **Library skill `knowledge_ingest`.** Reusable capture → report →
+  `pageindex__assimilate` SOP under `jvagent/skills/knowledge_ingest/` (opt-in
+  via `skills` / `-all` when PageIndex + web_fetch are on the agent).
+
+- **`Conversation.get_interactions` hydrates only the requested window.**
+  `scripts/bench_orchestrator.py` mocks compose so wall-clock is not poisoned by
+  empty API keys.
+
 - **Parameters own their enforcement and their placement (ADR-0037).** A rule
   now declares `enforcement` (`prompt` | `scrub` | `guard`), an optional named
   `detector`, and `placement` (`system` | `user_turn` | `inline`). Deleting a
@@ -19,6 +42,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   behaviour.
 
 ### Fixed
+
+- **Partial-compose salvage when finalize ignores STEP LIMIT.** After
+  `repeat_guard` / budget / duration, if the finalize tick returns another tool
+  call (observed: `find_tool('write file')` → clarify_text), the loop now
+  salvages plan `result` / tool observations instead of falling through to
+  `clarify_text`. Plan-drain nudge and `PLANNING_PROMPT` ban write-file detours
+  for in-memory report→assimilate work; `knowledge_ingest` forbids mid-task
+  progress replies and filesystem writes.
 
 - **A rule could hold on one transport and not another (ADR-0038).** Response
   rules were applied by callers, and the streaming path had no caller that did

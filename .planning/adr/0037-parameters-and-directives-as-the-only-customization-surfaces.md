@@ -30,7 +30,7 @@ change the guard; one who disables the guard does not change the prompt.
 |---|---|
 | **Parameters** | the `parameters` list (`orchestration` / `response` scoped) |
 | **Prompt text** | `system_prompt`, `user_prompt`, `planning_prompt`, `memory_prompt`, `tool_use_policy_prompt`, `flow_in_progress_prompt`, `length_limit_prompt`, `finalize_prompt`, `safeguards_reminder`, `no_skills_text`, `clarify_text`, `ack_statements` |
-| **Code guards** | `block_raw_tool_invocation`, `lock_active_flow`, `enforce_grounded_claims`, `enforce_grounded_specifics`, `plan_completion_max_deflections`, `skip_compose_without_guidance` |
+| **Code guards** | `block_raw_tool_invocation`, `lock_active_flow`, `enforce_grounded_claims`, `enforce_grounded_specifics`, `plan_completion_max_deflections` |
 | **Loop deflections** | five `(guard)` observation sites (chain, plan-drain, repeat, two grounding) |
 | **Deterministic scrub** | `vet_egress` (self-identification, cutoff claims, closers, duplicate greeting) |
 | **Skills / directives** | SKILL.md SOPs, interview directives, review re-entry guard |

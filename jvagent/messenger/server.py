@@ -126,9 +126,26 @@ def _build_handler(root: Path, frame_ancestors: str) -> type:
                 return None
             return target if target.is_file() else None
 
+        def _send_demo(self) -> None:
+            """Host-page demo that embeds loader.js (not the iframe app itself)."""
+            target = root / "demo.html"
+            if not target.is_file():
+                self.send_error(
+                    HTTPStatus.NOT_FOUND,
+                    "demo.html missing — rebuild with scripts/build_jvmessenger.py",
+                )
+                return
+            self._send_file(target)
+
         def _serve(self) -> None:
-            # Root path serves the iframe app entry.
-            if self.path.split("?", 1)[0] in ("/", "/app.html"):
+            path = self.path.split("?", 1)[0]
+            # `/` and `/demo` are the customer-site stand-in. Opening `/app.html`
+            # alone shows "Connecting…" forever — config arrives via postMessage
+            # from the loader on a host page, never from the URL.
+            if path in ("/", "/demo", "/demo.html"):
+                self._send_demo()
+                return
+            if path == "/app.html":
                 self._send_app_index()
                 return
             target = self._resolve(self.path)
@@ -183,7 +200,9 @@ def serve(
     url = f"http://{host}:{actual_port}"
     logger.info("jvmessenger serving at %s", url)
     print(f"jvmessenger: {url}  (Ctrl+C to stop)")
+    print(f"  → demo host page: {url}/  (or {url}/demo)")
     print(f"  → loader: {url}/loader.js")
+    print(f"  → iframe app: {url}/app.html")
     print(f"  → frame-ancestors: {frame_ancestors}")
 
     if open_browser:

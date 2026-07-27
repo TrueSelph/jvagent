@@ -48,6 +48,13 @@ async def test_default_review_manual_waits_for_confirm(tmp_path):
     assert "reply 'Confirm' or 'Yes' to continue" in directive
     assert "make changes" in directive.lower()
     assert "Do NOT call interview__complete until" in directive
+    # Meta steering must stay after U+2063 — never in the user-facing half.
+    from jvagent.action.reply.reply_action import user_facing_directive
+
+    facing = user_facing_directive(directive)
+    assert "Close with exactly" not in facing
+    assert "Do NOT call interview__complete" not in facing
+    assert "reply 'Confirm' or 'Yes' to continue" in facing
 
 
 @pytest.mark.asyncio

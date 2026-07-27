@@ -632,9 +632,9 @@ class Conversation(DeferredSaveMixin, Node):
         """Get Interactions for this conversation in chronological order.
 
         Batch-loads by ``conversation_id`` (one query, served by the
-        ``conv_timestamp`` compound index) and orders in memory via
-        ``_interaction_sort_key`` — the previous node-by-node chain walk cost
-        N sequential DB fetches per call on the per-turn history hot path.
+        ``conv_timestamp`` compound index), sorts raw rows in memory, then
+        hydrates only the requested window — so a ``history_limit`` of 10 does
+        not construct every Interaction in a long conversation.
 
         Args:
             limit: Maximum number of interactions to return (0 for all).
@@ -645,15 +645,57 @@ class Conversation(DeferredSaveMixin, Node):
         Returns:
             List of Interaction nodes in chronological order (oldest first by default)
         """
-        from jvagent.memory.interaction import Interaction, interaction_sort_key
+        from jvspatial.core.context import get_default_context
 
-        found = await Interaction.find({"context.conversation_id": self.id})
-        ordered = sorted(found or [], key=interaction_sort_key)
-        if reverse:
-            ordered.reverse()
+        from jvagent.memory.interaction import Interaction, interaction_row_sort_key
+
+        context = get_default_context()
+        await context.ensure_indexes(Interaction)
+        collection, final_query = await Interaction._build_database_query(
+            context, {"context.conversation_id": self.id}, {}
+        )
+        # Prefer DB sort+limit so backends that push down (Mongo/SQLite) avoid
+        # materializing every row. JsonDB still scans the collection but only
+        # returns the window. Portable re-sort with interaction_row_sort_key
+        # normalizes ISO-string vs datetime started_at within that window.
         if limit > 0:
+            direction = -1 if reverse else 1
+            rows = (
+                await context.database.find(
+                    collection,
+                    final_query,
+                    sort=[("context.started_at", direction), ("id", direction)],
+                    limit=limit,
+                )
+                or []
+            )
+        else:
+            rows = await context.database.find(collection, final_query) or []
+        ordered = sorted(rows, key=interaction_row_sort_key)
+        if reverse:
+            ordered = list(reversed(ordered))
+        if limit > 0 and len(ordered) > limit:
+            # Defensive: if a backend ignored limit, keep window semantics.
             ordered = ordered[:limit]
-        return ordered
+
+        objects: List["Interaction"] = []
+        skipped = 0
+        for data in ordered:
+            try:
+                obj = await context._deserialize_entity(Interaction, data)
+            except Exception:
+                skipped += 1
+                continue
+            if obj is not None:
+                objects.append(obj)
+        if skipped:
+            logger.debug(
+                "get_interactions: skipped %s row(s) that failed to hydrate "
+                "(conversation_id=%s)",
+                skipped,
+                self.id,
+            )
+        return objects
 
     @staticmethod
     async def truncate_statement(

@@ -175,8 +175,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `model` | `gpt-4o-mini` | main/heavy orchestrator model (the reasoning tier when gearing is on) |
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
-| `history_limit` | 4 | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit` |
-| `include_history_events` | `true` | include prior interaction `[EVENT]` lines in loop history; set `false` to omit |
+| `history_limit` | `4` | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit`. Loop history omits `[EVENT]` lines (ADR-0041) |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
 | `proactive_tasks_enabled` | `true` | surface the `queue_task` tool for enqueueing `PROACTIVE` tasks (ADR-0022) |
@@ -198,7 +197,7 @@ piece and logs a warning, so a bad string never breaks a turn.
 
 | Key | Placeholders | Effect |
 |---|---|---|
-| `system_prompt` | `{identity_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` | the main system-prompt body (identity → capabilities → tools → skills → step JSON → LOOP PROTOCOL → OPERATING RULES) |
+| `system_prompt` | `{identity_section}` `{session_context_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` `{extra_section}` | the main system-prompt body (identity → SESSION CONTEXT → protocol → extras → capabilities → tools → skills → OPERATING RULES). `{session_context_section}` is ADR-0042 clock/channel ground truth |
 | `system_prompt_extra` | — | extra text appended after the base body (safe additive; no placeholders needed) |
 | `user_prompt` | `{utterance}` `{observations_section}` (`{history_section}` accepted but rendered empty — history rides the structured-message channel) | the per-tick user prompt; the `SAFEGUARDS_REMINDER` (peak-attention OPERATING-RULES reminder) is appended to it each step |
 | `parameters` | — | scoped behavioural rules `{scope, condition?, response, enforcement?, detector?, placement?, key?, tier?}` (the **common parameter subsystem**, on the `Action` base). `scope: orchestration` rules render in the LOOP PROTOCOL; `scope: response` (default when unspecified) render in the reply compose; the executive natively owns the orchestration core, the ReplyAction the response core, and every action's params are pooled onto the interaction each turn |
@@ -225,9 +224,9 @@ prompt position are unchanged from the attribute era.
 (The agent's identity comes from the Agent's `alias` + `role` (ADR-0014), not
 from these keys.)
 
-### Model gearing (ADR-0016)
+### Model gearing (ADR-0016 / ADR-0041)
 
-Set `light_model` to engage gearing; empty = single-model (current `model*` used everywhere).
+Set `light_model` to engage gearing; empty = single-model (current `model*` used everywhere). Escalation policy is **fixed in core** (ADR-0041): skill active, `planning: true`, or ≥1 substantive tool → heavy; finalize keeps `last_gear`. No escalate_* / sticky_* attributes.
 
 | Key | Default | Effect |
 |---|---|---|
@@ -235,10 +234,8 @@ Set `light_model` to engage gearing; empty = single-model (current `model*` used
 | `light_model_action_type` | `""` | LM action for the light model; empty = heavy `model_action_type` |
 | `light_model_temperature` | `0.2` | light gear temperature |
 | `light_model_max_tokens` | `1024` | light gear max tokens |
-| `escalate_after_tool_calls` | `2` | switch to heavy after this many substantive tool calls (egress/meta excluded) |
-| `escalate_on_skill` | `true` | activating a skill escalates to heavy immediately |
 
-The heavy gear uses the existing `model*` + `reasoning_*`; reasoning applies only on heavy. Escalation is sticky; the partial-compose finalize runs light.
+The heavy gear uses the existing `model*` + `reasoning_*`; reasoning applies only on heavy. Escalation is sticky.
 
 ### Reasoning, stream, budgets, tooling (ADR-0015)
 
@@ -280,7 +277,7 @@ gated by these knobs.
 | **Essentials-only on large surfaces** — show just egress/meta/core + skills; the model reaches every capability via `find_tool`. Smaller prompt, but costs a discovery round-trip on most turns and leans harder on weaker models — best for very large surfaces or strong models where prompt cost dominates | `lean_presurface_k: 0` (optionally `lean_tool_threshold: 1` to force it on for any surface) |
 | **More/less aggressive pre-surface** | raise/lower `lean_presurface_k` (e.g. `10` surfaces more, fewer discovery ticks, bigger prompt) |
 | **Keep lean, but a few tools must fire turn-1** — a capability that must be callable on the first turn regardless of phrasing (the relevance pre-surface can miss it) | `pinned_tools: ["filing__*"]` (or a `SKILL.md` with `always-active: true` to pin its `allowed-tools`) — far better than `lean_tool_threshold: 0`, which un-leans the whole surface |
-| `enable_transient_ack` | `false` | emit transient ack line(s) if the turn is slow. Armed only once the turn is **complex** — a skill is active, or it has made ≥ `escalate_after_tool_calls` substantive tool calls — so simple/reply-only turns never surface it |
+| `enable_transient_ack` | `false` | emit transient ack line(s) if the turn is slow. Armed only once the turn is **complex** — a skill is active, or ≥2 substantive tool calls — so simple/reply-only turns never surface it |
 | `first_emit_timeout_ms` | `1200` | delay before the first transient ack fires (from when the turn arms) |
 | `ack_interval_ms` | `12000` | delay between subsequent acks |
 | `ack_statements` | `["One moment…", "Still working on it…"]` | ordered ack bodies emitted while a slow turn runs |

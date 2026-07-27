@@ -71,6 +71,7 @@ from .hooks import (
     field_prompt_directive,
     interview_tool_response,
     load_hook_function,
+    model_only_directive,
     no_session_directive,
     restart_session_directive,
     review_confirmation_directive,
@@ -1940,7 +1941,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
                 ok=True,
                 status="review",
                 already_presented=True,
-                response_directive=(
+                response_directive=model_only_directive(
                     "The review summary was already shown on an earlier turn and "
                     "the user has now responded to it. Do NOT show the summary "
                     "again and do NOT repeat the confirmation prompt — never "

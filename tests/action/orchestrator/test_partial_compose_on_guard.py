@@ -66,6 +66,58 @@ async def test_repeat_guard_delivers_gathered_work(
     assert composed.get("observations", 0) > 0
 
 
+async def test_repeat_guard_salvages_when_finalize_emits_tool(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """If finalize ignores STEP LIMIT and returns a tool call, still deliver
+    salvage from observations — never clarify_text."""
+    same = {"action": "tool", "tool": "find_tool", "args": {"query": "write file"}}
+    plan_obs_decision = {
+        "action": "tool",
+        "tool": "update_plan",
+        "args": {
+            "steps": [
+                {
+                    "step": "Gather posts",
+                    "status": "done",
+                    "result": "Fetched 2026 posts on AI and professional work.",
+                },
+                {"step": "Assimilate", "status": "pending"},
+            ]
+        },
+    }
+    seq = [plan_obs_decision, same, same, same]
+
+    ex = _finalizing_orchestrator(make_orchestrator, monkeypatch, seq)
+
+    async def _run_model(
+        self,
+        visitor,
+        utterance,
+        history,
+        tools,
+        observations,
+        flow_note="",
+        skills_section="",
+        **kw,
+    ):
+        if kw.get("finalize"):
+            # Broken finalize: model keeps tool-calling.
+            return {
+                "action": "tool",
+                "tool": "file_interface__describe_write_workspace",
+                "args": {},
+            }
+        return seq.pop(0) if seq else same
+
+    monkeypatch.setattr(type(ex), "_run_model", _run_model)
+    v = make_visitor(utterance="report and assimilate")
+    await ex.execute(v)
+    body = v.interaction.response or ""
+    assert ex.clarify_text not in body
+    assert "Fetched 2026 posts" in body
+
+
 async def test_guard_still_ends_the_turn(make_orchestrator, make_visitor, monkeypatch):
     """Breaking instead of returning must not let the loop keep running."""
     same = {"action": "tool", "tool": "find_tool", "args": {"query": "x"}}
@@ -93,3 +145,43 @@ async def test_guard_still_ends_the_turn(make_orchestrator, make_visitor, monkey
     await ex.execute(make_visitor(utterance="go"))
     # Guard fires on the third identical call — not after the whole budget.
     assert calls["n"] <= 4, calls
+
+
+def test_salvage_partial_answer_prefers_plan_results():
+    from jvagent.action.orchestrator.loop_helpers import salvage_partial_answer
+
+    obs = [
+        {
+            "tool": "update_plan",
+            "args": {
+                "steps": [
+                    {
+                        "step": "Gather",
+                        "status": "done",
+                        "result": "Fetched 2026 posts on AI.",
+                    }
+                ]
+            },
+            "observation": "(plan updated)",
+        },
+        {
+            "tool": "find_tool",
+            "args": {"query": "write file"},
+            "observation": "(no match)",
+        },
+    ]
+    out = salvage_partial_answer(obs)
+    assert "Fetched 2026 posts" in out
+    assert "continue" in out.lower()
+
+
+def test_plan_drain_nudge_rejects_write_file_detour():
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    nudge = OrchestratorInteractAction._plan_drain_nudge("- Assimilate (pending)")
+    text = nudge["observation"]
+    assert "write file" in text  # explicit ban must name the anti-pattern
+    assert "do NOT search for 'write file'" in text
+    assert "pageindex__assimilate" in text or "assimilate" in text.lower()

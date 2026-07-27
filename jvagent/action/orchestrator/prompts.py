@@ -32,7 +32,7 @@ from typing import Optional
 # ~200 tokens of cache is not worth trading for that. Measure before moving
 # them again.
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
-{identity_section}You operate as this agent's executive — a fast, conversational \
+{identity_section}{session_context_section}You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
 a single JSON object each step. No prose, no markdown, no ```json``` code fences — \
 raw JSON only.
@@ -103,6 +103,7 @@ ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
 # an easy thing to reach for. Prefer this helper.
 SYSTEM_PROMPT_PLACEHOLDERS = {
     "identity_section": "",
+    "session_context_section": "",
     "tools_section": "",
     "skills_section": "",
     "capabilities_section": "",
@@ -169,10 +170,11 @@ LENGTH_LIMIT_PROMPT = (
 
 # Appended on the final (partial-compose) tick when the budget/time is exhausted.
 FINALIZE_PROMPT = (
-    "STEP LIMIT REACHED: Do NOT call any tool. Reply to the user now with your "
-    "best, most complete answer using what you have already gathered. Return "
-    'action "final" with your answer (and any link/path to work you produced '
-    "this turn)."
+    'STEP LIMIT REACHED: Do NOT call any tool. Do NOT return action "tool". '
+    "Reply to the user now with your best, most complete answer using what you "
+    "have already gathered. Return ONLY "
+    '{"action":"final","answer":"<your reply>"} '
+    "(include any link/path to work you produced this turn in the answer)."
 )
 
 # Appended to the loop system prompt only when ``planning`` is on (ADR-0019).
@@ -183,11 +185,11 @@ PLANNING_PROMPT = (
     "call update_plan(steps=[...]) and keep it current — re-send the whole list "
     "each time with every step's status (pending|in_progress|done|skipped). The "
     "plan persists across turns, so a turn cut short resumes from the first "
-    "unfinished step. To make that resume cheap, save substantial intermediate "
-    "work to a file and note where in that step's `result` (e.g. {step, "
-    "status:'done', result:'draft saved to report.md'}) so a later turn reuses "
-    "it. Before your final answer, close the plan: update_plan with every step "
-    "done or skipped."
+    "unfinished step. Carry substantial intermediate work in the completing "
+    "tool's arguments (e.g. pageindex__assimilate doc=<report markdown>) or in "
+    "that step's `result` text — do not detour through a write-file tool unless "
+    "the user asked for a file. Before your final answer, close the plan: "
+    "update_plan with every step done or skipped."
 )
 
 # Appended to the loop system prompt only when ``block_raw_tool_invocation`` is

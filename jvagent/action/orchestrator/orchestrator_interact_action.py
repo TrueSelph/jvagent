@@ -285,16 +285,8 @@ class OrchestratorInteractAction(
     )
     light_model_temperature: float = attribute(default=0.2)
     light_model_max_tokens: int = attribute(default=1024)
-    escalate_after_tool_calls: int = attribute(
-        default=2,
-        description="Switch to the heavy model once the turn has made this many "
-        "substantive tool calls (reply/respond/catalog/skill meta-tools excluded).",
-    )
-    escalate_on_skill: bool = attribute(
-        default=True,
-        description="Activating a skill (a multi-step SOP) escalates to heavy "
-        "immediately.",
-    )
+    # Gearing escalation policy is fixed in core (ADR-0041): skill active,
+    # planning on, or ≥1 substantive tool → heavy; finalize keeps last gear.
 
     # -- Reasoning passthrough (only bites with a reasoning-capable model; the
     # default gpt-4o-mini ignores it). Threaded into the loop's model call so
@@ -344,13 +336,10 @@ class OrchestratorInteractAction(
     max_statement_length: Optional[int] = attribute(
         default=None,
         description="Soft cap (characters) on the reply, applied as a prompt "
-        "instruction; None disables.",
+        "instruction; None disables. Does not truncate loop history "
+        "(history is always untruncated; interaction [EVENT] lines are omitted).",
     )
     history_limit: int = attribute(default=4)
-    include_history_events: bool = attribute(
-        default=True,
-        description="Include interaction [EVENT] lines in loop history.",
-    )
 
     # -- Observation replay budget. Every tick re-sends this turn's prior tool
     # results, so without caps the per-turn input cost grows quadratically in
@@ -372,18 +361,8 @@ class OrchestratorInteractAction(
             "keeps that deployment on exactly its current text."
         ),
     )
-    skip_compose_without_guidance: bool = attribute(
-        default=False,
-        description=(
-            "Skip the compose model call on directive/resume/drain egress when "
-            "the directive carries no model-facing guidance and nothing else "
-            "needs shaping (no contributed response parameters, no channel "
-            "format, a single queued directive). Saves a serial round-trip in "
-            "front of a user-facing reply. EXPERIMENTAL: it changes what the "
-            "user reads on those paths, from a voiced rendering to the "
-            "directive's own wording — A/B before enabling."
-        ),
-    )
+    # Bare relay/directive egress always skips compose when there is no
+    # model-facing guidance (ADR-0041) — no config toggle.
     tool_listing_position: str = attribute(
         default="system",
         description=(
@@ -446,8 +425,9 @@ class OrchestratorInteractAction(
         default=ORCHESTRATOR_SYSTEM_PROMPT,
         description=(
             "The executive's main system-prompt body. Placeholders: "
-            "{identity_section}, {tools_section}, {skills_section}, "
-            "{capabilities_section}, {parameters_section}."
+            "{identity_section}, {session_context_section}, {tools_section}, "
+            "{skills_section}, {capabilities_section}, {parameters_section}, "
+            "{loop_protocol_extra}, {extra_section}."
         ),
     )
     # The Orchestrator's native core: the ``loop``-scoped hardening, applied in
@@ -2312,12 +2292,15 @@ class OrchestratorInteractAction(
                 f"{open_steps}\n"
                 "Do the NEXT step now with a real tool call — do not just "
                 "describe it, and do not deliver the result as a chat message "
-                "instead of completing the step. If you can't see the tool you "
-                "need, call find_tool to locate it (e.g. find_tool('write "
-                "file'), find_tool('add document to knowledge base')). Text you "
-                "have already produced can be passed straight to the tool — you "
-                "do not need to save a file first. When the work is genuinely "
-                "done, mark the steps done/skipped with update_plan, then reply.)"
+                "instead of completing the step. Prefer tools already on your "
+                "surface (e.g. pageindex__assimilate with the report markdown in "
+                "`doc`, web_fetch__fetch, reply). If you truly cannot see the "
+                "tool, call find_tool with the *capability* "
+                "(e.g. find_tool('assimilate into knowledge base'), "
+                "find_tool('ingest document')) — do NOT search for 'write file' "
+                "or invent a filesystem detour; text you already produced can be "
+                "passed straight into tool args. When the work is genuinely done, "
+                "mark the steps done/skipped with update_plan, then reply.)"
             ),
         }
 
@@ -2714,14 +2697,28 @@ class OrchestratorInteractAction(
         # model becomes the sole model) — so gearing is off.
         return bool(self._effective_light_model_id()) and self._has_main_model()
 
-    def _select_gear(self, substantive_tool_calls: int, skill_active: bool) -> str:
-        """Light until the turn proves multi-step, then heavy (sticky). Single-
-        model agents (no light_model, or no main_model) always run one tier."""
+    def _select_gear(
+        self,
+        substantive_tool_calls: int,
+        skill_active: bool,
+    ) -> str:
+        """Light until multi-step work is in play, then heavy (ADR-0041).
+
+        Fixed policy when gearing is on (``light_model`` set with a main model):
+        - skill active → heavy
+        - ``planning`` enabled → heavy (tick 0 must reason about ``update_plan``)
+        - ≥1 substantive tool call (egress/meta excluded) → heavy
+        - else light (reply-only)
+
+        Single-model agents (no light_model, or no main_model) always run heavy.
+        """
         if not self._gearing_on():
             return "heavy"
-        if (self.escalate_on_skill and skill_active) or (
-            substantive_tool_calls >= int(self.escalate_after_tool_calls)
-        ):
+        if skill_active:
+            return "heavy"
+        if bool(self.planning):
+            return "heavy"
+        if substantive_tool_calls >= 1:
             return "heavy"
         return "light"
 
@@ -2913,16 +2910,16 @@ class OrchestratorInteractAction(
         parameters_section: str = "",
         loop_protocol_extra: str = "",
         extra_section: str = "",
+        session_context_section: str = "",
     ) -> str:
         """Build the base system prompt from the (overridable) ``system_prompt``
         template, then place ``system_prompt_extra`` (plus any caller-supplied
-        ``extra_section``).
+        ``extra_section``) and SESSION CONTEXT (ADR-0042).
 
-        The built-in template carries an ``{extra_section}`` slot positioned
-        with the other invariant text — ahead of the per-tick tool/skill
-        listings — so operator instructions stay inside the cacheable prefix.
-        A custom ``system_prompt`` override that predates that slot has no
-        placeholder to fill, so the extras are appended at the end as before.
+        The built-in template carries ``{session_context_section}`` immediately
+        after identity (cacheable ground truth) and ``{extra_section}`` ahead of
+        the per-tick tool/skill listings. A custom ``system_prompt`` that
+        predates those slots gets extras/session context appended at the end.
         """
         extras = "\n\n".join(
             part
@@ -2932,20 +2929,30 @@ class OrchestratorInteractAction(
             )
             if part
         )
+        session_ctx = (session_context_section or "").strip()
+        if session_ctx and not session_ctx.endswith("\n"):
+            session_ctx = session_ctx + "\n\n"
+        elif session_ctx and not session_ctx.endswith("\n\n"):
+            session_ctx = session_ctx + "\n"
         template = self.system_prompt
-        inline = "{extra_section}" in template
+        inline_extra = "{extra_section}" in template
+        inline_session = "{session_context_section}" in template
         base = self._fmt(
             template,
             ORCHESTRATOR_SYSTEM_PROMPT,
             identity_section=identity_section,
+            session_context_section=(session_ctx if inline_session else ""),
             tools_section=tools_section,
             skills_section=skills_section,
             capabilities_section=capabilities_section,
             parameters_section=parameters_section,
             loop_protocol_extra=loop_protocol_extra,
-            extra_section=(f"\n{extras}\n" if (inline and extras) else ""),
+            extra_section=(f"\n{extras}\n" if (inline_extra and extras) else ""),
         )
-        if extras and not inline:
+        if session_ctx and not inline_session:
+            # Legacy custom system_prompt: keep ground truth visible after body.
+            base = f"{base}\n\n{session_ctx.strip()}"
+        if extras and not inline_extra:
             base = f"{base}\n\n{extras}"
         return base
 
@@ -3115,7 +3122,8 @@ class OrchestratorInteractAction(
                     ),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
-                    with_event=bool(self.include_history_events),
+                    with_event=False,
+                    max_statement_length=None,
                 )
                 or []
             )
@@ -3211,6 +3219,7 @@ class OrchestratorInteractAction(
         compose_kwargs: Dict[str, Any] = {
             "identity_section": prompt_cache.get("identity")
             or await self._render_identity(),
+            "session_context_section": prompt_cache.get("session_context") or "",
             "tools_section": tools_section,
             "skills_section": resolved_skills,
             "capabilities_section": capabilities_section
@@ -3223,13 +3232,19 @@ class OrchestratorInteractAction(
         try:
             system_prompt = self._compose_system_prompt(**compose_kwargs)
         except TypeError:
-            # A subclass may override _compose_system_prompt with the signature
-            # that predates ``extra_section``. Fall back to the old call and
-            # append the channel extra the way it used to be appended, rather
-            # than failing every tick of every turn.
+            # A subclass may override _compose_system_prompt with a signature
+            # that predates ``extra_section`` / ``session_context_section``.
+            # Fall back to the old call and append omitted sections.
             legacy = dict(compose_kwargs)
             extra = legacy.pop("extra_section", "")
-            system_prompt = self._compose_system_prompt(**legacy)
+            session_ctx = legacy.pop("session_context_section", "")
+            try:
+                system_prompt = self._compose_system_prompt(**legacy)
+            except TypeError:
+                legacy.pop("session_context_section", None)
+                system_prompt = self._compose_system_prompt(**legacy)
+            if session_ctx:
+                system_prompt = f"{system_prompt}\n\n{session_ctx.strip()}"
             if extra:
                 system_prompt = f"{system_prompt}\n\n{extra}"
         if flow_note:

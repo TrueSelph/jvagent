@@ -266,9 +266,9 @@ async def test_render_identity_section():
 
 async def test_system_prompt_lists_skills_and_priority_rule():
     from jvagent.action.orchestrator.prompts import (
-        ORCHESTRATOR_SYSTEM_PROMPT,
         render_identity_section,
         render_skills_section,
+        render_system_prompt,
     )
     from jvagent.action.parameters import (
         orchestration_parameters,
@@ -277,7 +277,7 @@ async def test_system_prompt_lists_skills_and_priority_rule():
         reply_core_parameters,
     )
 
-    sp = ORCHESTRATOR_SYSTEM_PROMPT.format(
+    sp = render_system_prompt(
         identity_section=render_identity_section("Executive Agent", "a helpful guide"),
         tools_section="- reply: ...",
         skills_section=render_skills_section(

@@ -90,6 +90,15 @@ async def test_review_refuses_to_re_present_on_a_later_turn(monkeypatch):
     assert not directive.lower().startswith("tell the user")
     # And it must name the failure it exists to prevent.
     assert "bare 'Confirm'" in directive
+    # Guidance-only: U+2063 first so skip_compose cannot demote this into a
+    # literal publish of the whole instruction block.
+    from jvagent.action.reply.reply_action import (
+        DIRECTIVE_GUIDANCE_MARKER,
+        user_facing_directive,
+    )
+
+    assert DIRECTIVE_GUIDANCE_MARKER in directive
+    assert user_facing_directive(directive) == ""
 
 
 async def test_same_turn_review_still_presents_the_summary(monkeypatch):

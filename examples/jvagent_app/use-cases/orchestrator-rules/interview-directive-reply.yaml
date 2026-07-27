@@ -13,9 +13,8 @@ given:
 turns:
   # The one scenario that reaches a compose egress path: the interview's tool
   # result carries a response_directive with no chained tool, so the loop
-  # delivers it via _send_reply(compose=True). That is the second, serial model
-  # call skip_compose_without_guidance proposes to remove -- so this is what
-  # tells us whether removing it still produces a sensible question.
+  # delivers it via _send_reply(compose=True). Guidance-only directives keep
+  # the compose path; bare relays skip it (ADR-0041).
   - id: request-signup
     when:
       user: "I'd like to sign up for the jvagent training."

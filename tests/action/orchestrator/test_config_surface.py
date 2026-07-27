@@ -332,6 +332,8 @@ async def test_no_decision_streak_finalizes(make_orchestrator, make_visitor):
 
 async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
     # A decision sequence that would loop forever; the wall-clock guard ends it.
+    # With observations already gathered, partial-compose salvage marks the exit
+    # as duration_finalized (never clarify_text).
     ex = make_orchestrator(
         decisions=[{"action": "tool", "tool": "noop", "args": {}}] * 50
     )
@@ -342,7 +344,8 @@ async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
     v.interaction.save = AsyncMock()
     await ex.execute(v)
     ev = [m for m in metrics if m["event_type"] == "orchestrator_activation"]
-    assert ev and ev[-1]["data"]["ended_via"] == "duration"
+    assert ev and ev[-1]["data"]["ended_via"] == "duration_finalized"
+    assert ex.clarify_text not in (v.interaction.response or "")
 
 
 # --- Model gearing (ADR-0016) --------------------------------------------
@@ -353,14 +356,14 @@ async def test_select_gear_logic():
     # gearing off (no light_model) → always heavy
     assert ex._select_gear(5, True) == "heavy"
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = True
+    ex.planning = False
     assert ex._select_gear(0, False) == "light"
-    assert ex._select_gear(1, False) == "light"
-    assert ex._select_gear(2, False) == "heavy"  # tool-count threshold
+    assert ex._select_gear(1, False) == "heavy"  # after first substantive tool
     assert ex._select_gear(0, True) == "heavy"  # skill active
-    ex.escalate_on_skill = False
-    assert ex._select_gear(0, True) == "light"  # skill ignored when off
+    ex.planning = True
+    assert ex._select_gear(0, False) == "heavy"  # planning on → heavy tick 0
+    ex.planning = False
+    assert ex._select_gear(0, False) == "light"
 
 
 async def test_gearing_on_from_byok_override_without_yaml_light():
@@ -417,8 +420,6 @@ async def test_gearing_escalates_after_one_substantive_tool(
     fake = _fake_capability_action("work", calls)
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 1
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},
         {"action": "final", "answer": "done"},
@@ -570,8 +571,6 @@ async def test_gearing_escalates_across_loop(
     fake = _fake_capability_action("work", calls)
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},
         {"action": "tool", "tool": "work", "args": {"i": 2}},
@@ -600,8 +599,8 @@ async def test_gearing_escalates_across_loop(
 
     monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _rm)
     await ex.execute(make_visitor(utterance="multi-step"))
-    # light, light (count 0,1), then heavy once 2 substantive calls reached.
-    assert gears[:4] == ["light", "light", "heavy", "heavy"]
+    # tick 0 light (0 tools); after first substantive tool → heavy thereafter.
+    assert gears[:4] == ["light", "heavy", "heavy", "heavy"]
 
 
 async def test_light_model_no_main_falls_back_to_light(monkeypatch):
@@ -680,11 +679,9 @@ async def test_progress_stream_fires_on_both_gears(
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.stream_internal_progress = True
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},  # light tick
-        {"action": "tool", "tool": "work", "args": {"i": 2}},  # light tick
+        {"action": "tool", "tool": "work", "args": {"i": 2}},  # heavy tick
         {"action": "tool", "tool": "work", "args": {"i": 3}},  # heavy tick
         {"action": "final", "answer": "done"},  # heavy tick
     ]
@@ -719,8 +716,6 @@ async def test_transient_ack_only_on_complex_turns(
         ex = make_orchestrator(actions=[fake], decisions=[])
         if not single_model:
             ex.light_model = "lite"  # gearing on
-        ex.escalate_after_tool_calls = 2
-        ex.escalate_on_skill = False
         seq = list(decisions)
 
         async def _rm(self, *a, gear="heavy", **k):
@@ -1281,6 +1276,7 @@ def test_render_system_prompt_defaults_every_slot():
     # Every documented placeholder has a default.
     assert set(P.SYSTEM_PROMPT_PLACEHOLDERS) >= {
         "identity_section",
+        "session_context_section",
         "tools_section",
         "skills_section",
         "capabilities_section",

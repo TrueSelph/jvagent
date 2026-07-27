@@ -14,6 +14,9 @@ from jvagent.action.orchestrator.constants import (
     _NON_SUBSTANTIVE_TOOLS,
     is_untrusted_directive_source,
 )
+from jvagent.action.orchestrator.loop_helpers import (
+    salvage_partial_answer as _salvage_partial_answer,
+)
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
@@ -190,18 +193,15 @@ class OrchestratorLoopMixin:
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
         skills_section = render_skills_section(skill_docs, blocked_skill_notes)
-        # State the current channel explicitly. Skill docs are already filtered
-        # to this channel (ADR-0032), so everything listed IS available here —
-        # without this line the model has no ground truth for where it is and
-        # can hallucinate a channel deny ("please message us on WhatsApp") to a
-        # user who is already there, parroting deny copy from its knowledge.
-        _channel = str(getattr(visitor, "channel", "") or "").strip()
-        if _channel:
-            skills_section = (
-                f"CURRENT CHANNEL: {_channel}. Every skill listed below is "
-                "available on this channel — never tell the user to switch "
-                "channels to use one of them.\n\n" + skills_section
-            )
+        # SESSION CONTEXT (ADR-0042): turn-stable clock + channel ground truth.
+        # Replaces the former CURRENT CHANNEL prepend on skills_section.
+        try:
+            app = await self.get_app()
+        except Exception:
+            app = None
+        from jvagent.action.orchestrator.session_context import render_session_context
+
+        session_context_section = await render_session_context(visitor, app=app)
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
@@ -226,6 +226,7 @@ class OrchestratorLoopMixin:
         )
         self._turn_prompt_cache = {
             "identity": await self._render_identity(),
+            "session_context": session_context_section,
             "capabilities": capabilities_section,
             "parameters": parameters_section,
             "skills_section": skills_section,
@@ -525,7 +526,7 @@ class OrchestratorLoopMixin:
         soft_abandon_streak = 0
         soft_abandon_title = ""
         nd_streak = 0  # consecutive unparseable model decisions
-        # Model gearing (ADR-0016): light until the turn proves multi-step.
+        # Model gearing (ADR-0016 / ADR-0041): light until multi-step.
         substantive_tool_calls = 0
         ticks_light = 0
         ticks_heavy = 0
@@ -658,6 +659,7 @@ class OrchestratorLoopMixin:
         user_named_tools = state.user_named_tools
         utterance = state.utterance
         visible = state.visible
+        last_gear = "light"
 
         try:
             while budget > 0:
@@ -666,9 +668,9 @@ class OrchestratorLoopMixin:
                     break
                 budget -= 1
                 ticks += 1
-                # Gear selection (sticky): heavy once the turn is multi-step —
-                # enough substantive tool calls, or a skill (multi-step SOP) is
-                # active. Single-model agents always run heavy.
+                # Gear selection (sticky, ADR-0041): heavy once a skill is
+                # active, planning is on, or after the first substantive tool.
+                # Single-model agents always run heavy.
                 gear = self._select_gear(
                     substantive_tool_calls,
                     bool(activated) or active_skill_doc is not None,
@@ -677,14 +679,12 @@ class OrchestratorLoopMixin:
                     ticks_light += 1
                 else:
                     ticks_heavy += 1
+                last_gear = gear
                 # Arm the transient ack only once the turn proves COMPLEX — a
                 # skill is active, or it has made multiple substantive tool calls.
                 # Simple single-tool / reply-only turns never surface a "working
                 # on it" line (and so it can't trail after a fast reply).
-                if not ack_started and (
-                    bool(activated)
-                    or substantive_tool_calls >= int(self.escalate_after_tool_calls)
-                ):
+                if not ack_started and (bool(activated) or substantive_tool_calls >= 2):
                     ack_started = True
                     ack_task = self._schedule_first_emit_ack(visitor)
                 visible_tools = [tools[n] for n in visible if n in tools]
@@ -1008,9 +1008,10 @@ class OrchestratorLoopMixin:
                         obs = (
                             f"(no such tool: {tool_name}. Call "
                             "find_tool(query) to find the right tool by "
-                            "capability — e.g. find_tool('write file'), "
-                            "find_tool('add to knowledge base') — then call the "
-                            "exact name it returns.)"
+                            "capability — e.g. find_tool('add to knowledge "
+                            "base'), find_tool('fetch url') — then call the "
+                            "exact name it returns. Pass gathered text in "
+                            "tool args; do not invent a write-file detour.)"
                         )
                     else:
                         if self.block_raw_tool_invocation and tool_name not in visible:
@@ -1326,11 +1327,17 @@ class OrchestratorLoopMixin:
                     observations,
                     skills_section=skills_section,
                     finalize=True,
-                    gear="light",  # wrap-up is single-dimensional
+                    gear=last_gear,
                     capabilities_section=capabilities_section,
                     parameters_section=parameters_section,
                 )
                 answer = _text_candidate(decision) if decision else ""
+                # Finalize must be text-only. Models often ignore STEP LIMIT and
+                # emit another tool call (observed: find_tool → write-file path
+                # after repeat_guard). Never fall through to clarify_text when
+                # we already gathered work.
+                if not answer:
+                    answer = _salvage_partial_answer(observations)
                 if answer:
                     await self._maybe_emit_final(visitor, answer)
                     ended_via = f"{ended_via}_finalized"

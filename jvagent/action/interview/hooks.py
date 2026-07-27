@@ -199,20 +199,40 @@ def validation_guidance_directive(error: str, *, question_text: str = "") -> str
     return user_directive(err)
 
 
+def model_only_directive(guidance: str) -> str:
+    """Guidance-only directive: empty user-facing block; all text after U+2063.
+
+    Use when the tool result must steer the model with no literal to relay.
+    Keeps bare guidance-only directives on the compose path (empty user-facing
+    block; all text after U+2063) rather than literal gather.
+    """
+    return f"{_G}{(guidance or '').strip()}"
+
+
 def review_confirmation_directive(
     summary: str,
     *,
     preamble: str = "Please review the details.",
 ) -> str:
-    """Confirmation-step directive — not completion."""
+    """Confirmation-step directive — not completion.
+
+    User-facing (before U+2063): preamble, summary, and the confirmation ask.
+    Model-only (after): how to close, Confirm/Yes ownership, and tool rules.
+    Meta like "Close with exactly this confirmation prompt" must never sit in
+    the user-facing block — gather/literal and compose both treat pre-marker
+    text as something to deliver.
+    """
     summary_block = f"\n\n{summary}" if summary else ""
-    return (
-        f"Tell the user or ask the user: {preamble}{summary_block}\n\n"
-        "Close with exactly this confirmation prompt (paraphrase lightly if needed): "
+    confirm_ask = (
         "If everything looks correct, reply 'Confirm' or 'Yes' to continue. "
         "If you'd like to make changes, just let me know."
-        f"{_G}Those quoted words are for the USER to say — never send a reply "
-        "that is just 'Confirm' or 'Yes'. "
+    )
+    return (
+        f"Tell the user or ask the user: {preamble}{summary_block}\n\n"
+        f"{confirm_ask}"
+        f"{_G}Close with exactly that confirmation ask (paraphrase lightly if needed). "
+        "Those quoted words ('Confirm' / 'Yes') are for the USER to say — never send a "
+        "reply that is just 'Confirm' or 'Yes'. "
         "This is a confirmation step only — the process is NOT complete yet. "
         "Do NOT say the process is complete or that any account or record has been created. "
         "Do NOT call interview__complete until they explicitly confirm. "

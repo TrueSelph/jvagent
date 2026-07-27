@@ -1,4 +1,4 @@
-"""Orchestrator history event inclusion via include_history_events."""
+"""Orchestrator loop history: events omitted; reply cap does not clip history."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 
 
 @pytest.mark.asyncio
-async def test_history_includes_events_by_default(make_visitor):
+async def test_history_omits_events(make_visitor):
     ex = OrchestratorInteractAction()
     ex.history_limit = 20
 
@@ -20,20 +20,20 @@ async def test_history_includes_events_by_default(make_visitor):
     visitor.conversation.get_interaction_history.assert_awaited_once()
     assert (
         visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
-        is True
+        is False
     )
 
 
 @pytest.mark.asyncio
-async def test_history_omits_events_when_flag_disabled(make_visitor):
+async def test_history_ignores_reply_max_statement_length(make_visitor):
+    """Reply soft-cap must not silently truncate prior turns in the loop prompt."""
     ex = OrchestratorInteractAction()
-    ex.history_limit = 20
-    ex.include_history_events = False
+    ex.history_limit = 8
+    ex.max_statement_length = 120
 
     visitor = make_visitor()
     await ex._history(visitor)
 
-    assert (
-        visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
-        is False
-    )
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["max_statement_length"] is None
+    assert kwargs["with_event"] is False

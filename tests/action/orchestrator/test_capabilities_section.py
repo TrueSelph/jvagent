@@ -8,10 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from jvagent.action.base import Action
-from jvagent.action.orchestrator.prompts import (
-    ORCHESTRATOR_SYSTEM_PROMPT,
-    render_capabilities_section,
-)
+from jvagent.action.orchestrator.prompts import render_capabilities_section
 
 
 def test_base_action_advertises_nothing_by_default():
@@ -42,8 +39,10 @@ def test_render_empty_has_safe_fallback():
 
 
 def test_digest_slots_into_system_prompt():
+    from jvagent.action.orchestrator.prompts import render_system_prompt
+
     cap = render_capabilities_section(["Sign users up for training"])
-    prompt = ORCHESTRATOR_SYSTEM_PROMPT.format(
+    prompt = render_system_prompt(
         identity_section="You are X. ",
         tools_section="(tools)",
         skills_section="(skills)",

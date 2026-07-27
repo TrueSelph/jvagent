@@ -264,7 +264,9 @@ python staged_skills/<skill>/scripts/render_pdf.py --input doc.md --output outpu
 On activation the orchestrator stages the folder at `staged_skills/<name>/` inside the
 caller's per-user sandbox and tells the model where to run it. Anything a script
 writes lands in that user's slice and is visible to the file tools. See
-[`pdf_generation`](pdf_generation) and [`triage`](triage) for working examples.
+[`pdf_generation`](pdf_generation), [`triage`](triage), [`research`](research),
+and [`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
+write-file detour) for working examples.
 
 **Requires the code-execution substrate.** Claude skills only execute when
 [`jvagent/code_execution`](../action/code_execution) is installed and **enabled**

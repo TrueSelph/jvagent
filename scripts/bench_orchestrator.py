@@ -57,10 +57,12 @@ except Exception:  # pragma: no cover - tiktoken is optional
         return len(text or "") // 4
 
 
-def synthetic_history(turns: int, with_events: bool) -> List[Dict[str, str]]:
+def synthetic_history(turns: int, with_events: bool = False) -> List[Dict[str, str]]:
     """Prior conversation in the shape ``get_interaction_history(formatted=True)``
-    returns it: alternating user/assistant messages, optionally with the
-    ``[EVENT]`` system lines that ``include_history_events`` adds.
+    returns it: alternating user/assistant messages.
+
+    Loop history never includes ``[EVENT]`` lines (ADR-0041); ``with_events`` is
+    retained only for local what-if measurements of token cost.
 
     Benchmarking against an empty history flatters the result -- history rides
     in every tick's request, between the system prompt and the user turn, and a
@@ -274,6 +276,36 @@ def instrument(orchestrator_cls: Any, script: List[Dict[str, Any]]) -> Dict[str,
 
     orchestrator_cls.publish = publish
 
+    # Compose egress must not hit a real model provider — the bench has no API
+    # key, and a failed respond() retry (~10s) poisons wall-clock measurements.
+    async def get_responder(self):
+        async def gather(visitor):
+            interaction = getattr(visitor, "interaction", None)
+            if interaction is None:
+                return False
+            for d in list(
+                getattr(interaction, "get_unexecuted_directives", lambda: [])()
+            ):
+                content = (d.get("content") or "").split("\u2063", 1)[0].strip()
+                if content.lower().startswith("tell the user"):
+                    content = content.split(":", 1)[-1].strip()
+                if content:
+                    interaction.response = (interaction.response or "") + content
+                d["executed"] = True
+            return bool((interaction.response or "").strip())
+
+        async def respond(interaction, visitor=None, **kwargs):
+            return await gather(visitor or SimpleNamespace(interaction=interaction))
+
+        return SimpleNamespace(
+            gather=gather,
+            respond=respond,
+            apply_channel_format=False,
+            get_channel_format=lambda _ch: None,
+        )
+
+    orchestrator_cls.get_responder = get_responder
+
     for name in (
         "_assemble_tools",
         "_collect_capabilities",
@@ -383,12 +415,6 @@ async def main() -> None:
         "to undo by moving a volatile section back above the invariant ones.",
     )
     parser.add_argument(
-        "--history-events",
-        action="store_true",
-        help="Include [EVENT] lines, as include_history_events does (default on "
-        "in the action).",
-    )
-    parser.add_argument(
         "--dump", default="", help="directory to write each tick's prompts"
     )
     parser.add_argument(
@@ -435,7 +461,7 @@ async def main() -> None:
     visitor = make_visitor(
         args.utterance,
         args.channel,
-        synthetic_history(args.history, args.history_events),
+        synthetic_history(args.history),
     )
     started = time.perf_counter()
     await orchestrator.execute(visitor)

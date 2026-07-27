@@ -108,8 +108,6 @@ def load_prior_prompt_constants(commit: str) -> Dict[str, str]:
 ATTRIBUTE_ARMS: Dict[str, Dict[str, Any]] = {
     "listing-system": {"tool_listing_position": "system"},
     "listing-trailing": {"tool_listing_position": "trailing"},
-    "compose-always": {"skip_compose_without_guidance": False},
-    "compose-skip": {"skip_compose_without_guidance": True},
 }
 
 
