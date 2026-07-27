@@ -46,6 +46,7 @@ actions:
       lean_tool_threshold: 15        # 0 disables (always list every tool)
       lean_presurface_k: 6           # relevance-ranked tools shown/turn under lean
       # pinned_tools: ["filing__*"]  # globs always visible under lean (turn-1 immediacy)
+      # denied_tools: ["file_interface__*"]  # hard-exclude (not lean-hide); find_tool cannot reach
       enable_transient_ack: false    # ack(s) only on complex turns (skill or multiple tools)
       # first_emit_timeout_ms: 1200  # delay before first ack + interval between acks
       # ack_statements: ["Working on it…"]   # transient 'working on it' line(s)

@@ -73,15 +73,16 @@ interview:
       prompt: "What is your phone number?"
       required: false
       hint: >-
-        Optional. Decline → interview__skip_field. Any digits the user gives →
-        interview__set_fields immediately (never acknowledge in a reply-only
-        turn). The phone validator accepts a 7-digit local number or a full
-        10-digit number (country code 592 is applied for bare local numbers).
+        Optional. Decline or say you don't have one to skip. Any digits the
+        user gives should be stored immediately (never acknowledge in a
+        reply-only turn). The phone validator accepts a 7-digit local number
+        or a full 10-digit number (country code 592 is applied for bare local
+        numbers).
       guidance: >-
-        Optional phone contact. Call interview__skip_field when the user
-        declines or has nothing to add. Always call interview__set_fields with
-        the digits they typed — do not ask for country/area code as a separate
-        chat turn; validation handles length.
+        Optional phone contact. Skip the field when the user declines or has
+        nothing to add. Always store the digits they typed with set_fields —
+        do not ask for country/area code as a separate chat turn; validation
+        handles length.
       validator: phone
       validator_args:
         exact_length: 10

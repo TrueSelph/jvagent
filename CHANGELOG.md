@@ -29,9 +29,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `pageindex__assimilate` SOP under `jvagent/skills/knowledge_ingest/` (opt-in
   via `skills` / `-all` when PageIndex + web_fetch are on the agent).
 
-- **`Conversation.get_interactions` hydrates only the requested window.**
-  `scripts/bench_orchestrator.py` mocks compose so wall-clock is not poisoned by
-  empty API keys.
+- **`Conversation.get_interactions` returns the correct oldest/newest window.**
+  Materialize matching rows, sort with `interaction_row_sort_key`, then slice
+  (JsonDB sort+limit pushdown was wrong). `scripts/bench_orchestrator.py` mocks
+  compose so wall-clock is not poisoned by empty API keys.
 
 - **Parameters own their enforcement and their placement (ADR-0037).** A rule
   now declares `enforcement` (`prompt` | `scrub` | `guard`), an optional named
@@ -43,6 +44,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **`Conversation.get_interactions` window on JsonDB.** Sort+limit pushdown
+  returned the wrong oldest/newest N when `started_at` types differed; always
+  materialize, sort with `interaction_row_sort_key`, then slice.
+
+- **jvmessenger `/` without `demo.html`.** Missing-demo `send_error` used a
+  Unicode em-dash that crashed latin-1 HTTP status lines; ASCII message +
+  fixture `demo.html`.
+
+- **Signup phone hint leaked tool names into `response_directive`.** Hint text
+  no longer names `interview__skip_field` / `interview__set_fields` (SOP body
+  still may).
+
 - **Partial-compose salvage when finalize ignores STEP LIMIT.** After
   `repeat_guard` / budget / duration, if the finalize tick returns another tool
   call (observed: `find_tool('write file')` → clarify_text), the loop now
@@ -50,6 +63,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `clarify_text`. Plan-drain nudge and `PLANNING_PROMPT` ban write-file detours
   for in-memory report→assimilate work; `knowledge_ingest` forbids mid-task
   progress replies and filesystem writes.
+
+### Added
+
+- **Orchestrator `denied_tools`.** Fnmatch globs hard-remove matching action/MCP
+  tools from the assembled surface (not lean-hide — `find_tool` and dispatch
+  cannot reach them). Mirrors `denied_skills`. Egress/meta tools are protected.
+  Channel-overridable via `channel_overrides.denied_tools`.
 
 - **A rule could hold on one transport and not another (ADR-0038).** Response
   rules were applied by callers, and the streaming path had no caller that did

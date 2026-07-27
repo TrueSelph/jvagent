@@ -132,7 +132,7 @@ def _build_handler(root: Path, frame_ancestors: str) -> type:
             if not target.is_file():
                 self.send_error(
                     HTTPStatus.NOT_FOUND,
-                    "demo.html missing — rebuild with scripts/build_jvmessenger.py",
+                    "demo.html missing - rebuild with scripts/build_jvmessenger.py",
                 )
                 return
             self._send_file(target)

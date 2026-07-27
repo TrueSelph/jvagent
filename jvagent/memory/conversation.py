@@ -654,28 +654,17 @@ class Conversation(DeferredSaveMixin, Node):
         collection, final_query = await Interaction._build_database_query(
             context, {"context.conversation_id": self.id}, {}
         )
-        # Prefer DB sort+limit so backends that push down (Mongo/SQLite) avoid
-        # materializing every row. JsonDB still scans the collection but only
-        # returns the window. Portable re-sort with interaction_row_sort_key
-        # normalizes ISO-string vs datetime started_at within that window.
-        if limit > 0:
-            direction = -1 if reverse else 1
-            rows = (
-                await context.database.find(
-                    collection,
-                    final_query,
-                    sort=[("context.started_at", direction), ("id", direction)],
-                    limit=limit,
-                )
-                or []
-            )
-        else:
-            rows = await context.database.find(collection, final_query) or []
+        # Always materialize then sort+slice in Python. Pushing sort+limit to
+        # the DB is correct only when the backend orders by the same key as
+        # ``interaction_row_sort_key`` (ISO-string vs datetime ``started_at``).
+        # JsonDB's window was wrong under sort+limit — oldest/newest N failed
+        # characterization tests. Conversation histories are small (agent
+        # ``interaction_limit`` / orchestrator ``history_limit``).
+        rows = await context.database.find(collection, final_query) or []
         ordered = sorted(rows, key=interaction_row_sort_key)
         if reverse:
             ordered = list(reversed(ordered))
-        if limit > 0 and len(ordered) > limit:
-            # Defensive: if a backend ignored limit, keep window semantics.
+        if limit > 0:
             ordered = ordered[:limit]
 
         objects: List["Interaction"] = []

@@ -21,6 +21,10 @@ def _make_dist(tmp_path):
         "<!doctype html><html><head></head><body>app</body></html>",
         encoding="utf-8",
     )
+    (tmp_path / "demo.html").write_text(
+        "<!doctype html><html><head></head><body>demo host</body></html>",
+        encoding="utf-8",
+    )
     assets = tmp_path / "assets"
     assets.mkdir()
     (assets / "app.js").write_text("console.log(1)", encoding="utf-8")
@@ -70,12 +74,16 @@ def test_app_html_is_framable(tmp_path):
         httpd.shutdown()
 
 
-def test_root_serves_app_entry(tmp_path):
+def test_root_serves_demo_host(tmp_path):
+    """``/`` is the customer-site stand-in (demo.html), not the iframe app."""
     httpd = _serve(_make_dist(tmp_path))
     try:
         status, _, body = _get(httpd, "/")
         assert status == 200
-        assert "app" in body.lower()
+        assert "demo host" in body.lower()
+        status2, _, body2 = _get(httpd, "/app.html")
+        assert status2 == 200
+        assert "app" in body2.lower()
     finally:
         httpd.shutdown()
 

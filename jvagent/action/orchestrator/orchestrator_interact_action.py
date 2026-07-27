@@ -611,7 +611,8 @@ class OrchestratorInteractAction(
         "activation_budget, max_duration_seconds, tool_call_timeout, "
         "max_statement_length, first_emit_timeout_ms, ack_statements, "
         "pinned_tools (REPLACES the action-level pin list on that channel, so a "
-        "channel-specific capability isn't pinned onto every other channel), and "
+        "channel-specific capability isn't pinned onto every other channel), "
+        "denied_tools (REPLACES the action-level deny list on that channel), and "
         "system_prompt_extra (APPENDED after the base extra for that channel "
         "only). Lets a voice channel run a tighter/faster loop with its own "
         "spoken filler than chat without a second agent.",
@@ -664,6 +665,16 @@ class OrchestratorInteractAction(
         "disabling lean for the rest. Empty by default. The skill-native "
         "equivalent is a SKILL.md with 'always-active: true' (pins its "
         "allowed-tools).",
+    )
+    denied_tools: List[str] = attribute(
+        default_factory=list,
+        description="Tool-name globs (e.g. 'file_interface__*', 'code_execution__*') "
+        "hard-removed from the Orchestrator surface — not listed, not find_tool-"
+        "reachable, not dispatchable. Mirrors denied_skills for first-party / MCP "
+        "tools that ride in via enabled actions. Egress and catalog meta-tools "
+        "(reply/respond/find_*/load_*/use_skill) cannot be denied. Empty by default. "
+        "Channel-overridable via channel_overrides.denied_tools (replaces the "
+        "action-level list on that channel).",
     )
 
     # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
@@ -824,7 +835,8 @@ class OrchestratorInteractAction(
         """Build the full tool surface and populate ``visible`` (the prompt set).
 
         Everything goes into the returned ``tools`` (so ``find_tool`` can surface
-        anything). ``visible`` — what the model sees up front — holds the
+        anything) except names matching ``denied_tools`` — those are hard-removed
+        so discovery and dispatch cannot reach them.
         general tools always, but a turn-spanning flow's IA-tool ONLY when it is
         the active flow or the utterance is anchor-relevant. This keeps idle
         flow tools out of the prompt so a weak model can't spuriously trigger an
@@ -1213,6 +1225,22 @@ class OrchestratorInteractAction(
         for d in docs:
             if getattr(d, "always_active", False):
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
+        # Hard exclude (wins over lean + pins): drop from tools so find_tool /
+        # load_tool / dispatch cannot reach them. Applied last intentionally.
+        denied = self._channel_cfg(visitor, "denied_tools", self.denied_tools)
+        if denied:
+            drop = self._match_tool_globs(list(denied), set(tools.keys()))
+            protected = drop & _STEER_EXEMPT
+            if protected:
+                logger.warning(
+                    "orchestrator: denied_tools matched protected tools %s — ignored",
+                    sorted(protected),
+                )
+                drop -= _STEER_EXEMPT
+            for name in drop:
+                tools.pop(name, None)
+                longtail.discard(name)
+                visible.discard(name)
         return tools
 
     @staticmethod

@@ -230,6 +230,74 @@ async def test_pins_are_channel_scopable(make_orchestrator, make_visitor):
     assert "calendar__create_event" not in visible2
 
 
+async def test_denied_tools_hard_remove_from_surface(make_orchestrator, make_visitor):
+    """denied_tools drops names from tools — not lean-hidden, gone for find_tool."""
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 0  # list everything so absence is unambiguous
+    ex.denied_tools = ["weather__*", "misc__tool00"]
+    v = make_visitor(utterance="weather please")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "weather please", None, {})
+    assert "weather__current" not in tools
+    assert "weather__current" not in visible
+    assert "misc__tool00" not in tools
+    # Untargeted tools remain.
+    assert "misc__tool01" in tools
+    # find_tool must not rediscover denied names (closes over tools dict).
+    find = tools["find_tool"]
+    hit = await find.run({"query": "weather"})
+    assert "weather__current" not in hit
+
+
+async def test_denied_tools_beats_pins(make_orchestrator, make_visitor):
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.pinned_tools = ["weather__*"]
+    ex.denied_tools = ["weather__*"]
+    v = make_visitor(utterance="hello")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "hello", None, {})
+    assert "weather__current" not in tools
+    assert "weather__current" not in visible
+
+
+async def test_denied_tools_cannot_drop_egress_or_meta(make_orchestrator, make_visitor):
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    action = _ToolsAction(_many(5))
+    ex = make_orchestrator(actions=[action, ReplyAction()])
+    ex.denied_tools = ["reply", "find_tool", "load_tool", "misc__*"]
+    v = make_visitor(utterance="hi")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "hi", None, {})
+    assert "reply" in tools
+    assert "find_tool" in tools
+    assert "load_tool" in tools
+    # Non-protected matches still drop.
+    assert not any(n.startswith("misc__") for n in tools)
+
+
+async def test_denied_tools_channel_override(make_orchestrator, make_visitor):
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 0
+    ex.denied_tools = ["weather__*"]
+    ex.channel_overrides = {"voice": {"denied_tools": ["calendar__*"]}}
+
+    v = make_visitor(utterance="x", channel="voice")
+    tools = await ex._assemble_tools(v, [], set(), None, "x", None, {})
+    assert "calendar__create_event" not in tools
+    assert "weather__current" in tools  # global deny replaced, not merged
+
+    v2 = make_visitor(utterance="x", channel="web")
+    tools2 = await ex._assemble_tools(v2, [], set(), None, "x", None, {})
+    assert "weather__current" not in tools2
+    assert "calendar__create_event" in tools2
+
+
 async def test_always_active_skill_pins_its_tools(
     make_orchestrator, make_visitor, monkeypatch
 ):
