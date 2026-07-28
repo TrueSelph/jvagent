@@ -14,6 +14,9 @@ STEER_EXEMPT = frozenset(
 NON_SUBSTANTIVE_TOOLS = STEER_EXEMPT
 
 # Decision keys that are control/text fields, never tool arguments.
+# Note: ``query`` is intentionally NOT reserved — it is a common real tool
+# parameter (pageindex__search, find_tool, find_skill). Reserving it broke
+# flattened model calls like {"tool":"pageindex__search","query":"..."}.
 DECISION_RESERVED_KEYS = frozenset(
     {
         "action",
@@ -28,7 +31,6 @@ DECISION_RESERVED_KEYS = frozenset(
         "name",
         "skill",
         "topic",
-        "query",
     }
 )
 
