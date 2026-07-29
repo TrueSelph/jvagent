@@ -51,9 +51,10 @@ def handle_messenger_command(args: List[str]) -> None:
         action="store_true",
         help=(
             "Serve the developer sandbox page instead of demo.html. "
-            "The sandbox page provides a login form, fetches the agent list "
-            "from the running jvagent server, and lets you switch agents via "
-            "a host-bar picker. For local development only."
+            "The sandbox page provides a login form (email + password), "
+            "fetches the agent list from the running jvagent server, and "
+            "lets you switch agents via a host-bar dropdown. For local "
+            "development only."
         ),
     )
     parser.add_argument(

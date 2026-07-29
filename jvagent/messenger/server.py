@@ -22,7 +22,7 @@ URL — so there is no runtime config injection here.
 Sandbox mode (``--sandbox``):
 When ``sandbox_mode=True`` the server also serves ``GET /`` and ``GET /sandbox``
 as a self-contained developer sandbox page. The sandbox page lets you log in with
-username + password, fetches the agent list from the running jvagent server, and
+email + password, fetches the agent list from the running jvagent server, and
 shows an agent-switcher host bar so you can try any agent without touching the URL.
 The sandbox page is **not** embeddable and is intended for local development only.
 """
@@ -61,7 +61,7 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     """Return a self-contained developer sandbox page as a UTF-8 HTML string.
 
     The page:
-    - Shows a login form (host URL + username + password).
+    - Shows a login form (host URL + email + password).
     - On successful login stores the JWT in ``sessionStorage`` and fetches the
       agent list from the jvagent server.
     - Renders a host-bar with agent pills; clicking one injects ``loader.js``
@@ -209,27 +209,21 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
       letter-spacing: 0.05em;
       flex-shrink: 0;
     }}
-    #agent-pills {{ display: flex; gap: 0.4rem; flex-wrap: wrap; flex: 1; }}
-    .agent-pill {{
-      background: var(--pill-bg);
+    #agent-select {{
+      flex: 1;
+      min-width: 12rem;
+      max-width: 28rem;
+      padding: 0.35rem 0.6rem;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 0.88rem;
       color: var(--ink);
-      border: none;
-      border-radius: 20px;
-      padding: 0.25rem 0.75rem;
-      font-size: 0.82rem;
-      font-weight: 500;
+      background: var(--bg);
+      outline: none;
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
     }}
-    .agent-pill:hover {{ background: #d4dff5; }}
-    .agent-pill.active {{
-      background: var(--pill-active-bg);
-      color: var(--pill-active-ink);
-    }}
-    .agent-pill:disabled {{
-      opacity: var(--pill-disabled-opacity);
-      cursor: not-allowed;
-    }}
+    #agent-select:focus {{ border-color: var(--accent); }}
+    #agent-select:disabled {{ opacity: 0.6; cursor: not-allowed; }}
     #bar-meta {{
       margin-left: auto;
       display: flex;
@@ -298,8 +292,8 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
       <input id="f-url" type="url" value="{safe_agent_url}" placeholder="http://127.0.0.1:8000" autocomplete="off" />
     </div>
     <div class="field">
-      <label for="f-user">Username</label>
-      <input id="f-user" type="text" placeholder="admin" autocomplete="username" />
+      <label for="f-email">Email</label>
+      <input id="f-email" type="email" placeholder="admin@example.com" autocomplete="email" />
     </div>
     <div class="field">
       <label for="f-pass">Password</label>
@@ -313,7 +307,9 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
 <!-- ── host bar ── -->
 <div id="host-bar">
   <span class="bar-label">agent</span>
-  <div id="agent-pills"></div>
+  <select id="agent-select" aria-label="Select agent">
+    <option value="">Select an agent…</option>
+  </select>
   <div id="bar-meta">
     <span class="server-badge" id="server-badge"></span>
     <span id="bar-status"></span>
@@ -323,8 +319,8 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
 
 <!-- ── fake customer body ── -->
 <div id="customer-body">
-  <h1>Acme support desk</h1>
-  <p>Stand-in customer site for the jvmessenger sandbox.
+  <h1>jvmessenger sandbox</h1>
+  <p>Stand-in host page for the embeddable messenger.
      The chat bubble (bottom-right) is injected by <span class="mono">loader.js</span> —
      open it to talk to the selected agent.</p>
   <div class="hint-card">
@@ -346,13 +342,15 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   var loginBtn = document.getElementById('login-btn');
   var logoutBtn = document.getElementById('logout-btn');
   var loginError = document.getElementById('login-error');
-  var agentPillsEl = document.getElementById('agent-pills');
+  var agentSelect = document.getElementById('agent-select');
   var serverBadge = document.getElementById('server-badge');
   var barStatus = document.getElementById('bar-status');
   var hintText = document.getElementById('hint-text');
 
   var currentAgentId = null;
   var currentAgentName = null;
+  // id → {{id, name, alias}} for the dropdown change handler
+  var agentById = {{}};
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -375,16 +373,16 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
 
   async function login() {{
     var url = normalizeUrl(document.getElementById('f-url').value.trim());
-    var username = document.getElementById('f-user').value.trim();
+    var email = document.getElementById('f-email').value.trim();
     var password = document.getElementById('f-pass').value;
-    if (!url || !username || !password) {{
+    if (!url || !email || !password) {{
       setError('All fields are required.');
       return;
     }}
     loginBtn.disabled = true;
     setError('');
     try {{
-      var token = await doLogin(url, username, password);
+      var token = await doLogin(url, email, password);
       sessionStorage.setItem(SESSION_KEY, token);
       sessionStorage.setItem(URL_KEY, url);
       await enterLoggedIn(url, token);
@@ -395,8 +393,9 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     }}
   }}
 
-  async function doLogin(url, username, password) {{
-    // Try /api/auth/login first, then /auth/login (same pattern as jvchat).
+  async function doLogin(url, email, password) {{
+    // jvspatial UserLogin expects {{email, password}} — same as jvchat.
+    // Try /api/auth/login first, then /auth/login.
     var endpoints = [url + '/api/auth/login', url + '/auth/login'];
     var lastErr = null;
     for (var i = 0; i < endpoints.length; i++) {{
@@ -404,10 +403,13 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
         var r = await fetch(endpoints[i], {{
           method: 'POST',
           headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ username: username, password: password }})
+          body: JSON.stringify({{ email: email, password: password }})
         }});
         if (r.status === 401 || r.status === 403) {{
-          throw new Error('Invalid username or password.');
+          throw new Error('Invalid email or password.');
+        }}
+        if (r.status === 422) {{
+          throw new Error('Invalid login payload (email + password required).');
         }}
         if (!r.ok) {{
           throw new Error('Server error (' + r.status + ').');
@@ -418,9 +420,10 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
         return tok;
       }} catch (err) {{
         lastErr = err;
-        if (err.message === 'Invalid username or password.' ||
+        if (err.message === 'Invalid email or password.' ||
+            err.message.startsWith('Invalid login payload') ||
             err.message.startsWith('Server error')) {{
-          throw err; // don't retry 401/5xx on second endpoint
+          throw err; // don't retry 401/422/5xx on second endpoint
         }}
       }}
     }}
@@ -456,25 +459,47 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     throw new Error('Could not fetch agent list.');
   }}
 
-  function renderPills(agents) {{
-    agentPillsEl.innerHTML = '';
+  function renderAgentSelect(agents) {{
+    agentById = {{}};
+    agentSelect.innerHTML = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = agents.length ? 'Select an agent…' : 'No agents found';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    agentSelect.appendChild(placeholder);
+
     if (!agents.length) {{
-      agentPillsEl.textContent = 'No agents found.';
+      agentSelect.disabled = true;
       return;
     }}
+    agentSelect.disabled = false;
     agents.forEach(function (a) {{
-      var btn = document.createElement('button');
-      btn.className = 'agent-pill';
-      btn.type = 'button';
-      btn.textContent = a.alias || a.name || a.id;
-      btn.title = a.id;
-      if (!a.enabled) {{
-        btn.disabled = true;
-        btn.title = a.id + ' (disabled)';
-      }} else {{
-        btn.addEventListener('click', function () {{ selectAgent(a); }});
+      // jvspatial export nests attributes under context unless flat=True.
+      // Match jvchat: context.enabled → enabled → default true.
+      var enabled = true;
+      if (a.context && a.context.enabled !== undefined) {{
+        enabled = !!a.context.enabled;
+      }} else if (a.enabled !== undefined) {{
+        enabled = !!a.enabled;
       }}
-      agentPillsEl.appendChild(btn);
+      var agentId = a.id || '';
+      if (!agentId) return;
+      var label = a.alias || (a.context && a.context.alias) ||
+                  a.name || (a.context && a.context.name) || agentId;
+      var opt = document.createElement('option');
+      opt.value = agentId;
+      opt.textContent = enabled ? label : (label + ' (disabled)');
+      opt.disabled = !enabled;
+      agentSelect.appendChild(opt);
+      if (enabled) {{
+        agentById[agentId] = {{
+          id: agentId,
+          name: label,
+          alias: a.alias || (a.context && a.context.alias) || null,
+          enabled: true
+        }};
+      }}
     }});
   }}
 
@@ -483,25 +508,29 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   function removeLoader() {{
     var old = document.getElementById('jvmessenger-loader-script');
     if (old) old.remove();
-    // Also remove any launcher/iframe the previous loader injected.
-    var btn = document.getElementById('jvmessenger-launcher');
-    if (btn) btn.remove();
-    var frame = document.getElementById('jvmessenger-frame');
-    if (frame) frame.remove();
+    // Shadow-DOM launcher host (data-jvmessenger="launcher") + any iframe wrappers.
+    document.querySelectorAll('[data-jvmessenger]').forEach(function (el) {{
+      el.remove();
+    }});
+    // Loader guards against double-embed; clear so a re-inject boots.
+    try {{ delete window.__jvmessengerLoaded; }} catch (_) {{
+      window.__jvmessengerLoaded = false;
+    }}
   }}
 
   async function selectAgent(agent) {{
     var url = getUrl();
     var token = getToken();
     if (!url || !token) return;
+    if (!agent || !agent.id) {{
+      setBarStatus('Agent has no id.');
+      return;
+    }}
 
-    // Update pill active state.
-    document.querySelectorAll('.agent-pill').forEach(function (p) {{
-      p.classList.toggle('active', p.title === agent.id || p.title === agent.id + ' (disabled)' ? false : p.title === agent.id);
-    }});
-    document.querySelectorAll('.agent-pill').forEach(function (p) {{
-      p.classList.toggle('active', p.title === agent.id);
-    }});
+    // Keep dropdown in sync with the active selection.
+    if (agentSelect.value !== agent.id) {{
+      agentSelect.value = agent.id;
+    }}
 
     currentAgentId = agent.id;
     currentAgentName = agent.alias || agent.name || agent.id;
@@ -556,7 +585,7 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     }}
     loginPanel.style.display = 'none';
     serverBadge.textContent = normalizeUrl(url).replace(/^https?:\\/\\//, '');
-    renderPills(agents);
+    renderAgentSelect(agents);
     hostBar.classList.add('visible');
     customerBody.classList.add('visible');
     hintText.textContent = 'Select an agent in the bar above to start.';
@@ -567,6 +596,11 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
 
   loginBtn.addEventListener('click', login);
   logoutBtn.addEventListener('click', logout);
+  agentSelect.addEventListener('change', function () {{
+    var id = agentSelect.value;
+    if (!id || !agentById[id]) return;
+    selectAgent(agentById[id]);
+  }});
 
   document.getElementById('f-pass').addEventListener('keydown', function (e) {{
     if (e.key === 'Enter') login();

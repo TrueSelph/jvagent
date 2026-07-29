@@ -270,16 +270,17 @@ jvagent messenger --sandbox --url http://127.0.0.1:8000
 
 Opens `http://127.0.0.1:3100/` in your browser. The page:
 
-1. **Login form** — enter the agent server URL (pre-filled from `--url`), username,
+1. **Login form** — enter the agent server URL (pre-filled from `--url`), email,
    and password. Authenticates via `POST /api/auth/login` (fallback `/auth/login`)
-   exactly like jvchat.
-2. **Agent host bar** — on successful login, fetches `GET /api/agents?per_page=50`
-   using the JWT and renders a pill for each enabled agent.
-3. **Embed** — clicking a pill injects `loader.js` (from this static server) with
+   with `{email, password}` exactly like jvchat.
+2. **Agent dropdown** — on successful login, fetches `GET /api/agents?per_page=50`
+   using the JWT and fills a select control with each agent (disabled agents
+   shown greyed-out).
+3. **Embed** — choosing an agent injects `loader.js` (from this static server) with
    the selected agent's id and server URL. The standard messenger bubble appears
    bottom-right.
-4. **Switch** — click another pill to replace the injected script and reload the
-   messenger with the new agent.
+4. **Switch** — pick another agent from the dropdown to replace the injected script
+   and reload the messenger with the new agent.
 5. **Logout** — clears `sessionStorage` and returns to the login form.
 
 ### Security notes

@@ -192,7 +192,7 @@ def test_sandbox_not_served_without_flag(tmp_path):
         status, _, body = _get(httpd, "/sandbox")
         assert status == 200
         # SPA fallback is app.html, not the sandbox login page.
-        assert "f-user" not in body  # login field id only present in sandbox
+        assert "f-email" not in body  # login field id only present in sandbox
         assert "demo host" not in body  # not demo.html either
     finally:
         httpd.shutdown()
@@ -203,6 +203,26 @@ def test_sandbox_html_contains_agent_url(tmp_path):
     agent_url = "http://example.com:9000"
     html = messenger._sandbox_html(agent_url, "http://127.0.0.1:3100")
     assert agent_url in html
+
+
+def test_sandbox_html_uses_email_not_username():
+    """Login payload must use email (jvspatial UserLogin), not username."""
+    html = messenger._sandbox_html("http://127.0.0.1:8000", "http://127.0.0.1:3100")
+    assert 'id="f-email"' in html
+    assert 'id="f-user"' not in html
+    assert "email: email, password: password" in html
+    assert "username: username" not in html
+
+
+def test_sandbox_html_resolves_context_enabled():
+    """Dropdown must treat missing enabled as true (jvspatial nests under context)."""
+    html = messenger._sandbox_html("http://127.0.0.1:8000", "http://127.0.0.1:3100")
+    assert "a.context && a.context.enabled" in html
+    # Must not gate on bare !a.enabled (undefined → disabled for every agent).
+    assert "if (!a.enabled)" not in html
+    assert 'id="agent-select"' in html
+    assert "agent-pills" not in html
+    assert "renderAgentSelect" in html
 
 
 def test_sandbox_page_not_embeddable(tmp_path):

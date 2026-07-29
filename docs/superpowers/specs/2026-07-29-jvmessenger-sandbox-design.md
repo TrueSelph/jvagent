@@ -1,6 +1,6 @@
 # jvmessenger sandbox — design spec
 
-**Date:** 2026-07-29  
+**Date:** 2026-07-29
 **Status:** approved → implementing
 
 ---
@@ -70,7 +70,7 @@ Python string. No Node rebuild required. The page:
    - Logout button clears `sessionStorage` and returns to login panel.
 
 3. **Fake customer body** (below host bar, always visible after login):
-   - Static "Acme support desk" copy (matches existing `demo.html` tone).
+   - Static "jvmessenger sandbox" copy on the fake host page.
    - Messenger bubble injected via `loader.js` with selected agent params.
 
 **Messenger config injected into `loader.js` src:**
@@ -109,7 +109,7 @@ Add to `handle_messenger_command`:
                     but does not activate sandbox alone.
 ```
 
-When `--sandbox` is set, call `serve(..., sandbox_mode=True, agent_url=ns.url)`.  
+When `--sandbox` is set, call `serve(..., sandbox_mode=True, agent_url=ns.url)`.
 When `--sandbox` is not set, existing `serve()` call unchanged (no regression).
 
 ### 4. `tests/messenger/test_messenger_server.py` — tests
