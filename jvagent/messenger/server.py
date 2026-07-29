@@ -253,6 +253,103 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
       display: none;
     }}
 
+    /* ── config panel ── */
+    #config-panel {{
+      display: none;
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      padding: 1rem 1.25rem 1.25rem;
+      max-height: min(70vh, 560px);
+      overflow-y: auto;
+    }}
+    #config-panel.visible {{ display: block; }}
+    #config-panel h2 {{
+      font-size: 0.95rem;
+      margin: 0 0 0.75rem;
+      letter-spacing: -0.02em;
+    }}
+    .cfg-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 0.75rem 1rem;
+    }}
+    .cfg-field {{ display: flex; flex-direction: column; gap: 0.25rem; }}
+    .cfg-field.wide {{ grid-column: 1 / -1; }}
+    .cfg-field label {{
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .cfg-field input[type="text"],
+    .cfg-field input[type="url"],
+    .cfg-field input[type="number"],
+    .cfg-field select,
+    .cfg-field textarea {{
+      padding: 0.4rem 0.55rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 0.88rem;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: inherit;
+      outline: none;
+    }}
+    .cfg-field textarea {{ min-height: 3.2rem; resize: vertical; }}
+    .cfg-field input:focus,
+    .cfg-field select:focus,
+    .cfg-field textarea:focus {{ border-color: var(--accent); }}
+    .cfg-toggles {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem 1.1rem;
+      grid-column: 1 / -1;
+      padding: 0.35rem 0;
+    }}
+    .cfg-toggle {{
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.88rem;
+      cursor: pointer;
+      user-select: none;
+    }}
+    .cfg-toggle input {{ accent-color: var(--accent); }}
+    .cfg-actions {{
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }}
+    .cfg-apply {{
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.4rem 0.9rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+    }}
+    .cfg-apply:hover {{ background: var(--accent-hover); }}
+    .cfg-reset {{
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+    }}
+    .cfg-reset:hover {{ border-color: var(--accent); color: var(--accent); }}
+    .cfg-hint {{ font-size: 0.78rem; color: var(--muted); }}
+    #config-toggle.active {{
+      border-color: var(--accent);
+      color: var(--accent);
+    }}
+
     /* ── fake customer body ── */
     #customer-body {{
       display: none;
@@ -313,7 +410,85 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   <div id="bar-meta">
     <span class="server-badge" id="server-badge"></span>
     <span id="bar-status"></span>
+    <button class="logout-btn" id="config-toggle" type="button">Config</button>
     <button class="logout-btn" id="logout-btn" type="button">Logout</button>
+  </div>
+</div>
+
+<!-- ── messenger config panel ── -->
+<div id="config-panel">
+  <h2>Messenger embed config</h2>
+  <div class="cfg-grid">
+    <div class="cfg-field">
+      <label for="cfg-title">Title</label>
+      <input id="cfg-title" type="text" placeholder="Chat (or agent name)" />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-description">Description</label>
+      <input id="cfg-description" type="text" placeholder="Shown under title" />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-theme">Theme</label>
+      <select id="cfg-theme">
+        <option value="auto">auto</option>
+        <option value="light">light</option>
+        <option value="dark">dark</option>
+      </select>
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-avatar">Avatar URL</label>
+      <input id="cfg-avatar" type="url" placeholder="https://…" />
+    </div>
+    <div class="cfg-field wide">
+      <label for="cfg-greeting">Greeting</label>
+      <input id="cfg-greeting" type="text" placeholder="Hi! How can I help?" />
+    </div>
+    <div class="cfg-field wide">
+      <label for="cfg-quick-replies">Quick replies (one per line)</label>
+      <textarea id="cfg-quick-replies" placeholder="What can you do?&#10;Help me get started"></textarea>
+    </div>
+    <div class="cfg-field wide">
+      <label for="cfg-notice">Notice banner</label>
+      <input id="cfg-notice" type="text" placeholder="Responses may be slower…" />
+    </div>
+    <div class="cfg-field wide">
+      <label for="cfg-consent">Consent text (empty = off)</label>
+      <textarea id="cfg-consent" placeholder="We may use this chat to improve…"></textarea>
+    </div>
+    <div class="cfg-field wide">
+      <label for="cfg-teaser">Teaser text (empty = off)</label>
+      <input id="cfg-teaser" type="text" placeholder="Need help? Ask me anything." />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-teaser-delay">Teaser delay (ms)</label>
+      <input id="cfg-teaser-delay" type="number" min="0" step="100" />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-teaser-cooldown">Teaser cooldown (days)</label>
+      <input id="cfg-teaser-cooldown" type="number" min="0" step="1" />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-teaser-triggers">Teaser triggers (CSV)</label>
+      <input id="cfg-teaser-triggers" type="text" placeholder="delay,scroll,exit,idle" />
+    </div>
+    <div class="cfg-field">
+      <label for="cfg-teaser-scroll">Teaser scroll %</label>
+      <input id="cfg-teaser-scroll" type="number" min="0" max="100" step="1" />
+    </div>
+    <div class="cfg-toggles">
+      <label class="cfg-toggle"><input id="cfg-attachments" type="checkbox" /> Attachments</label>
+      <label class="cfg-toggle"><input id="cfg-voice" type="checkbox" /> Voice</label>
+      <label class="cfg-toggle"><input id="cfg-fullscreen" type="checkbox" /> Fullscreen</label>
+      <label class="cfg-toggle"><input id="cfg-sound" type="checkbox" /> Sound</label>
+      <label class="cfg-toggle"><input id="cfg-show-reasoning" type="checkbox" /> Show reasoning</label>
+      <label class="cfg-toggle"><input id="cfg-page-context" type="checkbox" /> Page context</label>
+      <label class="cfg-toggle"><input id="cfg-proactive" type="checkbox" /> Proactive</label>
+    </div>
+  </div>
+  <div class="cfg-actions">
+    <button class="cfg-apply" id="cfg-apply" type="button">Apply &amp; reload messenger</button>
+    <button class="cfg-reset" id="cfg-reset" type="button">Reset defaults</button>
+    <span class="cfg-hint">Saved in sessionStorage · maps to loader data-* attrs</span>
   </div>
 </div>
 
@@ -335,9 +510,35 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   var SANDBOX_ORIGIN = '{safe_origin}';
   var SESSION_KEY = 'jvmessenger_sandbox_token';
   var URL_KEY = 'jvmessenger_sandbox_url';
+  var CONFIG_KEY = 'jvmessenger_sandbox_config';
+
+  var DEFAULT_CONFIG = {{
+    title: '',
+    description: '',
+    theme: 'auto',
+    avatar: '',
+    greeting: 'Hi! How can I help?',
+    quickReplies: 'What can you do?\\nHelp me get started',
+    notice: '',
+    consent: '',
+    teaser: '',
+    teaserDelay: 4000,
+    teaserCooldownDays: 7,
+    teaserTriggers: 'delay',
+    teaserScrollPercent: 55,
+    attachments: true,
+    voice: false,
+    fullscreen: true,
+    sound: true,
+    showReasoning: false,
+    pageContext: true,
+    proactive: false
+  }};
 
   var loginPanel = document.getElementById('login-panel');
   var hostBar = document.getElementById('host-bar');
+  var configPanel = document.getElementById('config-panel');
+  var configToggle = document.getElementById('config-toggle');
   var customerBody = document.getElementById('customer-body');
   var loginBtn = document.getElementById('login-btn');
   var logoutBtn = document.getElementById('logout-btn');
@@ -351,6 +552,7 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   var currentAgentName = null;
   // id → {{id, name, alias}} for the dropdown change handler
   var agentById = {{}};
+  var profileFallback = {{ title: '', greeting: '' }};
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -368,6 +570,127 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
   }}
 
   function normalizeUrl(u) {{ return (u || '').replace(/\\/+$/, ''); }}
+
+  // ── embed config ──────────────────────────────────────────────────────────
+
+  function loadSavedConfig() {{
+    try {{
+      var raw = sessionStorage.getItem(CONFIG_KEY);
+      if (!raw) return Object.assign({{}}, DEFAULT_CONFIG);
+      return Object.assign({{}}, DEFAULT_CONFIG, JSON.parse(raw));
+    }} catch (_) {{
+      return Object.assign({{}}, DEFAULT_CONFIG);
+    }}
+  }}
+
+  function readConfigFromForm() {{
+    return {{
+      title: document.getElementById('cfg-title').value.trim(),
+      description: document.getElementById('cfg-description').value.trim(),
+      theme: document.getElementById('cfg-theme').value || 'auto',
+      avatar: document.getElementById('cfg-avatar').value.trim(),
+      greeting: document.getElementById('cfg-greeting').value.trim(),
+      quickReplies: document.getElementById('cfg-quick-replies').value,
+      notice: document.getElementById('cfg-notice').value.trim(),
+      consent: document.getElementById('cfg-consent').value.trim(),
+      teaser: document.getElementById('cfg-teaser').value.trim(),
+      teaserDelay: Number(document.getElementById('cfg-teaser-delay').value) || 0,
+      teaserCooldownDays: Number(document.getElementById('cfg-teaser-cooldown').value) || 0,
+      teaserTriggers: document.getElementById('cfg-teaser-triggers').value.trim(),
+      teaserScrollPercent: Number(document.getElementById('cfg-teaser-scroll').value) || 0,
+      attachments: document.getElementById('cfg-attachments').checked,
+      voice: document.getElementById('cfg-voice').checked,
+      fullscreen: document.getElementById('cfg-fullscreen').checked,
+      sound: document.getElementById('cfg-sound').checked,
+      showReasoning: document.getElementById('cfg-show-reasoning').checked,
+      pageContext: document.getElementById('cfg-page-context').checked,
+      proactive: document.getElementById('cfg-proactive').checked
+    }};
+  }}
+
+  function writeConfigToForm(cfg) {{
+    document.getElementById('cfg-title').value = cfg.title || '';
+    document.getElementById('cfg-description').value = cfg.description || '';
+    document.getElementById('cfg-theme').value = cfg.theme || 'auto';
+    document.getElementById('cfg-avatar').value = cfg.avatar || '';
+    document.getElementById('cfg-greeting').value = cfg.greeting || '';
+    document.getElementById('cfg-quick-replies').value = cfg.quickReplies || '';
+    document.getElementById('cfg-notice').value = cfg.notice || '';
+    document.getElementById('cfg-consent').value = cfg.consent || '';
+    document.getElementById('cfg-teaser').value = cfg.teaser || '';
+    document.getElementById('cfg-teaser-delay').value = cfg.teaserDelay;
+    document.getElementById('cfg-teaser-cooldown').value = cfg.teaserCooldownDays;
+    document.getElementById('cfg-teaser-triggers').value = cfg.teaserTriggers || '';
+    document.getElementById('cfg-teaser-scroll').value = cfg.teaserScrollPercent;
+    document.getElementById('cfg-attachments').checked = !!cfg.attachments;
+    document.getElementById('cfg-voice').checked = !!cfg.voice;
+    document.getElementById('cfg-fullscreen').checked = !!cfg.fullscreen;
+    document.getElementById('cfg-sound').checked = !!cfg.sound;
+    document.getElementById('cfg-show-reasoning').checked = !!cfg.showReasoning;
+    document.getElementById('cfg-page-context').checked = !!cfg.pageContext;
+    document.getElementById('cfg-proactive').checked = !!cfg.proactive;
+  }}
+
+  function saveConfig(cfg) {{
+    try {{ sessionStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); }} catch (_) {{}}
+  }}
+
+  function quickRepliesJson(raw) {{
+    var lines = String(raw || '').split(/\\r?\\n/).map(function (l) {{
+      return l.trim();
+    }}).filter(Boolean);
+    return lines.length ? JSON.stringify(lines) : '';
+  }}
+
+  function applyConfigToScript(s, cfg) {{
+    var title = cfg.title || profileFallback.title || currentAgentName || 'Chat';
+    var greeting = cfg.greeting || profileFallback.greeting || '';
+    s.dataset.theme = cfg.theme || 'auto';
+    s.dataset.title = title;
+    if (cfg.description) s.dataset.description = cfg.description;
+    if (greeting) s.dataset.greeting = greeting;
+    if (cfg.avatar) s.dataset.avatar = cfg.avatar;
+    var qr = quickRepliesJson(cfg.quickReplies);
+    if (qr) s.dataset.quickReplies = qr;
+    if (cfg.notice) s.dataset.notice = cfg.notice;
+    if (cfg.consent) s.dataset.consent = cfg.consent;
+    s.dataset.attachments = cfg.attachments ? 'true' : 'false';
+    s.dataset.voice = cfg.voice ? 'true' : 'false';
+    s.dataset.fullscreen = cfg.fullscreen ? 'true' : 'false';
+    s.dataset.sound = cfg.sound ? 'true' : 'false';
+    s.dataset.showReasoning = cfg.showReasoning ? 'true' : 'false';
+    s.dataset.pageContext = cfg.pageContext ? 'true' : 'false';
+    s.dataset.proactive = cfg.proactive ? 'true' : 'false';
+    if (cfg.teaser) {{
+      s.dataset.teaser = cfg.teaser;
+      s.dataset.teaserDelay = String(cfg.teaserDelay);
+      s.dataset.teaserCooldownDays = String(cfg.teaserCooldownDays);
+      if (cfg.teaserTriggers) s.dataset.teaserTriggers = cfg.teaserTriggers;
+      s.dataset.teaserScrollPercent = String(cfg.teaserScrollPercent);
+    }}
+  }}
+
+  function reinjectMessenger() {{
+    if (!currentAgentId) {{
+      setBarStatus('Select an agent first.');
+      return;
+    }}
+    var url = getUrl();
+    if (!url) return;
+    var cfg = readConfigFromForm();
+    saveConfig(cfg);
+    removeLoader();
+    var s = document.createElement('script');
+    s.id = 'jvmessenger-loader-script';
+    s.src = SANDBOX_ORIGIN + '/loader.js' +
+      '?agentId=' + encodeURIComponent(currentAgentId) +
+      '&agentUrl=' + encodeURIComponent(url);
+    applyConfigToScript(s, cfg);
+    document.body.appendChild(s);
+    setBarStatus('');
+    hintText.innerHTML = 'Active agent: <span class="mono">' + escHtml(currentAgentName) +
+      '</span> &mdash; open the chat bubble. Config applied.';
+  }}
 
   // ── auth ─────────────────────────────────────────────────────────────────
 
@@ -435,8 +758,11 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     sessionStorage.removeItem(URL_KEY);
     currentAgentId = null;
     currentAgentName = null;
+    profileFallback = {{ title: '', greeting: '' }};
     removeLoader();
     hostBar.classList.remove('visible');
+    configPanel.classList.remove('visible');
+    configToggle.classList.remove('active');
     customerBody.classList.remove('visible');
     loginPanel.style.display = 'flex';
   }}
@@ -537,32 +863,24 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     setBarStatus('');
     hintText.innerHTML = 'Active agent: <span class="mono">' + escHtml(currentAgentName) + '</span> &mdash; open the chat bubble.';
 
-    // Best-effort profile fetch for greeting / title.
-    var greeting = 'Hi! How can I help?';
-    var title = currentAgentName;
+    // Best-effort profile for fallbacks when config title/greeting empty.
+    profileFallback = {{ title: currentAgentName, greeting: '' }};
     try {{
       var pr = await fetch(url + '/api/agents/' + encodeURIComponent(agent.id) + '/profile');
       if (!pr.ok) pr = await fetch(url + '/agents/' + encodeURIComponent(agent.id) + '/profile');
       if (pr.ok) {{
         var pd = await pr.json();
-        if (pd && pd.name) title = pd.name;
+        if (pd && pd.name) profileFallback.title = pd.name;
+        if (pd && pd.description) {{
+          var cfg = readConfigFromForm();
+          if (!cfg.description) {{
+            document.getElementById('cfg-description').value = pd.description;
+          }}
+        }}
       }}
     }} catch (_) {{}}
 
-    removeLoader();
-
-    var s = document.createElement('script');
-    s.id = 'jvmessenger-loader-script';
-    s.src = SANDBOX_ORIGIN + '/loader.js' +
-      '?agentId=' + encodeURIComponent(agent.id) +
-      '&agentUrl=' + encodeURIComponent(url);
-    s.dataset.theme = 'auto';
-    s.dataset.title = title;
-    s.dataset.greeting = greeting;
-    s.dataset.attachments = 'true';
-    s.dataset.fullscreen = 'true';
-    s.dataset.showReasoning = 'false';
-    document.body.appendChild(s);
+    reinjectMessenger();
   }}
 
   function escHtml(str) {{
@@ -594,8 +912,19 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
 
   // ── event wiring ──────────────────────────────────────────────────────────
 
+  writeConfigToForm(loadSavedConfig());
+
   loginBtn.addEventListener('click', login);
   logoutBtn.addEventListener('click', logout);
+  configToggle.addEventListener('click', function () {{
+    var open = configPanel.classList.toggle('visible');
+    configToggle.classList.toggle('active', open);
+  }});
+  document.getElementById('cfg-apply').addEventListener('click', reinjectMessenger);
+  document.getElementById('cfg-reset').addEventListener('click', function () {{
+    writeConfigToForm(Object.assign({{}}, DEFAULT_CONFIG));
+    saveConfig(DEFAULT_CONFIG);
+  }});
   agentSelect.addEventListener('change', function () {{
     var id = agentSelect.value;
     if (!id || !agentById[id]) return;

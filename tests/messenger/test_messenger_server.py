@@ -225,6 +225,19 @@ def test_sandbox_html_resolves_context_enabled():
     assert "renderAgentSelect" in html
 
 
+def test_sandbox_html_has_config_panel():
+    """Sandbox exposes embed config controls mapped to loader data-* attrs."""
+    html = messenger._sandbox_html("http://127.0.0.1:8000", "http://127.0.0.1:3100")
+    assert 'id="config-panel"' in html
+    assert 'id="cfg-attachments"' in html
+    assert 'id="cfg-quick-replies"' in html
+    assert 'id="cfg-voice"' in html
+    assert 'id="cfg-proactive"' in html
+    assert "applyConfigToScript" in html
+    assert "reinjectMessenger" in html
+    assert "jvmessenger_sandbox_config" in html
+
+
 def test_sandbox_page_not_embeddable(tmp_path):
     """Sandbox page must send X-Frame-Options: DENY — it is not a customer embed."""
     httpd = _serve(_make_dist(tmp_path), sandbox_mode=True)

@@ -279,9 +279,13 @@ Opens `http://127.0.0.1:3100/` in your browser. The page:
 3. **Embed** — choosing an agent injects `loader.js` (from this static server) with
    the selected agent's id and server URL. The standard messenger bubble appears
    bottom-right.
-4. **Switch** — pick another agent from the dropdown to replace the injected script
-   and reload the messenger with the new agent.
-5. **Logout** — clears `sessionStorage` and returns to the login form.
+4. **Config panel** — **Config** in the host bar opens every embed `data-*` knob
+   (greeting, quick replies, attachments, voice, teaser, proactive, …). **Apply
+   & reload messenger** re-injects `loader.js` with the chosen settings.
+   Values persist in `sessionStorage` for the tab.
+5. **Switch** — pick another agent from the dropdown to replace the injected script
+   and reload the messenger with the new agent (current config kept).
+6. **Logout** — clears auth `sessionStorage` and returns to the login form.
 
 ### Security notes
 
