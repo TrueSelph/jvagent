@@ -220,6 +220,44 @@ class TestMetaOutboundMedia:
         assert send_calls[0] == ("image", "media-id-123", "Hi")
 
     @pytest.mark.asyncio
+    async def test_send_file_passes_filename_in_extra_media_fields(self, meta_api):
+        extra_fields: list[Optional[dict]] = []
+
+        async def fake_fetch(url: str):
+            return b"%PDF-1.4", "application/pdf"
+
+        async def fake_upload(file_bytes, mime_type, filename="file"):
+            assert filename == "quotation_Z1.pdf"
+            return "doc-media-id"
+
+        async def fake_send(
+            phone,
+            msg_type,
+            media_id,
+            caption="",
+            context_id="",
+            extra_media_fields=None,
+        ):
+            extra_fields.append(extra_media_fields)
+            assert msg_type == "document"
+            assert media_id == "doc-media-id"
+            assert caption == "Your quote"
+            return {"messaging_product": "whatsapp"}
+
+        meta_api._fetch_url_bytes = fake_fetch  # type: ignore[method-assign]
+        meta_api._upload_media = fake_upload  # type: ignore[method-assign]
+        meta_api._send_media_message = fake_send  # type: ignore[method-assign]
+
+        result = await meta_api.send_file(
+            "16505551234",
+            "https://example.com/q.pdf",
+            caption="Your quote",
+            filename="quotation_Z1.pdf",
+        )
+        assert result.get("ok") is True
+        assert extra_fields[0] == {"filename": "quotation_Z1.pdf"}
+
+    @pytest.mark.asyncio
     async def test_send_voice_mp3_without_voice_flag(self, meta_api):
         extra_fields: list[Optional[dict]] = []
 

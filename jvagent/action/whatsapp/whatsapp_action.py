@@ -211,6 +211,16 @@ class WhatsAppAction(Action):
         min_length=1,
     )
 
+    flow_data_exchange_action: Optional[str] = attribute(
+        default="",
+        description=(
+            "Optional sibling Action entity type that implements "
+            "handle_flow_data_exchange for Request-data / INIT Flows "
+            "(same pattern as stt_action / tts_action). Empty uses the "
+            "default stub (endpoint_not_configured on INIT)."
+        ),
+    )
+
     # Internal state tracking (not persisted)
     _session_registered: bool = False
 
@@ -302,13 +312,80 @@ class WhatsAppAction(Action):
             return "jvconnect"
         return derive_meta_verify_token(agent_id, self._env_app_secret())
 
-    def handle_flow_data_exchange(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Respond to jvconnect ``X-Jvconnect-Flow-Exchange`` without InteractWalker."""
+    async def _flow_exchange_sibling(self, agent: Any = None) -> Any:
+        """Resolve optional ``flow_data_exchange_action`` sibling, if configured."""
+        handler_type = (self.flow_data_exchange_action or "").strip()
+        if agent is None or not handler_type:
+            return None
+        try:
+            sibling = await agent.get_action_by_type(handler_type)
+        except Exception:
+            logger.debug(
+                "flow data exchange: get_action_by_type(%s) failed",
+                handler_type,
+                exc_info=True,
+            )
+            return None
+        if sibling is None or sibling is self:
+            return None
+        return sibling
+
+    async def handle_flow_data_exchange(
+        self, payload: Dict[str, Any], agent: Any = None
+    ) -> Dict[str, Any]:
+        """Respond to jvconnect ``X-Jvconnect-Flow-Exchange`` without InteractWalker.
+
+        When ``flow_data_exchange_action`` is set and ``agent`` is provided,
+        forward to that sibling Action's ``handle_flow_data_exchange`` if it
+        returns a non-``None`` result (app-local Request-data handlers).
+        Otherwise use the default stub.
+        """
         from .utils.flow_data_exchange import build_flow_data_exchange_response
 
-        return build_flow_data_exchange_response(
-            payload if isinstance(payload, dict) else {}
-        )
+        body = payload if isinstance(payload, dict) else {}
+        sibling = await self._flow_exchange_sibling(agent)
+        if sibling is not None:
+            handler = getattr(sibling, "handle_flow_data_exchange", None)
+            if callable(handler):
+                try:
+                    result = handler(body)
+                    if asyncio.iscoroutine(result):
+                        result = await result
+                except Exception:
+                    logger.exception(
+                        "flow data exchange handler failed on %s",
+                        type(sibling).__name__,
+                    )
+                    result = None
+                if result is not None:
+                    return result
+        return build_flow_data_exchange_response(body)
+
+    async def should_ignore_flow_nfm_reply(self, body: str, agent: Any = None) -> bool:
+        """Ask the Flow exchange sibling whether an ``nfm_reply`` should skip Interact.
+
+        Endpoint-powered Flows often finish create work during data exchange; the
+        subsequent Meta ``nfm_reply`` (SUCCESS params as chat text) would only
+        race a duplicate LLM reply. Apps opt in via
+        ``should_ignore_flow_nfm_reply`` on ``flow_data_exchange_action``.
+        """
+        sibling = await self._flow_exchange_sibling(agent)
+        if sibling is None:
+            return False
+        handler = getattr(sibling, "should_ignore_flow_nfm_reply", None)
+        if not callable(handler):
+            return False
+        try:
+            result = handler(body)
+            if asyncio.iscoroutine(result):
+                result = await result
+            return bool(result)
+        except Exception:
+            logger.exception(
+                "should_ignore_flow_nfm_reply failed on %s",
+                type(sibling).__name__,
+            )
+            return False
 
     def _env_waba_id(self) -> str:
         w = (self.waba_id or "").strip()
@@ -581,7 +658,12 @@ class WhatsAppAction(Action):
                     if reg.get("status") == "ok":
                         self._session_registered = True
                         logger.info(
-                            "WhatsApp Meta webhook registration succeeded: %s",
+                            "WhatsApp Meta webhook registration succeeded: "
+                            "phone_number_id=%s callback=%s "
+                            "(only this phone's forward was replaced)",
+                            reg.get("phone_number_id")
+                            or self.phone_number_id
+                            or "(from key)",
                             reg.get("callback_url"),
                         )
                     elif reg.get("status") == "skipped":
@@ -615,9 +697,31 @@ class WhatsAppAction(Action):
         agent_id: str,
         wa: MetaWhatsAppAPI,
     ) -> Dict[str, Any]:
-        """Fetch Graph webhook config and flag URLs that do not match this agent."""
+        """Fetch Graph/jvconnect webhook config and flag mismatched callbacks.
+
+        For ``provider: meta`` (jvconnect), Meta Graph overrides should point at
+        jvconnect ``…/api/webhooks``; the agent id is validated on the stored
+        ``webhook_forwards.callback_url``, not on Graph URLs.
+        """
         graph = await wa.get_webhook_override_status()
-        stale = find_stale_callbacks(graph, callback, agent_id)
+        meta_callback_url = ""
+        forward_callback: Optional[str] = None
+        if isinstance(graph, dict):
+            meta_callback_url = str(graph.get("meta_callback_url") or "").strip()
+            if meta_callback_url or "forward" in graph:
+                # jvconnect status shape: always validate the forward row.
+                forward = graph.get("forward")
+                if isinstance(forward, dict):
+                    forward_callback = str(forward.get("callback_url") or "").strip()
+                else:
+                    forward_callback = ""
+        stale = find_stale_callbacks(
+            graph,
+            callback,
+            agent_id,
+            expected_meta_callback_url=meta_callback_url,
+            agent_forward_callback_url=forward_callback,
+        )
         if stale:
             for item in stale:
                 logger.warning(
@@ -656,19 +760,37 @@ class WhatsAppAction(Action):
         verify = self.effective_verify_token(agent_id)
         wa = await self.api()
         check = await self._meta_webhook_stale_check(callback, expected_agent_id, wa)
+        graph = check["graph"] if isinstance(check.get("graph"), dict) else {}
+        meta_callback = str(graph.get("meta_callback_url") or "").strip()
+        forward = (
+            graph.get("forward") if isinstance(graph.get("forward"), dict) else None
+        )
+        forward_url = (
+            str(forward.get("callback_url") or "").strip() if forward else None
+        )
         return {
             "expected_callback_url": callback,
             "expected_agent_id": expected_agent_id,
+            "expected_meta_callback_url": meta_callback or None,
+            "forward_callback_url": forward_url,
+            "phone_number_id": (
+                str(graph.get("phone_number_id") or self.phone_number_id or "").strip()
+                or None
+            ),
             "verify_token": verify,
             "stale_callbacks": check["stale_callbacks"],
             "dashboard_action": check["dashboard_action"]
             or (
                 "Meta App Dashboard shows the app default callback URL only. "
-                "WABA/phone overrides appear here and in Graph subscribed_apps."
+                "WABA/phone overrides appear here and in Graph subscribed_apps. "
+                "For provider=meta, Graph should match expected_meta_callback_url "
+                "(jvconnect); agent id is checked on forward_callback_url."
             ),
             "dashboard_note": (
                 "Meta App Dashboard shows the app default callback URL only. "
-                "WABA/phone overrides appear here and in Graph subscribed_apps."
+                "WABA/phone overrides appear here and in Graph subscribed_apps. "
+                "One JVCONNECT_API_KEY = one phone; only that phone's forward is "
+                "replaced on register."
             ),
             "graph": check["graph"],
         }
@@ -1013,12 +1135,13 @@ class WhatsAppAction(Action):
             verify = self.effective_verify_token(agent_id)
             logger.info(
                 "Registering Meta WhatsApp webhook override (agent_id=%s callback=%s). "
-                "Meta will GET hub.challenge on that URL before accepting it.",
+                "Meta verifies jvconnect …/api/webhooks; jvconnect forwards to this agent.",
                 agent_id,
                 callback,
             )
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
+            phone = ""
             # Persist jvconnect binding + webhook HMAC secret for inbound verification
             if self.is_meta_provider() and isinstance(result, dict):
                 dirty = False
@@ -1068,9 +1191,14 @@ class WhatsAppAction(Action):
                     "agent_id": agent_id,
                     "result": result,
                 }
+            phone = phone or str(self.phone_number_id or "").strip()
             logger.info(
-                "WhatsApp Meta webhook override set (agent_id=%s callback=%s)",
+                "WhatsApp Meta webhook override set "
+                "(agent_id=%s phone_number_id=%s callback=%s). "
+                "Only this phone's jvconnect forward was replaced — message that "
+                "number, or re-register with the API key bound to each phone you use.",
                 agent_id,
+                phone or "(from key)",
                 callback,
             )
             stale_check = await self._meta_webhook_stale_check(callback, agent_id, wa)
@@ -1079,6 +1207,7 @@ class WhatsAppAction(Action):
                 "ok": True,
                 "callback_url": callback,
                 "agent_id": agent_id,
+                "phone_number_id": phone or None,
                 "expected_agent_id": agent_id,
                 "stale_callbacks": stale_check["stale_callbacks"],
                 "dashboard_action": stale_check["dashboard_action"],

@@ -570,9 +570,12 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                 # (Meta Flows contract), not this endpoint's declared
                 # {status, response} schema — letting FastAPI serialize it
                 # against the response model 500s the exchange.
-                return JSONResponse(
-                    content=whatsapp_action.handle_flow_data_exchange(request_data)
+                # Optional app handler via WhatsAppAction.flow_data_exchange_action
+                # (same pattern as stt_action / tts_action).
+                content = await whatsapp_action.handle_flow_data_exchange(
+                    request_data, agent=agent
                 )
+                return JSONResponse(content=content)
         else:
             await _authenticate_bridge_webhook_api_key(request)
             request_data = getattr(request.state, "parsed_payload", None)
@@ -627,6 +630,16 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         # MessagePayload is a dataclass, access attributes directly
         utterance = data.body or data.caption
         utterance = utterance.strip() if utterance else None
+
+        # Endpoint-powered Flows may already have finished work on data exchange;
+        # sibling can opt to ignore the follow-up nfm_reply chat utterance.
+        if utterance and await whatsapp_action.should_ignore_flow_nfm_reply(
+            utterance, agent=agent
+        ):
+            logger.info(
+                "WhatsApp webhook: ignoring Flow nfm_reply (handled by exchange action)"
+            )
+            return {"status": "ignored", "response": "Flow nfm_reply ignored"}
 
         # Skip LID conversion for groups - @g.us IDs are not LIDs and cause "No LID for user" errors
         if (
