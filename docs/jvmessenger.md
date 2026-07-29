@@ -257,6 +257,48 @@ The server serves `loader.js` (permissive CORS, uncached) and the iframe app
 `Content-Security-Policy: frame-ancestors` allowlist (default `*` for dev). Set
 `--frame-ancestors` to the customer origins in production.
 
+## Sandbox / dev mode
+
+`--sandbox` replaces `demo.html` with a developer sandbox page that lets you log
+in, browse agents on a running jvagent instance, and switch between them without
+touching the URL. **For local development only — do not expose publicly.**
+
+```bash
+# jvagent server already running on :8000
+jvagent messenger --sandbox --url http://127.0.0.1:8000
+```
+
+Opens `http://127.0.0.1:3100/` in your browser. The page:
+
+1. **Login form** — enter the agent server URL (pre-filled from `--url`), username,
+   and password. Authenticates via `POST /api/auth/login` (fallback `/auth/login`)
+   exactly like jvchat.
+2. **Agent host bar** — on successful login, fetches `GET /api/agents?per_page=50`
+   using the JWT and renders a pill for each enabled agent.
+3. **Embed** — clicking a pill injects `loader.js` (from this static server) with
+   the selected agent's id and server URL. The standard messenger bubble appears
+   bottom-right.
+4. **Switch** — click another pill to replace the injected script and reload the
+   messenger with the new agent.
+5. **Logout** — clears `sessionStorage` and returns to the login form.
+
+### Security notes
+
+- All credentials stay in `sessionStorage` (cleared on tab close). Never in
+  `localStorage` or cookies.
+- The sandbox page itself sends `X-Frame-Options: DENY` — it is not embeddable.
+- The sandbox route (`GET /` and `GET /sandbox`) only activates when `--sandbox`
+  is passed; the normal `demo.html` flow is unchanged without the flag.
+- Uses the existing admin-auth `GET /api/agents` endpoint — no new public route.
+
+### CLI flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--sandbox` | off | Activate sandbox mode. |
+| `--url URL` | `http://127.0.0.1:8000` | jvagent server the sandbox logs in to. |
+| `--port`, `--host`, `--frame-ancestors`, `--no-browser` | unchanged | Same as non-sandbox mode. |
+
 ## Backend endpoints
 
 All are agent-scoped and `auth=False` (public). The messenger uses the existing

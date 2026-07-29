@@ -46,6 +46,26 @@ def handle_messenger_command(args: List[str]) -> None:
         action="store_true",
         help="Do not open a browser window on startup.",
     )
+    parser.add_argument(
+        "--sandbox",
+        action="store_true",
+        help=(
+            "Serve the developer sandbox page instead of demo.html. "
+            "The sandbox page provides a login form, fetches the agent list "
+            "from the running jvagent server, and lets you switch agents via "
+            "a host-bar picker. For local development only."
+        ),
+    )
+    parser.add_argument(
+        "--url",
+        dest="agent_url",
+        default="http://127.0.0.1:8000",
+        help=(
+            "jvagent server URL the sandbox authenticates against and embeds "
+            "loader.js from (default: http://127.0.0.1:8000). "
+            "Only used with --sandbox."
+        ),
+    )
     ns = parser.parse_args(args)
 
     if not is_built():
@@ -64,6 +84,8 @@ def handle_messenger_command(args: List[str]) -> None:
             port=ns.port,
             frame_ancestors=ns.frame_ancestors,
             open_browser=not ns.no_browser,
+            sandbox_mode=ns.sandbox,
+            agent_url=ns.agent_url,
         )
     except OSError as exc:
         print(
