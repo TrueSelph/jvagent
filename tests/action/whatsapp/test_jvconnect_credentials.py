@@ -144,6 +144,129 @@ async def test_jvconnect_webhook_register_callback_only(monkeypatch):
     assert api.phone_number_id == "phone1"
 
 
+@pytest.mark.asyncio
+async def test_jvconnect_webhook_register_rate_limited(monkeypatch):
+    api = JvconnectWhatsAppAPI(
+        api_url="https://connect.example.com",
+        session="jvconnect",
+        token="jvk_x",
+    )
+
+    async def fake_json(method, path, json_body=None, params=None):
+        return {
+            "ok": False,
+            "http_status": 429,
+            "code": 80008,
+            "error": "(#80008) too many calls",
+            "retry_after_sec": 120,
+        }
+
+    monkeypatch.setattr(api, "_jvconnect_json", fake_json)
+    result = await api.register_webhook_subscription(
+        "https://agent.example.com/hook", "ignored"
+    )
+    assert result.get("ok") is False
+    assert result.get("rate_limited") is True
+    assert result.get("code") == 80008
+
+
+@pytest.mark.asyncio
+async def test_meta_webhook_forward_is_healthy(monkeypatch):
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+
+    class FakeApi:
+        async def get_webhook_override_status(self):
+            return {
+                "ok": True,
+                "forward": {
+                    "callback_url": (
+                        "https://agent.example.com/api/whatsapp/interact/"
+                        "webhook/n.Agent.1"
+                    )
+                },
+            }
+
+    async def fake_api(self):
+        return FakeApi()
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    assert await action._meta_webhook_forward_is_healthy() is True
+
+
+@pytest.mark.asyncio
+async def test_meta_webhook_forward_unhealthy_when_missing(monkeypatch):
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+
+    class FakeApi:
+        async def get_webhook_override_status(self):
+            return {"ok": True, "forward": None}
+
+    async def fake_api(self):
+        return FakeApi()
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    assert await action._meta_webhook_forward_is_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_register_meta_webhook_subscription_rate_limited(monkeypatch):
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+
+    class FakeApi:
+        async def register_webhook_subscription(self, callback, verify):
+            return {
+                "ok": False,
+                "rate_limited": True,
+                "http_status": 429,
+                "code": 80008,
+                "error": "(#80008) too many calls",
+                "retry_after_sec": 60,
+            }
+
+    async def fake_api(self):
+        return FakeApi()
+
+    class FakeAgent:
+        id = "n.Agent.1"
+
+    async def fake_get_agent(self):
+        return FakeAgent()
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(WhatsAppAction, "get_agent", fake_get_agent)
+    monkeypatch.setattr(
+        "jvagent.action.whatsapp.whatsapp_action.get_public_base_url",
+        lambda: "https://agent.example.com",
+    )
+    result = await action.register_meta_webhook_subscription()
+    assert result["status"] == "rate_limited"
+    assert result["ok"] is False
+
+
 def test_env_app_secret_uses_jvconnect_webhook_secret(monkeypatch):
     monkeypatch.delenv("WHATSAPP_APP_SECRET", raising=False)
     action = WhatsAppAction()
