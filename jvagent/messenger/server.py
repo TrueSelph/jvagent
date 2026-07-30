@@ -259,8 +259,8 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
       background: var(--card);
       border-bottom: 1px solid var(--line);
       padding: 1rem 1.25rem 1.25rem;
-      max-height: min(70vh, 560px);
-      overflow-y: auto;
+      /* Grow with content — no inner scrollpane (that clipped toggles/notes).
+         Page scroll shows the rest; host bar stays sticky. */
     }}
     #config-panel.visible {{ display: block; }}
     #config-panel h2 {{
@@ -345,6 +345,24 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     }}
     .cfg-reset:hover {{ border-color: var(--accent); color: var(--accent); }}
     .cfg-hint {{ font-size: 0.78rem; color: var(--muted); }}
+    .cfg-req-note {{
+      grid-column: 1 / -1;
+      margin-top: 0.15rem;
+      padding: 0.55rem 0.7rem;
+      background: #f7f3e8;
+      border: 1px solid #e5d9b8;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #5c4a1f;
+      line-height: 1.45;
+    }}
+    .cfg-req-note code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85em;
+      background: rgba(255,255,255,0.55);
+      padding: 0.05em 0.3em;
+      border-radius: 3px;
+    }}
     #config-toggle.active {{
       border-color: var(--accent);
       color: var(--accent);
@@ -484,11 +502,16 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
       <label class="cfg-toggle"><input id="cfg-page-context" type="checkbox" /> Page context</label>
       <label class="cfg-toggle"><input id="cfg-proactive" type="checkbox" /> Proactive</label>
     </div>
+    <p class="cfg-req-note">
+      <strong>Attachments</strong>, <strong>Voice</strong>, and <strong>Proactive</strong>
+      need <code>JVSPATIAL_JWT_SECRET_KEY</code> on the agent server (session tokens for
+      uploads / STT / TTS / the proactive channel). Without it those controls stay inert.
+    </p>
   </div>
   <div class="cfg-actions">
-    <button class="cfg-apply" id="cfg-apply" type="button">Apply &amp; reload messenger</button>
+    <button class="cfg-apply" id="cfg-apply" type="button">Reload now</button>
     <button class="cfg-reset" id="cfg-reset" type="button">Reset defaults</button>
-    <span class="cfg-hint">Saved in sessionStorage · maps to loader data-* attrs</span>
+    <span class="cfg-hint">Auto-saves &amp; reloads messenger · sessionStorage</span>
   </div>
 </div>
 
@@ -690,6 +713,23 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     setBarStatus('');
     hintText.innerHTML = 'Active agent: <span class="mono">' + escHtml(currentAgentName) +
       '</span> &mdash; open the chat bubble. Config applied.';
+  }}
+
+  // Persist form → sessionStorage immediately; reinject after idle debounce.
+  var _cfgTimer = null;
+  function scheduleConfigApply(immediate) {{
+    var cfg = readConfigFromForm();
+    saveConfig(cfg);
+    if (!currentAgentId) return;
+    if (_cfgTimer) clearTimeout(_cfgTimer);
+    if (immediate) {{
+      reinjectMessenger();
+      return;
+    }}
+    _cfgTimer = setTimeout(function () {{
+      _cfgTimer = null;
+      reinjectMessenger();
+    }}, 450);
   }}
 
   // ── auth ─────────────────────────────────────────────────────────────────
@@ -920,10 +960,19 @@ def _sandbox_html(agent_url: str, sandbox_origin: str) -> str:
     var open = configPanel.classList.toggle('visible');
     configToggle.classList.toggle('active', open);
   }});
-  document.getElementById('cfg-apply').addEventListener('click', reinjectMessenger);
+  document.getElementById('cfg-apply').addEventListener('click', function () {{
+    scheduleConfigApply(true);
+  }});
   document.getElementById('cfg-reset').addEventListener('click', function () {{
     writeConfigToForm(Object.assign({{}}, DEFAULT_CONFIG));
-    saveConfig(DEFAULT_CONFIG);
+    scheduleConfigApply(true);
+  }});
+  // Auto-save + debounced messenger reload on any config control change.
+  configPanel.addEventListener('change', function () {{ scheduleConfigApply(false); }});
+  configPanel.addEventListener('input', function (e) {{
+    var t = e.target;
+    if (!t || t.tagName === 'SELECT') return;
+    scheduleConfigApply(false);
   }});
   agentSelect.addEventListener('change', function () {{
     var id = agentSelect.value;

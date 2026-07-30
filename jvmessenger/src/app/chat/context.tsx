@@ -7,6 +7,10 @@ import type { MessengerConfig } from "../../shared/config";
 export interface ChatServices {
   config: MessengerConfig;
   getToken: () => string | undefined;
+  /** Open/resume a session so uploads and voice have an X-Session-Token. */
+  ensureSession: () => Promise<string | null>;
+  /** True once a session token is available (restored or opened). */
+  hasSession: boolean;
   /** Send a turn — used by agent-rendered component actions. */
   sendText: (text: string) => void;
 }

@@ -235,7 +235,12 @@ def test_sandbox_html_has_config_panel():
     assert 'id="cfg-proactive"' in html
     assert "applyConfigToScript" in html
     assert "reinjectMessenger" in html
+    assert "scheduleConfigApply" in html
     assert "jvmessenger_sandbox_config" in html
+    assert "Auto-saves" in html
+    assert "JVSPATIAL_JWT_SECRET_KEY" in html
+    assert "cfg-req-note" in html
+    assert "Attachments" in html and "Voice" in html and "Proactive" in html
 
 
 def test_sandbox_page_not_embeddable(tmp_path):

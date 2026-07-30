@@ -280,9 +280,11 @@ Opens `http://127.0.0.1:3100/` in your browser. The page:
    the selected agent's id and server URL. The standard messenger bubble appears
    bottom-right.
 4. **Config panel** — **Config** in the host bar opens every embed `data-*` knob
-   (greeting, quick replies, attachments, voice, teaser, proactive, …). **Apply
-   & reload messenger** re-injects `loader.js` with the chosen settings.
-   Values persist in `sessionStorage` for the tab.
+   (greeting, quick replies, attachments, voice, teaser, proactive, …). Changes
+   **auto-save** to `sessionStorage` and **debounced-reload** the messenger;
+   **Reload now** forces an immediate reinject. A note in the panel lists
+   **Attachments**, **Voice**, and **Proactive** as needing
+   `JVSPATIAL_JWT_SECRET_KEY` on the agent server.
 5. **Switch** — pick another agent from the dropdown to replace the injected script
    and reload the messenger with the new agent (current config kept).
 6. **Logout** — clears auth `sessionStorage` and returns to the login form.
@@ -312,6 +314,7 @@ interact stream plus a small public surface:
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `POST /api/agents/{id}/interact` | session-token per mode | Streaming chat (SSE). |
+| `POST /api/agents/{id}/interact/session/open` | — | Create/resume web session + mint token (no utterance). |
 | `POST /api/agents/{id}/interact/session/refresh` | — | Renew the session token. |
 | `GET  /api/agents/{id}/profile` | none | Agent avatar + name + description (public branding). |
 | `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip, batch (reuses `BaseSTTAction`). |
@@ -320,11 +323,14 @@ interact stream plus a small public surface:
 | `POST /api/agents/{id}/voice/tts` | **X-Session-Token required** | Synthesize speech (reuses `BaseTTSAction`). |
 | `POST /api/agents/{id}/uploads` | **X-Session-Token required** | Multipart upload → URL for the next interact `data`. |
 
-Voice + upload **always** require a valid `X-Session-Token` (minted by a prior
-interact turn) regardless of `JVAGENT_INTERACT_PUBLIC_AUTH` mode — so they are
-inert in `off` mode by design (no token is minted there). `/profile` is
-unauthenticated branding, served read-only. New public routes live in the
-interact package ([`voice_endpoints.py`](../jvagent/action/interact/voice_endpoints.py),
+Voice + upload **always** require a valid `X-Session-Token` (from
+`POST .../interact/session/open` or a prior interact turn) regardless of
+`JVAGENT_INTERACT_PUBLIC_AUTH` mode. Tokens are minted whenever
+`JVSPATIAL_JWT_SECRET_KEY` is set — including when interact auth is `off` —
+so attachments/voice work in local sandbox once the JWT secret is configured.
+Without that secret, voice/uploads stay inert. `/profile` is unauthenticated
+branding, served read-only. New public routes live in the interact package
+([`voice_endpoints.py`](../jvagent/action/interact/voice_endpoints.py),
 [`voice_stream_endpoints.py`](../jvagent/action/interact/voice_stream_endpoints.py),
 [`upload_endpoints.py`](../jvagent/action/interact/upload_endpoints.py),
 [`avatar_endpoints.py`](../jvagent/action/interact/avatar_endpoints.py)) and reuse
@@ -370,8 +376,9 @@ routes — the wrapper puts the route on every built app so it survives rebuilds
 - **Framing:** set `--frame-ancestors` (or the server's `frame_ancestors`) to the
   customer origins — not `*`.
 - **Session auth:** run `JVAGENT_INTERACT_PUBLIC_AUTH=required` and set
-  `JVSPATIAL_JWT_SECRET_KEY`. Voice/uploads require a token, so they are inert in
-  `off` mode by design.
+  `JVSPATIAL_JWT_SECRET_KEY`. Voice/uploads need a token; the messenger opens a
+  session via `session/open` (or the first interact turn) whenever the JWT
+  secret is set — including when interact auth mode is still `off`.
 - **Uploads reachable by the model:** set `JVAGENT_PUBLIC_BASE_URL` so uploaded
   files resolve to absolute, fetchable URLs for the vision pipeline.
 - **Voice providers:** configure the agent's STT/TTS actions and their keys

@@ -205,3 +205,47 @@ export async function refreshSessionToken(
   }
   return null;
 }
+
+/**
+ * Open (or resume) a web conversation and mint a session token without sending
+ * an utterance — needed so attachments/voice work before the first chat turn.
+ */
+export async function openSession(
+  agentUrl: string,
+  agentId: string,
+  existing?: SessionState
+): Promise<SessionState | null> {
+  const base = agentUrl.replace(/\/+$/, "");
+  const urls = [
+    `${base}/api/agents/${agentId}/interact/session/open`,
+    `${base}/agents/${agentId}/interact/session/open`,
+  ];
+  const body: Record<string, string> = {};
+  if (existing?.sessionId) body.session_id = existing.sessionId;
+  if (existing?.userId) body.user_id = existing.userId;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 404) continue;
+      if (!res.ok) return null;
+      const data = await res.json();
+      const sessionToken =
+        data?.session_token ?? data?.data?.session_token ?? null;
+      const sessionId = data?.session_id ?? data?.data?.session_id ?? null;
+      const userId = data?.user_id ?? data?.data?.user_id ?? null;
+      if (typeof sessionToken !== "string" || !sessionToken) return null;
+      return {
+        sessionToken,
+        sessionId: typeof sessionId === "string" ? sessionId : undefined,
+        userId: typeof userId === "string" ? userId : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}

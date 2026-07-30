@@ -134,6 +134,8 @@ function ChatSurface({
     runtime,
     sendText,
     getToken,
+    ensureSession,
+    hasSession,
     attachments,
     addAttachment,
     removeAttachment,
@@ -191,6 +193,8 @@ function ChatSurface({
           config={shellConfig}
           sendText={sendText}
           getToken={getToken}
+          ensureSession={ensureSession}
+          hasSession={hasSession}
           attachments={attachments}
           addAttachment={addAttachment}
           removeAttachment={removeAttachment}

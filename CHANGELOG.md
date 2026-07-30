@@ -8,8 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **`POST /agents/{id}/interact/session/open`.** Opens (or resumes) a web
+  conversation and mints an `X-Session-Token` without an utterance so messenger
+  attachments/voice work before the first chat turn. Requires
+  `JVSPATIAL_JWT_SECRET_KEY`.
+
 ### Changed
 
+- **Session tokens mint whenever JWT secret is set.** Mode B tokens are no
+  longer withheld in `JVAGENT_INTERACT_PUBLIC_AUTH=off`; interact *enforcement*
+  still follows the mode. Voice/upload gates keep requiring a valid token.
+- **jvmessenger sandbox config auto-save.** Config panel changes persist to
+  `sessionStorage` and debounced-reload the messenger (Reload now = immediate).
+- **jvmessenger attachments/voice.** Client opens a session eagerly when
+  attachments/voice/proactive are on; paperclip/mic are clickable without a
+  prior chat turn.
 - **SESSION CONTEXT in Orchestrator system prompt (ADR-0042).** Each turn
   injects authoritative date/time (`App.now()`) and channel into
   `{session_context_section}` after identity so relative time (“this year”)

@@ -15,7 +15,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button
 import { blobToBase64, useChatServices } from "./context";
 
 export function MicButton() {
-  const { config, getToken } = useChatServices();
+  const { config, getToken, ensureSession } = useChatServices();
   const composer = useComposerRuntime();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -85,15 +85,16 @@ export function MicButton() {
   );
 
   const start = useCallback(async () => {
-    const token = getToken();
-    if (!token) return;
-
-    const existing = composer.getState().text;
-    prefixRef.current = existing ? existing + " " : "";
-    committedRef.current = "";
-
     setBusy(true);
     try {
+      let token = getToken();
+      if (!token) token = (await ensureSession()) ?? undefined;
+      if (!token) return;
+
+      const existing = composer.getState().text;
+      prefixRef.current = existing ? existing + " " : "";
+      committedRef.current = "";
+
       // Await ready/fail inside startLiveTranscription — null means fall back.
       const controller = await startLiveTranscription(
         config.agentUrl,
@@ -122,7 +123,7 @@ export function MicButton() {
     } finally {
       setBusy(false);
     }
-  }, [config, getToken, composer, renderLive, startBatch]);
+  }, [config, getToken, ensureSession, composer, renderLive, startBatch]);
 
   const stop = useCallback(() => {
     if (liveRef.current) {
@@ -136,20 +137,17 @@ export function MicButton() {
     recorderRef.current?.stop();
   }, [composer]);
 
-  const disabled = busy || !getToken();
   return (
     <TooltipIconButton
       tooltip={
-        disabled
-          ? busy
-            ? "Starting voice…"
-            : "Send a message first to enable voice"
+        busy
+          ? "Starting voice…"
           : recording
             ? "Stop recording"
             : "Record voice"
       }
-      onClick={recording ? stop : start}
-      disabled={disabled}
+      onClick={recording ? stop : () => void start()}
+      disabled={busy}
       className={recording ? "text-destructive" : ""}
     >
       {busy ? (

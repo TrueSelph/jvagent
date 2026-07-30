@@ -38,6 +38,7 @@ import {
   loadHistory,
   loadSeenIds,
   loadSession,
+  openSession,
   refreshSessionToken,
   saveHistory,
   saveSeenIds,
@@ -145,6 +146,38 @@ export function useChatRuntime(
     null
   );
   const getToken = useCallback(() => session.current.sessionToken, []);
+  // True once a Mode B token is known (restored or opened) so attach/mic enable.
+  const [hasSession, setHasSession] = useState(() => !!session.current.sessionToken);
+
+  const ensureSession = useCallback(async (): Promise<string | null> => {
+    if (session.current.sessionToken) {
+      setHasSession(true);
+      return session.current.sessionToken;
+    }
+    const opened = await openSession(config.agentUrl, config.agentId, session.current);
+    if (!opened?.sessionToken) return null;
+    session.current = { ...session.current, ...opened };
+    saveSession(config.agentId, session.current);
+    setHasSession(true);
+    return opened.sessionToken;
+  }, [config.agentUrl, config.agentId]);
+
+  // Eager session open when uploads/voice/proactive need a token before first turn.
+  useEffect(() => {
+    if (!(config.attachments || config.voice || config.proactive)) return;
+    if (session.current.sessionToken) {
+      setHasSession(true);
+      return;
+    }
+    void ensureSession();
+  }, [
+    config.agentId,
+    config.attachments,
+    config.voice,
+    config.proactive,
+    ensureSession,
+  ]);
+
   // Latest host-page context, refreshed by the loader. Held in a ref so a new
   // snapshot doesn't re-create runTurn mid-conversation.
   const pageContextRef = useRef<unknown | null>(pageContext ?? null);
@@ -339,6 +372,7 @@ export function useChatRuntime(
                 sessionToken: chunk.session_token ?? session.current.sessionToken,
               };
               saveSession(config.agentId, session.current);
+              if (session.current.sessionToken) setHasSession(true);
             },
             onMessage,
             onError: (text) => {
@@ -508,6 +542,8 @@ export function useChatRuntime(
       runtime,
       sendText: runTurn,
       getToken,
+      ensureSession,
+      hasSession,
       attachments,
       addAttachment,
       removeAttachment,
@@ -525,6 +561,8 @@ export function useChatRuntime(
       runtime,
       runTurn,
       getToken,
+      ensureSession,
+      hasSession,
       attachments,
       addAttachment,
       removeAttachment,

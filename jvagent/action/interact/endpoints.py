@@ -29,8 +29,6 @@ from jvagent.action.interact.rate_limiter import (
 from jvagent.action.interact.response_builder import build_interact_response
 from jvagent.action.interact.session_token import (
     MODE_LOG,
-    MODE_OFF,
-    auth_mode,
     is_web_channel,
     mint_session_token,
     refresh_session_token,
@@ -180,12 +178,13 @@ async def _issue_session_token(
 
     ADR-0020: ensures the conversation has a ``token_secret`` (lazy backfill for
     pre-existing conversations) and returns a fresh capability token bound to it.
-    The secret mutation rides the request's deferred-entity flush. Returns
-    ``None`` in ``off`` mode, for non-web channels, or when no signing secret is
-    configured.
+    The secret mutation rides the request's deferred-entity flush.
+
+    Minting is independent of ``JVAGENT_INTERACT_PUBLIC_AUTH`` enforcement mode:
+    voice/upload gates always require a token, so tokens are issued whenever a
+    signing secret is configured (even in ``off`` mode). Returns ``None`` for
+    non-web channels or when ``JVSPATIAL_JWT_SECRET_KEY`` is unset.
     """
-    if auth_mode() == MODE_OFF:
-        return None
     conversation = getattr(walker, "conversation", None)
     if conversation is None or not is_web_channel(
         getattr(conversation, "channel", None)
@@ -264,8 +263,9 @@ async def interact_session_refresh_endpoint(
     (``cs == Conversation.token_secret``) — rotating the conversation's
     ``token_secret`` revokes refresh exactly like it revokes resume.
 
-    **Modes:** available in ``log`` and ``required`` modes; in ``off`` mode
-    session tokens are not in use and the endpoint returns a validation error.
+    **Modes:** available whenever tokens are mintable (``JVSPATIAL_JWT_SECRET_KEY``
+    set). Interact enforcement mode (``off`` / ``log`` / ``required``) does not
+    gate refresh — voice/upload still need a live token in every mode.
     """
     rate_limiter = get_rate_limiter()
     client_ip = extract_client_ip(request) or "unknown"
@@ -282,15 +282,6 @@ async def interact_session_refresh_endpoint(
             },
         )
     await rate_limiter.record_request(client_ip, agent_id)
-
-    if auth_mode() == MODE_OFF:
-        raise ValidationError(
-            message=(
-                "Session token authentication is disabled "
-                "(JVAGENT_INTERACT_PUBLIC_AUTH=off); there is no token to refresh."
-            ),
-            details={"reason": "auth_off"},
-        )
 
     from jvagent.core.cache import get_cached_agent
 
@@ -319,6 +310,130 @@ async def interact_session_refresh_endpoint(
         "session_id": str((claims or {}).get("session_id") or ""),
         "user_id": str((claims or {}).get("user_id") or ""),
         "session_token": new_token,
+        "expires_in": token_ttl_seconds(),
+    }
+
+
+@endpoint(
+    "/agents/{agent_id}/interact/session/open",
+    methods=["POST"],
+    auth=False,
+    tags=["Agent"],
+    response=success_response(
+        data={
+            "session_id": ResponseField(
+                field_type=str,
+                description="Session identifier for the opened conversation",
+                example="sess_xyz789",
+            ),
+            "user_id": ResponseField(
+                field_type=str,
+                description="User identifier for the opened conversation",
+                example="usr_abc123",
+            ),
+            "session_token": ResponseField(
+                field_type=str,
+                description=(
+                    "Mode B session capability token (ADR-0020). Send as "
+                    "X-Session-Token on uploads, voice, and subsequent interact."
+                ),
+                example="eyJhbGciOi...",
+            ),
+            "expires_in": ResponseField(
+                field_type=int,
+                description="Lifetime of the session token in seconds",
+                example=604800,
+            ),
+        }
+    ),
+    response_model_exclude_none=True,
+)
+async def interact_session_open_endpoint(
+    request: Request,
+    agent_id: str,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Any:
+    """Open (or resume) a web conversation and mint a session token without an utterance.
+
+    Enables messenger attachments/voice before the first chat turn. Requires
+    ``JVSPATIAL_JWT_SECRET_KEY``. Optional ``session_id`` / ``user_id`` resume an
+    existing anonymous session; omit both to create a new one.
+    """
+    rate_limiter = get_rate_limiter()
+    client_ip = extract_client_ip(request) or "unknown"
+    if not await rate_limiter.check_rate_limit(client_ip, agent_id):
+        raise RateLimitError(
+            message=(
+                f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} "
+                "requests per minute"
+            ),
+            details={
+                "rate_limit": rate_limiter.rate_limit_per_minute,
+                "ip": client_ip,
+                "agent_id": agent_id,
+            },
+        )
+    await rate_limiter.record_request(client_ip, agent_id)
+
+    from jvagent.core.cache import get_cached_agent
+
+    agent = await get_cached_agent(agent_id)
+    if not agent:
+        raise ResourceNotFoundError(
+            message=f"Agent with ID '{agent_id}' not found",
+            details={"agent_id": agent_id},
+        )
+
+    memory = await agent.get_memory()
+    if memory is None:
+        raise ValidationError(
+            message="Agent has no Memory node",
+            details={"reason": "no_memory", "agent_id": agent_id},
+        )
+
+    try:
+        _user, conversation, resolved_user_id, resolved_session_id, _new = (
+            await memory.get_session(
+                user_id=(user_id or "").strip() or None,
+                session_id=(session_id or "").strip() or None,
+                channel="default",
+            )
+        )
+    except ValueError as exc:
+        raise ValidationError(
+            message=str(exc),
+            details={"reason": "session_resolution_error"},
+        ) from exc
+    except Exception as exc:
+        logger.error("session/open get_session failed: %s", exc, exc_info=True)
+        raise ValidationError(
+            message="Failed to open session",
+            details={"reason": "init_error"},
+        ) from exc
+
+    walker = type(
+        "SessionOpenWalker",
+        (),
+        {
+            "conversation": conversation,
+            "session_id": resolved_session_id,
+            "user_id": resolved_user_id,
+        },
+    )()
+    token = await _issue_session_token(walker, agent_id)  # type: ignore[arg-type]
+    if not token:
+        raise ValidationError(
+            message=(
+                "Could not mint a session token. Set JVSPATIAL_JWT_SECRET_KEY "
+                "(required for messenger uploads and voice)."
+            ),
+            details={"reason": "no_secret_configured"},
+        )
+    return {
+        "session_id": resolved_session_id,
+        "user_id": resolved_user_id,
+        "session_token": token,
         "expires_in": token_ttl_seconds(),
     }
 

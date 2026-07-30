@@ -44,6 +44,8 @@ export interface ThreadServices {
   config: MessengerConfig;
   sendText: (text: string) => void;
   getToken: () => string | undefined;
+  ensureSession: () => Promise<string | null>;
+  hasSession: boolean;
   attachments: UploadedAttachment[];
   addAttachment: (a: UploadedAttachment) => void;
   removeAttachment: (url: string) => void;
@@ -60,6 +62,8 @@ export function Thread(props: ThreadServices) {
     config,
     sendText,
     getToken,
+    ensureSession,
+    hasSession,
     attachments,
     addAttachment,
     removeAttachment,
@@ -74,7 +78,7 @@ export function Thread(props: ThreadServices) {
   );
 
   return (
-    <ChatServicesProvider value={{ config, getToken, sendText }}>
+    <ChatServicesProvider value={{ config, getToken, ensureSession, hasSession, sendText }}>
       <ThreadPrimitive.Root
         className="aui-root box-border flex h-full flex-col overflow-hidden bg-background"
         style={{ ["--thread-max-width" as string]: "100%" }}
