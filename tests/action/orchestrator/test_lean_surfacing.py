@@ -205,6 +205,99 @@ async def test_pinned_tools_survive_lean(make_orchestrator, make_visitor):
     assert "misc__tool00" not in visible
 
 
+async def test_pins_are_channel_scopable(make_orchestrator, make_visitor):
+    """A pin is usually a per-channel claim. Pinning a channel-specific tool
+    globally puts an unusable tool in every other channel's prompt — wasted
+    tokens, and a misroute target for a weak model."""
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.pinned_tools = ["weather__*"]
+    ex.channel_overrides = {"voice": {"pinned_tools": ["calendar__*"]}}
+
+    v = make_visitor(utterance="hello", channel="voice")
+    visible: set = set()
+    await ex._assemble_tools(v, [], visible, None, "hello", None, {})
+    assert "calendar__create_event" in visible  # the channel's own pin
+    assert "weather__current" not in visible  # the global pin does not leak in
+
+    # A channel with no override still gets the action-level pins.
+    v2 = make_visitor(utterance="hello", channel="web")
+    visible2: set = set()
+    await ex._assemble_tools(v2, [], visible2, None, "hello", None, {})
+    assert "weather__current" in visible2
+    assert "calendar__create_event" not in visible2
+
+
+async def test_denied_tools_hard_remove_from_surface(make_orchestrator, make_visitor):
+    """denied_tools drops names from tools — not lean-hidden, gone for find_tool."""
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 0  # list everything so absence is unambiguous
+    ex.denied_tools = ["weather__*", "misc__tool00"]
+    v = make_visitor(utterance="weather please")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "weather please", None, {})
+    assert "weather__current" not in tools
+    assert "weather__current" not in visible
+    assert "misc__tool00" not in tools
+    # Untargeted tools remain.
+    assert "misc__tool01" in tools
+    # find_tool must not rediscover denied names (closes over tools dict).
+    find = tools["find_tool"]
+    hit = await find.run({"query": "weather"})
+    assert "weather__current" not in hit
+
+
+async def test_denied_tools_beats_pins(make_orchestrator, make_visitor):
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.pinned_tools = ["weather__*"]
+    ex.denied_tools = ["weather__*"]
+    v = make_visitor(utterance="hello")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "hello", None, {})
+    assert "weather__current" not in tools
+    assert "weather__current" not in visible
+
+
+async def test_denied_tools_cannot_drop_egress_or_meta(make_orchestrator, make_visitor):
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    action = _ToolsAction(_many(5))
+    ex = make_orchestrator(actions=[action, ReplyAction()])
+    ex.denied_tools = ["reply", "find_tool", "load_tool", "misc__*"]
+    v = make_visitor(utterance="hi")
+    visible: set = set()
+    tools = await ex._assemble_tools(v, [], visible, None, "hi", None, {})
+    assert "reply" in tools
+    assert "find_tool" in tools
+    assert "load_tool" in tools
+    # Non-protected matches still drop.
+    assert not any(n.startswith("misc__") for n in tools)
+
+
+async def test_denied_tools_channel_override(make_orchestrator, make_visitor):
+    action = _ToolsAction(_many(20))
+    ex = make_orchestrator(actions=[action])
+    ex.lean_tool_threshold = 0
+    ex.denied_tools = ["weather__*"]
+    ex.channel_overrides = {"voice": {"denied_tools": ["calendar__*"]}}
+
+    v = make_visitor(utterance="x", channel="voice")
+    tools = await ex._assemble_tools(v, [], set(), None, "x", None, {})
+    assert "calendar__create_event" not in tools
+    assert "weather__current" in tools  # global deny replaced, not merged
+
+    v2 = make_visitor(utterance="x", channel="web")
+    tools2 = await ex._assemble_tools(v2, [], set(), None, "x", None, {})
+    assert "weather__current" not in tools2
+    assert "calendar__create_event" in tools2
+
+
 async def test_always_active_skill_pins_its_tools(
     make_orchestrator, make_visitor, monkeypatch
 ):
@@ -232,3 +325,107 @@ async def test_always_active_skill_pins_its_tools(
     await ex._assemble_tools(v, [], visible, None, "hello", None, meta)
     assert meta["lean"] is True
     assert "weather__current" in visible  # pinned by the always-active skill
+
+
+# --- find_tool result size --------------------------------------------------
+
+
+async def test_find_tool_summarizes_rather_than_dumping_descriptions():
+    """find_tool is a discovery aid; load_tool is what returns the full text.
+    Echoing every hit's full description made find_tool the most expensive
+    observation of a discovery turn and left load_tool with nothing to add."""
+    long_desc = "Record or update your multi-step plan as a checklist. " * 20
+    all_tools = {"plan__update": SkillTool("plan__update", long_desc, run=None)}
+    cat = build_catalog_tools(all_tools, visible=set())
+
+    found = await cat["find_tool"].run({"query": "plan"})
+    assert len(found) < 400  # summarized
+    assert "…" in found
+
+    loaded = await cat["load_tool"].run({"name": "plan__update"})
+    assert long_desc.strip() in loaded  # full text still reachable
+
+
+async def test_find_tool_reports_when_matches_are_capped():
+    """A cap that looks like the whole answer makes the model conclude the tool
+    doesn't exist instead of narrowing its query."""
+    all_tools = {
+        f"misc__tool{i:03d}": SkillTool(f"misc__tool{i:03d}", "A capability.", run=None)
+        for i in range(50)
+    }
+    cat = build_catalog_tools(all_tools, visible=set())
+    out = await cat["find_tool"].run({"query": "capability"})
+    assert "of 50 matches" in out
+    assert "narrow the query" in out
+
+
+async def test_find_tool_without_truncation_says_nothing_extra():
+    all_tools = {"email__send": SkillTool("email__send", "Send an email.", run=None)}
+    cat = build_catalog_tools(all_tools, visible=set())
+    out = await cat["find_tool"].run({"query": "email"})
+    assert "matches" not in out
+    assert "Send an email." in out  # short descriptions survive intact
+
+
+# --- find_tool must match natural-language queries --------------------------
+#
+# Discovery matched the WHOLE query as a substring of "name + description", so
+# find_tool("knowledge base") worked and find_tool("add to knowledge base")
+# returned nothing -- and the second is the example the loop prompt gives the
+# model. Live, the model followed that instruction, got nothing, re-queried,
+# tripped the repeat-guard, and a turn that had already planned and fetched a
+# page died on "Sorry, I didn't quite catch that".
+
+
+def _catalog():
+    tools = {
+        "pageindex__assimilate": SkillTool(
+            "pageindex__assimilate",
+            "Ingest one document into the knowledge base so it can be searched "
+            "later with pageindex__search.",
+            run=None,  # type: ignore[arg-type]
+        ),
+        "file_interface__write_file": SkillTool(
+            "file_interface__write_file",
+            "Write a file to the per-user sandbox.",
+            run=None,  # type: ignore[arg-type]
+        ),
+        "web_search__search": SkillTool(
+            "web_search__search", "Search the public web.", run=None  # type: ignore[arg-type]
+        ),
+    }
+    return build_catalog_tools(tools, visible=set())
+
+
+async def test_the_prompts_own_example_queries_resolve():
+    """These exact strings are what render_tools_section tells the model to use."""
+    cat = _catalog()
+    for query, expected in (
+        ("add to knowledge base", "pageindex__assimilate"),
+        ("write file", "file_interface__write_file"),
+        ("write a file", "file_interface__write_file"),
+    ):
+        out = await cat["find_tool"].run({"query": query})
+        assert expected in out, f"{query!r} failed to surface {expected}"
+
+
+async def test_extra_words_do_not_break_a_match():
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "save the finished report to a file"})
+    assert "file_interface__write_file" in out
+
+
+async def test_best_match_is_ranked_first():
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "knowledge base document ingest"})
+    listed = [ln for ln in out.splitlines() if ln.startswith("- ")]
+    assert listed and "pageindex__assimilate" in listed[0]
+
+
+async def test_no_match_gives_a_way_forward_instead_of_a_dead_end():
+    """A bare "(no tools matched)" invites the re-query that kills the turn."""
+    cat = _catalog()
+    out = await cat["find_tool"].run({"query": "send a fax to mars"})
+    assert "no tool matches" in out
+    assert "Do NOT repeat this search" in out
+    assert "pageindex" in out  # names the groups that DO exist

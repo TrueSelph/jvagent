@@ -237,3 +237,14 @@ def test_refresh_endpoint_declares_response_fields():
     ).model_dump(exclude_none=True)
     assert dumped.get("session_token") == "tok123"
     assert dumped.get("expires_in") == 604800
+
+
+def test_open_endpoint_declares_response_fields():
+    from jvagent.action.interact.endpoints import interact_session_open_endpoint
+
+    cfg = getattr(interact_session_open_endpoint, "_jvspatial_endpoint_config", None)
+    assert cfg is not None
+    schema = cfg.get("response")
+    assert schema is not None
+    for field in ("session_id", "user_id", "session_token", "expires_in"):
+        assert field in (schema.data or {})

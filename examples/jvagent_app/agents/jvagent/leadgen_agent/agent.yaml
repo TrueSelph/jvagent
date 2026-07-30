@@ -30,6 +30,11 @@ actions:
         - product_faq             # answer common product questions (StorefrontAction)
         - product_search          # find / compare catalog products (StorefrontAction)
       lock_active_flow: false
+      # ui__render is long-tail, so lean surfacing (ADR-0018) hides it and the
+      # model can only reach it via find_tool. Pin it so components are callable
+      # on any turn without disabling lean for everything else.
+      pinned_tools:
+        - ui__render
       # Vision (ADR-0021): a pre-loop reflex interprets images in data.image_urls
       # (e.g. an attachment from the messenger), stores the description as a
       # conversation artifact, and seeds it into the reply. Requires jvagent/vision.
@@ -73,6 +78,21 @@ actions:
   # Supplies storefront__faq and storefront__search_products, which the
   # product_faq and product_search skills pin via allowed-tools.
   - action: contrib/storefront
+    context:
+      enabled: true
+
+  # ── Host page context (core) — tells the model where the visitor is ──
+  # The messenger sends data.page_context; nothing else surfaces visitor.data to
+  # the model, so this contributes it as a factual response-shaping parameter.
+  - action: jvagent/page_context
+    context:
+      enabled: true
+
+  # ── Agent-driven UI components (core) — ui__render on the tool surface ──
+  # The messenger owns the catalog (card, choices); the model only picks one and
+  # supplies data. Staged during the loop, flushed at weight 90 so the component
+  # renders *under* the reply text.
+  - action: jvagent/ui
     context:
       enabled: true
 

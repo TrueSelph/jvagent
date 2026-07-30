@@ -74,8 +74,24 @@ class OrchestratorEgressMixin:
             try:
                 interaction.add_directive(framed, self.get_class_name())
             except Exception:
-                pass
+                logger.debug(
+                    "orchestrator: could not queue the framed directive; the turn continues without it",
+                    exc_info=True,
+                )
         responder = await self.get_responder()
+        # A compose is a second, SERIAL model call in front of a user-facing
+        # reply (~550 input tokens, measured). It earns that when the directive
+        # carries model-facing guidance to voice, or when queued parameters /
+        # channel formatting have to be applied. It earns nothing for a bare
+        # relay directive with no shaping — ReplyAction.gather()'s N=1 literal
+        # path renders that unchanged, without a model (ADR-0041: always skip).
+        if (
+            compose
+            and responder is not None
+            and "\u2063" not in raw
+            and not self._compose_shaping_pending(responder, interaction, visitor)
+        ):
+            compose = False
         if compose and responder is not None:
             respond = getattr(responder, "respond", None)
             if callable(respond):
@@ -94,16 +110,14 @@ class OrchestratorEgressMixin:
                     return
             except Exception as exc:
                 logger.warning("orchestrator: responder.gather failed: %s", exc)
-        if (
-            responder is not None
-            and interaction is not None
-            and not user_facing
-            and not compose
-        ):
-            from jvagent.action.reply.reply_action import ReplyAction
-
-            has_params = bool(ReplyAction._collect_parameters(None, interaction))
-            if has_params:
+        # Last resort. respond()/gather() were unavailable or raised — but
+        # directives and parameters are the agent's behavioural contract, not a
+        # nicety, and dropping them because the responder misbehaved ships
+        # ungoverned text. Previously this only re-tried when there was no text
+        # of our own (``not user_facing``), so a reply WITH text and queued
+        # shaping fell straight through to a raw publish.
+        if responder is not None and interaction is not None:
+            if self._shaping_or_directives_pending(responder, interaction, visitor):
                 respond = getattr(responder, "respond", None)
                 if callable(respond):
                     try:
@@ -114,7 +128,50 @@ class OrchestratorEgressMixin:
                             "orchestrator: responder.respond failed: %s", exc
                         )
         if user_facing:
+            # publish() applies the deterministic egress scrub, so even this
+            # path meets the core response rules.
             await self.publish(visitor=visitor, content=user_facing)
+
+    @classmethod
+    def _shaping_or_directives_pending(
+        cls, responder: Any, interaction: Any, visitor: Any
+    ) -> bool:
+        """True when a compose is still owed: parameters, channel format, or any
+        queued directive that has not been rendered yet."""
+        if cls._compose_shaping_pending(responder, interaction, visitor):
+            return True
+        try:
+            getter = getattr(interaction, "get_unexecuted_directives", None)
+            return bool(getter()) if callable(getter) else False
+        except Exception:  # pragma: no cover - defensive
+            return False
+
+    @staticmethod
+    def _compose_shaping_pending(
+        responder: Any, interaction: Any, visitor: Any
+    ) -> bool:
+        """True when a compose would actually change the output.
+
+        Mirrors the conditions ReplyAction.gather() uses to choose composing over
+        its literal fast path: contributed (non-ambient) response parameters, a
+        channel format, or more than one queued directive. Defensive — if any of
+        it can't be resolved, assume shaping is pending and compose, since an
+        unvoiced directive reaching the user verbatim is the worse failure.
+        """
+        try:
+            from jvagent.action.reply.reply_action import ReplyAction
+
+            if ReplyAction._collect_parameters(None, interaction).strip():
+                return True
+            channel = getattr(visitor, "channel", "default") or "default"
+            if getattr(
+                responder, "apply_channel_format", False
+            ) and responder.get_channel_format(channel):
+                return True
+            queued = ReplyAction._directive_items(interaction)
+            return len(queued) > 1
+        except Exception:
+            return True
 
     async def _emit_reply(self, visitor: "InteractWalker", text: str) -> None:
         if not (text or "").strip():

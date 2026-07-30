@@ -45,6 +45,23 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         },
         description="Fallback mapping from reasoning_effort to Anthropic thinking budget.",
     )
+    prompt_caching: bool = attribute(
+        default=True,
+        description="Mark the system prompt as cacheable (an ephemeral "
+        "cache_control breakpoint on the last system block). Agentic callers "
+        "resend a large, stable system prompt on every tick, so a cache hit is "
+        "the common case and reads bill at a fraction of the write. Unlike "
+        "OpenAI's automatic prefix caching this must be requested explicitly. "
+        "Disable for a caller whose system prompt changes every call.",
+    )
+    prompt_cache_min_chars: int = attribute(
+        default=3000,
+        description="Skip the cache breakpoint below this system-prompt size. "
+        "Anthropic only caches prefixes past a per-model token minimum (1024 "
+        "for Sonnet/Opus, 2048 for Haiku); below it the marker just adds a "
+        "cache-write attempt with nothing to show for it. ~3000 chars ≈ 750 "
+        "tokens, a deliberately conservative floor.",
+    )
 
     async def on_register(self) -> None:
         """Called when action is registered during installation."""
@@ -350,7 +367,7 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             payload["temperature"] = kwargs.get("temperature", self.temperature)
 
         if system_text:
-            payload["system"] = system_text
+            payload["system"] = self._system_blocks(system_text)
 
         mapped_tools = self._map_tools(tools)
         if mapped_tools:
@@ -358,14 +375,44 @@ class AnthropicLanguageModelAction(LanguageModelAction):
 
         return payload
 
+    def _system_blocks(self, system_text: str) -> Any:
+        """The ``system`` payload field, with a cache breakpoint when worthwhile.
+
+        Anthropic caches the prefix up to an explicit ``cache_control`` marker,
+        so one breakpoint at the end of the system prompt makes the whole of it
+        reusable. Returns the plain string when caching is off or the prompt is
+        too small to clear the provider's minimum, so the payload shape is
+        unchanged for those callers.
+        """
+        if not self.prompt_caching or len(system_text) < int(
+            self.prompt_cache_min_chars
+        ):
+            return system_text
+        return [
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+
     def _extract_usage(self, data: Dict[str, Any]) -> Dict[str, int]:
         usage = data.get("usage", {})
         prompt_tokens = int(usage.get("input_tokens", 0) or 0)
         completion_tokens = int(usage.get("output_tokens", 0) or 0)
+        # Cached input is reported separately and is NOT included in
+        # input_tokens. Fold it into prompt_tokens so totals stay comparable
+        # across providers, and keep the split so cache effectiveness is
+        # visible in the model_call observability event.
+        cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+        cache_write = int(usage.get("cache_creation_input_tokens", 0) or 0)
+        prompt_tokens += cache_read + cache_write
         return {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
+            "cache_read_input_tokens": cache_read,
+            "cache_creation_input_tokens": cache_write,
         }
 
     def _extract_result_fields(

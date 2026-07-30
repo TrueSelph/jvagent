@@ -34,6 +34,10 @@ limitation and rely on the snippets you have rather than re-searching endlessly.
 
 This skill is for evidence-first investigation and synthesis across available sources. Use it for exploratory or analytical questions where source-backed conclusions matter. Do not use it for transactional tool workflows like sending mail or mutating calendar/files directly.
 
+When the user also wants the result **saved into the internal knowledge base**
+(capture / report / assimilate), activate `knowledge_ingest` instead — this
+skill stops at synthesis and does not own PageIndex ingest.
+
 ## Grounding
 
 - Distinguish observed evidence from inference, and label general knowledge separately.

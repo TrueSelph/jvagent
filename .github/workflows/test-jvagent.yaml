@@ -41,6 +41,19 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
+      # Orchestrator prompt cost is easy to regress and invisible in a diff: any
+      # edit to the prompt template, tool surfacing, or observation replay
+      # changes what every tick resends. Token counts here are deterministic
+      # (the model call is intercepted, so no API key and no network), which
+      # makes this a real gate rather than a flaky threshold. Budgets carry
+      # headroom over the measured baseline — they catch a structural
+      # regression, not normal drift.
+      - name: Check orchestrator prompt budget
+        run: |
+          python scripts/bench_orchestrator.py examples/jvagent_app \
+            --assert-max-tokens 11000 \
+            --assert-min-cache-pct 90
+
       - name: Run pre-commit checks
         run: |
           pip install pre-commit

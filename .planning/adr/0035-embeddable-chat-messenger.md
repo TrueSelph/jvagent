@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-23
-**Implementation:** [`jvmessenger/`](../../jvmessenger), [`jvagent/messenger/server.py`](../../jvagent/messenger/server.py), [`jvagent/cli/widget.py`](../../jvagent/cli/widget.py), [`scripts/build_jvmessenger.py`](../../scripts/build_jvmessenger.py), [`jvagent/action/interact/voice_endpoints.py`](../../jvagent/action/interact/voice_endpoints.py), [`jvagent/action/interact/upload_endpoints.py`](../../jvagent/action/interact/upload_endpoints.py), [`jvagent/action/interact/public_gate.py`](../../jvagent/action/interact/public_gate.py)
+**Implementation:** [`jvmessenger/`](../../jvmessenger), [`jvagent/messenger/server.py`](../../jvagent/messenger/server.py), [`jvagent/cli/messenger.py`](../../jvagent/cli/messenger.py), [`scripts/build_jvmessenger.py`](../../scripts/build_jvmessenger.py), [`jvagent/action/interact/voice_endpoints.py`](../../jvagent/action/interact/voice_endpoints.py), [`jvagent/action/interact/upload_endpoints.py`](../../jvagent/action/interact/upload_endpoints.py), [`jvagent/action/interact/public_gate.py`](../../jvagent/action/interact/public_gate.py)
 **Relation:** extends [ADR-0020](0020-public-interact-endpoint-auth.md) (public interact auth), [ADR-0032](0032-interact-session-token-refresh.md) (session-token refresh). Sibling to `jvchat` ([`docs/jvchat.md`](../../docs/jvchat.md)).
 
 ## 1. Context

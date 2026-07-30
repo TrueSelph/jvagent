@@ -274,6 +274,13 @@ def parse_skill_bundle(
         skill_file,
         key="denied-channels",
     )
+    # Behavioural parameters (ADR-0037). A skill states the standing rules
+    # that apply while it is driving the turn, in the same
+    # {scope?, condition?, response} shape an Action declares
+    # programmatically — so both routes produce identical pooled entries.
+    parameters = _normalize_parameters(
+        frontmatter.get("parameters"), skill_file, key="parameters"
+    )
     deny_access_directive = str(
         frontmatter.get("deny-access-directive")
         or frontmatter.get("deny_access_directive")
@@ -340,6 +347,7 @@ def parse_skill_bundle(
         "exports": exports,
         "imports": imports,
         "coactivate_with": coactivate_with,
+        "parameters": parameters,
         "allowed_channels": allowed_channels,
         "denied_channels": denied_channels,
         "deny_access_directive": deny_access_directive,
@@ -352,6 +360,41 @@ def parse_skill_bundle(
             "dependencies": dependencies,
         },
     }
+
+
+def _normalize_parameters(raw: Any, skill_file: Any, *, key: str) -> List[dict]:
+    """Frontmatter ``parameters:`` -> a list of {scope?, condition?, response}.
+
+    Tolerant of the shapes a hand-written SKILL.md produces: a bare string is a
+    rule with no condition. A mapping without ``response`` is dropped with a
+    warning rather than silently contributing an empty rule.
+    """
+    if not raw:
+        return []
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    out: List[dict] = []
+    for item in items:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append({"response": text})
+            continue
+        if not isinstance(item, dict):
+            logger.warning("%s: %s entry is not a mapping; skipped", skill_file, key)
+            continue
+        response = str(item.get("response") or "").strip()
+        if not response:
+            logger.warning("%s: %s entry has no 'response'; skipped", skill_file, key)
+            continue
+        entry: dict = {"response": response}
+        condition = str(item.get("condition") or "").strip()
+        if condition:
+            entry["condition"] = condition
+        scope = str(item.get("scope") or "").strip().lower()
+        if scope:
+            entry["scope"] = scope
+        out.append(entry)
+    return out
 
 
 def _resolve_builtin_root() -> Optional[Path]:

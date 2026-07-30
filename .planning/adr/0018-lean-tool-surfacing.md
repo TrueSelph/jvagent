@@ -112,3 +112,16 @@ lean policy so they survive it:
 Both default to off/empty (no behaviour change). They preserve lean for the rest
 of the surface — the point is "keep lean, but guarantee *these* few," not "turn
 lean off." Covered by `tests/action/orchestrator/test_lean_surfacing.py`.
+
+### Hard deny (capability gate)
+
+Lean hiding is **not** a capability gate — `find_tool` / naming still reach the
+long tail. To **remove** tools that ride in because their owning action is
+enabled (without disabling the whole action), use **`denied_tools`**: fnmatch
+globs (e.g. `["file_interface__*"]`) applied *after* pins so a deny wins.
+Matching names are dropped from the assembled `tools` dict — not listed, not
+`find_tool`-reachable, not dispatchable. Egress and catalog meta-tools
+(`reply`/`respond`/`find_*`/`load_tool`/`use_skill`) cannot be denied.
+Channel-overridable via `channel_overrides.denied_tools` (replaces the
+action-level list). MCP servers retain their own per-server `denied_tools`.
+Mirrors `denied_skills`. Covered by `tests/action/orchestrator/test_lean_surfacing.py`.

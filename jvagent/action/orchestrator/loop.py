@@ -14,12 +14,17 @@ from jvagent.action.orchestrator.constants import (
     _NON_SUBSTANTIVE_TOOLS,
     is_untrusted_directive_source,
 )
+from jvagent.action.orchestrator.loop_helpers import (
+    salvage_partial_answer as _salvage_partial_answer,
+)
 from jvagent.action.orchestrator.loop_helpers import text_candidate as _text_candidate
 from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
 )
+from jvagent.action.orchestrator.turn_state import TurnState
 from jvagent.action.parameters import (
+    accumulate_skill_parameters,
     orchestration_parameters,
     render_parameters,
     reply_core_parameters,
@@ -39,7 +44,130 @@ def _orch():
 
 
 class OrchestratorLoopMixin:
-    async def _run_loop(self, visitor: "InteractWalker") -> None:
+    def _parameter_pool(self, visitor: Any) -> List[Any]:
+        """The turn's parameter pool — the single read path for every rule.
+
+        Prefers the interaction pool (core + action-contributed + skill-declared
+        + queued, already unioned upstream). Without one, falls back to this
+        action's own params PLUS the response core: the orchestrator's native
+        set is orchestration-scoped only, so its list alone would never contain
+        a response-scoped rule such as grounding, which it nonetheless enforces.
+        """
+        interaction = getattr(visitor, "interaction", None) if visitor else None
+        pool = getattr(interaction, "parameters", None) if interaction else None
+        try:
+            base = list(pool) if pool else []
+        except TypeError:  # not iterable — treat as absent rather than crashing
+            base = []
+        if not base:
+            base = list(self.parameters or [])
+        # The interaction pool is orchestration-scoped by construction, so a
+        # response-scoped rule (grounding, voice, length) would be invisible to
+        # a lookup by key. Union the response core in unconditionally; an
+        # operator override already in the pool still wins, because
+        # resolve_parameters() ranks agent tier above the core default.
+        return base + reply_core_parameters()
+
+    @staticmethod
+    def _grounding_corpus(
+        utterance: str,
+        history: List[Dict[str, str]],
+        observations: List[Dict[str, Any]],
+    ) -> str:
+        """Everything the agent can legitimately answer from this turn: the user's
+        message, the conversation so far, and this turn's tool results."""
+        parts: List[str] = [utterance or ""]
+        for message in history or []:
+            parts.append(str(message.get("content", "")))
+        for obs in observations or []:
+            parts.append(str(obs.get("observation", "")))
+            parts.append(str(obs.get("args", "")))
+        return "\n".join(parts)
+
+    def _grounding_deflection(
+        self, text: str, substantive_tool_calls: int, corpus: str = "", visitor=None
+    ):
+        """Guard observation from any ``enforcement: guard`` parameter in force.
+
+        The rule and its enforcement now live together (ADR-0037 §2.2): the
+        parameter that says "don't state facts you haven't verified" is the same
+        object that names the detectors proving it. Previously the loop carried
+        hardcoded flags beside the rule, so editing the parameter changed the
+        prompt and nothing else.
+        """
+        from jvagent.action.parameters import (
+            ENFORCEMENT_GUARD,
+            detectors_for,
+            parameters_with_enforcement,
+        )
+
+        pool = self._parameter_pool(visitor)
+        context = {
+            "substantive_tool_calls": substantive_tool_calls,
+            "corpus": corpus,
+        }
+        for param in parameters_with_enforcement(pool, ENFORCEMENT_GUARD):
+            for detector in detectors_for(param, ENFORCEMENT_GUARD):
+                try:
+                    violation = detector(text, context)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        "orchestrator: guard detector for %r failed: %s",
+                        param.get("key"),
+                        exc,
+                    )
+                    continue
+                if violation:
+                    return {
+                        "tool": "(guard)",
+                        "args": {},
+                        "observation": f"({violation})",
+                    }
+        return None
+
+    async def _absorb_skill_parameters(self, visitor, docs) -> str:
+        """Pool an in-force skill's parameters and re-render the loop section.
+
+        Response-scoped rules reach the reply compose on their own, because that
+        reads the interaction pool at compose time. Orchestration-scoped ones
+        would not: the loop's parameters_section is rendered once at turn start,
+        so a skill activating mid-turn would have its rules ignored for the rest
+        of that turn. Re-rendering keeps both scopes honest.
+        """
+        interaction = getattr(visitor, "interaction", None)
+        if interaction is None or not docs:
+            return ""
+        try:
+            changed = await accumulate_skill_parameters(interaction, docs)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("orchestrator: skill parameter accumulation failed: %s", exc)
+            return ""
+        if not changed:
+            return ""
+        try:
+            await interaction.save()
+        except Exception:
+            logger.debug(
+                "orchestrator: interaction save failed while absorbing skill parameters; they apply this turn but are not persisted",
+                exc_info=True,
+            )
+        pool = self._parameter_pool(visitor)
+        section = render_parameters(
+            orchestration_parameters(pool) + reply_core_parameters()
+        )
+        cache = getattr(self, "_turn_prompt_cache", None)
+        if isinstance(cache, dict):
+            cache["parameters"] = section
+        return section
+
+    async def _prepare_turn(self, visitor: "InteractWalker") -> Optional[TurnState]:
+        """Everything the turn needs before the first tick.
+
+        Split out of ``_run_loop`` so the boundary between deciding *what this
+        turn is* and *stepping it* is explicit and typed rather than implied by
+        390 lines of shared scope. Returns ``None`` when the turn is already
+        finished here — a locked flow that ran, or a drained task that replied.
+        """
         loop_t0 = time.perf_counter()
         tool_timings: List[Dict[str, Any]] = []
         activated: List[str] = []
@@ -65,18 +193,15 @@ class OrchestratorLoopMixin:
         skill_names = {getattr(d, "name", "") for d in skill_docs}
         blocked_skill_notes = surface_meta.get("blocked_skill_notes") or []
         skills_section = render_skills_section(skill_docs, blocked_skill_notes)
-        # State the current channel explicitly. Skill docs are already filtered
-        # to this channel (ADR-0032), so everything listed IS available here —
-        # without this line the model has no ground truth for where it is and
-        # can hallucinate a channel deny ("please message us on WhatsApp") to a
-        # user who is already there, parroting deny copy from its knowledge.
-        _channel = str(getattr(visitor, "channel", "") or "").strip()
-        if _channel:
-            skills_section = (
-                f"CURRENT CHANNEL: {_channel}. Every skill listed below is "
-                "available on this channel — never tell the user to switch "
-                "channels to use one of them.\n\n" + skills_section
-            )
+        # SESSION CONTEXT (ADR-0042): turn-stable clock + channel ground truth.
+        # Replaces the former CURRENT CHANNEL prepend on skills_section.
+        try:
+            app = await self.get_app()
+        except Exception:
+            app = None
+        from jvagent.action.orchestrator.session_context import render_session_context
+
+        session_context_section = await render_session_context(visitor, app=app)
         # Advertised abilities: each enabled action's get_capabilities() merged
         # with the skill descriptions. Sourced from the actions/skills directly
         # (not the lean-surfaced tool list), so it stays complete even when most
@@ -95,12 +220,13 @@ class OrchestratorLoopMixin:
         # executive can author a user-facing reply directly (the fast ``reply``
         # path applies no compose-time shaping). The reply compose renders the
         # response set as well — whichever path produces user text is hardened.
-        _pool = getattr(interaction, "parameters", None) or self.parameters
+        _pool = self._parameter_pool(visitor)
         parameters_section = render_parameters(
             orchestration_parameters(_pool) + reply_core_parameters()
         )
         self._turn_prompt_cache = {
             "identity": await self._render_identity(),
+            "session_context": session_context_section,
             "capabilities": capabilities_section,
             "parameters": parameters_section,
             "skills_section": skills_section,
@@ -190,7 +316,7 @@ class OrchestratorLoopMixin:
                 tool_timings=tool_timings,
             )
             await self._finalize_plan(visitor)
-            return
+            return None
 
         if flow_owner and flow_owner not in tools:
             # Locked-in skill tasks use the skill name as owner_action — they
@@ -300,6 +426,14 @@ class OrchestratorLoopMixin:
                         active_skill_doc = doc
                         break
 
+        in_force = [d for d in skill_docs if getattr(d, "always_active", False)]
+        if active_skill_doc is not None and active_skill_doc not in in_force:
+            in_force.append(active_skill_doc)
+
+        refreshed = await self._absorb_skill_parameters(visitor, in_force)
+        if refreshed:
+            parameters_section = refreshed
+
         if active_skill_doc is not None:
             prep_obs_before = len(observations)
             tools, visible, skills_section = await self._apply_active_task_lock_skill(
@@ -372,6 +506,10 @@ class OrchestratorLoopMixin:
         # going instead of ending the turn mid-task. Bounded so a deliberate
         # reply/finish is never blocked for long.
         plan_deflections = 0
+        # Grounding guard: a reply claiming it consulted a source while the
+        # turn ran NO substantive tool is false by construction. Bounded so a
+        # genuine reply is never blocked for long.
+        grounding_deflections = 0
         # Named-tool steering guard (block_raw_tool_invocation): tools the user
         # named literally this turn, deflected once each so the model re-plans
         # from intent rather than obeying the named tool.
@@ -388,7 +526,7 @@ class OrchestratorLoopMixin:
         soft_abandon_streak = 0
         soft_abandon_title = ""
         nd_streak = 0  # consecutive unparseable model decisions
-        # Model gearing (ADR-0016): light until the turn proves multi-step.
+        # Model gearing (ADR-0016 / ADR-0041): light until multi-step.
         substantive_tool_calls = 0
         ticks_light = 0
         ticks_heavy = 0
@@ -415,7 +553,113 @@ class OrchestratorLoopMixin:
         if drain_directive:
             await self._send_reply(visitor, drain_directive, compose=True)
             ended_via = "drain_reply"
-            return
+            return None
+
+        return TurnState(
+            ack_started=ack_started,
+            ack_task=ack_task,
+            activated=activated,
+            active_skill_doc=active_skill_doc,
+            agent=agent,
+            budget=budget,
+            capabilities_section=capabilities_section,
+            chain_deflections=chain_deflections,
+            deadline=deadline,
+            deflected_named=deflected_named,
+            drain_directive=drain_directive,
+            ended_via=ended_via,
+            flow_note=flow_note,
+            flow_owner=flow_owner,
+            grounding_deflections=grounding_deflections,
+            history=history,
+            interaction=interaction,
+            last_obs=last_obs,
+            last_sig=last_sig,
+            lean_surface=lean_surface,
+            locked_companion_skill_names=locked_companion_skill_names,
+            locked_companion_tools=locked_companion_tools,
+            loop_actions=loop_actions,
+            loop_t0=loop_t0,
+            nd_streak=nd_streak,
+            observations=observations,
+            parameters_section=parameters_section,
+            pending_chain=pending_chain,
+            plan_deflections=plan_deflections,
+            plan_note=plan_note,
+            refreshed=refreshed,
+            repeats=repeats,
+            skill_docs=skill_docs,
+            skill_names=skill_names,
+            skills_section=skills_section,
+            soft_abandon_evaluated=soft_abandon_evaluated,
+            soft_abandon_streak=soft_abandon_streak,
+            soft_abandon_title=soft_abandon_title,
+            substantive_tool_calls=substantive_tool_calls,
+            ticks=ticks,
+            ticks_heavy=ticks_heavy,
+            ticks_light=ticks_light,
+            tool_timings=tool_timings,
+            tools=tools,
+            user_named_tools=user_named_tools,
+            utterance=utterance,
+            visible=visible,
+        )
+
+    async def _run_loop(self, visitor: "InteractWalker") -> None:
+        state = await self._prepare_turn(visitor)
+        if state is None:
+            return  # the turn was completed during preparation
+        # The 47 names below are the entire interface between preparation and
+        # the tick loop. Unpacked rather than used as `state.x` so the loop body
+        # is unchanged by this split; shrinking this list is the next step.
+        ack_started = state.ack_started
+        ack_task = state.ack_task
+        activated = state.activated
+        active_skill_doc = state.active_skill_doc
+        agent = state.agent
+        budget = state.budget
+        capabilities_section = state.capabilities_section
+        chain_deflections = state.chain_deflections
+        deadline = state.deadline
+        deflected_named = state.deflected_named
+        drain_directive = state.drain_directive
+        ended_via = state.ended_via
+        flow_note = state.flow_note
+        flow_owner = state.flow_owner
+        grounding_deflections = state.grounding_deflections
+        history = state.history
+        interaction = state.interaction
+        last_obs = state.last_obs
+        last_sig = state.last_sig
+        lean_surface = state.lean_surface
+        locked_companion_skill_names = state.locked_companion_skill_names
+        locked_companion_tools = state.locked_companion_tools
+        loop_actions = state.loop_actions
+        loop_t0 = state.loop_t0
+        nd_streak = state.nd_streak
+        observations = state.observations
+        parameters_section = state.parameters_section
+        pending_chain = state.pending_chain
+        plan_deflections = state.plan_deflections
+        plan_note = state.plan_note
+        refreshed = state.refreshed
+        repeats = state.repeats
+        skill_docs = state.skill_docs
+        skill_names = state.skill_names
+        skills_section = state.skills_section
+        soft_abandon_evaluated = state.soft_abandon_evaluated
+        soft_abandon_streak = state.soft_abandon_streak
+        soft_abandon_title = state.soft_abandon_title
+        substantive_tool_calls = state.substantive_tool_calls
+        ticks = state.ticks
+        ticks_heavy = state.ticks_heavy
+        ticks_light = state.ticks_light
+        tool_timings = state.tool_timings
+        tools = state.tools
+        user_named_tools = state.user_named_tools
+        utterance = state.utterance
+        visible = state.visible
+        last_gear = "light"
 
         try:
             while budget > 0:
@@ -424,9 +668,9 @@ class OrchestratorLoopMixin:
                     break
                 budget -= 1
                 ticks += 1
-                # Gear selection (sticky): heavy once the turn is multi-step —
-                # enough substantive tool calls, or a skill (multi-step SOP) is
-                # active. Single-model agents always run heavy.
+                # Gear selection (sticky, ADR-0041): heavy once a skill is
+                # active, planning is on, or after the first substantive tool.
+                # Single-model agents always run heavy.
                 gear = self._select_gear(
                     substantive_tool_calls,
                     bool(activated) or active_skill_doc is not None,
@@ -435,14 +679,12 @@ class OrchestratorLoopMixin:
                     ticks_light += 1
                 else:
                     ticks_heavy += 1
+                last_gear = gear
                 # Arm the transient ack only once the turn proves COMPLEX — a
                 # skill is active, or it has made multiple substantive tool calls.
                 # Simple single-tool / reply-only turns never surface a "working
                 # on it" line (and so it can't trail after a fast reply).
-                if not ack_started and (
-                    bool(activated)
-                    or substantive_tool_calls >= int(self.escalate_after_tool_calls)
-                ):
+                if not ack_started and (bool(activated) or substantive_tool_calls >= 2):
                     ack_started = True
                     ack_task = self._schedule_first_emit_ack(visitor)
                 visible_tools = [tools[n] for n in visible if n in tools]
@@ -543,6 +785,19 @@ class OrchestratorLoopMixin:
                             observations.append(self._plan_drain_nudge(open_steps))
                             continue
                     answer = _text_candidate(decision)
+                    if answer and grounding_deflections < int(
+                        self.grounding_max_deflections
+                    ):
+                        nudge = self._grounding_deflection(
+                            answer,
+                            substantive_tool_calls,
+                            self._grounding_corpus(utterance, history, observations),
+                            visitor,
+                        )
+                        if nudge is not None:
+                            grounding_deflections += 1
+                            observations.append(nudge)
+                            continue
                     if answer:
                         await self._maybe_emit_final(visitor, answer)
                     ended_via = "final"
@@ -590,6 +845,22 @@ class OrchestratorLoopMixin:
                             }
                         )
                         continue
+                    if tool_name in (
+                        "reply",
+                        "respond",
+                    ) and grounding_deflections < int(self.grounding_max_deflections):
+                        nudge = self._grounding_deflection(
+                            str(
+                                (args or {}).get("text") or _text_candidate(args or {})
+                            ),
+                            substantive_tool_calls,
+                            self._grounding_corpus(utterance, history, observations),
+                            visitor,
+                        )
+                        if nudge is not None:
+                            grounding_deflections += 1
+                            observations.append(nudge)
+                            continue
                     if tool_name in ("reply", "respond") and plan_deflections < int(
                         self.plan_completion_max_deflections
                     ):
@@ -695,8 +966,15 @@ class OrchestratorLoopMixin:
                     repeats = repeats + 1 if sig == last_sig else 0
                     last_sig = sig
                     if repeats >= 2:
+                        # Break, don't return: the post-loop partial-compose
+                        # below is what turns gathered work into an answer. A
+                        # bare return skipped it, so a turn that had already
+                        # activated a skill, planned and fetched a page ended on
+                        # "Sorry, I didn't quite catch that" and threw all of it
+                        # away. Observed live on a research → report → assimilate
+                        # request.
                         ended_via = "repeat_guard"
-                        return
+                        break
                     if repeats == 1:
                         prior_errored = (
                             last_obs.startswith("(tool error:")
@@ -730,9 +1008,10 @@ class OrchestratorLoopMixin:
                         obs = (
                             f"(no such tool: {tool_name}. Call "
                             "find_tool(query) to find the right tool by "
-                            "capability — e.g. find_tool('write file'), "
-                            "find_tool('add to knowledge base') — then call the "
-                            "exact name it returns.)"
+                            "capability — e.g. find_tool('add to knowledge "
+                            "base'), find_tool('fetch url') — then call the "
+                            "exact name it returns. Pass gathered text in "
+                            "tool args; do not invent a write-file detour.)"
                         )
                     else:
                         if self.block_raw_tool_invocation and tool_name not in visible:
@@ -832,6 +1111,11 @@ class OrchestratorLoopMixin:
                         )
                         if locked_doc is not None:
                             active_skill_doc = locked_doc
+                            refreshed = await self._absorb_skill_parameters(
+                                visitor, [locked_doc]
+                            )
+                            if refreshed:
+                                parameters_section = refreshed
                             if new_section:
                                 skills_section = new_section
                             await self._emit_server_prep_tool_thoughts(
@@ -995,9 +1279,10 @@ class OrchestratorLoopMixin:
                         )
                         return
                     continue
-                # Unknown action — stop rather than loop.
+                # Unknown action — stop rather than loop, but still let the
+                # partial-compose below deliver whatever the turn gathered.
                 ended_via = "unknown"
-                return
+                break
 
             # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
             # finalize idle while runnable work remains. Drain non-skill runnable
@@ -1024,7 +1309,14 @@ class OrchestratorLoopMixin:
             # from what it gathered. Only when there's actual work to summarize.
             if (
                 not emitted
-                and ended_via in ("budget", "duration", "no_decision")
+                and ended_via
+                in (
+                    "budget",
+                    "duration",
+                    "no_decision",
+                    "repeat_guard",
+                    "unknown",
+                )
                 and observations
             ):
                 decision = await self._run_model(
@@ -1035,11 +1327,17 @@ class OrchestratorLoopMixin:
                     observations,
                     skills_section=skills_section,
                     finalize=True,
-                    gear="light",  # wrap-up is single-dimensional
+                    gear=last_gear,
                     capabilities_section=capabilities_section,
                     parameters_section=parameters_section,
                 )
                 answer = _text_candidate(decision) if decision else ""
+                # Finalize must be text-only. Models often ignore STEP LIMIT and
+                # emit another tool call (observed: find_tool → write-file path
+                # after repeat_guard). Never fall through to clarify_text when
+                # we already gathered work.
+                if not answer:
+                    answer = _salvage_partial_answer(observations)
                 if answer:
                     await self._maybe_emit_final(visitor, answer)
                     ended_via = f"{ended_via}_finalized"

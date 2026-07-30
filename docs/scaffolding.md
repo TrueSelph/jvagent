@@ -190,6 +190,8 @@ the `jvagent/orchestrator` action via:
 
 - `skills`: `-all` or a list of names/globs (default unset = expose none)
 - `denied_skills`: optional subtractive names/globs
+- `denied_tools`: optional subtractive tool-name globs (hard-exclude from the
+  Orchestrator surface; not lean-hide — see `docs/ORCHESTRATOR.md`)
 - `skills_source`: `library`, `app`, or `both`
 
 ### Skill commands

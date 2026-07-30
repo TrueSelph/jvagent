@@ -71,6 +71,7 @@ from .hooks import (
     field_prompt_directive,
     interview_tool_response,
     load_hook_function,
+    model_only_directive,
     no_session_directive,
     restart_session_directive,
     review_confirmation_directive,
@@ -1880,6 +1881,19 @@ def _review_response(
 
 
 REVIEW_PRESENTED_MARKER_KEY = "review_presented_marker"
+# Fingerprint of the collected values at the moment the summary was shown.
+# Re-entry is only a repeat if nothing changed; after a correction the user
+# must see the UPDATED summary.
+REVIEW_PRESENTED_FIELDS_KEY = "review_presented_fields"
+
+
+def _fields_fingerprint(collected: Dict[str, Any]) -> str:
+    """Stable digest of the collected values, so a re-entry can tell "the user
+    replied to the same summary" from "the user corrected something"."""
+    try:
+        return json.dumps(collected or {}, sort_keys=True, default=str)
+    except Exception:  # pragma: no cover - defensive
+        return str(sorted((collected or {}).items()))
 
 
 def _interaction_marker(visitor: Any) -> str:
@@ -1902,12 +1916,56 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     review_fn = spec.handlers.review
     func = load_hook_function(spec, review_fn) if review_fn else None
 
+    # Re-entry guard: the summary was already presented on an EARLIER turn and
+    # the user has since replied. Re-presenting it makes the model relay the
+    # confirmation prompt again, and in practice it compresses that to the bare
+    # control token — a user who answered "Looks good" was shown a reply
+    # consisting of the single word "Confirm". Hand the model the next step
+    # instead of the same summary. It still decides what the reply means; the
+    # tool only refuses to repeat itself.
+    if spec.confirm != "auto" and session.status == InterviewStatus.REVIEW:
+        marker = _interaction_marker(visitor)
+        stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
+        stored_fields = session.context.get(REVIEW_PRESENTED_FIELDS_KEY)
+        # Absent (not merely different) means the summary was stamped by a build
+        # that predates the fingerprint, or by a path that doesn't record one.
+        # Treat that as unchanged and fall back to the marker alone — reading
+        # absence as "something changed" silently disables the guard for every
+        # in-flight session, which is exactly how the echo reached a user again
+        # after the first fix shipped.
+        unchanged = stored_fields is None or str(stored_fields) == _fields_fingerprint(
+            collected
+        )
+        if stamped and marker and stamped != marker and unchanged:
+            return interview_tool_response(
+                ok=True,
+                status="review",
+                already_presented=True,
+                response_directive=model_only_directive(
+                    "The review summary was already shown on an earlier turn and "
+                    "the user has now responded to it. Do NOT show the summary "
+                    "again and do NOT repeat the confirmation prompt — never "
+                    "reply with a bare 'Confirm' or 'Yes'; those are words for "
+                    "the USER to say, not for you. Read their latest message: if "
+                    'it agrees in any wording ("looks good", "yep", "go '
+                    'ahead", "that\'s right"), call interview__complete now. '
+                    "If they asked to change something, call "
+                    "interview__set_fields with the correction. If it is genuinely "
+                    "unclear, ask one short question about what they want to change."
+                ),
+                system_message=(
+                    "Review already presented on a previous turn — interpret the "
+                    "user's reply; do not re-present."
+                ),
+            )
+
     if not func:
         summary = build_review_summary(
             session, spec, collected, visible_keys=visible_keys
         )
         session.status = InterviewStatus.REVIEW
         session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
+        session.context[REVIEW_PRESENTED_FIELDS_KEY] = _fields_fingerprint(collected)
         await action._save_session(session, visitor)
         return _review_response(session, spec, review_fields, summary)
 
@@ -1975,6 +2033,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     )
     session.status = InterviewStatus.REVIEW
     session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
+    session.context[REVIEW_PRESENTED_FIELDS_KEY] = _fields_fingerprint(collected)
     await action._save_session(session, visitor)
     review_fields = {
         k: collected[k] for k in visible_keys if k in collected and k not in omit_fields

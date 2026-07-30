@@ -126,3 +126,55 @@ async def test_batch_failure_single_directive(signup_action):
     assert "next_tool" not in result
     assert "response_directive" in result
     assert len([k for k in result if k == "response_directive"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_signup_phone_local_seven_digits_accepted_with_country_code(
+    signup_action,
+):
+    """Bare local numbers must go through set_fields — not a reply-only country ask.
+
+    Regression: model followed a hint to ask for country/area code conversationally
+    instead of calling set_fields; validator never ran and the user had to nudge.
+    """
+    action, contract = signup_action
+    phone = contract.get_field("phone_number")
+    assert phone is not None
+    assert phone.validator_args.get("country_code") == "592"
+    assert phone.validator_args.get("exact_length") == 10
+    assert "ask for country" not in (phone.hint or "").lower()
+
+    session = InterviewSession(interview_type="signup_interview")
+    session.set_value("user_name", "Eldon Marks")
+    session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
+    session.set_value("user_email", "eldon@mail.com")
+    session.set_value("employer_name", "V75 Inc.")
+    action._get_session_and_contract = AsyncMock(return_value=(session, contract))
+    action._save_session = AsyncMock()
+    visitor = SimpleNamespace(utterance="6415808")
+
+    result = json.loads(
+        await action._handle_set_fields(
+            fields={"phone_number": "6415808"}, visitor=visitor
+        )
+    )
+
+    assert result["ok"] is True
+    assert session.get_value("phone_number") == "5926415808"
+
+
+@pytest.mark.asyncio
+async def test_signup_phone_too_short_returns_length_reask(signup_action):
+    action, contract = signup_action
+    session = InterviewSession(interview_type="signup_interview")
+    action._get_session_and_contract = AsyncMock(return_value=(session, contract))
+    action._save_session = AsyncMock()
+    visitor = SimpleNamespace(utterance="123")
+
+    result = json.loads(
+        await action._handle_set_fields(fields={"phone_number": "123"}, visitor=visitor)
+    )
+
+    assert result["ok"] is False
+    assert "10-digit" in (result.get("response_directive") or "").lower()
+    assert "phone_number" not in session.fields

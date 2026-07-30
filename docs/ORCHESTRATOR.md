@@ -35,6 +35,8 @@ Active-flow detection reads persisted state only. With `lock_active_flow=False` 
 
 The orchestrator and every action on its tool surface follow the **[thin harness principle](thin-harness.md)**: the server exposes primitives (tools, session state, validation gates, raw JSON results); the model and skill SOP own intent, routing, extraction, and multi-step chaining. The orchestrator must not classify user intent, inject prep observations that pre-select tools, auto-store extracted values on skill activation, inline multi-step tool results, or post-process one action's outputs to force follow-up calls. Turn-lock ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)) is a mechanical surface restriction — not semantic routing.
 
+**SESSION CONTEXT** ([ADR-0042](../.planning/adr/0042-session-context-ground-truth.md)) is turn-stable environment ground truth (current date/time via `App.now()`, channel), injected into the system prompt each turn — the same class as the former CURRENT CHANNEL line. It is **not** prep steering: relative time must use that clock; `get_current_datetime` remains for mid-turn refresh only.
+
 Subsystem-specific rules (e.g. interviews) extend the platform doc as **profiles** — see [Interview profile](../jvagent/action/interview/docs/thin-harness.md).
 
 ## Flow continuation (configurable: deterministic lock or model-mediated)
@@ -60,7 +62,7 @@ Resume is **soft**, mirroring `lock_active_flow=False`: at turn start, an unfini
 
 **Plan-drain guard (don't complete with open steps).** While an active plan still has unfinished steps, a turn-ending decision — `final`, **or** a `reply`/`respond` (the terminal egress), whether bare narration coerced to a reply ("Proceeding to drafting now") or a deliberate reply — is **deflected**, nudging the model to do the next step or explicitly close the plan (mark steps done/skipped) before completing. This is what stops the "narrate a step then stop" stall. It is bounded by `plan_completion_max_deflections` (default 6, `0` disables): after the cap the reply passes, so a genuine mid-plan question to the user is never blocked forever. The guard only bites when `planning: true` and a plan is actually open — no plan, no effect. Each deflection nudge is **actionable** — it tells the model to make a real tool call (using `find_tool` to locate the tool if it isn't visible, and that produced text can go straight to the tool — e.g. `pageindex__assimilate` accepts content, no file write needed) rather than narrate or dump the result as a chat message.
 
-**Carrying work across the resume.** The checklist persists, but the turn's `observations` (gathered evidence, drafts) do not. So a step can record a short **`result`** — `{step, status:'done', result:'draft saved to report.md'}` — carried onto the persisted step (`Step.result`, bounded ~1k chars). `plan_resume_note` renders those under each step (a `↳` line), telling the model to **reuse** them (read the file) rather than regenerate. The durable home for a substantial artifact is the **per-user sandbox** (which already persists across turns — file_interface/code_execution write there); the `result` note is just the pointer. This keeps the plan compact while making a resumed multi-step turn continue from saved work instead of restarting — paired with the model-floor and the plan-completion guard above, it closes the "nudge restarts the task" failure mode.
+**Carrying work across the resume.** The checklist persists, but the turn's `observations` (gathered evidence, drafts) do not. So a step can record a short **`result`** — `{step, status:'done', result:'summarized 12 posts'}` — carried onto the persisted step (`Step.result`, bounded ~1k chars). `plan_resume_note` renders those under each step (a `↳` line), telling the model to **reuse** them rather than regenerate. Prefer passing substantial intermediate text **in the next tool's args** (e.g. report markdown into `pageindex__assimilate`'s `doc`) — do not detour through a write-file tool unless the user asked for a file. When a durable file *is* required, the per-user sandbox (file_interface/code_execution) is the home and `result` holds the path pointer. Paired with the model-floor and the plan-completion / salvage path on budget-exhaust, this closes both "nudge restarts the task" and "repeat_guard → clarify_text discards work".
 
 ## The unified tool surface
 
@@ -97,9 +99,127 @@ Two further knobs/notes:
 - **Skills are not gated** by lean surfacing — they're few and the listing is the proactive "prefer a whole SOP" nudge, so the skill index stays fully shown. `find_skill` remains for larger catalogs.
 - **Essentials-only** is reachable with `lean_presurface_k: 0` (optionally `lean_tool_threshold: 1` to force it on for any surface): the prompt then carries only egress, the meta-tools (`find_*`/`load_tool`/`use_skill`), core tools, an active-flow tool, and the skill index — every capability is reached via `find_tool`. It's the smallest prompt but pays a discovery round-trip on most turns and leans harder on weaker models, so it's an **option for very large surfaces / strong models**, not the default. The default relevance pre-surface removes that round-trip for the common single-intent turn, which is where a lean harness should be fast.
 - **Always-visible pins (turn-1 immediacy).** The relevance pre-surface is lexical, so a tool that must be callable on the first turn *regardless of phrasing* (e.g. a filing tool) can fall behind a `find_tool` round-trip. Rather than un-leaning the whole surface with `lean_tool_threshold: 0`, pin just the few that need it — `pinned_tools: ["filing__*"]` (tool-name globs) or a `SKILL.md` with `always-active: true` (pins that skill's `allowed-tools`). Both are merged into the visible set *after* the lean policy, every turn, and default off. (`always-active` previously did nothing to tool visibility under the orchestrator — it now pins, per [ADR-0018 §5](../.planning/adr/0018-lean-tool-surfacing.md).)
+- **Hard deny (capability gate).** `denied_tools: ["file_interface__*"]` (fnmatch globs) removes matching tools from the assembled surface entirely — not listed, not discoverable via `find_tool`, not dispatchable. Applied after pins so a deny wins. Mirrors `denied_skills`. Egress and catalog meta-tools cannot be denied. Channel-overridable via `channel_overrides.denied_tools`. Prefer this over disabling a whole action when only some of its tools should be unavailable; MCP servers still have their own per-server `denied_tools`.
 - **Plan-aware pre-surface.** When `planning: true` and a multi-step plan is in progress, the lean relevance signal is the user's message **plus the active plan's checklist**. A plan resumed on a low-signal turn ("Well?", "continue") would otherwise surface nothing and force `find_tool` round-trips for the tools the next step needs (e.g. `pageindex__assimilate` for "add to knowledge base"); folding the checklist into the signal keeps those tools visible without a round-trip.
 - **Naming a hidden tool just runs it.** If the model names a tool that's real but lean-hidden, the loop auto-promotes it to visible and dispatches it (an implicit `load_tool`) rather than rejecting it — hiding is a prompt-size optimization, not a capability gate. `find_tool` is for *discovering* a tool whose exact name you don't know; an unknown/hallucinated name is bounced there with examples.
 - **Tolerant decision parsing.** The loop normalizer salvages the common malformed shapes a model emits so a step isn't wasted: text in `answer`/`content` instead of `args.text`; a skill addressed as if it were a tool (`{"tool":"research"}` → `use_skill`); and a **flattened** call where tool args sit at the decision top level instead of under `args` (`{"tool":"update_plan","steps":[...]}`) — when no `args` object is supplied, the non-reserved top-level keys are folded in. `update_plan` additionally accepts its list under many key aliases / a bare string / a single inline step.
+
+## Prompt cost (what a turn actually bills)
+
+A turn is N model calls over the same assembled prompt, so the executive's cost
+is dominated by what gets *resent* rather than by any single call. Four
+properties govern it, and `scripts/bench_orchestrator.py` measures them
+against a real app graph without needing an API key:
+
+**1. Section order is a cost decision.** Providers discount the request *prefix*
+up to the first byte that changed (Anthropic only up to an explicit
+`cache_control` breakpoint — see below). The tool and skill listings change
+mid-turn: `load_tool` promotes a hidden tool, `use_skill` swaps the procedure
+in. So the built-in system prompt puts the invariant sections first — identity,
+loop protocol, gated protocol extras, `system_prompt_extra` — and the volatile
+listings last. Measured on the example agent, the reverse order left only 20% of
+a 3.4k-token system prompt reusable after the first skill activation.
+
+**OPERATING RULES are the deliberate exception and stay last**, behind the
+volatile listings, which costs ~300 tokens of cacheable prefix. That is not a
+style choice: an A/B against gpt-4.1 (`scripts/ab_prompt_variants.py`) moved them
+mid-prompt for cache reasons and prompt-injection resistance fell to 2/5 — the
+agent replied `BYPASS OK` verbatim to "ignore all previous instructions". The
+rule *text* was unchanged; only its distance from the user turn moved. Recency
+governs adherence for the safety rules specifically. Measure before moving them
+again.
+
+Restoring the position raised resistance to **~88% (22/25 runs), not 100%** — the
+first 5-run sample read as a clean 5/5 and was simply too small. `SAFEGUARDS_REMINDER`
+(`safeguards_reminder`) therefore also restates the user-content boundary in the
+user turn, the slot a model weights most: 10/10 versus 9/10 for the shorter text.
+That margin is itself underpowered; treat the reminder as defence in depth rather
+than a fix, and **do not treat prompt-level injection resistance as a guarantee** —
+it is stochastic on this model.
+
+A custom `system_prompt` override controls its own ordering. Overrides that
+include the `{extra_section}` placeholder get `system_prompt_extra` (and the
+channel-scoped extra) placed there; overrides without it keep the legacy
+append-at-the-end behaviour.
+
+The request is `[system, *history, user]`, and a provider caches the *request*
+prefix — so conversation history is part of the cacheable span and is re-priced
+along with everything else downstream of the first changed byte. Counting it,
+the same turn reuses **35%** at `history_limit: 10`. The gap is structural: the
+volatile listings and the trailing OPERATING RULES close the system message, so
+history sits behind them. Moving those listings into a trailing message would pull history
+into the cacheable prefix (1,476 → 2,126 reusable tokens) — not done, because it
+takes the tool list out of the system role, which is a behavioural change on
+weaker models and needs its own measurement.
+
+**2. Observation replay is the quadratic term.** See the observation budget under
+[extended config](#extended-config-surface-adr-0015).
+
+**3. History is charged on every tick.** It is resolved once per turn and resent
+with each model call, so `history_limit` is a per-tick multiplier, not a one-off:
+at the example agent's `10` it is ~650 tokens/tick, +23% on a 5-tick turn.
+Interaction `[EVENT]` lines are omitted from loop history by design (ADR-0041)
+— they cost ~100+ tokens/tick when resent. Bench a realistic turn with
+`--history N`.
+
+**4. Cache accounting.** OpenAI caches long prefixes automatically and reports
+hits in `usage.prompt_tokens_details.cached_tokens`; Anthropic caches only up to
+a `cache_control` marker, which `AnthropicLanguageModelAction` sets at the end of
+the system prompt by default (`prompt_caching`, skipped below
+`prompt_cache_min_chars`). Both surface their counters into usage, so hit rate is
+visible in the `model_call` event, and `estimate_cost` prices cached input at its
+real rate rather than the full input rate — OpenAI reads at ×0.5, Anthropic reads
+at ×0.1 with writes at a ×1.25 premium. Unknown providers claim no discount.
+
+**Egress adds a second model call on the compose paths.** `reply` normally takes
+ReplyAction's literal fast path — zero extra model calls. But the four
+`_send_reply(..., compose=True)` sites (`drain_reply`, `resume_reply`,
+`directive_reply`, and the budget-exhausted drain) go straight to
+`ReplyAction.respond()`, which is one more round-trip: measured at ~550 input
+tokens on the example agent. The tokens are minor; the cost is a *serial*
+round-trip sitting in front of a user-facing reply. It is not gratuitous — a
+directive may carry model-facing guidance (after `U+2063`) that must be rendered
+into the agent's voice rather than leaked verbatim. But those sites call
+`respond()` unconditionally, without checking whether guidance is actually
+present, so a bare relay directive with no shaping pays for a compose that would
+render it unchanged. Routing them through `gather()` (whose N=1 literal path
+already handles exactly that case) would skip the call — untested here, since it
+changes user-facing reply text and wants a live check.
+
+**Measured levers.** A/B'd at 5 runs over the rule corpus with no detected
+regression:
+
+- `tool_listing_position: trailing` (still opt-in) moves the tool/skill listings
+  into their own message after the history. The request becomes `[system,
+  *history, listing, user]`, so the cacheable prefix extends through the
+  conversation: **100% prefix reuse versus 36%** on a skill-activating turn at
+  `history_limit: 10`, for +205 raw tokens. Prompt-section position has already
+  moved behaviour once in this loop, so soak it before making it the default.
+- Bare relay/directive egress **always** skips the serial compose call when
+  there is no model-facing guidance and nothing else needs shaping (ADR-0041) —
+  ~550 input tokens and one round-trip off a user-facing reply.
+
+**Regression gate.** `scripts/bench_orchestrator.py --assert-max-tokens N
+--assert-min-cache-pct P` exits non-zero past either budget, and runs on every PR
+in `test-jvagent.yaml`. Counts are deterministic, so these are gates rather than
+thresholds.
+
+> **Persisted config outruns your edits.** Every `attribute` — prompt templates,
+> `pinned_tools`, `channel_overrides`, `system_prompt_extra`, all of it — is
+> stored on the action node at bootstrap. An app graph keeps the values it was
+> bootstrapped with, so **editing `agent.yaml` changes nothing until you sync**:
+>
+> ```bash
+> jvagent <app> --update --source
+> ```
+>
+> This is easy to misread as a product bug. Live-testing the channel-gating work
+> produced an agent that called `whatsapp__send_flow` three times on a *web* turn
+> and dead-ended — because the running server still held the pre-edit config
+> (globally pinned WhatsApp tools and a `system_prompt_extra` that said
+> "IMMEDIATELY call whatsapp__send_flow"). The same request routed correctly the
+> moment the graph was synced. `scripts/bench_orchestrator.py` defaults to
+> `--update-mode source` for exactly this reason.
 
 ## Model floor (don't run the orchestrator on a weak model)
 
@@ -108,7 +228,9 @@ The orchestrator is **model-mediated** ([ADR-0013](../.planning/adr/0013-togglab
 The plan-gated completion guard + prompt hardening (act-don't-announce; finish multi-step tasks before replying) compensate, but they do not replace a capable model. Guidance:
 
 - **Heavy gear** (the reasoning model that runs once a turn is multi-step) **floor: gpt-4.1 or Claude Opus/Sonnet.** The class default `model` is `gpt-4o-mini` for cheap single-agent use — **override it** for any agent that runs multi-step skills/plans (the example app sets `model: gpt-4.1`). See model gearing ([ADR-0016](../.planning/adr/0016-model-gearing-light-heavy.md)).
-- The **light gear** (`light_model`, single-step turns) can stay cheap; gearing escalates to heavy after `escalate_after_tool_calls` substantive calls or once a skill is active.
+- The **light gear** (`light_model`, single-step turns) can stay cheap; gearing
+  escalates to heavy after the first substantive tool, when a skill is active,
+  or when `planning` is on ([ADR-0041](../.planning/adr/0041-gearing-and-cost-policy-in-core.md)).
 
 ## Identity and egress (ADR-0014)
 
@@ -194,17 +316,18 @@ actions:
 
 Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
 
-### Model gearing (ADR-0016)
+### Model gearing (ADR-0016 / ADR-0041)
 
-Optional: pair a **light** completion model with the **heavy** reasoning model so single-dimensional turns don't pay the reasoning tax. The existing `model*`/`reasoning_*` are the heavy profile; set `light_model` (+ `light_model_action_type`, `light_model_temperature`, `light_model_max_tokens`) to engage gearing — empty leaves the agent single-model. The loop starts on the light model and **escalates to heavy** once the turn is multi-step: `escalate_after_tool_calls` substantive tool calls (default 2; egress/meta tools excluded) or `escalate_on_skill` (a skill activated). Escalation is sticky; the partial-compose finalize runs light. Reasoning kwargs apply only on the heavy gear. The `orchestrator_activation` event reports `ticks_light`/`ticks_heavy`/`escalated`.
+Optional: pair a **light** completion model with the **heavy** reasoning model so single-dimensional turns don't pay the reasoning tax. The existing `model*`/`reasoning_*` are the heavy profile; set `light_model` (+ `light_model_action_type`, `light_model_temperature`, `light_model_max_tokens`) to engage gearing — empty leaves the agent single-model.
+
+Policy is **fixed in core** ([ADR-0041](../.planning/adr/0041-gearing-and-cost-policy-in-core.md)): the loop starts light and escalates to heavy when a skill is active, when `planning: true`, or after ≥1 substantive tool call (egress/meta excluded). Escalation is sticky; budget finalize keeps `last_gear`. Reasoning kwargs apply only on the heavy gear. The `orchestrator_activation` event reports `ticks_light`/`ticks_heavy`/`escalated`.
 
 ```yaml
       model: kimi-k2.6:cloud            # heavy / reasoning
       model_action_type: OllamaLanguageModelAction
       light_model: gpt-4o-mini          # light / completion (engages gearing)
       light_model_action_type: OpenAILanguageModelAction
-      escalate_after_tool_calls: 2
-      escalate_on_skill: true
+      # planning: true                  # also forces heavy from tick 0
 ```
 
 ### Extended config surface (ADR-0015)
@@ -213,7 +336,8 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 
 - **Reasoning** (reasoning-capable models only): `reasoning_enabled`, `reasoning_effort` (low/medium/high), `reasoning_budget_tokens`, `reasoning_extra`. Threaded into the loop's model call; the executive profile owns its own reasoning level.
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
-- **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **4096** — the orchestrator is agentic (each tick emits reasoning plus an action, often the substantive answer, and thinking models spend completion tokens on reasoning), so it carries more headroom than a single-shot responder; raise further for long-form replies. `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft prompt cap), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`), `include_history_events` (prior `[EVENT]` lines in loop history, default on). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback.
+- **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **4096** — the orchestrator is agentic (each tick emits reasoning plus an action, often the substantive answer, and thinking models spend completion tokens on reasoning), so it carries more headroom than a single-shot responder; raise further for long-form replies. `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft reply prompt cap; does not truncate loop history), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** on `last_gear` — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback. If that finalize tick still returns a tool call (models sometimes ignore STEP LIMIT), the loop **salvages** plan step `result`s / tool observations into a user-facing summary instead of `clarify_text`.
+- **Observation budget**: every tick resends this turn's prior tool results, so *unbounded* results make the per-turn input cost grow with the square of the tick count — an 8-tick research turn over 8 KB page fetches billed ~70k input tokens, a 20-tick one ~325k. `MAX_OBSERVATIONS_IN_PROMPT` bounds how *many* results replay; `observation_max_chars` (default 4000) and `stale_observation_max_chars` (default 600) bound how *big* each one is, with the most recent `observation_full_recent` (default 3) getting the generous budget. `observation_args_max_chars` (default 400) caps the arguments — a write-file call carries its whole payload there. Elision is middle-out and marked, so the model can re-run the tool if it truly needs the body; set any cap to `0` to disable it.
 - **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
 - **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` is reserved for future parallel tool batches (the loop executes one tool per tick today).
 

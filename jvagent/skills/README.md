@@ -100,6 +100,7 @@ metadata:
 | `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. When `extends: action:…` is set, that action ref is also the **preferred lifecycle binder** for skill hooks (`on_skill_activate`, `prepare_task_lock_turn`, `resolve_task_lock_skill`, etc.). |
 | `allowed-channels` | both | List of canonical channel names the skill is surfaced on (e.g. `[whatsapp]`). Empty/absent = all channels. Channel is normalized via `normalize_channel` (`web`→`default`). |
 | `denied-channels` | both | List of canonical channel names the skill is hidden from. Subtracted from `allowed-channels` when both are set. |
+| `parameters` | both | Standing behavioural rules that apply **while this skill is driving the turn** (ADR-0037). Same `{scope?, condition?, response}` shape an Action declares programmatically, pooled onto the same interaction so the loop prompt and the reply compose read them through one path. `scope` is `response` (default) or `orchestration`. A bare string is an unconditional rule. Contributed only when the skill is **in force** — `always-active`, the active task-lock, or activated this turn — never merely because it is listed. |
 | `deny-access-directive` | both | Message the model relays verbatim when the user asks for the skill on a non-allowed channel (the skill is hidden; this note is surfaced in `skills_section`). |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
 
@@ -187,6 +188,51 @@ lock-companions:
 actions in `requires-actions` when the skill depends on their tools; use
 `extends: action:…` on interview skills so `InterviewAction` keeps hook ownership.
 
+
+### Behavioural parameters
+
+A skill can state the rules that hold while it runs, instead of burying them in
+SOP prose the model may or may not follow:
+
+```yaml
+---
+name: research
+description: Investigate a topic with evidence-first synthesis.
+parameters:
+  - Always cite a source for a factual claim.
+  - scope: orchestration
+    response: Search before answering; do not answer from memory.
+  - condition: the user asks for an opinion
+    response: Say plainly that it is an opinion.
+---
+```
+
+These are pooled onto the interaction exactly like an Action's `parameters`, so
+they reach the loop prompt (orchestration scope) and the reply compose (response
+scope) with no separate read path. They apply **only while the skill is in
+force**; a skill that is merely available on the agent contributes nothing, or
+every listed skill would shape every turn.
+
+Activating a skill mid-turn re-renders the loop's parameter section, so an
+orchestration-scoped rule takes effect for the rest of that same turn.
+
+Add a `key` to make a rule *replace* rather than accumulate. Rules sharing a key
+in the same scope compete, and the highest tier wins — action < skill < core
+default < agent (ADR-0037 §2.4). A skill rule therefore overrides a capability's
+default but not the operator's `agent.yaml`. Rules without a key are additive and
+never conflict.
+
+```yaml
+parameters:
+  - key: voice.verbosity
+    response: Give complete detail; this skill produces reports.
+```
+
+The framework's safety floor — identity, cutoff, internals, grounded claims,
+injection resistance — is marked `inviolable` and cannot be overridden by any
+key. An attempt is dropped and logged with its source.
+
+
 ## JV skills — coordinate existing tools
 
 A JV skill is pure judgment: a `SKILL.md` whose body steers tools that Actions
@@ -218,7 +264,9 @@ python staged_skills/<skill>/scripts/render_pdf.py --input doc.md --output outpu
 On activation the orchestrator stages the folder at `staged_skills/<name>/` inside the
 caller's per-user sandbox and tells the model where to run it. Anything a script
 writes lands in that user's slice and is visible to the file tools. See
-[`pdf_generation`](pdf_generation) and [`triage`](triage) for working examples.
+[`pdf_generation`](pdf_generation), [`triage`](triage), [`research`](research),
+and [`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
+write-file detour) for working examples.
 
 **Requires the code-execution substrate.** Claude skills only execute when
 [`jvagent/code_execution`](../action/code_execution) is installed and **enabled**

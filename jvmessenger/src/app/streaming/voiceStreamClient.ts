@@ -10,9 +10,9 @@
  *                      {"type":"final","transcript":…} | {"type":"utterance_end"}
  *                      {"type":"error","message":…}
  *
- * The session token rides as a query param because browsers cannot set custom
- * headers on a WebSocket handshake (the server also gates it the same way the
- * voice/upload POST endpoints gate `X-Session-Token`).
+ * Auth: mint a short-lived ticket via header-authed POST (keeps the long-lived
+ * session token out of query strings), then open the socket with `?ticket=`.
+ * Falls back to `?token=` when the ticket endpoint is unavailable (older servers).
  */
 
 export interface LiveTranscriptionHandlers {
@@ -22,7 +22,7 @@ export interface LiveTranscriptionHandlers {
   onFinal?: (text: string) => void;
   /** Fired once the socket is open and recording has started. */
   onReady?: () => void;
-  /** Terminal failure; the caller should fall back to batch STT. */
+  /** Terminal failure after the stream has started. */
   onError?: (reason: string) => void;
 }
 
@@ -50,18 +50,108 @@ function pickMimeType(): string | undefined {
   return undefined;
 }
 
-/** Derive the STT-stream WebSocket URL (http→ws, https→wss; token in query). */
-export function wsUrl(agentUrl: string, agentId: string, token: string): string {
+/** Dual-prefix WS URLs (``/api`` then bare), matching HTTP clients. */
+export function wsUrls(
+  agentUrl: string,
+  agentId: string,
+  credential: string,
+  param: "ticket" | "token" = "ticket"
+): string[] {
   const base = agentUrl.replace(/\/+$/, "");
   const wsBase = base.replace(/^http/i, "ws"); // http→ws, https→wss
-  const q = `?token=${encodeURIComponent(token)}`;
-  return `${wsBase}/api/agents/${encodeURIComponent(agentId)}/voice/stt/stream${q}`;
+  const q = `?${param}=${encodeURIComponent(credential)}`;
+  const id = encodeURIComponent(agentId);
+  return [
+    `${wsBase}/api/agents/${id}/voice/stt/stream${q}`,
+    `${wsBase}/agents/${id}/voice/stt/stream${q}`,
+  ];
+}
+
+/** @deprecated Prefer {@link wsUrls}; kept for tests that assert a single URL. */
+export function wsUrl(agentUrl: string, agentId: string, token: string): string {
+  return wsUrls(agentUrl, agentId, token, "token")[0];
+}
+
+async function mintStreamTicket(
+  agentUrl: string,
+  agentId: string,
+  sessionToken: string
+): Promise<string | null> {
+  const base = agentUrl.replace(/\/+$/, "");
+  const urls = [
+    `${base}/api/agents/${encodeURIComponent(agentId)}/voice/stt/stream/ticket`,
+    `${base}/agents/${encodeURIComponent(agentId)}/voice/stt/stream/ticket`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Token": sessionToken,
+        },
+        body: "{}",
+      });
+      if (res.status === 404) continue;
+      if (!res.ok) return null;
+      const body = (await res.json()) as { ticket?: string };
+      if (typeof body.ticket === "string" && body.ticket) return body.ticket;
+      return null;
+    } catch {
+      /* try next prefix */
+    }
+  }
+  return null;
+}
+
+/** Open the first WS URL that reaches OPEN; null if all fail before open. */
+function connectFirstOpen(urls: string[]): Promise<WebSocket | null> {
+  return new Promise((resolve) => {
+    let idx = 0;
+    const tryNext = () => {
+      if (idx >= urls.length) {
+        resolve(null);
+        return;
+      }
+      const url = urls[idx++];
+      let settled = false;
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        tryNext();
+        return;
+      }
+      ws.binaryType = "arraybuffer";
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        tryNext();
+      };
+      ws.onopen = () => {
+        if (settled) return;
+        settled = true;
+        // Clear fail handlers so a later error doesn't open a second socket.
+        ws.onerror = null;
+        ws.onclose = null;
+        resolve(ws);
+      };
+      ws.onerror = fail;
+      ws.onclose = fail;
+    };
+    tryNext();
+  });
 }
 
 /**
- * Begin live transcription. Resolves to a controller once the mic + socket are
- * up, or `null` if the environment/permissions/socket prevent streaming (the
- * caller should then fall back to the batch `transcribe` path).
+ * Begin live transcription. Resolves to a controller only after the server
+ * sends ``ready`` (auth + provider ok), or ``null`` if streaming cannot start
+ * (caller should fall back to batch ``transcribe``).
  */
 export async function startLiveTranscription(
   agentUrl: string,
@@ -80,19 +170,22 @@ export async function startLiveTranscription(
 
   const cleanupStream = () => stream.getTracks().forEach((t) => t.stop());
 
-  let ws: WebSocket;
-  try {
-    ws = new WebSocket(wsUrl(agentUrl, agentId, token));
-  } catch {
+  // Prefer a short-lived ticket so the long-lived session token never appears
+  // in WS query strings / access logs. Fall back to ?token= for older servers.
+  const ticket = await mintStreamTicket(agentUrl, agentId, token);
+  const urls = ticket
+    ? wsUrls(agentUrl, agentId, ticket, "ticket")
+    : wsUrls(agentUrl, agentId, token, "token");
+
+  const ws = await connectFirstOpen(urls);
+  if (!ws) {
     cleanupStream();
     return null;
   }
-  ws.binaryType = "arraybuffer";
 
   const mimeType = pickMimeType();
   const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
   let stopped = false;
-  let opened = false;
 
   recorder.ondataavailable = (e) => {
     if (e.data.size && ws.readyState === WebSocket.OPEN) ws.send(e.data);
@@ -107,7 +200,6 @@ export async function startLiveTranscription(
       /* already stopped */
     }
     cleanupStream();
-    // Tell the server to flush + close (only if the socket is still usable).
     if (ws.readyState === WebSocket.OPEN) {
       try {
         ws.send(JSON.stringify({ type: "stop" }));
@@ -118,18 +210,66 @@ export async function startLiveTranscription(
     if (reason) handlers.onError?.(reason);
   };
 
-  ws.onopen = () => {
-    opened = true;
-    // 250 ms slices keep interim latency low without flooding the socket.
-    try {
-      recorder.start(250);
-    } catch {
-      finish("recorder_start_failed");
-      return;
-    }
-    handlers.onReady?.();
-  };
+  // Wait for server ``ready`` (or early ``error`` / close) before starting the
+  // recorder or returning a controller — so MicButton can fall back to batch.
+  const ready = await new Promise<boolean>((resolve) => {
+    let done = false;
+    const succeed = () => {
+      if (done) return;
+      done = true;
+      resolve(true);
+    };
+    const fail = () => {
+      if (done) return;
+      done = true;
+      resolve(false);
+    };
 
+    ws.onmessage = (e) => {
+      if (typeof e.data !== "string") return;
+      let msg: { type?: string; transcript?: string; message?: string };
+      try {
+        msg = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (msg.type === "ready") {
+        succeed();
+        return;
+      }
+      if (msg.type === "error") {
+        fail();
+        return;
+      }
+      // Interim/final before ready is unexpected; ignore until after ready.
+    };
+    ws.onerror = () => fail();
+    ws.onclose = () => fail();
+  });
+
+  if (!ready) {
+    cleanupStream();
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  try {
+    recorder.start(250);
+  } catch {
+    cleanupStream();
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
+  // Rebind message handler for the live phase.
   ws.onmessage = (e) => {
     if (typeof e.data !== "string") return;
     let msg: { type?: string; transcript?: string; message?: string };
@@ -148,26 +288,20 @@ export async function startLiveTranscription(
       case "error":
         finish(msg.message || "stream_error");
         break;
-      // "ready" / "utterance_end" need no client action here.
     }
   };
-
   ws.onerror = () => {
-    // If the socket never opened, signal failure so the caller can fall back.
-    if (!opened) {
-      cleanupStream();
-      handlers.onError?.("socket_error");
-    }
+    if (!stopped) finish("socket_error");
   };
-
   ws.onclose = () => {
     if (!stopped) finish();
   };
 
+  handlers.onReady?.();
+
   return {
     stop: () => {
       finish();
-      // Give the last audio slice + stop control a moment to flush, then close.
       setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
           try {
