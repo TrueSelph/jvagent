@@ -5,14 +5,13 @@ but they trigger expensive provider calls (STT/TTS) or storage writes, so — pe
 the messenger design decision — they **always** require a valid Mode B session
 capability token (``X-Session-Token``), regardless of
 ``JVAGENT_INTERACT_PUBLIC_AUTH`` mode. The token must have been minted by a prior
-``/interact`` turn and still bind to its ``Conversation``; this ties every voice
-clip and upload to an established conversation and reuses the interact rate
-limiter for abuse control.
+``/interact`` turn or ``/interact/session/open`` and still bind to its
+``Conversation``; this ties every voice clip and upload to an established
+conversation and reuses the interact rate limiter for abuse control.
 
-Because a token is only ever minted when ``JVAGENT_INTERACT_PUBLIC_AUTH`` is
-``log`` or ``required`` (and ``JVSPATIAL_JWT_SECRET_KEY`` is set), voice/uploads
-are unavailable in ``off`` mode by construction — that is the intended
-fail-closed behavior for anonymous provider access.
+Tokens are minted whenever ``JVSPATIAL_JWT_SECRET_KEY`` is set (including when
+interact auth mode is ``off``). Without that secret, voice/uploads stay
+unavailable by construction.
 """
 
 from __future__ import annotations

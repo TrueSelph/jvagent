@@ -5,6 +5,9 @@ description: >
   messaged on WhatsApp — e.g. "send me the signup template", "send the welcome
   template". Only works on inbound WhatsApp turns; refuses web/chat.
 spec: jv
+allowed-channels:
+  - whatsapp
+  - whatsapp_call
 requires-actions:
   - WhatsAppAction
 allowed-tools:

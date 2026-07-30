@@ -43,7 +43,11 @@ def _datetime_tool(action: Any) -> SkillTool:
 
     return SkillTool(
         name="get_current_datetime",
-        description="Get the current authoritative date, time, and timezone.",
+        description=(
+            "Refresh the current date, time, and timezone. SESSION CONTEXT "
+            "already carries the turn's clock — call this only when you need a "
+            "fresh reading mid-turn."
+        ),
         run=_run,
     )
 
@@ -185,14 +189,16 @@ def _plan_tool(action: Any, visitor: Any) -> SkillTool:
             "across turns (so you can resume if interrupted). Argument shape: a "
             "single key `steps` holding a LIST — re-send the WHOLE list every "
             'call. Example: {"steps": [{"step": "Research", "status": "done", '
-            '"result": "saved sources.md"}, {"step": "Write report", "status": '
-            '"in_progress"}]}. Each item is either a bare string (a pending '
-            "step) or an object with `step` (the text), optional `status` "
-            "(pending|in_progress|done|skipped), and optional `result`. On a "
-            "completed step set `result` to a short note of what it produced — "
-            "especially an artifact path (e.g. 'draft saved to report.md') — so "
-            "a later turn reuses that work instead of redoing it. Use for "
-            "genuinely multi-step work; skip it for single-step requests."
+            '"result": "summarized 12 posts"}, {"step": "Assimilate report", '
+            '"status": "in_progress"}]}. Each item is either a bare string (a '
+            "pending step) or an object with `step` (the text), optional "
+            "`status` (pending|in_progress|done|skipped), and optional "
+            "`result`. On a completed step set `result` to a short note of "
+            "what it produced (facts gathered, doc_name ingested) so a later "
+            "turn reuses that work instead of redoing it. Prefer carrying "
+            "report text in the next tool's args over writing a file unless "
+            "the user asked for a file. Use for genuinely multi-step work; "
+            "skip it for single-step requests."
         ),
         run=_run,
     )

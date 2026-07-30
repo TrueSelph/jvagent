@@ -134,13 +134,43 @@ function ChatSurface({
     runtime,
     sendText,
     getToken,
+    ensureSession,
+    hasSession,
     attachments,
     addAttachment,
     removeAttachment,
     suggestions,
+    activity,
+    turnError,
+    retry,
+    unread,
+    clearUnread,
     downloadTranscript,
-  } = useChatRuntime(config);
+  } = useChatRuntime(config, bridge.pageContext);
   const profile = useResolvedProfile(config);
+
+  // A message typed into the launcher teaser becomes the first turn, once.
+  const prefill = bridge.prefill;
+  const { clearPrefill } = bridge;
+  useEffect(() => {
+    if (!prefill) return;
+    clearPrefill();
+    void sendText(prefill);
+  }, [prefill, clearPrefill, sendText]);
+
+  // Badge the launcher for proactive messages that land while the panel is
+  // closed, and clear it the moment the visitor opens the chat.
+  const bridgeOpen = bridge.open;
+  const { notify } = bridge;
+  useEffect(() => {
+    if (bridgeOpen) {
+      if (unread) clearUnread();
+      notify(0);
+    } else if (unread) {
+      notify(unread);
+    }
+  }, [bridgeOpen, unread, clearUnread, notify]);
+
   const shellConfig = useMemo(
     () => ({
       ...config,
@@ -163,10 +193,15 @@ function ChatSurface({
           config={shellConfig}
           sendText={sendText}
           getToken={getToken}
+          ensureSession={ensureSession}
+          hasSession={hasSession}
           attachments={attachments}
           addAttachment={addAttachment}
           removeAttachment={removeAttachment}
           suggestions={suggestions}
+          activity={activity}
+          turnError={turnError}
+          retry={retry}
         />
       </Shell>
     </AssistantRuntimeProvider>

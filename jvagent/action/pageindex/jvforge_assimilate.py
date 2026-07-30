@@ -135,10 +135,13 @@ def _jvforge_form_data(
     ocr: bool,
     docling_ocr_engine: Optional[str] = None,
     normalize_bold_headings: bool,
+    generate_description: Optional[bool] = None,
     llm_webhook_url: str,
     file_url: Optional[str] = None,
     notification_url: Optional[str] = None,
     notification_secret: Optional[str] = None,
+    image_model: Optional[str] = None,
+    notify_delay_seconds: Optional[float] = None,
 ) -> Dict[str, str]:
     data: Dict[str, str] = {
         "agent_id": agent_id,
@@ -156,6 +159,8 @@ def _jvforge_form_data(
     data["if_add_node_summary"] = if_add_node_summary
     if doc_description:
         data["doc_description"] = doc_description
+    if generate_description is not None:
+        data["generate_description"] = "yes" if generate_description else "no"
     if doc_url:
         data["doc_url"] = doc_url
     if metadata:
@@ -166,6 +171,10 @@ def _jvforge_form_data(
         data["notification_url"] = notification_url
     if notification_secret:
         data["notification_secret"] = notification_secret
+    if image_model:
+        data["image_model"] = image_model
+    if notify_delay_seconds is not None:
+        data["notify_delay_seconds"] = str(notify_delay_seconds)
     return data
 
 
@@ -343,6 +352,7 @@ async def assimilate_via_jvforge_async(
     ocr: bool,
     docling_ocr_engine: Optional[str] = None,
     normalize_bold_headings: bool = False,
+    generate_description: Optional[bool] = None,
     llm_webhook_url: str,
     emergency: bool = False,
     filename: Optional[str] = None,
@@ -350,6 +360,8 @@ async def assimilate_via_jvforge_async(
     file_url: Optional[str] = None,
     notification_url: Optional[str] = None,
     notification_secret: Optional[str] = None,
+    image_model: Optional[str] = None,
+    notify_delay_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     POST document to jvforge /v1/jobs (async), return immediately with job info.
@@ -385,10 +397,13 @@ async def assimilate_via_jvforge_async(
         ocr=ocr,
         docling_ocr_engine=docling_ocr_engine,
         normalize_bold_headings=normalize_bold_headings,
+        generate_description=generate_description,
         llm_webhook_url=llm_webhook_url,
         file_url=fu or None,
         notification_url=notification_url,
         notification_secret=notification_secret,
+        image_model=image_model,
+        notify_delay_seconds=notify_delay_seconds,
     )
 
     headers: Dict[str, str] = {}

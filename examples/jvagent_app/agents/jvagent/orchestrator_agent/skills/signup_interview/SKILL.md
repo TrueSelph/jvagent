@@ -73,14 +73,20 @@ interview:
       prompt: "What is your phone number?"
       required: false
       hint: >-
-        Optional field — accept skip/decline without pressing. When they give a
-        number, ask for country and area code if missing.
+        Optional. Decline or say you don't have one to skip. Any digits the
+        user gives should be stored immediately (never acknowledge in a
+        reply-only turn). The phone validator accepts a 7-digit local number
+        or a full 10-digit number (country code 592 is applied for bare local
+        numbers).
       guidance: >-
-        Optional phone contact. Call interview__skip_field when the user
-        declines or has nothing to add.
+        Optional phone contact. Skip the field when the user declines or has
+        nothing to add. Always store the digits they typed with set_fields —
+        do not ask for country/area code as a separate chat turn; validation
+        handles length.
       validator: phone
       validator_args:
         exact_length: 10
+        country_code: "592"
   handlers:
     review: signup_review
     complete: signup_complete
@@ -95,3 +101,12 @@ tags: [signup, training, interview, onboarding]
 ### Tone
 Relay the prompts in a friendly and helpful manner. Field hints are model-only
 compose steering — do not read them aloud.
+
+### Phone number
+- Digits in the latest message → call `interview__set_fields` with
+  `{"fields": {"phone_number": "<digits>"}}` **this turn**. Do not reply-only
+  thank or ask for country/area code instead of storing.
+- Decline / "I don't have one" / skip → `interview__skip_field` for
+  `phone_number`, then continue (`next_field` / `review`).
+- On `ok: false`, follow `response_directive` (re-ask). Never invent a soft
+  confirmation before the validator has run.

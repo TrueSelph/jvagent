@@ -73,26 +73,32 @@ from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
     FLOW_IN_PROGRESS_PROMPT,
     LENGTH_LIMIT_PROMPT,
-    MEMORY_PROMPT,
     NO_SKILLS_AVAILABLE,
     ORCHESTRATOR_SYSTEM_PROMPT,
     ORCHESTRATOR_USER_PROMPT_TEMPLATE,
     PLANNING_PROMPT,
-    SAFEGUARDS_REMINDER,
-    TOOL_USE_POLICY,
+    SAFEGUARDS_REMINDER_TEMPLATE,
     render_identity_section,
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
 from jvagent.action.orchestrator.tools import (
+    DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+    DEFAULT_OBSERVATION_FULL_RECENT,
+    DEFAULT_OBSERVATION_MAX_CHARS,
+    DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+    MAX_OBSERVATIONS_IN_PROMPT,
     SkillTool,
     parse_json_object,
     render_observations_section,
     render_tools_section,
     wrap_action_tool,
 )
+from jvagent.action.orchestrator.turn_cache import bind_turn_cache, get_turn_cache
 from jvagent.action.parameters import (
     accumulate_action_parameters,
     orchestrator_core_parameters,
+    parameter_text,
+    render_user_turn_reminders,
 )
 from jvagent.tooling.tool_executor import bind_dispatch_context
 
@@ -105,6 +111,10 @@ from jvagent.action.orchestrator.constants import (
     DECISION_RESERVED_KEYS as _DECISION_RESERVED_KEYS,
 )
 from jvagent.action.orchestrator.constants import STEER_EXEMPT as _STEER_EXEMPT
+from jvagent.action.orchestrator.constants import (
+    STOPWORDS,
+    significant_tokens,
+)
 
 DEFAULT_ACTIVATION_BUDGET = 24
 
@@ -172,54 +182,10 @@ def _version_satisfies(version: str, constraint: str) -> bool:
 
 # Significant-token stopwords for the lightweight relevance gates (flow
 # anchoring + lean tool pre-surfacing). No model call — cheap token overlap.
-_STOPWORDS = frozenset(
-    {
-        "the",
-        "and",
-        "for",
-        "with",
-        "you",
-        "your",
-        "are",
-        "can",
-        "could",
-        "would",
-        "want",
-        "like",
-        "need",
-        "please",
-        "this",
-        "that",
-        "have",
-        "how",
-        "what",
-        "who",
-        "when",
-        "where",
-        "why",
-        "about",
-        "into",
-        "from",
-        "get",
-        "got",
-        "tell",
-        "let",
-        "all",
-        "any",
-        "out",
-        "use",
-        "now",
-    }
-)
-
-
-def _significant_tokens(s: str) -> set:
-    """Lowercase alnum tokens, len>2, minus stopwords — for relevance overlap."""
-    return {
-        w
-        for w in re.findall(r"[a-z0-9]+", (s or "").lower())
-        if len(w) > 2 and w not in _STOPWORDS
-    }
+# Relevance tokenizer — shared with the tool catalog (constants.py has no
+# intra-package imports, so find_tool can use it without a cycle).
+_STOPWORDS = STOPWORDS
+_significant_tokens = significant_tokens
 
 
 def _is_tool_chain_directive(directive: str) -> bool:
@@ -252,7 +218,10 @@ def _append_directive_hint(directive: str, hint: str) -> str:
         if appended != directive:
             return appended
     except Exception:  # pragma: no cover - defensive
-        pass
+        logger.debug(
+            "orchestrator: appending the upload note failed; the turn proceeds without it",
+            exc_info=True,
+        )
     return f"{directive}\n({hint})"
 
 
@@ -316,16 +285,8 @@ class OrchestratorInteractAction(
     )
     light_model_temperature: float = attribute(default=0.2)
     light_model_max_tokens: int = attribute(default=1024)
-    escalate_after_tool_calls: int = attribute(
-        default=2,
-        description="Switch to the heavy model once the turn has made this many "
-        "substantive tool calls (reply/respond/catalog/skill meta-tools excluded).",
-    )
-    escalate_on_skill: bool = attribute(
-        default=True,
-        description="Activating a skill (a multi-step SOP) escalates to heavy "
-        "immediately.",
-    )
+    # Gearing escalation policy is fixed in core (ADR-0041): skill active,
+    # planning on, or ≥1 substantive tool → heavy; finalize keeps last gear.
 
     # -- Reasoning passthrough (only bites with a reasoning-capable model; the
     # default gpt-4o-mini ignores it). Threaded into the loop's model call so
@@ -375,12 +336,83 @@ class OrchestratorInteractAction(
     max_statement_length: Optional[int] = attribute(
         default=None,
         description="Soft cap (characters) on the reply, applied as a prompt "
-        "instruction; None disables.",
+        "instruction; None disables. Does not truncate loop history "
+        "(history is always untruncated; interaction [EVENT] lines are omitted).",
     )
     history_limit: int = attribute(default=4)
-    include_history_events: bool = attribute(
-        default=True,
-        description="Include interaction [EVENT] lines in loop history.",
+
+    # -- Observation replay budget. Every tick re-sends this turn's prior tool
+    # results, so without caps the per-turn input cost grows quadratically in
+    # tick count. ``max_observations_in_prompt`` bounds how MANY replay; the
+    # rest bound how BIG each one is.
+    safeguards_reminder: str = attribute(
+        default=SAFEGUARDS_REMINDER_TEMPLATE,
+        description=(
+            "Mechanics frame for the reminder appended to every tick's user "
+            "turn — the slot a model weights most. The reminder exists because "
+            "the system-prompt rules alone do not always hold: measured "
+            "injection resistance on the example agent sits near 88%, not "
+            "100%. The BEHAVIOURAL half is not written here: '{reminders}' is "
+            "filled with the rules that declare 'placement: user_turn' "
+            "(ADR-0037 §2.2), so a rule is edited in one place and both slots "
+            "follow. With the core parameters in force this renders "
+            "byte-identical to the pre-ADR string. A value persisted before "
+            "this change has no '{reminders}' slot and renders verbatim, which "
+            "keeps that deployment on exactly its current text."
+        ),
+    )
+    # Bare relay/directive egress always skips compose when there is no
+    # model-facing guidance (ADR-0041) — no config toggle.
+    tool_listing_position: str = attribute(
+        default="system",
+        description=(
+            "Where the AVAILABLE TOOLS / AVAILABLE SKILLS listings are placed. "
+            "'system' (default) keeps them in the system prompt. 'trailing' "
+            "moves them into their own message just before the user turn, which "
+            "pulls conversation history into the cacheable request prefix "
+            "(history otherwise sits behind the listings and is re-priced "
+            "whenever the surface changes). EXPERIMENTAL: it also takes the tool "
+            "list out of the system role, and prompt-section position has "
+            "already been shown to move behaviour on this loop — A/B before "
+            "enabling (scripts/ab_prompt_variants.py)."
+        ),
+    )
+    grounding_max_deflections: int = attribute(
+        default=2,
+        description=(
+            "How many times a turn may be deflected for an unsupported source "
+            "claim before the reply is allowed through, so a genuine reply is "
+            "never blocked forever. 0 disables the guard."
+        ),
+    )
+    max_observations_in_prompt: int = attribute(
+        default=MAX_OBSERVATIONS_IN_PROMPT,
+        description="How many of this turn's tool results replay into the loop "
+        "prompt (most recent first). Raise it for long agentic turns whose "
+        "later steps depend on early findings; lower it to cut prompt size. "
+        "0 replays all of them (size caps still apply).",
+    )
+    observation_max_chars: int = attribute(
+        default=DEFAULT_OBSERVATION_MAX_CHARS,
+        description="Max characters of a RECENT tool result replayed into the "
+        "loop prompt (middle-out elided, and marked). 0 disables the cap.",
+    )
+    stale_observation_max_chars: int = attribute(
+        default=DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+        description="Max characters of an OLDER tool result (beyond "
+        "observation_full_recent) replayed into the loop prompt. Older results "
+        "matter as 'what happened', not as payload. 0 disables the cap.",
+    )
+    observation_full_recent: int = attribute(
+        default=DEFAULT_OBSERVATION_FULL_RECENT,
+        description="How many of the most recent tool results are replayed at "
+        "observation_max_chars rather than stale_observation_max_chars.",
+    )
+    observation_args_max_chars: int = attribute(
+        default=DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
+        description="Max characters of a tool call's ARGUMENTS replayed into "
+        "the loop prompt. A write-file call carries its whole payload here, "
+        "which would otherwise be re-sent every remaining tick. 0 disables.",
     )
     clarify_text: str = attribute(
         default="Sorry, I didn't quite catch that — could you rephrase?",
@@ -393,8 +425,9 @@ class OrchestratorInteractAction(
         default=ORCHESTRATOR_SYSTEM_PROMPT,
         description=(
             "The executive's main system-prompt body. Placeholders: "
-            "{identity_section}, {tools_section}, {skills_section}, "
-            "{capabilities_section}, {parameters_section}."
+            "{identity_section}, {session_context_section}, {tools_section}, "
+            "{skills_section}, {capabilities_section}, {parameters_section}, "
+            "{loop_protocol_extra}, {extra_section}."
         ),
     )
     # The Orchestrator's native core: the ``loop``-scoped hardening, applied in
@@ -428,17 +461,9 @@ class OrchestratorInteractAction(
             "placeholder is still accepted but rendered empty.)"
         ),
     )
-    tool_use_policy_prompt: str = attribute(
-        default=TOOL_USE_POLICY,
-        description="Appended when block_raw_tool_invocation is on.",
-    )
     flow_in_progress_prompt: str = attribute(
         default=FLOW_IN_PROGRESS_PROMPT,
         description="Appended while a flow is active. Placeholder: {flow_note}.",
-    )
-    length_limit_prompt: str = attribute(
-        default=LENGTH_LIMIT_PROMPT,
-        description="Appended when max_statement_length is set. Placeholder: {max_chars}.",
     )
     finalize_prompt: str = attribute(
         default=FINALIZE_PROMPT,
@@ -464,12 +489,6 @@ class OrchestratorInteractAction(
             "mid-plan question to the user isn't blocked forever). 0 disables "
             "the drain guard."
         ),
-    )
-    memory_prompt: str = attribute(
-        default=MEMORY_PROMPT,
-        description="Memory-access protocol rendered in the LOOP PROTOCOL: search "
-        "memory (the conversation in context + saved artifacts) before answering "
-        "from a blank or claiming you can't recall. Set empty to omit.",
     )
     lock_active_flow: bool = attribute(
         default=True,
@@ -590,7 +609,10 @@ class OrchestratorInteractAction(
         description="Per-channel loop-knob overrides, keyed by visitor.channel "
         "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
         "activation_budget, max_duration_seconds, tool_call_timeout, "
-        "max_statement_length, first_emit_timeout_ms, ack_statements, and "
+        "max_statement_length, first_emit_timeout_ms, ack_statements, "
+        "pinned_tools (REPLACES the action-level pin list on that channel, so a "
+        "channel-specific capability isn't pinned onto every other channel), "
+        "denied_tools (REPLACES the action-level deny list on that channel), and "
         "system_prompt_extra (APPENDED after the base extra for that channel "
         "only). Lets a voice channel run a tighter/faster loop with its own "
         "spoken filler than chat without a second agent.",
@@ -644,6 +666,16 @@ class OrchestratorInteractAction(
         "equivalent is a SKILL.md with 'always-active: true' (pins its "
         "allowed-tools).",
     )
+    denied_tools: List[str] = attribute(
+        default_factory=list,
+        description="Tool-name globs (e.g. 'file_interface__*', 'code_execution__*') "
+        "hard-removed from the Orchestrator surface — not listed, not find_tool-"
+        "reachable, not dispatchable. Mirrors denied_skills for first-party / MCP "
+        "tools that ride in via enabled actions. Egress and catalog meta-tools "
+        "(reply/respond/find_*/load_*/use_skill) cannot be denied. Empty by default. "
+        "Channel-overridable via channel_overrides.denied_tools (replaces the "
+        "action-level list on that channel).",
+    )
 
     # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
     tool_servers: Any = attribute(
@@ -671,7 +703,10 @@ class OrchestratorInteractAction(
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
+        with bind_turn_cache():
+            await self._execute_turn(visitor)
 
+    async def _execute_turn(self, visitor: "InteractWalker") -> None:
         # Curate the remaining walk path: routable IAs (exposed as tools) must
         # NOT also self-execute as weight-chain members — they are reached only
         # by the model selecting their tool. Keep self + always_execute IAs +
@@ -800,7 +835,8 @@ class OrchestratorInteractAction(
         """Build the full tool surface and populate ``visible`` (the prompt set).
 
         Everything goes into the returned ``tools`` (so ``find_tool`` can surface
-        anything). ``visible`` — what the model sees up front — holds the
+        anything) except names matching ``denied_tools`` — those are hard-removed
+        so discovery and dispatch cannot reach them.
         general tools always, but a turn-spanning flow's IA-tool ONLY when it is
         the active flow or the utterance is anchor-relevant. This keeps idle
         flow tools out of the prompt so a weak model can't spuriously trigger an
@@ -1177,11 +1213,34 @@ class OrchestratorInteractAction(
         #   2. ``always-active: true`` skills, whose ``allowed-tools`` are pinned
         #      every turn (skill-native; mirrors use_skill surfacing without an
         #      activation round-trip).
-        if self.pinned_tools:
-            visible |= self._match_tool_globs(self.pinned_tools, set(tools.keys()))
+        # Pins are channel-scopable. A pin exists to make one capability callable
+        # turn-1, and that is usually a per-channel claim — pinning a WhatsApp
+        # Flow send is right on a WhatsApp turn and is dead weight (plus a
+        # misroute target for a weak model) on web. ``channel_overrides`` can
+        # therefore narrow or replace the pin set per channel; without an
+        # override the action-level list applies everywhere, as before.
+        pinned_tools = self._channel_cfg(visitor, "pinned_tools", self.pinned_tools)
+        if pinned_tools:
+            visible |= self._match_tool_globs(list(pinned_tools), set(tools.keys()))
         for d in docs:
             if getattr(d, "always_active", False):
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
+        # Hard exclude (wins over lean + pins): drop from tools so find_tool /
+        # load_tool / dispatch cannot reach them. Applied last intentionally.
+        denied = self._channel_cfg(visitor, "denied_tools", self.denied_tools)
+        if denied:
+            drop = self._match_tool_globs(list(denied), set(tools.keys()))
+            protected = drop & _STEER_EXEMPT
+            if protected:
+                logger.warning(
+                    "orchestrator: denied_tools matched protected tools %s — ignored",
+                    sorted(protected),
+                )
+                drop -= _STEER_EXEMPT
+            for name in drop:
+                tools.pop(name, None)
+                longtail.discard(name)
+                visible.discard(name)
         return tools
 
     @staticmethod
@@ -2261,12 +2320,15 @@ class OrchestratorInteractAction(
                 f"{open_steps}\n"
                 "Do the NEXT step now with a real tool call — do not just "
                 "describe it, and do not deliver the result as a chat message "
-                "instead of completing the step. If you can't see the tool you "
-                "need, call find_tool to locate it (e.g. find_tool('write "
-                "file'), find_tool('add document to knowledge base')). Text you "
-                "have already produced can be passed straight to the tool — you "
-                "do not need to save a file first. When the work is genuinely "
-                "done, mark the steps done/skipped with update_plan, then reply.)"
+                "instead of completing the step. Prefer tools already on your "
+                "surface (e.g. pageindex__assimilate with the report markdown in "
+                "`doc`, web_fetch__fetch, reply). If you truly cannot see the "
+                "tool, call find_tool with the *capability* "
+                "(e.g. find_tool('assimilate into knowledge base'), "
+                "find_tool('ingest document')) — do NOT search for 'write file' "
+                "or invent a filesystem detour; text you already produced can be "
+                "passed straight into tool args. When the work is genuinely done, "
+                "mark the steps done/skipped with update_plan, then reply.)"
             ),
         }
 
@@ -2663,14 +2725,28 @@ class OrchestratorInteractAction(
         # model becomes the sole model) — so gearing is off.
         return bool(self._effective_light_model_id()) and self._has_main_model()
 
-    def _select_gear(self, substantive_tool_calls: int, skill_active: bool) -> str:
-        """Light until the turn proves multi-step, then heavy (sticky). Single-
-        model agents (no light_model, or no main_model) always run one tier."""
+    def _select_gear(
+        self,
+        substantive_tool_calls: int,
+        skill_active: bool,
+    ) -> str:
+        """Light until multi-step work is in play, then heavy (ADR-0041).
+
+        Fixed policy when gearing is on (``light_model`` set with a main model):
+        - skill active → heavy
+        - ``planning`` enabled → heavy (tick 0 must reason about ``update_plan``)
+        - ≥1 substantive tool call (egress/meta excluded) → heavy
+        - else light (reply-only)
+
+        Single-model agents (no light_model, or no main_model) always run heavy.
+        """
         if not self._gearing_on():
             return "heavy"
-        if (self.escalate_on_skill and skill_active) or (
-            substantive_tool_calls >= int(self.escalate_after_tool_calls)
-        ):
+        if skill_active:
+            return "heavy"
+        if bool(self.planning):
+            return "heavy"
+        if substantive_tool_calls >= 1:
             return "heavy"
         return "light"
 
@@ -2861,22 +2937,51 @@ class OrchestratorInteractAction(
         capabilities_section: str = "",
         parameters_section: str = "",
         loop_protocol_extra: str = "",
+        extra_section: str = "",
+        session_context_section: str = "",
     ) -> str:
         """Build the base system prompt from the (overridable) ``system_prompt``
-        template, then append ``system_prompt_extra`` if set."""
+        template, then place ``system_prompt_extra`` (plus any caller-supplied
+        ``extra_section``) and SESSION CONTEXT (ADR-0042).
+
+        The built-in template carries ``{session_context_section}`` immediately
+        after identity (cacheable ground truth) and ``{extra_section}`` ahead of
+        the per-tick tool/skill listings. A custom ``system_prompt`` that
+        predates those slots gets extras/session context appended at the end.
+        """
+        extras = "\n\n".join(
+            part
+            for part in (
+                (self.system_prompt_extra or "").strip(),
+                extra_section.strip(),
+            )
+            if part
+        )
+        session_ctx = (session_context_section or "").strip()
+        if session_ctx and not session_ctx.endswith("\n"):
+            session_ctx = session_ctx + "\n\n"
+        elif session_ctx and not session_ctx.endswith("\n\n"):
+            session_ctx = session_ctx + "\n"
+        template = self.system_prompt
+        inline_extra = "{extra_section}" in template
+        inline_session = "{session_context_section}" in template
         base = self._fmt(
-            self.system_prompt,
+            template,
             ORCHESTRATOR_SYSTEM_PROMPT,
             identity_section=identity_section,
+            session_context_section=(session_ctx if inline_session else ""),
             tools_section=tools_section,
             skills_section=skills_section,
             capabilities_section=capabilities_section,
             parameters_section=parameters_section,
             loop_protocol_extra=loop_protocol_extra,
+            extra_section=(f"\n{extras}\n" if (inline_extra and extras) else ""),
         )
-        extra = (self.system_prompt_extra or "").strip()
-        if extra:
-            base = f"{base}\n\n{extra}"
+        if session_ctx and not inline_session:
+            # Legacy custom system_prompt: keep ground truth visible after body.
+            base = f"{base}\n\n{session_ctx.strip()}"
+        if extras and not inline_extra:
+            base = f"{base}\n\n{extras}"
         return base
 
     async def _routable_flow_tool_names(self) -> Set[str]:
@@ -2911,10 +3016,19 @@ class OrchestratorInteractAction(
         if agent is None:
             self._actions_enum_failed = False
             return []
+        # Memoized for the turn: this is a per-node database walk, and four
+        # independent call sites want the same answer within one turn.
+        turn_cache = get_turn_cache()
+        cache_key = f"enabled_actions:{getattr(agent, 'id', None) or id(agent)}"
+        if turn_cache is not None and cache_key in turn_cache:
+            self._actions_enum_failed = False
+            return turn_cache[cache_key]
         try:
             mgr = await agent.get_actions_manager()
             actions = await mgr.get_all_actions(enabled_only=True) if mgr else []
             self._actions_enum_failed = False
+            if turn_cache is not None:
+                turn_cache[cache_key] = actions
             return actions
         except Exception as exc:
             # Signal loop to skip orphan-flow cancel — a partial/empty tool
@@ -3036,7 +3150,8 @@ class OrchestratorInteractAction(
                     ),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
-                    with_event=bool(self.include_history_events),
+                    with_event=False,
+                    max_statement_length=None,
                 )
                 or []
             )
@@ -3080,6 +3195,7 @@ class OrchestratorInteractAction(
         # system prompt (not trailing after the rules): planning, the tool-use
         # policy, and the upload-memory affordance are all about how to run the
         # loop. Each is gated; ordered planning → tool-use → memory.
+        pool = self._parameter_pool(visitor)
         loop_extra: List[str] = []
         # Planning (ADR-0019): nudge update_plan for multi-step work; re-surface
         # an unfinished prior plan so the turn resumes. Off on the finalize tick.
@@ -3089,34 +3205,76 @@ class OrchestratorInteractAction(
                 loop_extra.append(plan_note)
         # Tool-use policy: tool selection is the agent's job, not the user's to
         # dictate (gated by block_raw_tool_invocation).
+        # Text owned by the `tools.selection` parameter; the flag still gates it
+        # because it also gates real code (raw-invocation blocking).
         if self.block_raw_tool_invocation:
-            loop_extra.append(self.tool_use_policy_prompt)
+            policy = parameter_text(pool, "tools.selection")
+            if policy:
+                loop_extra.append(policy)
         # Memory-access protocol: search memory (the conversation in context +
         # saved artifacts) before answering from a blank or claiming you can't
         # recall. A standing protocol — not vision-gated; the artifact-tool part
         # is phrased conditionally so it's safe when those tools aren't surfaced.
-        if self.memory_prompt:
-            loop_extra.append(self.memory_prompt)
+        memory_rule = parameter_text(pool, "memory.search_first")
+        if memory_rule:
+            loop_extra.append(memory_rule)
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
         prompt_cache = getattr(self, "_turn_prompt_cache", None) or {}
-        system_prompt = self._compose_system_prompt(
-            identity_section=prompt_cache.get("identity")
-            or await self._render_identity(),
-            tools_section=render_tools_section(tools, lean=lean),
-            skills_section=skills_section
-            or prompt_cache.get("skills_section")
-            or self.no_skills_text,
-            capabilities_section=capabilities_section
-            or prompt_cache.get("capabilities", ""),
-            parameters_section=parameters_section or prompt_cache.get("parameters", ""),
-            loop_protocol_extra=loop_protocol_extra,
-        )
+        # Channel-scoped extra instructions are invariant for the whole turn, so
+        # they compose into the prompt's stable region rather than trailing after
+        # the per-tick tool listing.
         channel_extra = str(
             self._channel_cfg(visitor, "system_prompt_extra", "") or ""
         ).strip()
-        if channel_extra:
-            system_prompt = f"{system_prompt}\n\n{channel_extra}"
+        tools_section = render_tools_section(tools, lean=lean)
+        resolved_skills = (
+            skills_section or prompt_cache.get("skills_section") or self.no_skills_text
+        )
+        trailing = str(self.tool_listing_position or "system").strip() == "trailing"
+        trailing_listing = ""
+        if trailing:
+            # The listings leave the system prompt entirely; a pointer keeps the
+            # surrounding prose truthful ("the tools below") rather than leaving
+            # two empty headings.
+            trailing_listing = (
+                f"AVAILABLE SKILLS — standard operating procedures for whole "
+                f"tasks. PREFER a matching skill over ad-hoc tool calls:\n"
+                f"{resolved_skills}\n\nAVAILABLE TOOLS:\n{tools_section}"
+            )
+            tools_section = "(listed in the message below)"
+            resolved_skills = "(listed in the message below)"
+        compose_kwargs: Dict[str, Any] = {
+            "identity_section": prompt_cache.get("identity")
+            or await self._render_identity(),
+            "session_context_section": prompt_cache.get("session_context") or "",
+            "tools_section": tools_section,
+            "skills_section": resolved_skills,
+            "capabilities_section": capabilities_section
+            or prompt_cache.get("capabilities", ""),
+            "parameters_section": parameters_section
+            or prompt_cache.get("parameters", ""),
+            "loop_protocol_extra": loop_protocol_extra,
+            "extra_section": channel_extra,
+        }
+        try:
+            system_prompt = self._compose_system_prompt(**compose_kwargs)
+        except TypeError:
+            # A subclass may override _compose_system_prompt with a signature
+            # that predates ``extra_section`` / ``session_context_section``.
+            # Fall back to the old call and append omitted sections.
+            legacy = dict(compose_kwargs)
+            extra = legacy.pop("extra_section", "")
+            session_ctx = legacy.pop("session_context_section", "")
+            try:
+                system_prompt = self._compose_system_prompt(**legacy)
+            except TypeError:
+                legacy.pop("session_context_section", None)
+                system_prompt = self._compose_system_prompt(**legacy)
+            if session_ctx:
+                system_prompt = f"{system_prompt}\n\n{session_ctx.strip()}"
+            if extra:
+                system_prompt = f"{system_prompt}\n\n{extra}"
         if flow_note:
             note = self._fmt(
                 self.flow_in_progress_prompt,
@@ -3128,12 +3286,14 @@ class OrchestratorInteractAction(
             visitor, "max_statement_length", self.max_statement_length
         )
         if max_statement_length and int(max_statement_length) > 0:
-            limit = self._fmt(
-                self.length_limit_prompt,
-                LENGTH_LIMIT_PROMPT,
-                max_chars=int(max_statement_length),
-            )
-            system_prompt = f"{system_prompt}\n\n{limit}"
+            length_rule = parameter_text(pool, "voice.length")
+            if length_rule:
+                limit = self._fmt(
+                    length_rule,
+                    LENGTH_LIMIT_PROMPT,
+                    max_chars=int(max_statement_length),
+                )
+                system_prompt = f"{system_prompt}\n\n{limit}"
         if finalize:
             system_prompt = f"{system_prompt}\n\n{self.finalize_prompt}"
         # Conversation history travels as structured prior messages — the
@@ -3148,18 +3308,49 @@ class OrchestratorInteractAction(
             ORCHESTRATOR_USER_PROMPT_TEMPLATE,
             history_section="",
             utterance=utterance or "(no message)",
-            observations_section=render_observations_section(observations),
+            observations_section=render_observations_section(
+                observations,
+                max_chars=int(self.observation_max_chars),
+                stale_max_chars=int(self.stale_observation_max_chars),
+                full_recent=int(self.observation_full_recent),
+                args_max_chars=int(self.observation_args_max_chars),
+                max_observations=int(self.max_observations_in_prompt),
+            ),
         )
         # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the
         # user turn (the slot the model weights most), so a weak model actually
         # obeys the safeguards when it writes a reply — the same technique that
         # got it to comply with directives in ReplyAction.
-        user_prompt = f"{user_prompt}\n\n{SAFEGUARDS_REMINDER}"
+        #
+        # The behavioural half is no longer a hand-maintained restatement: rules
+        # that declare ``placement: user_turn`` render themselves here (ADR-0037
+        # §2.2), so deleting or editing such a rule updates both slots at once.
+        # Only the mechanics frame is template text. A ``safeguards_reminder``
+        # persisted before this change has no ``{reminders}`` slot, so it
+        # renders verbatim and that deployment keeps exactly today's string.
+        reminders = render_user_turn_reminders(self._parameter_pool(visitor))
+        user_prompt = "{0}\n\n{1}".format(
+            user_prompt,
+            self._fmt(
+                self.safeguards_reminder,
+                SAFEGUARDS_REMINDER_TEMPLATE,
+                reminders=(" " + reminders) if reminders else "",
+            ),
+        )
         prior_messages = list(history or [])
+        # Under 'trailing', the listings ride in their own system message after
+        # the history, so the cacheable prefix extends through the conversation
+        # instead of stopping at the first tool-surface change.
+        listing_messages = (
+            [{"role": "system", "content": trailing_listing}]
+            if trailing_listing
+            else []
+        )
         kwargs: Dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system_prompt},
                 *prior_messages,
+                *listing_messages,
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,

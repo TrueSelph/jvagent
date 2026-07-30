@@ -103,17 +103,25 @@ async def test_seed_caps_count_and_length():
 
 
 async def test_memory_prompt_default_and_general_coverage():
+    """The memory protocol is now the `memory.search_first` parameter rather
+    than an attribute (ADR-0037 §2.1), rendered at the same LOOP PROTOCOL
+    position. Text and placement are unchanged; only ownership moved."""
+    from jvagent.action.parameters import parameter_text, reply_core_parameters
+
     ex = _ex()
-    assert ex.memory_prompt == MEMORY_PROMPT
+    pool = list(ex.parameters) + reply_core_parameters()
+    rule = parameter_text(pool, "memory.search_first")
+    assert rule == MEMORY_PROMPT
     # general memory protocol: covers BOTH conversation and artifacts
     assert "CONVERSATION" in MEMORY_PROMPT
     assert "ARTIFACTS" in MEMORY_PROMPT
     assert "list_artifacts" in MEMORY_PROMPT
-    # rendered in the LOOP PROTOCOL, not baked into the base template; it's a
-    # standing protocol (not vision-gated) — present whenever memory_prompt is set.
+    # rendered in the LOOP PROTOCOL, not baked into the base template
     base = ex._compose_system_prompt(
         identity_section="", tools_section="", skills_section=""
     )
     assert MEMORY_PROMPT not in base
-    composed = f"{base}\n\n{ex.memory_prompt}" if ex.memory_prompt else base
-    assert MEMORY_PROMPT in composed
+    assert MEMORY_PROMPT in f"{base}\n\n{rule}"
+    # deleting the rule removes it — one surface, no orphaned attribute
+    without = [p for p in pool if p.get("key") != "memory.search_first"]
+    assert parameter_text(without, "memory.search_first") == ""

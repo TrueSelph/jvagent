@@ -152,7 +152,7 @@ async def test_loop_repeat_guard_breaks_on_self_repeat(
         for e in v.interaction.observability_metrics
         if e.get("event_type") == "orchestrator_activation"
     )
-    assert ev["data"]["ended_via"] == "repeat_guard"
+    assert ev["data"]["ended_via"] == "repeat_guard_finalized"
     assert ev["data"]["tick_count"] <= 5  # broke far below the budget (16)
     assert "(guard)" in ev["data"]["tools_invoked"]  # nudge was injected
 
@@ -207,7 +207,7 @@ async def test_repeat_guard_blocks_duplicate_side_effect_dispatch(
         for e in v.interaction.observability_metrics
         if e.get("event_type") == "orchestrator_activation"
     )
-    assert ev["data"]["ended_via"] == "repeat_guard"
+    assert ev["data"]["ended_via"] == "repeat_guard_finalized"
 
 
 async def test_repeat_guard_allows_one_retry_after_tool_error(

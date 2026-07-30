@@ -67,6 +67,10 @@ def main() -> int:
         shutil.rmtree(DEST_DIST)
     DEST_DIST.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(SRC_DIST, DEST_DIST)
+    # Host-page demo lives beside the Vite outputs (not produced by Vite).
+    demo_src = JVMESSENGER / "demo.html"
+    if demo_src.is_file():
+        shutil.copy2(demo_src, DEST_DIST / "demo.html")
     count = sum(1 for _ in DEST_DIST.rglob("*") if _.is_file())
     print(f"Staged {count} files into {DEST_DIST.relative_to(REPO)}")
     return 0

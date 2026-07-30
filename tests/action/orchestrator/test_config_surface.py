@@ -32,11 +32,39 @@ async def test_system_prompt_default_is_builtin():
     assert "AVAILABLE TOOLS:" in out  # built-in body present
 
 
-async def test_system_prompt_extra_is_appended():
+async def test_system_prompt_extra_lands_in_the_stable_region():
+    """The built-in template has an ``{extra_section}`` slot ahead of the
+    per-tick tool/skill listings, so operator instructions stay inside the
+    cacheable prefix instead of trailing the volatile tail."""
     ex = OrchestratorInteractAction()
     ex.system_prompt_extra = "HOUSE RULE: always greet in French."
     out = _compose(ex)
     assert "AVAILABLE TOOLS:" in out  # built-in still there
+    assert "HOUSE RULE: always greet in French." in out
+    assert out.index("HOUSE RULE") < out.index("AVAILABLE TOOLS:")
+    assert out.count("HOUSE RULE") == 1  # placed, not also appended
+
+
+async def test_channel_extra_composes_after_the_action_extra():
+    ex = OrchestratorInteractAction()
+    ex.system_prompt_extra = "HOUSE RULE: be brief."
+    out = ex._compose_system_prompt(
+        identity_section="You are Ada.\n\n",
+        tools_section="- reply: say something",
+        skills_section="- research: investigate",
+        extra_section="CHANNEL RULE: speak, don't type.",
+    )
+    assert out.index("HOUSE RULE: be brief.") < out.index("CHANNEL RULE")
+    assert out.index("CHANNEL RULE") < out.index("AVAILABLE TOOLS:")
+
+
+async def test_legacy_override_without_slot_still_gets_the_extra():
+    """A custom ``system_prompt`` predating the ``{extra_section}`` slot has no
+    placeholder to fill, so the extras append at the end as they used to."""
+    ex = OrchestratorInteractAction()
+    ex.system_prompt = "{identity_section}CUSTOM {tools_section} // {skills_section}"
+    ex.system_prompt_extra = "HOUSE RULE: always greet in French."
+    out = _compose(ex)
     assert out.rstrip().endswith("HOUSE RULE: always greet in French.")
 
 
@@ -78,9 +106,18 @@ async def test_subprompts_default_to_constants():
     ex = OrchestratorInteractAction()
     assert ex.system_prompt == P.ORCHESTRATOR_SYSTEM_PROMPT
     assert ex.user_prompt == P.ORCHESTRATOR_USER_PROMPT_TEMPLATE
-    assert ex.tool_use_policy_prompt == P.TOOL_USE_POLICY
     assert ex.flow_in_progress_prompt == P.FLOW_IN_PROGRESS_PROMPT
-    assert ex.length_limit_prompt == P.LENGTH_LIMIT_PROMPT
+    # tool_use_policy_prompt / length_limit_prompt / memory_prompt are gone
+    # (ADR-0037 §2.1): the text is owned by the parameter that states the rule,
+    # rendered inline at the same prompt position it always occupied.
+    for attr in ("tool_use_policy_prompt", "length_limit_prompt", "memory_prompt"):
+        assert not hasattr(ex, attr), attr
+    from jvagent.action.parameters import parameter_text, reply_core_parameters
+
+    pool = list(ex.parameters) + reply_core_parameters()
+    assert parameter_text(pool, "tools.selection") == P.TOOL_USE_POLICY
+    assert parameter_text(pool, "voice.length") == P.LENGTH_LIMIT_PROMPT
+    assert parameter_text(pool, "memory.search_first") == P.MEMORY_PROMPT
     assert ex.finalize_prompt == P.FINALIZE_PROMPT
     assert ex.no_skills_text == P.NO_SKILLS_AVAILABLE
 
@@ -295,6 +332,8 @@ async def test_no_decision_streak_finalizes(make_orchestrator, make_visitor):
 
 async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
     # A decision sequence that would loop forever; the wall-clock guard ends it.
+    # With observations already gathered, partial-compose salvage marks the exit
+    # as duration_finalized (never clarify_text).
     ex = make_orchestrator(
         decisions=[{"action": "tool", "tool": "noop", "args": {}}] * 50
     )
@@ -305,7 +344,8 @@ async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
     v.interaction.save = AsyncMock()
     await ex.execute(v)
     ev = [m for m in metrics if m["event_type"] == "orchestrator_activation"]
-    assert ev and ev[-1]["data"]["ended_via"] == "duration"
+    assert ev and ev[-1]["data"]["ended_via"] == "duration_finalized"
+    assert ex.clarify_text not in (v.interaction.response or "")
 
 
 # --- Model gearing (ADR-0016) --------------------------------------------
@@ -316,14 +356,14 @@ async def test_select_gear_logic():
     # gearing off (no light_model) → always heavy
     assert ex._select_gear(5, True) == "heavy"
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = True
+    ex.planning = False
     assert ex._select_gear(0, False) == "light"
-    assert ex._select_gear(1, False) == "light"
-    assert ex._select_gear(2, False) == "heavy"  # tool-count threshold
+    assert ex._select_gear(1, False) == "heavy"  # after first substantive tool
     assert ex._select_gear(0, True) == "heavy"  # skill active
-    ex.escalate_on_skill = False
-    assert ex._select_gear(0, True) == "light"  # skill ignored when off
+    ex.planning = True
+    assert ex._select_gear(0, False) == "heavy"  # planning on → heavy tick 0
+    ex.planning = False
+    assert ex._select_gear(0, False) == "light"
 
 
 async def test_gearing_on_from_byok_override_without_yaml_light():
@@ -380,8 +420,6 @@ async def test_gearing_escalates_after_one_substantive_tool(
     fake = _fake_capability_action("work", calls)
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 1
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},
         {"action": "final", "answer": "done"},
@@ -533,8 +571,6 @@ async def test_gearing_escalates_across_loop(
     fake = _fake_capability_action("work", calls)
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},
         {"action": "tool", "tool": "work", "args": {"i": 2}},
@@ -563,8 +599,8 @@ async def test_gearing_escalates_across_loop(
 
     monkeypatch.setattr(OrchestratorInteractAction, "_run_model", _rm)
     await ex.execute(make_visitor(utterance="multi-step"))
-    # light, light (count 0,1), then heavy once 2 substantive calls reached.
-    assert gears[:4] == ["light", "light", "heavy", "heavy"]
+    # tick 0 light (0 tools); after first substantive tool → heavy thereafter.
+    assert gears[:4] == ["light", "heavy", "heavy", "heavy"]
 
 
 async def test_light_model_no_main_falls_back_to_light(monkeypatch):
@@ -643,11 +679,9 @@ async def test_progress_stream_fires_on_both_gears(
     ex = make_orchestrator(actions=[fake], decisions=[])
     ex.stream_internal_progress = True
     ex.light_model = "lite"
-    ex.escalate_after_tool_calls = 2
-    ex.escalate_on_skill = False
     seq = [
         {"action": "tool", "tool": "work", "args": {"i": 1}},  # light tick
-        {"action": "tool", "tool": "work", "args": {"i": 2}},  # light tick
+        {"action": "tool", "tool": "work", "args": {"i": 2}},  # heavy tick
         {"action": "tool", "tool": "work", "args": {"i": 3}},  # heavy tick
         {"action": "final", "answer": "done"},  # heavy tick
     ]
@@ -682,8 +716,6 @@ async def test_transient_ack_only_on_complex_turns(
         ex = make_orchestrator(actions=[fake], decisions=[])
         if not single_model:
             ex.light_model = "lite"  # gearing on
-        ex.escalate_after_tool_calls = 2
-        ex.escalate_on_skill = False
         seq = list(decisions)
 
         async def _rm(self, *a, gear="heavy", **k):
@@ -1180,3 +1212,75 @@ async def test_stream_internal_progress_emits_during_execute(
 async def test_max_concurrent_tools_default_is_unbounded():
     ex = OrchestratorInteractAction()
     assert ex.max_concurrent_tools == 0
+
+
+# --- downstream compatibility ------------------------------------------------
+#
+# `system_prompt` is a documented extension point, so downstream apps customise
+# prompting. Adding the `{extra_section}` slot changed two contracts these
+# checks pin down.
+
+
+async def test_legacy_subclass_override_still_works():
+    """A subclass may override _compose_system_prompt with the signature that
+    predates extra_section. The loop must not TypeError on every tick."""
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    class Legacy(OrchestratorInteractAction):
+        def _compose_system_prompt(
+            self,
+            *,
+            identity_section,
+            tools_section,
+            skills_section,
+            capabilities_section="",
+            parameters_section="",
+            loop_protocol_extra="",
+        ):
+            return "CUSTOM " + tools_section
+
+    kwargs = dict(
+        identity_section="",
+        tools_section="T",
+        skills_section="S",
+        capabilities_section="",
+        parameters_section="",
+        loop_protocol_extra="",
+        extra_section="CHANNEL",
+    )
+    ex = Legacy()
+    try:
+        out = ex._compose_system_prompt(**kwargs)
+    except TypeError:  # the fallback the loop performs
+        legacy = dict(kwargs)
+        extra = legacy.pop("extra_section", "")
+        out = ex._compose_system_prompt(**legacy)
+        out = f"{out}\n\n{extra}" if extra else out
+    assert out.startswith("CUSTOM T")
+    assert "CHANNEL" in out
+
+
+def test_render_system_prompt_defaults_every_slot():
+    """The supported way to render the template. Calling .format() directly
+    breaks whenever a slot is added, which is exactly what happened."""
+    import jvagent.action.orchestrator.prompts as P
+
+    out = P.render_system_prompt(tools_section="TOOLS")
+    assert "TOOLS" in out
+    # No placeholder left unfilled. (Literal JSON braces from the doubled
+    # ``{{ }}`` in the template are expected and must survive.)
+    for slot in P.SYSTEM_PROMPT_PLACEHOLDERS:
+        assert "{" + slot + "}" not in out
+    # Every documented placeholder has a default.
+    assert set(P.SYSTEM_PROMPT_PLACEHOLDERS) >= {
+        "identity_section",
+        "session_context_section",
+        "tools_section",
+        "skills_section",
+        "capabilities_section",
+        "parameters_section",
+        "loop_protocol_extra",
+        "extra_section",
+    }

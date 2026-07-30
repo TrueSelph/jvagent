@@ -39,6 +39,7 @@ tests/
 ├── bundle/                  # bundle/Dockerfile generation
 ├── skills/                  # skill discovery + dispatch
 ├── integration/             # end-to-end flows
+├── wire/                    # WIRE-CONTRACT tier — see §3.1
 ├── unit/                    # cross-cutting unit tests
 ├── test_comprehensive_pruning.py
 ├── test_pruning_fix.py
@@ -74,6 +75,38 @@ pytest -n auto                     # parallel (pytest-xdist if installed)
 - For full integration, see `tests/integration/`.
 - For stress / synthetic data: `tests/test_stress_seed_graph.py` + the `stress-seed` CLI subcommand.
 
+### 3.1 The wire tier (`tests/wire/`)
+
+Everything else in this suite constructs actions in memory. `tests/wire/` does
+not: it bootstraps a real app graph from YAML, loads the action **back out of
+the database**, and asserts on the exact prompt a tick would send. Only the
+model is stubbed.
+
+Use it when the thing that can break is *wiring* rather than logic:
+
+| Symptom it catches | Why unit tests miss it |
+|---|---|
+| A stale persisted attribute beating a new code default | The constructed object has the new default |
+| A render site that stopped calling its helper | The helper's own test still passes |
+| A rule that renders twice, or not at all | Neither is visible without the assembled prompt |
+| Interpreter-order dependence reaching the model | Needs two processes with different `PYTHONHASHSEED` |
+
+```bash
+pytest tests/wire/ -q          # ~5s, boots a real graph per test
+```
+
+Conventions:
+- **Assert on captured wire text, never on a helper's return value.** A helper
+  can be correct while the code that calls it is not — that is the failure mode
+  this tier exists for.
+- The `wire` fixture is function-scoped on purpose. jvspatial objects bind to
+  the event loop that created them; a session-scoped graph fails across
+  pytest-asyncio's per-test loops.
+- Cross-process checks go through `tests/wire/_render_once.py` as a subprocess
+  so the caller controls `PYTHONHASHSEED`.
+- **Mutation-check new tests here.** Break the behaviour on purpose and confirm
+  the test goes red before trusting it.
+
 ---
 
 ## 4. When you add a feature
@@ -87,6 +120,7 @@ Add at least one test slice:
 | `action/{name}/` | `tests/action/{name}/` |
 | `action/interact/` | `tests/action/interact/` + `tests/action/access_control/` if access control changes |
 | `action/orchestrator/` | `tests/action/orchestrator/` |
+| Prompt assembly, parameter rendering, persisted config | `tests/wire/` as well — logic tests do not see wiring |
 | `cli/` | `tests/cli/` |
 | Tool schemas | check `tests/test_tool_schema_audit.py` still passes; add cases |
 

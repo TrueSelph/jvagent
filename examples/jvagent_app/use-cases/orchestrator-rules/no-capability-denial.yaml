@@ -1,0 +1,24 @@
+schema: jvagent.use-case/v1
+id: rules.no-capability-denial
+title: An advertised capability is not denied to the user
+priority: P0
+tags: [orchestrator-rules, live, capabilities]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # WHAT YOU CAN DO moved position during the reorder, from early in the prompt
+  # to just above the tool listing. If that cost it authority, the symptom is the
+  # agent under-claiming -- "I can't browse the web" while holding a search tool.
+  - id: ask-for-a-lookup
+    when:
+      user: "Can you look things up on the web for me?"
+    then:
+      publish:
+        not_matches:
+          - "I can'?t (?:browse|search|access)"
+          - "I do(?:n't| not) have (?:the ability|access) to"
+          - "I'?m (?:just )?an? (?:AI|language model|bot)"

@@ -31,6 +31,10 @@ export interface IframeBridge {
 export function createIframeBridge(handlers: {
   onConfig: (config: MessengerConfig) => void;
   onVisibility?: (open: boolean) => void;
+  /** Text typed in the launcher teaser, to be sent as the first turn. */
+  onPrefill?: (text: string) => void;
+  /** Host-page context snapshot from the loader. */
+  onContext?: (context: unknown) => void;
 }): IframeBridge {
   // Standalone (not framed): a dev harness sets `__JVMESSENGER_DEV_CONFIG__` so the
   // app renders without a host. Never taken in production, where the iframe is
@@ -70,6 +74,10 @@ export function createIframeBridge(handlers: {
       handlers.onConfig(msg.config);
     } else if (msg.type === "visibility") {
       handlers.onVisibility?.(msg.open);
+    } else if (msg.type === "prefill") {
+      handlers.onPrefill?.(msg.text);
+    } else if (msg.type === "context") {
+      handlers.onContext?.(msg.context);
     }
   };
 

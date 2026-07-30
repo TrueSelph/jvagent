@@ -1,0 +1,23 @@
+package:
+  name: jvagent/artifact_handler_interact_action
+  author: Tharick Jairam
+  archetype: ArtifactHandlerInteractAction
+  version: 2.0.0
+  meta:
+    title: Artifact Handler Interact Action
+    description: >-
+      Interact-action that auto-detects media attachments on visitor.data and
+      ingests them into the artifact handler via jvforge async (or PageIndex sync
+      fallback). Also hosts the jvforge job reverse-index, completion notification
+      sub-callback, and LLM tool dispatch for the artifact_handler skill.
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: -280
+  dependencies:
+    jvagent: ~0.1.2
+    actions:
+      - jvagent/pageindex_action
+    pip:
+      - httpx

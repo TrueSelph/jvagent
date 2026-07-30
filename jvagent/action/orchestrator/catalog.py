@@ -23,6 +23,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
+from jvagent.action.orchestrator.constants import significant_tokens
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
 
@@ -53,6 +54,7 @@ def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -
         str(getattr(orch, "planning", "")),
         str(getattr(orch, "vision", "")),
         str(getattr(orch, "pinned_tools", "") or ""),
+        str(getattr(orch, "denied_tools", "") or ""),
         ",".join(sorted(enabled_action_ids)),
     ]
     digest = hashlib.sha256("|".join(parts).encode()).hexdigest()
@@ -75,6 +77,62 @@ def invalidate_tool_surface_cache(agent_id: Optional[str] = None) -> None:
         _TOOL_SURFACE_CACHE.pop(agent_id, None)
 
 
+# One-line summary length for a ``find_tool`` hit. Discovery only needs enough
+# to pick the right name — ``load_tool`` is what returns the full description,
+# and that split is the whole point of the two-tool catalog. Echoing every hit's
+# full description made find_tool the most expensive observation in a discovery
+# turn (some tool descriptions run several hundred tokens on their own) and left
+# load_tool with nothing to add.
+FIND_TOOL_SUMMARY_CHARS = 140
+
+
+def _summarize(description: str, limit: int = FIND_TOOL_SUMMARY_CHARS) -> str:
+    """First line of *description*, clipped to *limit* on a word boundary."""
+    one = (description or "").strip().splitlines()[0].strip() if description else ""
+    if len(one) <= limit:
+        return one
+    clipped = one[:limit].rstrip()
+    cut = clipped.rfind(" ")
+    if cut > limit // 2:
+        clipped = clipped[:cut]
+    return clipped.rstrip(",;:.") + "…"
+
+
+def _rank_tools(query: str, all_tools: Dict[str, SkillTool]) -> List[SkillTool]:
+    """Tools matching *query*, best first.
+
+    Matching is per-token, not whole-string. The original implementation asked
+    whether the entire query appeared verbatim inside "name + description", so
+    ``find_tool("knowledge base")`` found ``pageindex__assimilate`` while
+    ``find_tool("add to knowledge base")`` found nothing at all -- and the latter
+    is the example the loop prompt itself gives the model. A natural-language
+    query is the normal case here; requiring it to be a literal substring made
+    discovery fail exactly when the model was following instructions.
+
+    An exact substring still wins (it is a strong signal), then token overlap.
+    """
+    if not query:
+        return list(all_tools.values())
+    tokens = significant_tokens(query)
+    scored: List[Tuple[int, str, SkillTool]] = []
+    for name, tool in all_tools.items():
+        haystack = f"{name} {tool.description or ''}".lower()
+        score = 0
+        if query in haystack:
+            score += 5
+        if tokens:
+            searchable = significant_tokens(
+                name.replace("__", " ").replace("_", " ")
+                + " "
+                + (tool.description or "")
+            )
+            score += len(tokens & searchable)
+        if score:
+            scored.append((score, name, tool))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [tool for _, _, tool in scored]
+
+
 def build_catalog_tools(
     all_tools: Dict[str, SkillTool], visible: Set[str]
 ) -> Dict[str, SkillTool]:
@@ -82,26 +140,52 @@ def build_catalog_tools(
 
     async def _find(args: Dict[str, Any]) -> str:
         q = ((args or {}).get("query") or "").strip().lower()
-        hits = [
-            t
-            for name, t in all_tools.items()
-            if not q or q in (name + " " + (t.description or "")).lower()
-        ]
+        hits = _rank_tools(q, all_tools)
         if not hits:
-            return "(no tools matched)"
+            # A bare "(no tools matched)" is a dead end: the model was told to
+            # call find_tool to locate a capability, so it re-queries, hits the
+            # repeat-guard and the whole turn is lost -- observed live on
+            # "research X, write a report, add it to your knowledge base".
+            # Say what to do next instead.
+            namespaces = sorted({n.split("__", 1)[0] for n in all_tools if "__" in n})
+            hint = (
+                f" Available tool groups: {', '.join(namespaces)}."
+                if namespaces
+                else ""
+            )
+            return (
+                f"(no tool matches {q!r}.{hint} Try ONE different keyword — the "
+                "single most distinctive noun for the capability. If nothing "
+                "fits, this agent cannot do that step: say so plainly and "
+                "deliver what you already have. Do NOT repeat this search.)"
+            )
         # Group by namespace prefix (``<ns>__tool``) so one find_tool call reveals
         # a whole integration compactly instead of scattered lines.
         groups: Dict[str, List[Any]] = {}
-        for t in hits[:30]:
+        shown = hits[:30]
+        for t in shown:
             ns = t.name.split("__", 1)[0] if "__" in t.name else ""
             groups.setdefault(ns, []).append(t)
         lines: List[str] = []
+        listed = 0
         for ns in sorted(groups):
             if ns:
                 lines.append(f"[{ns}]")
             for t in groups[ns][:15]:
-                lines.append(f"- {t.name}: {t.description}")
-        return "Matching tools (call load_tool to surface one):\n" + "\n".join(lines)
+                listed += 1
+                summary = _summarize(t.description)
+                lines.append(f"- {t.name}: {summary}" if summary else f"- {t.name}")
+        # Never let a cap silently masquerade as the whole answer: a model that
+        # can't see it was truncated will conclude the tool it needs doesn't
+        # exist and give up instead of searching more specifically.
+        if listed < len(hits):
+            lines.append(
+                f"(showing {listed} of {len(hits)} matches — narrow the query to see others)"
+            )
+        return (
+            "Matching tools (call load_tool for a tool's full description):\n"
+            + "\n".join(lines)
+        )
 
     async def _load(args: Dict[str, Any]) -> str:
         name = ((args or {}).get("name") or "").strip()

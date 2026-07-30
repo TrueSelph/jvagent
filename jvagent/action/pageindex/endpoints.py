@@ -1036,6 +1036,15 @@ async def ingest_document_endpoint(
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
 
                 if async_mode:
+                    # Import callback is separate from LLM webhook: same PageIndex
+                    # interact URL handles process_document_url when client did not
+                    # supply notification_url.
+                    import_callback = (notification_url or "").strip() or llm_wh_url
+                    import_secret = (
+                        (notification_secret or "").strip() or None
+                        if (notification_url or "").strip()
+                        else None
+                    )
                     result = await assimilate_via_jvforge_async(
                         base_url=effective_forge,
                         agent_id=agent_id,
@@ -1055,8 +1064,9 @@ async def ingest_document_endpoint(
                         file_url=file_url,
                         filename=None,
                         content=None,
-                        notification_url=notification_url,
-                        notification_secret=notification_secret,
+                        notification_url=import_callback,
+                        notification_secret=import_secret,
+                        notify_delay_seconds=0,
                     )
                     return {
                         "status": result["status"],
@@ -1169,7 +1179,15 @@ async def ingest_document_endpoint(
                     summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
 
                 if async_mode:
-                    # Async mode: queue job and return immediately
+                    # Async mode: queue job and return immediately.
+                    # Always pass import callback (notification_url); default to
+                    # PageIndex interact webhook which accepts process_document_url.
+                    import_callback = (notification_url or "").strip() or llm_wh_url
+                    import_secret = (
+                        (notification_secret or "").strip() or None
+                        if (notification_url or "").strip()
+                        else None
+                    )
                     result = await assimilate_via_jvforge_async(
                         base_url=effective_forge,
                         agent_id=agent_id,
@@ -1188,8 +1206,9 @@ async def ingest_document_endpoint(
                         emergency=False,  # Can be made configurable via form field
                         filename=filename,
                         content=content,
-                        notification_url=notification_url,
-                        notification_secret=notification_secret,
+                        notification_url=import_callback,
+                        notification_secret=import_secret,
+                        notify_delay_seconds=0,
                     )
 
                     # Return async response with queue position (root_id/description

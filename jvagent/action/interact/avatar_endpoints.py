@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from fastapi import Request
 from jvspatial.api import endpoint
+from jvspatial.api.exceptions import RateLimitError
 
 from jvagent.action.interact.public_gate import resolve_agent_action
 from jvagent.action.interact.rate_limiter import extract_client_ip, get_rate_limiter
@@ -40,10 +41,17 @@ async def agent_profile_endpoint(request: Request, agent_id: str) -> Any:
     """Return the agent's public profile: {avatar, name, description}."""
     rate_limiter = get_rate_limiter()
     client_ip = extract_client_ip(request) or "unknown"
-    try:
-        await rate_limiter.record_request(client_ip, agent_id)
-    except Exception:  # pragma: no cover - defensive
-        pass
+    # Same bucket as interact/voice/upload — must check before recording so
+    # profile spam cannot fill the shared IP+agent window and 429 real turns.
+    if not await rate_limiter.check_rate_limit(client_ip, agent_id):
+        raise RateLimitError(
+            message=(
+                f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} "
+                "requests per minute"
+            ),
+            details={"ip": client_ip, "agent_id": agent_id},
+        )
+    await rate_limiter.record_request(client_ip, agent_id)
 
     from jvagent.core.cache import get_cached_agent
 
@@ -53,7 +61,15 @@ async def agent_profile_endpoint(request: Request, agent_id: str) -> Any:
     description: Optional[str] = None
     if agent is not None:
         name = _first_str(agent, "alias", "name")
-        description = _first_str(agent, "description")
+        # ``role`` before ``description``: this string is shown to end customers
+        # under the agent's name in an embedded chat header. ``role`` is the
+        # customer-facing half of the agent's identity (ADR-0014 — "You are
+        # {alias}, {role}"), whereas ``description`` is the operator's own note
+        # about the agent and is routinely architectural. The example agent's
+        # reads "Orchestrator-pattern agent. One orchestrator (-200) locks onto
+        # an active flow when present…", which is what a visitor to a customer
+        # site actually saw before this.
+        description = _first_str(agent, "role", "description")
         action = await resolve_agent_action(agent, "AvatarAction")
         if action is not None:
             try:

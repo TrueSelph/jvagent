@@ -1,4 +1,12 @@
-"""ResponseBus - Centralized response bus service (agent-scoped)."""
+"""ResponseBus - Centralized response bus service (agent-scoped).
+
+This is the single choke point for user-facing text. Every byte the user sees
+leaves through ``publish``, so the response rules are applied *here* rather than
+by each caller. Previously ``ReplyAction`` and ``InteractAction.publish`` each
+scrubbed and the streaming path did not, which meant governance depended on the
+transport: the same reply was clean over REST and unscrubbed over the messenger.
+See ``jvagent/action/egress_gate.py`` for the invariant and its proof.
+"""
 
 import asyncio
 import logging
@@ -8,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
+from jvagent.action.egress_gate import EgressGate, scrub_text
+from jvagent.action.parameters import reply_core_parameters
 from jvagent.action.response.message import ResponseMessage
 from jvagent.action.response.thought_formatting import (
     normalize_thought_text_for_publish,
@@ -34,6 +44,36 @@ class AdhocAccumulator:
     relay_to_adapters: bool = False
     started_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
+    # The egress gate for this message. Streaming chunks are released through
+    # it so a streamed reply is governed exactly like a non-streamed one.
+    gate: Optional[Any] = None
+
+
+def _egress_parameters(interaction: Optional[Any]) -> Optional[List[Any]]:
+    """The rule set governing this message, or None for the framework core."""
+    pool = getattr(interaction, "parameters", None) if interaction is not None else None
+    try:
+        listed = list(pool) if pool else []
+    except TypeError:  # not iterable — treat as absent, not as "no rules"
+        listed = []
+    if not listed:
+        return None  # no pool: vet_egress falls back to the framework core
+    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
+    # it contains no response rules at all — and vet_egress, which filters to
+    # response scope, would then scrub nothing. Union the response core in, or
+    # egress governance silently switches off for exactly those turns that
+    # accumulated parameters. An operator override already in the pool still
+    # wins: resolve_parameters ranks agent tier above the core default.
+    return listed + reply_core_parameters()
+
+
+def _governed(category: str, transient: bool) -> bool:
+    """Whether this message is user-facing text subject to the response rules.
+
+    Thoughts and transient status lines are not shown as the agent's speech, so
+    the voice/identity rules do not apply to them.
+    """
+    return category == "user" and not transient
 
 
 # Process-level bus registry — survives Agent cache rematerialize (TTL churn).
@@ -390,6 +430,14 @@ class ResponseBus:
                     action_name=(flush_message.metadata or {}).get("action_name"),
                 )
 
+        if _governed(message_category, transient):
+            # One gate, every transport. For the non-streaming and
+            # whole-content-streaming shapes the whole text is already known, so
+            # this is a straight scrub; the incremental shape below feeds the
+            # same gate chunk by chunk and gets the same answer.
+            if not (stream and not streaming_complete):
+                content = scrub_text(content, _egress_parameters(interaction))
+
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
             message = ResponseMessage(
@@ -532,11 +580,39 @@ class ResponseBus:
                 segment_id=message_segment_id,
                 relay_to_adapters=relay_to_adapters,
             )
+            # Incremental chunks are released through the accumulator's gate: it
+            # withholds anything a later chunk could still change (a trailing
+            # closer, an unfinished sentence) and returns only settled text.
+            # ``acc.chunks`` therefore records what the user actually received,
+            # not what the model produced.
+            governed = _governed(message_category, transient)
+            if governed:
+                if acc.gate is None:
+                    acc.gate = EgressGate(_egress_parameters(interaction))
+                content = (
+                    acc.gate.close() if streaming_complete else acc.gate.feed(content)
+                )
             acc.chunks.append(content)
             acc.last_activity = time.time()
 
             now = await self._get_now()
             if not streaming_complete:
+                if not content:
+                    # The gate is holding this chunk back; nothing to send yet.
+                    return ResponseMessage(
+                        id=acc.message_id,
+                        session_id=session_id,
+                        user_id=user_id or "",
+                        interaction_id=interaction_id,
+                        content="",
+                        channel=channel,
+                        message_type="stream_chunk",
+                        metadata=metadata or {},
+                        timestamp=now,
+                        category=message_category,
+                        thought_type=thought_type,
+                        segment_id=message_segment_id,
+                    )
                 # Emit chunk to subscribers only
                 chunk_message = ResponseMessage(
                     id=acc.message_id,
@@ -556,7 +632,29 @@ class ResponseBus:
                 self._append_to_message_buffers(interaction_id, chunk_message)
                 return chunk_message
 
-            # streaming_complete=True: flush accumulator
+            # streaming_complete=True: flush accumulator.
+            # The gate holds text back until it is settled, so at end-of-stream
+            # there is usually a tail that no chunk has carried yet. Send it as
+            # a real chunk — a client that renders progressively from chunks
+            # would otherwise never show the last sentence.
+            if governed and content:
+                tail_message = ResponseMessage(
+                    id=acc.message_id,
+                    session_id=session_id,
+                    user_id=user_id or "",
+                    interaction_id=interaction_id,
+                    content=content,
+                    channel=channel,
+                    message_type="stream_chunk",
+                    metadata=metadata or {},
+                    timestamp=now,
+                    category=message_category,
+                    thought_type=thought_type,
+                    segment_id=message_segment_id,
+                )
+                await self._enqueue_and_notify(tail_message, session_id)
+                self._append_to_message_buffers(interaction_id, tail_message)
+
             full_content = "".join(acc.chunks)
             flush_message = ResponseMessage(
                 id=acc.message_id,
@@ -626,7 +724,33 @@ class ResponseBus:
         if interaction_id not in self._adhoc_accumulation:
             return
         acc = self._adhoc_accumulation[interaction_id]
-        if not acc.chunks:
+        # Close the gate before reading the accumulator. The gate holds back
+        # text that was not yet settled, so without this the tail of the reply
+        # is silently dropped — this path is a second exit from the same
+        # accumulator and must end the message the same way publish() does.
+        if acc.gate is not None:
+            tail = acc.gate.close()
+            if tail:
+                acc.chunks.append(tail)
+                now = await self._get_now()
+                await self._enqueue_and_notify(
+                    ResponseMessage(
+                        id=acc.message_id,
+                        session_id=acc.session_id,
+                        user_id=acc.user_id or "",
+                        interaction_id=interaction_id,
+                        content=tail,
+                        channel=acc.channel,
+                        message_type="stream_chunk",
+                        metadata=acc.metadata or {},
+                        timestamp=now,
+                        category=acc.category,
+                        thought_type=acc.thought_type,
+                        segment_id=acc.segment_id,
+                    ),
+                    acc.session_id,
+                )
+        if not any(acc.chunks):
             self._adhoc_accumulation.pop(interaction_id, None)
             return
         full_content = "".join(acc.chunks)
@@ -776,7 +900,10 @@ class ResponseBus:
 
                     interaction._graph_context = get_default_context()
                 except Exception:
-                    pass
+                    logger.debug(
+                        "response bus: could not attach a graph context to the interaction before saving",
+                        exc_info=True,
+                    )
             await interaction.save()
 
     async def _append_to_interaction_agent_trace_impl(
@@ -817,7 +944,10 @@ class ResponseBus:
 
                     interaction._graph_context = get_default_context()
                 except Exception:
-                    pass
+                    logger.debug(
+                        "response bus: could not attach a graph context to the interaction before saving",
+                        exc_info=True,
+                    )
             await interaction.save()
 
     async def _send_to_adapter(

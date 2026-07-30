@@ -46,8 +46,6 @@ actions:
       light_model_action_type: OpenAILanguageModelAction
       light_model_temperature: 0.2
       light_model_max_tokens: 1024
-      escalate_after_tool_calls: 2       # heavy after this many substantive tool calls
-      escalate_on_skill: true            # activating a skill escalates immediately
 
       # HEAVY profile — the reasoning model, used once a turn proves multi-step.
       # MODEL FLOOR: the orchestrator is model-mediated — it keeps the loop going
@@ -104,27 +102,17 @@ actions:
 
       # -- Prompt surface: every sub-prompt defaults to its constant in
       # jvagent/action/orchestrator/prompts.py and is overridable here
-      # (system_prompt, user_prompt, tool_use_policy_prompt, flow_in_progress_prompt,
-      # length_limit_prompt, finalize_prompt, no_skills_text). They are str.format
+      # (system_prompt, user_prompt, flow_in_progress_prompt, finalize_prompt,
+      # no_skills_text). They are str.format
       # templates — keep the placeholders and double literal { } as {{ }}. The
       # simplest, safe knob is additive extra instructions:
+      # Only what applies on EVERY channel lives here. The WhatsApp Flow rules
+      # moved to channel_overrides below — as a global they were ~230 tokens of
+      # unreachable instruction on every web turn, and instruction volume is
+      # exactly what a gpt-4.1-class model degrades on.
       system_prompt_extra: >-
         Keep replies brief and conversational; prefer 1-2 sentences unless
-        detail is explicitly requested. On WhatsApp text or WhatsApp voice-call
-        turns: if the user wants to sign up, sign in, log in, create an account,
-        or register, IMMEDIATELY call whatsapp__send_flow with
-        flow_name=signin_signup only (no flow_id; do not web-search, do not
-        announce first). If they want to book or schedule an appointment,
-        IMMEDIATELY call whatsapp__send_flow with
-        flow_name=appointment_booking only (no flow_id). Never say you "will
-        send" a form — calling the tool IS sending it; only after the tool
-        returns ok reply that the form was sent (on a voice call, say it was
-        sent to this WhatsApp chat). In all user-facing replies call these
-        "forms" (e.g. "sign-up form", "appointment booking form") — never
-        "flows". If the latest user message is raw JSON containing form field
-        values and a flow_token, that is the user's SUBMITTED form: acknowledge
-        completion naturally, reference relevant submitted details (NEVER
-        repeat passwords or sensitive values), and do NOT send another form.
+        detail is explicitly requested.
 
       # -- Tooling / egress-UX.
       tool_tier: standard                 # minimal | standard | full
@@ -144,11 +132,11 @@ actions:
       # in, where a relevance pre-surface keyed on the original message no longer
       # covers it — without these pins a weak model grabs whatever IS visible
       # (get_artifact, a filesystem MCP) instead of the right tool and stalls.
-      # Pin Flow send so signup/appointment intents work turn-1 under lean
-      # surfacing (gpt-4.1-nano often skips use_skill / find_tool).
-      pinned_tools:
-        - "whatsapp__send_flow"
-        - "whatsapp__list_flows"
+      # Pins are CHANNEL-SCOPED here (see channel_overrides below): the WhatsApp
+      # Flow tools are pinned on WhatsApp turns only. Pinning them globally put
+      # two unusable tools in every web/chat prompt — wasted tokens, and a weak
+      # model would occasionally reach for them on a channel that can't send.
+      pinned_tools: []
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
@@ -166,7 +154,32 @@ actions:
       # than chat (shorter history prompt, tick + wall-clock caps, per-tool
       # timeout, and a shorter spoken-reply cap). Chat turns are untouched.
       channel_overrides:
+        # Pin the Flow send so signup/appointment intents work turn-1 under lean
+        # surfacing (gpt-4.1-nano often skips use_skill / find_tool) — on the
+        # channels that can actually send a Flow, and nowhere else.
+        whatsapp:
+          pinned_tools:
+            - "whatsapp__send_flow"
+            - "whatsapp__list_flows"
+          system_prompt_extra: >-
+            If the user wants to sign up, sign in, log in, create an account, or
+            register, IMMEDIATELY call whatsapp__send_flow with
+            flow_name=signin_signup only (no flow_id; do not web-search, do not
+            announce first). If they want to book or schedule an appointment,
+            IMMEDIATELY call whatsapp__send_flow with
+            flow_name=appointment_booking only (no flow_id). Never say you "will
+            send" a form — calling the tool IS sending it; only after the tool
+            returns ok reply that the form was sent. In all user-facing replies
+            call these "forms" (e.g. "sign-up form", "appointment booking form")
+            — never "flows". If the latest user message is raw JSON containing
+            form field values and a flow_token, that is the user's SUBMITTED
+            form: acknowledge completion naturally, reference relevant submitted
+            details (NEVER repeat passwords or sensitive values), and do NOT send
+            another form.
         whatsapp_call:
+          pinned_tools:
+            - "whatsapp__send_flow"
+            - "whatsapp__list_flows"
           history_limit: 6              # fewer prior turns in the loop prompt
           activation_budget: 8          # voice turns should be 1-3 ticks
           max_duration_seconds: 30      # hard wall-clock cap for a spoken turn
@@ -184,7 +197,15 @@ actions:
             This is a live voice call: answer from what you already know in
             1-2 short spoken sentences. Do not use exploratory tools (web
             search, fetch, knowledge-base search, file tools) unless the user
-            explicitly asks you to look something up.
+            explicitly asks you to look something up. If the user wants to sign
+            up, sign in, log in, create an account, or register, IMMEDIATELY
+            call whatsapp__send_flow with flow_name=signin_signup only (no
+            flow_id; do not announce first). If they want to book or schedule an
+            appointment, IMMEDIATELY call whatsapp__send_flow with
+            flow_name=appointment_booking only. Never say you "will send" a
+            form — calling the tool IS sending it; only after the tool returns
+            ok, say the form was sent to this WhatsApp chat. Call these "forms",
+            never "flows".
 
       # -- MCP tool servers: '-all' pulls tools from every enabled jvagent/mcp
       # action; or list action names. Tools surface as mcp_<server>__<tool>.

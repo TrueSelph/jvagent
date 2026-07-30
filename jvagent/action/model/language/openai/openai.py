@@ -375,6 +375,15 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 "completion_tokens": raw_usage.get("completion_tokens", 0),
                 "total_tokens": raw_usage.get("total_tokens", 0),
             }
+            # Cached prompt tokens (automatic prefix caching) live in a nested
+            # details dict that the flattening above drops. They are already
+            # counted inside prompt_tokens, so this is reported alongside rather
+            # than added: without it an agentic caller has no way to see whether
+            # its stable prompt prefix is actually being reused, and cost is
+            # overstated because cached input bills at a discount.
+            cached_tokens = self._cached_prompt_tokens(raw_usage)
+            if cached_tokens:
+                usage["cached_tokens"] = cached_tokens
 
             # Estimate cost (use raw_usage for cost calculation as it may have more details)
             self._estimate_cost(raw_usage, model_name=model_override)
@@ -657,6 +666,22 @@ class OpenAILanguageModelAction(LanguageModelAction):
     # Helper Methods
     # ============================================================================
 
+    @staticmethod
+    def _cached_prompt_tokens(raw_usage: Dict[str, Any]) -> int:
+        """Cached prompt tokens from OpenAI's ``prompt_tokens_details``.
+
+        Returns 0 when the provider reports no details block — the field is
+        absent on older API versions and on OpenAI-compatible backends
+        (Groq, OpenRouter, ollama) that don't implement prefix caching.
+        """
+        details = raw_usage.get("prompt_tokens_details")
+        if not isinstance(details, dict):
+            return 0
+        try:
+            return int(details.get("cached_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
     def _estimate_cost(
         self, usage: Dict[str, Any], model_name: Optional[str] = None
     ) -> None:
@@ -676,7 +701,18 @@ class OpenAILanguageModelAction(LanguageModelAction):
         prompt_tokens = usage.get("prompt_tokens", 0) or 0
         completion_tokens = usage.get("completion_tokens", 0) or 0
 
-        prompt_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+        # Cached prompt tokens are already inside prompt_tokens but bill at a
+        # discount, so charging them at the full input rate overstates the cost
+        # of exactly the calls the prompt is designed to make cheap.
+        from jvagent.action.model.cost_estimator import cache_rates_for_provider
+
+        cached_tokens = min(self._cached_prompt_tokens(usage), prompt_tokens)
+        rate = cache_rates_for_provider(getattr(self, "provider", None) or "openai")
+        prompt_cost = (
+            ((prompt_tokens - cached_tokens) + cached_tokens * rate["read"])
+            / 1_000_000
+            * pricing["input"]
+        )
         completion_cost = (completion_tokens / 1_000_000) * pricing["output"]
 
         total_cost = prompt_cost + completion_cost

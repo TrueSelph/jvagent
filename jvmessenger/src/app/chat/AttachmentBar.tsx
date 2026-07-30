@@ -11,7 +11,7 @@ export function AttachmentButton({
 }: {
   onUploaded: (a: UploadedAttachment) => void;
 }) {
-  const { config, getToken } = useChatServices();
+  const { config, getToken, ensureSession } = useChatServices();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +20,17 @@ export function AttachmentButton({
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
       e.target.value = "";
-      const token = getToken();
-      if (!token || !files.length) return;
+      if (!files.length) return;
       setBusy(true);
       setError(null);
       let failed = 0;
       try {
+        let token = getToken();
+        if (!token) token = (await ensureSession()) ?? undefined;
+        if (!token) {
+          setError("Session unavailable — set JVSPATIAL_JWT_SECRET_KEY");
+          return;
+        }
         for (const file of files) {
           const out = await uploadFile(config.agentUrl, config.agentId, token, file);
           if (out) onUploaded(out);
@@ -37,16 +42,33 @@ export function AttachmentButton({
       // Surface upload failures instead of failing silently.
       if (failed) setError(failed === 1 ? "Upload failed" : `${failed} uploads failed`);
     },
-    [config, getToken, onUploaded]
+    [config, getToken, ensureSession, onUploaded]
   );
 
-  const disabled = busy || !getToken();
+  const onPick = useCallback(async () => {
+    if (busy) return;
+    setError(null);
+    if (!getToken()) {
+      setBusy(true);
+      try {
+        const tok = await ensureSession();
+        if (!tok) {
+          setError("Session unavailable — set JVSPATIAL_JWT_SECRET_KEY");
+          return;
+        }
+      } finally {
+        setBusy(false);
+      }
+    }
+    inputRef.current?.click();
+  }, [busy, getToken, ensureSession]);
+
   return (
     <div className="flex items-center gap-1.5">
       <TooltipIconButton
-        tooltip={disabled ? "Send a message first to enable uploads" : "Attach a file"}
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
+        tooltip={busy ? "Preparing upload…" : "Attach a file"}
+        onClick={() => void onPick()}
+        disabled={busy}
       >
         {busy ? <Loader2Icon className="animate-spin" /> : <PaperclipIcon />}
       </TooltipIconButton>

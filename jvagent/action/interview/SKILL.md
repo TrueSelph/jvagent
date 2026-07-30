@@ -94,6 +94,7 @@ Review handlers with `terminate: true` end without `complete`.
 - Ask questions only from `next_field` / `response_directive` supplied **this turn**.
 - Always place the question prompt from `next_field` in its own line for emphasis. Place any hints or notes in their own separate line.
 - Do not store filler or acknowledgements as answers — validators are the gate; re-ask using `error` from failed `set_fields`.
+- Never thank or acknowledge a field answer in a reply-only turn. Digits / text that answer the pending field must go through `interview__set_fields` (or `interview__skip_field` on decline) **this turn** so validation can accept or re-ask via `response_directive`.
 - Fields listed in `skipped_fields` (carried on `set_fields`, `next_field`, `skip_field`, and `get_status`) were declined — never re-prompt them, including while correcting other answers.
 - Map user answers to canonical keys from `field_reference[].key` (the activation catalog) — never invent or alias field keys.
 - `set_fields` args: `{"fields": {"field_key": "value"}}` — never put field keys at the top level.

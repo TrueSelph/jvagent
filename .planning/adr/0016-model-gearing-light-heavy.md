@@ -24,12 +24,14 @@ The existing `model` / `model_action_type` / `model_temperature` / `model_max_to
 
 ### 2.2 Gearing trigger — escalate by accumulated work (no extra call)
 
-The loop starts **light** and escalates to **heavy** once the turn proves multi-step, via `_select_gear(substantive_tool_calls, skill_active)`:
+The loop starts **light** and escalates to **heavy** once the turn proves multi-step, via `_select_gear(substantive_tool_calls, skill_active)` — policy fixed in core ([ADR-0041](0041-gearing-and-cost-policy-in-core.md)):
 
-- **heavy** when `substantive_tool_calls >= escalate_after_tool_calls` (default **2**), or
-- **heavy** when a skill (a multi-step SOP) is active and `escalate_on_skill` (default true).
+- **heavy** when a skill is active, or
+- **heavy** when `planning` is enabled (tick 0 must reason about `update_plan`), or
+- **heavy** when `substantive_tool_calls >= 1` (egress/meta excluded; see also [ADR-0039](0039-gearing-escalate-after-first-tool.md)),
+- else **light** (reply-only).
 
-A *substantive* tool call excludes egress (`reply`/`respond`) and indirection meta-tools (`find_tool`/`load_tool`/`find_skill`/`use_skill`). Escalation is **sticky** for the turn (state only accumulates). Net effect: reply-only and single-tool→reply stay light; multi-tool/skilled research escalates after it is clearly deliberative. The **partial-compose finalize** runs on the light gear (wrap-up is single-dimensional).
+A *substantive* tool call excludes egress (`reply`/`respond`) and indirection meta-tools (`find_tool`/`load_tool`/`find_skill`/`use_skill`). Escalation is **sticky** for the turn. Partial-compose finalize uses **`last_gear`** (not forced light).
 
 ### 2.3 Observability
 

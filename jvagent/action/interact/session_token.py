@@ -49,6 +49,10 @@ _TOKEN_CHANNEL = "web"
 _ALGORITHM = "HS256"
 _DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
 _DEFAULT_REFRESH_GRACE_SECONDS = 60 * 60 * 24 * 7  # 7 days past exp
+# Short-lived ticket for the STT WebSocket handshake (avoids putting the
+# long-lived session capability token in ``?token=`` access logs / Referer).
+_STT_STREAM_TICKET_TTL_SECONDS = 60
+_STT_STREAM_TICKET_TYP = "stt_stream"
 
 # Staged-rollout modes.
 MODE_OFF = "off"
@@ -177,6 +181,70 @@ def verify_session_token(
     except jwt.InvalidTokenError as exc:
         return None, f"invalid:{type(exc).__name__}"
     if claims.get("typ") != "interact_session":
+        return None, "wrong_type"
+    if expected_agent_id and claims.get("agent_id") != expected_agent_id:
+        return None, "agent_mismatch"
+    return claims, None
+
+
+def stt_stream_ticket_ttl_seconds() -> int:
+    """Lifetime for STT-stream WebSocket tickets (fixed short window)."""
+    return _STT_STREAM_TICKET_TTL_SECONDS
+
+
+def mint_stt_stream_ticket(
+    *,
+    agent_id: str,
+    session_id: str,
+    user_id: str,
+    token_secret: str,
+    ttl_seconds: Optional[int] = None,
+) -> Optional[str]:
+    """Mint a short-lived ticket for ``WS …/voice/stt/stream``.
+
+    Same binding claims as a session token, but ``typ=stt_stream`` and a ~60s
+    TTL so the long-lived Mode B token never needs to ride in a query string.
+    Returns ``None`` when no signing secret is configured.
+    """
+    secret = _secret()
+    if not secret:
+        return None
+    now = int(time.time())
+    ttl = (
+        ttl_seconds
+        if (ttl_seconds and ttl_seconds > 0)
+        else _STT_STREAM_TICKET_TTL_SECONDS
+    )
+    payload = {
+        "agent_id": agent_id,
+        "session_id": session_id,
+        "user_id": user_id,
+        "channel": _TOKEN_CHANNEL,
+        "cs": token_secret,
+        "iat": now,
+        "exp": now + ttl,
+        "jti": uuid.uuid4().hex,
+        "typ": _STT_STREAM_TICKET_TYP,
+    }
+    return jwt.encode(payload, secret, algorithm=_ALGORITHM)
+
+
+def verify_stt_stream_ticket(
+    ticket: str, *, expected_agent_id: Optional[str] = None
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Verify an STT-stream ticket (signature, expiry, ``typ=stt_stream``)."""
+    secret = _secret()
+    if not secret:
+        return None, "no_secret_configured"
+    if not ticket:
+        return None, "missing_token"
+    try:
+        claims = jwt.decode(ticket, secret, algorithms=[_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        return None, "expired"
+    except jwt.InvalidTokenError as exc:
+        return None, f"invalid:{type(exc).__name__}"
+    if claims.get("typ") != _STT_STREAM_TICKET_TYP:
         return None, "wrong_type"
     if expected_agent_id and claims.get("agent_id") != expected_agent_id:
         return None, "agent_mismatch"

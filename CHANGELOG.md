@@ -8,6 +8,139 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Artifact handler notify SSRF / cross-agent key / replay (#127).** Vault URL
+  fetches go through PageIndex `fetch_url_bytes_capped` (SSRF + redirect
+  guards). Notify API keys are minted to the exact
+  `/api/artifact_handler_action/notify/{agent_id}` path (no `/*` wildcard) and
+  the handler binds `api_key_id` to the action's minted key. Unknown or
+  cleared `job_id` callbacks return 404 **before** graph import.
+
+### Added
+
+- **Library action `jvagent/artifact_handler_interact_action` + skill `artifact_handler`.**
+  Session-private document/media ingest with jvforge async jobs (notify webhook
+  imports into PageIndex), sync assimilate fallback, and `artifact_handler__*`
+  tools. Opt in via agent action + orchestrator `skills:` when PageIndex and
+  AccessControl are present. Requires `JVAGENT_JVFORGE_BASE_URL` for async.
+
+- **`POST /agents/{id}/interact/session/open`.** Opens (or resumes) a web
+  conversation and mints an `X-Session-Token` without an utterance so messenger
+  attachments/voice work before the first chat turn. Requires
+  `JVSPATIAL_JWT_SECRET_KEY`.
+
+### Changed
+
+- **Session tokens mint whenever JWT secret is set.** Mode B tokens are no
+  longer withheld in `JVAGENT_INTERACT_PUBLIC_AUTH=off`; interact *enforcement*
+  still follows the mode. Voice/upload gates keep requiring a valid token.
+- **jvmessenger sandbox config auto-save.** Config panel changes persist to
+  `sessionStorage` and debounced-reload the messenger (Reload now = immediate).
+- **jvmessenger attachments/voice.** Client opens a session eagerly when
+  attachments/voice/proactive are on; paperclip/mic are clickable without a
+  prior chat turn.
+- **SESSION CONTEXT in Orchestrator system prompt (ADR-0042).** Each turn
+  injects authoritative date/time (`App.now()`) and channel into
+  `{session_context_section}` after identity so relative time (“this year”)
+  does not fall back to training cutoff. `get_current_datetime` remains for
+  mid-turn refresh. No new YAML knobs.
+
+- **Gearing and cost policy baked into Orchestrator core (ADR-0041).** Removed
+  Unreleased knobs `escalate_after_tool_calls`, `escalate_on_skill`,
+  `escalate_on_planning`, `sticky_finalize_gear`, `skip_compose_without_guidance`,
+  `include_history_events`, and `history_max_statement_length`. Fixed law: skill /
+  `planning` / ≥1 substantive tool → heavy; finalize keeps `last_gear`; bare
+  egress skips compose; loop history untruncated and omits `[EVENT]` lines.
+  Product surface stays `light_model*` + `planning` + sizing (`history_limit`,
+  `max_statement_length`).
+
+- **Library skill `knowledge_ingest`.** Reusable capture → report →
+  `pageindex__assimilate` SOP under `jvagent/skills/knowledge_ingest/` (opt-in
+  via `skills` / `-all` when PageIndex + web_fetch are on the agent).
+
+- **`Conversation.get_interactions` returns the correct oldest/newest window.**
+  Materialize matching rows, sort with `interaction_row_sort_key`, then slice
+  (JsonDB sort+limit pushdown was wrong). `scripts/bench_orchestrator.py` mocks
+  compose so wall-clock is not poisoned by empty API keys.
+
+- **Parameters own their enforcement and their placement (ADR-0037).** A rule
+  now declares `enforcement` (`prompt` | `scrub` | `guard`), an optional named
+  `detector`, and `placement` (`system` | `user_turn` | `inline`). Deleting a
+  parameter removes its prompt text, its egress scrub and its loop guard
+  together; previously one rule lived in up to three places that could drift.
+  Existing parameters are unaffected — every new field defaults to today's
+  behaviour.
+
+### Fixed
+
+- **`Conversation.get_interactions` window on JsonDB.** Sort+limit pushdown
+  returned the wrong oldest/newest N when `started_at` types differed; always
+  materialize, sort with `interaction_row_sort_key`, then slice.
+
+- **jvmessenger `/` without `demo.html`.** Missing-demo `send_error` used a
+  Unicode em-dash that crashed latin-1 HTTP status lines; ASCII message +
+  fixture `demo.html`.
+
+- **Signup phone hint leaked tool names into `response_directive`.** Hint text
+  no longer names `interview__skip_field` / `interview__set_fields` (SOP body
+  still may).
+
+- **Partial-compose salvage when finalize ignores STEP LIMIT.** After
+  `repeat_guard` / budget / duration, if the finalize tick returns another tool
+  call (observed: `find_tool('write file')` → clarify_text), the loop now
+  salvages plan `result` / tool observations instead of falling through to
+  `clarify_text`. Plan-drain nudge and `PLANNING_PROMPT` ban write-file detours
+  for in-memory report→assimilate work; `knowledge_ingest` forbids mid-task
+  progress replies and filesystem writes.
+
+### Added
+
+- **Orchestrator `denied_tools`.** Fnmatch globs hard-remove matching action/MCP
+  tools from the assembled surface (not lean-hide — `find_tool` and dispatch
+  cannot reach them). Mirrors `denied_skills`. Egress/meta tools are protected.
+  Channel-overridable via `channel_overrides.denied_tools`.
+
+- **A rule could hold on one transport and not another (ADR-0038).** Response
+  rules were applied by callers, and the streaming path had no caller that did
+  — so the same reply came out clean over REST and unscrubbed over the
+  messenger, which streams. Observed live as a duplicate greeting that
+  `voice.single_greeting` should have removed. The `ResponseBus` is now the
+  single egress gate; `EgressGate` is the one implementation, and non-streaming
+  scrubbing is the degenerate case of it. Equivalence is asserted over every
+  chunk split point rather than argued.
+- **`commit_pending_adhoc` was a second, ungoverned exit** from the streaming
+  accumulator; it dropped text the gate was holding. It now ends the message the
+  same way `publish()` does.
+
+- **Quick-reply chips were ungoverned.** `SuggestionsInteractAction` generates
+  user-facing text with a language model but publishes it in `metadata`, where
+  `publish()`'s egress scrub never looked, and it rendered no response rules
+  into its prompt. Both halves are closed: the rules go into the prompt, and
+  each chip is scrubbed before publish.
+- **`vet_egress` gained `allow_empty=`.** For a reply, text that is entirely a
+  rule-break is still returned — a silent turn is worse than a bad one. For a
+  fragment that is one of several (a chip), that inverts, and it now scrubs to
+  empty.
+- **`identity.cutoff` and `identity.self_disclosure` shared one scrub
+  detector**, so deleting either rule left the other enforcing both. They now
+  have one detector each (`drop_cutoff_claims`, `drop_self_disclosure`);
+  `drop_leak_sentences` remains registered as the union.
+
+### Removed
+
+- **BREAKING — five orchestrator attributes.** `enforce_grounded_claims`,
+  `enforce_grounded_specifics`, `tool_use_policy_prompt`, `length_limit_prompt`
+  and `memory_prompt` are gone. The rules they carried are now parameters
+  (`grounding.verified_claims`, `tools.selection`, `voice.length`,
+  `memory.search_first`), overridable by key from `agent.yaml`. Prompt text and
+  prompt position are byte-identical, so behaviour is unchanged unless you had
+  customized one of these attributes — in which case move that text onto the
+  matching parameter. `safeguards_reminder` survives as a mechanics-only
+  template with a `{reminders}` slot; a value persisted before this change has
+  no slot, renders verbatim, and keeps that deployment on its current text
+  until `--update --source`.
+
 ## [0.1.3] - 2026-07-23
 
 ### Added

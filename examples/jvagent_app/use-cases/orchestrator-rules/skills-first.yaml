@@ -1,0 +1,22 @@
+schema: jvagent.use-case/v1
+id: rules.skills-first
+title: A request matching a skill activates that skill rather than ad-hoc tools
+priority: P0
+tags: [orchestrator-rules, live, loop-protocol]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # "PREFER a matching skill over ad-hoc tool calls" survives consolidation only
+  # if the model still reaches for use_skill first. A model that goes straight to
+  # web_search here has lost the rule.
+  - id: request-research
+    when:
+      user: "Do a proper researched write-up on solid-state battery manufacturing costs, with sources."
+    then:
+      loop:
+        tools_called: [use_skill]
+        must_not_announce: true

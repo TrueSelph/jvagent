@@ -26,6 +26,8 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 3. **No turn-prep steering** — task-lock prep (`prepare_task_lock_turn`, `task_lock_runtime_ready`, etc.) may load session and contract only. It must **not** inject observations that tell the model which tool to call next, auto-seed field values, or attach `pending_directive` hints that replace explicit tool calls.
 
+   **Allowed:** turn-stable **environment ground truth** in the system prompt (e.g. SESSION CONTEXT clock + channel per [ADR-0042](../.planning/adr/0042-session-context-ground-truth.md)). That is factual context, not tool selection.
+
 4. **No activation auto-store** — skill or action activation must not parse the user message and pre-fill session state. Extraction is model-owned via explicit tool calls.
 
 5. **No response inlining** — do not merge downstream tool payloads into upstream tool responses inside the server (e.g. auto-inlining “next step” content into a store response). `next_tool` hints and `response_directive` are allowed; the model still issues separate tool calls per SOP.

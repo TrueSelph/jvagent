@@ -13,6 +13,7 @@
 import { parseConfig } from "../shared/config";
 import { createHostBridge } from "./bridge-host";
 import { createLauncher } from "./launcher";
+import { watchPage, type TriggerKind } from "./pageContext";
 
 function boot(): void {
   // `document.currentScript` is valid while this IIFE executes synchronously.
@@ -52,18 +53,51 @@ function boot(): void {
   const messengerOrigin = new URL(script.src, window.location.href).origin;
   const iframeSrc = `${messengerOrigin}/app.html`;
 
+  // Teaser dismissal is remembered on the *host* origin (the loader runs there),
+  // so a visitor who waves us away isn't nagged on every page view.
+  const TEASER_KEY = `jvmessenger:teaser-dismissed:${config.agentId}`;
+  const teaserSuppressed = (): boolean => {
+    try {
+      const until = Number(window.localStorage.getItem(TEASER_KEY) || 0);
+      return Number.isFinite(until) && Date.now() < until;
+    } catch {
+      return false;
+    }
+  };
+  const suppressTeaser = (): void => {
+    try {
+      const ms = config.teaserCooldownDays * 24 * 60 * 60 * 1000;
+      window.localStorage.setItem(TEASER_KEY, String(Date.now() + ms));
+    } catch {
+      // Storage unavailable (private mode) — dismissal lasts this page view.
+    }
+  };
+
+  const openChat = (): void => {
+    bridge.open();
+    launcher.setOpen(true);
+    launcher.setUnread(0);
+  };
+
   const launcher = createLauncher({
     avatar: config.avatar,
+    title: config.title,
+    teaser: config.teaser,
     onToggle: () => {
       if (bridge.isOpen()) {
         bridge.close();
         launcher.setOpen(false);
       } else {
-        bridge.open();
-        launcher.setOpen(true);
-        launcher.setUnread(0);
+        openChat();
       }
     },
+    onTeaserSend: (text) => {
+      // Open the panel and hand the typed text to the app to send as turn one.
+      suppressTeaser();
+      openChat();
+      bridge.prefill(text);
+    },
+    onTeaserDismiss: suppressTeaser,
   });
 
   const bridge = createHostBridge({
@@ -76,6 +110,36 @@ function boot(): void {
       if (!bridge.isOpen()) launcher.setUnread(unread);
     },
   });
+
+  // With proactive on, boot the (hidden) iframe now so the app can subscribe to
+  // the session channel and receive agent-initiated messages while closed.
+  if (config.proactive) bridge.preload();
+
+  // Watch the host page: context for the agent, behaviour for the teaser.
+  const teaserWanted = !!config.teaser && !teaserSuppressed();
+  const triggers = (
+    config.teaserTriggers.length
+      ? config.teaserTriggers
+      : teaserWanted
+        ? ["delay"]
+        : []
+  ) as TriggerKind[];
+
+  const page = watchPage({
+    agentId: config.agentId,
+    triggers,
+    delaySeconds: config.teaserDelay / 1000,
+    scrollPercent: config.teaserScrollPercent,
+    onTrigger: () => {
+      if (teaserWanted && !bridge.isOpen()) launcher.showTeaser();
+    },
+  });
+
+  if (config.pageContext) {
+    // Send once now and refresh on open, so the agent sees current dwell/scroll.
+    bridge.sendContext(page.snapshot());
+    window.setInterval(() => bridge.sendContext(page.snapshot()), 15000);
+  }
 }
 
 if (document.readyState === "loading") {
