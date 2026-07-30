@@ -214,7 +214,7 @@ class PageIndexAction(Action):
             )
 
     async def handle_webhook_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """LLM completion for jvforge (prompt + optional model)."""
+        """LLM completion for jvforge (prompt + optional model / image)."""
         prompt = (payload.get("prompt") or "").strip()
         if not prompt:
             raise ValidationError(
@@ -230,14 +230,38 @@ class PageIndexAction(Action):
         else:
             model = str(model).strip()
 
+        image_base64 = payload.get("image_base64")
+        if isinstance(image_base64, str):
+            image_base64 = image_base64.strip() or None
+        else:
+            image_base64 = None
+        mime_type = (
+            str(payload.get("mime_type") or "image/jpeg").strip() or "image/jpeg"
+        )
+
         model_action = await self.get_model_action(required=False)
         try:
-            llm_bridge.set_pageindex_model_action(model_action)
-            text = await llm_bridge.llm_acompletion(
-                model,
-                prompt,
-                _real_impl=pageindex_core_utils.llm_acompletion,
-            )
+            if image_base64:
+                if model_action is None:
+                    raise ValidationError(
+                        message="Language model action is required for image completion",
+                        details={},
+                    )
+                # Prefer data-URI so mime_type is honored (create_image_content
+                # defaults base64 parts to image/jpeg).
+                data_uri = f"data:{mime_type};base64,{image_base64}"
+                content = model_action.create_image_content(prompt, image_url=data_uri)
+                result = await model_action.query_sync(
+                    content, temperature=0, model=model
+                )
+                text = await result.get_response() if result else ""
+            else:
+                llm_bridge.set_pageindex_model_action(model_action)
+                text = await llm_bridge.llm_acompletion(
+                    model,
+                    prompt,
+                    _real_impl=pageindex_core_utils.llm_acompletion,
+                )
         finally:
             llm_bridge.set_pageindex_model_action(None)
 

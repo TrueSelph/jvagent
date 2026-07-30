@@ -529,6 +529,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     docling_ocr_engine=cfg.docling_ocr_engine,
                     normalize_bold_headings=cfg.normalize_bold_headings,
                     llm_webhook_url=llm_wh_url,
+                    # Same interact webhook imports via process_document_url.
+                    notification_url=llm_wh_url,
+                    notify_delay_seconds=0,
                     emergency=False,
                 )
                 return {

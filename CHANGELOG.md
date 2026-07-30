@@ -8,7 +8,22 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Artifact handler notify SSRF / cross-agent key / replay (#127).** Vault URL
+  fetches go through PageIndex `fetch_url_bytes_capped` (SSRF + redirect
+  guards). Notify API keys are minted to the exact
+  `/api/artifact_handler_action/notify/{agent_id}` path (no `/*` wildcard) and
+  the handler binds `api_key_id` to the action's minted key. Unknown or
+  cleared `job_id` callbacks return 404 **before** graph import.
+
 ### Added
+
+- **Library action `jvagent/artifact_handler_interact_action` + skill `artifact_handler`.**
+  Session-private document/media ingest with jvforge async jobs (notify webhook
+  imports into PageIndex), sync assimilate fallback, and `artifact_handler__*`
+  tools. Opt in via agent action + orchestrator `skills:` when PageIndex and
+  AccessControl are present. Requires `JVAGENT_JVFORGE_BASE_URL` for async.
 
 - **`POST /agents/{id}/interact/session/open`.** Opens (or resumes) a web
   conversation and mints an `X-Session-Token` without an utterance so messenger
