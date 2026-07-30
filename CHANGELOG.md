@@ -8,6 +8,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Artifact handler notify SSRF / cross-agent key / replay (#127).** Vault URL
+  fetches go through PageIndex `fetch_url_bytes_capped` (SSRF + redirect
+  guards). Notify API keys are minted to the exact
+  `/api/artifact_handler_action/notify/{agent_id}` path (no `/*` wildcard) and
+  the handler binds `api_key_id` to the action's minted key. Unknown or
+  cleared `job_id` callbacks return 404 **before** graph import.
+
 ### Added
 
 - **Library action `jvagent/artifact_handler_interact_action` + skill `artifact_handler`.**

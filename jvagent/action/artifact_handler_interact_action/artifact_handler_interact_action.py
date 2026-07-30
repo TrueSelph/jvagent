@@ -260,27 +260,29 @@ def collect_visitor_media(visitor: Any) -> Tuple[List[UploadItem], bool]:
 async def _fetch_url_bytes_for_vault(
     url: str, *, max_bytes: int = MAX_UPLOAD_ITEM_BYTES
 ) -> Optional[bytes]:
-    """Download media in jvagent so jvforge never fetches WhatsApp CDN URLs."""
-    import httpx
+    """Download media in jvagent so jvforge never fetches WhatsApp CDN URLs.
+
+    Uses PageIndex ``fetch_url_bytes_capped`` (SSRF guard + per-hop redirect
+    validation) so public interact callers cannot point the server at private
+    or link-local targets via ``visitor.data`` media URLs.
+    """
+    from jvspatial.api.exceptions import ValidationError
+
+    from jvagent.action.pageindex.url_guard import fetch_url_bytes_capped
 
     target = (url or "").strip()
     if not target.startswith(("http://", "https://")):
         return None
     try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            async with client.stream("GET", target) as resp:
-                resp.raise_for_status()
-                chunks: List[bytes] = []
-                total = 0
-                async for chunk in resp.aiter_bytes():
-                    if not chunk:
-                        continue
-                    total += len(chunk)
-                    if total > max_bytes:
-                        return None
-                    chunks.append(chunk)
-                data = b"".join(chunks)
-                return data or None
+        content, _fname, _ctype = await fetch_url_bytes_capped(
+            target,
+            max_bytes=max_bytes,
+            read_timeout=60.0,
+            user_agent="jvagent-artifact-handler/1.0",
+        )
+        return content or None
+    except ValidationError:
+        return None
     except Exception:
         return None
 
@@ -905,10 +907,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         from jvagent.core.public_url import get_public_base_url
 
         from .webhook_auth import (
-            ALLOWED_WEBHOOK_ENDPOINT_GLOB,
             ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX,
             WEBHOOK_PERMISSION,
             get_or_create_system_user,
+            notify_endpoint_for_agent,
         )
 
         base_url = (get_public_base_url() or "").strip().rstrip("/")
@@ -924,6 +926,24 @@ class ArtifactHandlerInteractAction(InteractAction):
             expected_url_base = (
                 f"{base_url}/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/{agent_id}"
             )
+            allowed_endpoint = notify_endpoint_for_agent(agent_id)
+
+            def _key_scoped_to_agent(existing_key: Any) -> bool:
+                if existing_key is None or not getattr(
+                    existing_key, "is_active", False
+                ):
+                    return False
+                existing_eps = list(
+                    getattr(existing_key, "allowed_endpoints", None) or []
+                )
+                if allowed_endpoint not in existing_eps:
+                    return False
+                for ep in existing_eps:
+                    if ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX not in ep:
+                        continue
+                    if ep.endswith("*"):
+                        return False
+                return True
 
             prime_ctx = GraphContext(database=get_prime_database())
             api_key_service = APIKeyService(context=prime_ctx)
@@ -933,27 +953,28 @@ class ArtifactHandlerInteractAction(InteractAction):
                 and self.notify_webhook_url
                 and "?api_key=" in self.notify_webhook_url
                 and self.notify_webhook_url.startswith(expected_url_base)
+                and self.notify_webhook_api_key_id
             ):
-                if allowed_ip is not None and self.notify_webhook_api_key_id:
-                    try:
-                        existing_key = await api_key_service.get_key(
-                            self.notify_webhook_api_key_id
-                        )
-                        if existing_key and existing_key.is_active:
+                try:
+                    existing_key = await api_key_service.get_key(
+                        self.notify_webhook_api_key_id
+                    )
+                    if _key_scoped_to_agent(existing_key):
+                        if allowed_ip is not None:
                             requested_ips = [allowed_ip] if allowed_ip else []
                             existing_ips = (
                                 getattr(existing_key, "allowed_ips", None) or []
                             )
                             if requested_ips == existing_ips:
                                 return self.notify_webhook_url
-                    except Exception:
-                        pass
-                else:
-                    return self.notify_webhook_url
+                        else:
+                            return self.notify_webhook_url
+                except Exception:
+                    pass
 
             system_user_id = await get_or_create_system_user()
 
-            if regenerate and self.notify_webhook_api_key_id:
+            if self.notify_webhook_api_key_id:
                 try:
                     await api_key_service.revoke_key(
                         self.notify_webhook_api_key_id, system_user_id
@@ -968,7 +989,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 permissions=[WEBHOOK_PERMISSION],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
+                allowed_endpoints=[allowed_endpoint],
                 key_prefix="jv_",
             )
 

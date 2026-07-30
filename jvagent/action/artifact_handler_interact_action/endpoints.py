@@ -827,19 +827,20 @@ async def artifact_handler_notify(request: Request, agent_id: str):
 
         {
           "process_document_url": "<https://jvforge/v1/artifacts/{job_id}>",
-          "job_id": "<str|null>",
+          "job_id": "<str>",
           "doc_name": "<str|null>"
         }
 
     Flow:
-        1. Download artifact from ``process_document_url``.
-        2. Import the pageindex_graph into PageIndex.
-        3. Resolve the ArtifactHandlerInteractAction and look up the job.
+        1. Resolve the ArtifactHandlerInteractAction; bind API key to this agent.
+        2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
+        3. Download artifact from ``process_document_url`` and import into PageIndex.
         4. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        5. For WhatsApp: send two messages — a ready notice (immediate) and an
-           answer (background, using call_model if there's a pending question).
+        5. For WhatsApp: send ready notice + optional answer.
         6. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
     """
+    import hmac
+
     try:
         payload = await request.json()
     except Exception:
@@ -856,11 +857,15 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     job_id = str(payload.get("job_id") or "").strip()
     doc_name = str(payload.get("doc_name") or "").strip()
 
-    # ── Step 1: Download artifact and import into PageIndex.
     if not process_document_url:
         return JSONResponse(
             status_code=400,
             content={"detail": "process_document_url is required"},
+        )
+    if not job_id:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "job_id is required"},
         )
 
     action = await _resolve_action(agent_id)
@@ -869,6 +874,25 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             status_code=503,
             content={"detail": "action not available"},
             headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+        )
+
+    # Bind the presented API key to this action's minted notify key so a key
+    # minted for agent A cannot drive imports on agent B (jvspatial endpoint
+    # allowlists are prefix-based; exact-path minting alone is not enough when
+    # agent ids share a common prefix).
+    user = getattr(request.state, "user", None) or {}
+    api_key_id = (
+        str(user.get("api_key_id") or "").strip() if isinstance(user, dict) else ""
+    )
+    expected_key = str(getattr(action, "notify_webhook_api_key_id", None) or "").strip()
+    if (
+        not expected_key
+        or not api_key_id
+        or not hmac.compare_digest(expected_key, api_key_id)
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "API key not authorized for this agent"},
         )
 
     from jvagent.core.agent import Agent
@@ -881,6 +905,31 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
         )
 
+    # Job lookup BEFORE download/import — unknown / cleared jobs must not
+    # trigger expensive PageIndex writes (replay / forged callbacks).
+    entry = await action.lookup_job(job_id)
+    if not entry:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "unknown or already-cleared job_id"},
+        )
+
+    entry_agent = str(entry.get("agent_id") or "").strip()
+    if entry_agent and entry_agent != agent_id:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "job_id does not belong to this agent"},
+        )
+
+    # Idempotent success when we already finished notifying for this job.
+    if entry.get("notified"):
+        return {
+            "status": "already_imported",
+            "job_id": job_id,
+            "notified": True,
+            "doc_name": str(entry.get("doc_name") or doc_name or ""),
+        }
+
     imported_doc_name = await _download_and_import_graph(process_document_url, agent_id)
     if not imported_doc_name:
         return JSONResponse(
@@ -889,18 +938,13 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
         )
 
-    # ── Step 2: Look up the job in the reverse index.
-    entry = await action.lookup_job(job_id) if job_id else None
-    if not entry and job_id:
-
-        pass
-    user_id = str((entry or {}).get("user_id") or "").strip()
-    session_id = str((entry or {}).get("session_id") or "").strip()
-    conversation_id = str((entry or {}).get("conversation_id") or "").strip()
-    channel = str((entry or {}).get("channel") or "").strip().lower() or "default"
+    user_id = str(entry.get("user_id") or "").strip()
+    session_id = str(entry.get("session_id") or "").strip()
+    conversation_id = str(entry.get("conversation_id") or "").strip()
+    channel = str(entry.get("channel") or "").strip().lower() or "default"
     # Prefer PageIndex import name; fall back to vault job name normalized the
     # same way PageIndex does (strip_redundant_md_suffix).
-    vault_doc_name = str((entry or {}).get("doc_name") or doc_name or "").strip()
+    vault_doc_name = str(entry.get("doc_name") or doc_name or "").strip()
     try:
         from jvagent.action.pageindex.adapter import strip_redundant_md_suffix
     except Exception:
@@ -911,15 +955,11 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         internal_doc_name = strip_redundant_md_suffix(vault_doc_name) or vault_doc_name
     else:
         internal_doc_name = vault_doc_name
-    display_doc = (
-        _display_doc_name(entry or {}, doc_name)
-        if entry
-        else (imported_doc_name or internal_doc_name)
-    )
-    pending_question = str((entry or {}).get("pending_question") or "").strip()
+    display_doc = _display_doc_name(entry, doc_name)
+    pending_question = str(entry.get("pending_question") or "").strip()
 
-    # ── Step 3: Mark the job as ready in conversation context.
-    if job_id and conversation_id:
+    # ── Mark the job as ready in conversation context.
+    if conversation_id:
         try:
             from jvagent.memory.conversation import Conversation
 
@@ -948,7 +988,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                                     )
         except Exception:
             pass
-    # ── Step 4: Send WhatsApp notifications (ready notice + answer).
+    # ── Send WhatsApp notifications (ready notice + answer).
     if user_id and channel == "whatsapp":
         asyncio.create_task(
             _send_whatsapp_notifications(
@@ -963,7 +1003,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             )
         )
 
-    # ── Step 5: Mark notified + clear from jvforge reverse index.
+    # ── Mark notified + clear from jvforge reverse index.
     if action is not None and job_id:
         try:
             await action.mark_notified(job_id)
