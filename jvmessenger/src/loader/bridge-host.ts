@@ -5,6 +5,7 @@
  */
 
 import type { MessengerConfig } from "../shared/config";
+import type { PageContext } from "./pageContext";
 import {
   type IframeToHost,
   type MessengerMode,
@@ -16,6 +17,12 @@ export interface HostBridge {
   open(): void;
   close(): void;
   isOpen(): boolean;
+  /** Hand text typed in the launcher teaser to the app to send as turn one. */
+  prefill(text: string): void;
+  /** Create the iframe hidden so the app can run before the panel is opened. */
+  preload(): void;
+  /** Push a fresh host-page context snapshot to the app. */
+  sendContext(context: PageContext): void;
   destroy(): void;
 }
 
@@ -68,6 +75,11 @@ export function createHostBridge(opts: {
 }): HostBridge {
   let iframe: HTMLIFrameElement | null = null;
   let open = false;
+  // Text from the launcher teaser, held until the app posts `ready`.
+  let pendingPrefill: string | null = null;
+  // Latest context snapshot, replayed on `ready` so a late-booting app gets it.
+  let lastContext: PageContext | null = null;
+  let appReady = false;
 
   const applyMode = (mode: MessengerMode) => {
     if (!iframe) return;
@@ -92,6 +104,30 @@ export function createHostBridge(opts: {
           envelope({ type: "init", config: opts.config }),
           opts.iframeOrigin
         );
+        // State the current visibility explicitly. The app assumes it is
+        // visible until told otherwise, which is wrong on the `preload()` path
+        // (hidden iframe, never opened) — and that would make it clear the
+        // unread badge for proactive messages the visitor hasn't seen.
+        iframe.contentWindow?.postMessage(
+          envelope({ type: "visibility", open }),
+          opts.iframeOrigin
+        );
+        // The teaser can be submitted before the app has booted, so any text
+        // queued by `prefill()` is flushed once the app announces itself.
+        if (pendingPrefill) {
+          iframe.contentWindow?.postMessage(
+            envelope({ type: "prefill", text: pendingPrefill }),
+            opts.iframeOrigin
+          );
+          pendingPrefill = null;
+        }
+        if (lastContext) {
+          iframe.contentWindow?.postMessage(
+            envelope({ type: "context", context: lastContext }),
+            opts.iframeOrigin
+          );
+        }
+        appReady = true;
         break;
       case "resize":
         applyMode(msg.mode);
@@ -142,10 +178,46 @@ export function createHostBridge(opts: {
     );
   }
 
+  /**
+   * Create the iframe up front, kept collapsed (`display:none`), so the app can
+   * subscribe to the session channel before the visitor ever opens the panel.
+   * Costs a bundle load on every page view — callers gate it on `data-proactive`.
+   */
+  function preload(): void {
+    ensureIframe();
+    applyMode("collapsed");
+  }
+
+  function sendContext(context: PageContext): void {
+    lastContext = context;
+    if (appReady && iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        envelope({ type: "context", context }),
+        opts.iframeOrigin
+      );
+    }
+  }
+
+  function prefill(text: string): void {
+    ensureIframe();
+    if (appReady && iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        envelope({ type: "prefill", text }),
+        opts.iframeOrigin
+      );
+    } else {
+      // App still booting — the `ready` handler flushes this.
+      pendingPrefill = text;
+    }
+  }
+
   return {
     open: open_,
     close,
     isOpen: () => open,
+    prefill,
+    preload,
+    sendContext,
     destroy() {
       window.removeEventListener("message", onMessage);
       iframe?.remove();

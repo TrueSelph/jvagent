@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>jvmessenger demo host</title>
+    <style>
+      :root {
+        --bg: #f0f2f7;
+        --ink: #1a1f2e;
+        --muted: #5c6578;
+        --card: #ffffff;
+        --line: #d8dde8;
+        --accent: #1f4b99;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #d9e4ff 0%, transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, #ffe8d6 0%, transparent 50%),
+          var(--bg);
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 4.5rem 1.5rem 8rem;
+      }
+      h1 {
+        font-size: clamp(2rem, 4vw, 2.75rem);
+        letter-spacing: -0.03em;
+        margin: 0 0 0.75rem;
+      }
+      p { color: var(--muted); line-height: 1.55; max-width: 38rem; }
+      .card {
+        margin-top: 2rem;
+        padding: 1.25rem 1.35rem;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+      code, .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85em;
+        word-break: break-all;
+      }
+      .hint { font-size: 0.92rem; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Acme support desk</h1>
+      <p>
+        Stand-in customer site for the embeddable messenger. The chat bubble
+        (bottom-right) is injected by <span class="mono">loader.js</span> —
+        open it to talk to the local agent.
+      </p>
+      <div class="card hint">
+        <div>Override via query string:</div>
+        <div class="mono" id="example"></div>
+      </div>
+    </main>
+    <script>
+      (async function () {
+        var q = new URLSearchParams(window.location.search);
+        // Pass ?agentId=…&agentUrl=… after every DB purge — agent node ids rotate.
+        // Default is the current examples/jvagent_app orchestrator when known.
+        var agentUrl = (q.get("agentUrl") || "http://127.0.0.1:8000").replace(/\/$/, "");
+        var agentId = q.get("agentId") || "n.Agent.190b6ecb9d634aae89fb9bce";
+        var messengerOrigin = window.location.origin;
+        var hint = document.getElementById("example");
+
+        async function profileOk(id) {
+          try {
+            var r = await fetch(
+              agentUrl + "/api/agents/" + encodeURIComponent(id) + "/profile"
+            );
+            if (!r.ok) return false;
+            var j = await r.json();
+            // Stale ids after purge often 200 with null name; live agents have a name.
+            return !!(j && j.name);
+          } catch (_) {
+            return false;
+          }
+        }
+
+        if (!(await profileOk(agentId))) {
+          hint.textContent =
+            "Agent " +
+            agentId +
+            " is missing or stale at " +
+            agentUrl +
+            ". After a purge, open /?agentId=<new-orchestrator-id>";
+          hint.style.color = "#9b1c1c";
+          return;
+        }
+
+        hint.textContent =
+          location.pathname + "?agentId=" + agentId + "&agentUrl=" + agentUrl;
+
+        var s = document.createElement("script");
+        s.src =
+          messengerOrigin +
+          "/loader.js?agentId=" +
+          encodeURIComponent(agentId) +
+          "&agentUrl=" +
+          encodeURIComponent(agentUrl);
+        s.dataset.theme = "auto";
+        s.dataset.title = "Orchestrator Agent";
+        s.dataset.greeting = "Hi! How can I help you today?";
+        s.dataset.quickReplies = JSON.stringify([
+          "What can you do?",
+          "Help me get started",
+        ]);
+        s.dataset.showReasoning = "false";
+        s.dataset.attachments = "true";
+        s.dataset.voice = "false";
+        s.dataset.fullscreen = "true";
+        document.body.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>

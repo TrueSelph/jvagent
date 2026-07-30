@@ -1,0 +1,23 @@
+schema: jvagent.use-case/v1
+id: rules.find-tool-no-substitute
+title: A capability that is not visible is discovered, not approximated
+priority: P1
+tags: [orchestrator-rules, live, lean-surfacing]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # Under lean surfacing the write/save tools are usually hidden. The rule says
+  # call find_tool rather than substituting a visible near-match (a read/search
+  # tool where a write is needed), which fails silently.
+  - id: save-a-file
+    when:
+      user: "Save a note to a file called shopping.txt with milk, eggs and bread in it."
+    then:
+      loop:
+        must_not_announce: true
+        min_substantive_tools: 1
+        tools_not_called: [pageindex__search, web_search__search]

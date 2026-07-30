@@ -94,6 +94,48 @@ export function clearHistory(agentId: string): void {
   }
 }
 
+// --- Rendered-message ids (dedup for the persistent session channel) ---
+
+/**
+ * The subscribe stream replays its backlog on every reconnect and is never
+ * drained by streaming subscribers, so the same message arrives repeatedly —
+ * and the interact stream delivers turn messages a second time. Ids of anything
+ * already rendered are persisted so a reload doesn't resurrect them.
+ */
+const MAX_SEEN_IDS = 500;
+
+function seenKey(agentId: string): string {
+  return `jvmessenger:seen:${agentId}`;
+}
+
+export function loadSeenIds(agentId: string): string[] {
+  try {
+    const raw = localStorage.getItem(seenKey(agentId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSeenIds(agentId: string, ids: Iterable<string>): void {
+  try {
+    // Keep the most recent window; older ids can't reappear in a bounded replay.
+    const trimmed = Array.from(ids).slice(-MAX_SEEN_IDS);
+    localStorage.setItem(seenKey(agentId), JSON.stringify(trimmed));
+  } catch {
+    // Storage unavailable — dedup degrades to in-memory for this page view.
+  }
+}
+
+export function clearSeenIds(agentId: string): void {
+  try {
+    localStorage.removeItem(seenKey(agentId));
+  } catch {
+    // ignore
+  }
+}
+
 // --- Consent acceptance (per agent, keyed to the disclosure text) ---
 
 function consentKey(agentId: string): string {
@@ -157,6 +199,50 @@ export async function refreshSessionToken(
       const token =
         data?.session_token ?? data?.data?.session_token ?? null;
       return typeof token === "string" ? token : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Open (or resume) a web conversation and mint a session token without sending
+ * an utterance — needed so attachments/voice work before the first chat turn.
+ */
+export async function openSession(
+  agentUrl: string,
+  agentId: string,
+  existing?: SessionState
+): Promise<SessionState | null> {
+  const base = agentUrl.replace(/\/+$/, "");
+  const urls = [
+    `${base}/api/agents/${agentId}/interact/session/open`,
+    `${base}/agents/${agentId}/interact/session/open`,
+  ];
+  const body: Record<string, string> = {};
+  if (existing?.sessionId) body.session_id = existing.sessionId;
+  if (existing?.userId) body.user_id = existing.userId;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 404) continue;
+      if (!res.ok) return null;
+      const data = await res.json();
+      const sessionToken =
+        data?.session_token ?? data?.data?.session_token ?? null;
+      const sessionId = data?.session_id ?? data?.data?.session_id ?? null;
+      const userId = data?.user_id ?? data?.data?.user_id ?? null;
+      if (typeof sessionToken !== "string" || !sessionToken) return null;
+      return {
+        sessionToken,
+        sessionId: typeof sessionId === "string" ? sessionId : undefined,
+        userId: typeof userId === "string" ? userId : undefined,
+      };
     } catch {
       return null;
     }

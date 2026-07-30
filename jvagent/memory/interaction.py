@@ -47,6 +47,27 @@ def interaction_sort_key(node: Any) -> tuple:
     return (st, getattr(node, "id", ""))
 
 
+def interaction_row_sort_key(row: Dict[str, Any]) -> tuple:
+    """Same chronology as :func:`interaction_sort_key` for a raw DB record.
+
+    Attribute fields live under ``context`` on disk; sorting raw rows lets
+    ``get_interactions`` hydrate only the limited window instead of every
+    interaction in the conversation.
+    """
+    ctx = row.get("context") if isinstance(row.get("context"), dict) else {}
+    st = ctx.get("started_at") if ctx else None
+    if isinstance(st, str):
+        try:
+            st = datetime.fromisoformat(st.replace("Z", "+00:00"))
+        except ValueError:
+            st = None
+    if st is None:
+        return (datetime.min.replace(tzinfo=timezone.utc), row.get("id") or "")
+    if getattr(st, "tzinfo", None) is None:
+        st = st.replace(tzinfo=timezone.utc)
+    return (st, row.get("id") or "")
+
+
 @compound_index([("conversation_id", 1), ("started_at", -1)], name="conv_timestamp")
 class Interaction(DeferredSaveMixin, Node):
     """Single exchange within a Conversation.

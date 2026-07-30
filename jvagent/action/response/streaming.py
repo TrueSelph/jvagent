@@ -27,6 +27,8 @@ async def stream_messages(
     session_id: str,
     response_bus: Any,
     interaction_id: Optional[str] = None,
+    keepalive_seconds: Optional[float] = None,
+    max_replay: Optional[int] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream messages from response bus for a session.
 
@@ -37,10 +39,22 @@ async def stream_messages(
         session_id: Session identifier
         response_bus: ResponseBus instance
         interaction_id: Optional interaction ID to filter messages
+        keepalive_seconds: When set, emit an SSE comment every this many idle
+            seconds and use it as the queue poll interval. Long-lived
+            subscriptions need this: proxies (nginx ``proxy_read_timeout``, ALB,
+            Cloudflare) drop connections that stay silent for 60-100s. It also
+            avoids the default 10-wakeups-per-second poll on an idle stream,
+            which is fine for a turn-scoped stream but wasteful per parked tab.
+        max_replay: When set, replay only the most recent N backlog messages.
+            The backlog is never drained by streaming subscribers, so an
+            unbounded replay re-sends the whole queue on every reconnect.
 
     Yields:
         SSE-formatted string chunks
     """
+    # Idle poll interval. Turn-scoped streams keep the original tight loop so
+    # end-of-walk detection stays snappy; long-lived ones poll at the keepalive.
+    poll_timeout = keepalive_seconds if keepalive_seconds else 0.1
     # Subscribe to new messages using asyncio.Queue for real-time delivery
     message_queue: asyncio.Queue = asyncio.Queue()
     done = asyncio.Event()
@@ -65,6 +79,8 @@ async def stream_messages(
         # Send any existing messages first, recording their ids for dedup.
         replayed_ids: set = set()
         existing_messages = await response_bus.get_messages(session_id)
+        if max_replay is not None and len(existing_messages) > max_replay:
+            existing_messages = existing_messages[-max_replay:]
         for message in existing_messages:
             if interaction_id and message.interaction_id != interaction_id:
                 continue
@@ -77,7 +93,9 @@ async def stream_messages(
         while True:
             try:
                 # Wait for message with timeout to allow checking for done event
-                message = await asyncio.wait_for(message_queue.get(), timeout=0.1)
+                message = await asyncio.wait_for(
+                    message_queue.get(), timeout=poll_timeout
+                )
                 mid = getattr(message, "id", None) or getattr(
                     message, "message_id", None
                 )
@@ -90,6 +108,10 @@ async def stream_messages(
                 # Check if we should continue (allows graceful shutdown)
                 if done.is_set():
                     break
+                if keepalive_seconds:
+                    # SSE comment — ignored by clients, keeps proxies from
+                    # dropping an idle long-lived connection.
+                    yield ": keepalive\n\n"
                 continue
             except Exception as e:
                 logger.error(f"Error streaming message: {e}", exc_info=True)

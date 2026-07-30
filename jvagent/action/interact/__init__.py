@@ -9,6 +9,7 @@ from jvagent.action.interact import avatar_endpoints  # noqa: F401
 from jvagent.action.interact import endpoints  # noqa: F401
 from jvagent.action.interact import upload_endpoints  # noqa: F401
 from jvagent.action.interact import voice_endpoints  # noqa: F401
+from jvagent.action.interact import voice_stream_endpoints  # noqa: F401
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
 

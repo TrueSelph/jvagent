@@ -1,0 +1,29 @@
+schema: jvagent.use-case/v1
+id: rules.interview-directive-reply
+title: A signup request reaches the interview and asks its first question
+priority: P0
+tags: [orchestrator-rules, live, egress, compose]
+traceability:
+  skills: [signup_interview]
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # The one scenario that reaches a compose egress path: the interview's tool
+  # result carries a response_directive with no chained tool, so the loop
+  # delivers it via _send_reply(compose=True). Guidance-only directives keep
+  # the compose path; bare relays skip it (ADR-0041).
+  - id: request-signup
+    when:
+      user: "I'd like to sign up for the jvagent training."
+    then:
+      loop:
+        must_reply: true
+        must_not_announce: true
+      publish:
+        not_matches:
+          - "Tell the user"          # directive framing must never leak
+          - "response_directive"
+          - "\\bU\\+2063\\b"

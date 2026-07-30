@@ -49,6 +49,31 @@ export interface MessengerConfig {
   fullscreen: boolean;
   /** Play a subtle chime when an assistant message arrives. */
   sound: boolean;
+  /**
+   * Greeting shown in the launcher teaser card before the panel is opened
+   * (with an inline mini-composer). Empty disables the teaser entirely.
+   */
+  teaser?: string;
+  /** Delay in ms before the teaser appears. */
+  teaserDelay: number;
+  /** Days a dismissal suppresses the teaser for (0 = only this page view). */
+  teaserCooldownDays: number;
+  /**
+   * Subscribe to the persistent session channel so the agent can push messages
+   * between turns (proactive follow-ups). Off by default: it holds an open SSE
+   * connection, and note that proactive delivery requires a single-worker
+   * deployment (the response bus is process-scoped).
+   */
+  proactive: boolean;
+  /**
+   * Behavioural triggers that may reveal the teaser: any of
+   * `delay | scroll | exit | idle`. Empty keeps the plain delay behaviour.
+   */
+  teaserTriggers: string[];
+  /** Scroll percentage (0-100) that fires the `scroll` trigger. */
+  teaserScrollPercent: number;
+  /** Send host-page context (path, title, referrer, dwell) to the agent. */
+  pageContext: boolean;
 }
 
 /** Defaults applied when a `data-*` attribute is absent. */
@@ -66,7 +91,19 @@ export const CONFIG_DEFAULTS: Omit<MessengerConfig, "agentUrl" | "agentId"> = {
   voice: false,
   fullscreen: true,
   sound: true,
+  teaser: undefined,
+  teaserDelay: 4000,
+  teaserCooldownDays: 7,
+  proactive: false,
+  teaserTriggers: [],
+  teaserScrollPercent: 55,
+  pageContext: true,
 };
+
+function asInt(value: string | undefined, fallback: number): number {
+  const n = Number.parseInt((value ?? "").trim(), 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
 
 function asBool(value: string | undefined, fallback: boolean): boolean {
   if (value == null) return fallback;
@@ -130,5 +167,18 @@ export function parseConfig(
     voice: asBool(dataset.voice, CONFIG_DEFAULTS.voice),
     fullscreen: asBool(dataset.fullscreen, CONFIG_DEFAULTS.fullscreen),
     sound: asBool(dataset.sound, CONFIG_DEFAULTS.sound),
+    teaser: dataset.teaser?.trim() || CONFIG_DEFAULTS.teaser,
+    teaserDelay: asInt(dataset.teaserDelay, CONFIG_DEFAULTS.teaserDelay),
+    teaserCooldownDays: asInt(
+      dataset.teaserCooldownDays,
+      CONFIG_DEFAULTS.teaserCooldownDays
+    ),
+    proactive: asBool(dataset.proactive, CONFIG_DEFAULTS.proactive),
+    teaserTriggers: asStringArray(dataset.teaserTriggers),
+    teaserScrollPercent: asInt(
+      dataset.teaserScrollPercent,
+      CONFIG_DEFAULTS.teaserScrollPercent
+    ),
+    pageContext: asBool(dataset.pageContext, CONFIG_DEFAULTS.pageContext),
   };
 }

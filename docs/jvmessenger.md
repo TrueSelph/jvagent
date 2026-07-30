@@ -64,6 +64,14 @@ on the loader src.
 | `attachments` | `false` | Enable file uploads. |
 | `voice` | `false` | Enable mic (STT — real-time when supported, batch fallback) + read-aloud (TTS). |
 | `fullscreen` | `true` | Allow expanding to a centered fullscreen view. |
+| `sound` | `true` | Subtle chime when an assistant message arrives (synthesized, no asset). |
+| `teaser` | — | Greeting shown in the launcher teaser card, with an inline mini-composer, **before** the panel is opened. Empty disables the teaser. |
+| `teaser-delay` | `4000` | Milliseconds before the `delay` trigger fires. |
+| `teaser-cooldown-days` | `7` | How long a dismissal suppresses the teaser (per host origin). `0` = this page view only. |
+| `teaser-triggers` | `delay` | JSON array (or CSV) of `delay` / `scroll` / `exit` / `idle`. First match wins, once per page view. |
+| `teaser-scroll-percent` | `55` | Scroll depth (0-100) that fires the `scroll` trigger. |
+| `page-context` | `true` | Send host-page context (path, title, referrer origin, dwell, scroll depth, repeat visit) to the agent. See [Page context](#page-context). |
+| `proactive` | `false` | Subscribe to the persistent session channel so the agent can push messages between turns. See [Proactive messages](#proactive-messages) — **read the deployment caveat first**. |
 
 ¹ When `avatar` / `title` / `description` are not set, the messenger fetches the
 agent's public profile (`GET /agents/{id}/profile`) and uses its avatar (from a
@@ -128,6 +136,113 @@ its label verbatim and can't carry that data. The leadgen reference agent
 enables it. Any action can alternatively attach `metadata.suggestions` /
 `metadata.actions` to its own published message.
 
+## Launcher teaser
+
+When `teaser` is set, the launcher shows a labelled pill, a dismissible greeting
+card, and an **inline mini-composer** — all rendered in the Shadow-DOM launcher,
+so they work before the chat iframe exists. Text typed there opens the panel and
+is sent as the first turn.
+
+Which trigger reveals it is controlled by `teaser-triggers`:
+
+| Trigger | Fires when |
+|---|---|
+| `delay` | `teaser-delay` ms have passed |
+| `scroll` | the visitor scrolls past `teaser-scroll-percent` |
+| `exit` | the pointer leaves through the top of the viewport (exit intent; no-op on touch) |
+| `idle` | as `delay`, for embeds that only want dwell-based engagement |
+
+First match wins, once per page view. It never fires while the visitor is typing
+in one of the host page's own form fields, never covers an already-open panel,
+and a dismissal is remembered for `teaser-cooldown-days` on the host origin.
+Entrance and attention animations are disabled under `prefers-reduced-motion`.
+
+## Page context
+
+With `page-context` on (the default), the loader — which runs in the host page —
+reports where the visitor actually is, and the app forwards it on each turn as
+`data.page_context`:
+
+```jsonc
+{ "origin": "https://acme.com", "path": "/pricing", "title": "Pricing",
+  "referrer": "https://google.com",        // origin only
+  "secondsOnPage": 95, "scrollDepth": 80,
+  "visitCount": 3, "returning": true }
+```
+
+**Privacy:** query strings and hashes are deliberately dropped — they routinely
+carry emails, tokens and order ids — and the referrer is reduced to its origin.
+
+`visitor.data` is never surfaced to the model on its own, so the core
+[`jvagent/page_context`](../jvagent/action/page_context/) action renders this as
+one factual line and contributes it as an **orchestration-scoped** parameter.
+That scope matters: response-scoped parameters shape the responder, and the
+Orchestrator's literal `reply` path can skip that compose entirely, so the model
+would never see them while reasoning. Enable it on the agent:
+
+```yaml
+- action: jvagent/page_context
+  context:
+    enabled: true
+```
+
+The action states facts only — it never suggests a next step, which would be
+turn-prep steering (`docs/thin-harness.md` invariant 3).
+
+## Proactive messages
+
+With `proactive` on, the app subscribes to
+`POST /agents/{id}/reply/subscribe?stream=true` (the same Mode B session token it
+already holds) so the agent can speak between turns — `Agent.send_proactive_message`
+or a `TaskMonitor` follow-up. Messages arriving while the panel is closed badge
+the launcher.
+
+**Off by default, for two reasons:**
+
+1. It creates the chat iframe hidden at boot so the app can subscribe before the
+   panel is ever opened — that loads the bundle on every page view.
+2. **Delivery requires a single-worker deployment.** `ResponseBus` is
+   process-scoped, so a proactive send in worker A is invisible to a subscriber
+   on worker B and is silently dropped. **Sticky sessions do not fix this** — the
+   publisher is a background scheduler, not the client. Run proactive-capable
+   deployments with `--workers 1`. The durable fix (a DB-backed catch-up poll) is
+   not built.
+
+The client dedups on server message id (persisted), because the subscribe
+backlog replays on every reconnect and is never drained by streaming
+subscribers; it also suspends the channel during a turn, since one bus feeds both
+transports.
+
+## Agent-driven UI components
+
+The messenger owns a fixed component catalog; the agent names a component and
+supplies data on `metadata.ui`. A model can never inject markup or layout — only
+fill in a shape the frontend defined.
+
+```jsonc
+"metadata": {
+  "ui": {
+    "v": 1,
+    "component": "card",              // card | choices
+    "id": "ui_ord1042",               // stable id (render dedup)
+    "fallback": "Order #1042 — shipped, arrives Fri Aug 1.",
+    "props": { "title": "Order #1042", "subtitle": "Shipped",
+               "fields": [{ "label": "Carrier", "value": "DHL" }],
+               "actions": [{ "label": "Track", "kind": "link",
+                             "href": "https://…" }] }
+  }
+}
+```
+
+`fallback` is required in practice: it renders on version skew, an unknown
+component, or a malformed payload, and it is what appears in the downloaded
+transcript. Malformed entries are dropped rather than thrown. Link `href`s are
+allowlisted to `https`/`mailto`/`tel`. `choices` sends the tapped label verbatim,
+the same contract as the suggestion chips.
+
+> **Status:** rendering is implemented; **no server-side emitter ships yet**, so
+> nothing populates `metadata.ui` today. Any action can attach it manually.
+
 ## Serving
 
 ```bash
@@ -142,6 +257,55 @@ The server serves `loader.js` (permissive CORS, uncached) and the iframe app
 `Content-Security-Policy: frame-ancestors` allowlist (default `*` for dev). Set
 `--frame-ancestors` to the customer origins in production.
 
+## Sandbox / dev mode
+
+`--sandbox` replaces `demo.html` with a developer sandbox page that lets you log
+in, browse agents on a running jvagent instance, and switch between them without
+touching the URL. **For local development only — do not expose publicly.**
+
+```bash
+# jvagent server already running on :8000
+jvagent messenger --sandbox --url http://127.0.0.1:8000
+```
+
+Opens `http://127.0.0.1:3100/` in your browser. The page:
+
+1. **Login form** — enter the agent server URL (pre-filled from `--url`), email,
+   and password. Authenticates via `POST /api/auth/login` (fallback `/auth/login`)
+   with `{email, password}` exactly like jvchat.
+2. **Agent dropdown** — on successful login, fetches `GET /api/agents?per_page=50`
+   using the JWT and fills a select control with each agent (disabled agents
+   shown greyed-out).
+3. **Embed** — choosing an agent injects `loader.js` (from this static server) with
+   the selected agent's id and server URL. The standard messenger bubble appears
+   bottom-right.
+4. **Config panel** — **Config** in the host bar opens every embed `data-*` knob
+   (greeting, quick replies, attachments, voice, teaser, proactive, …). Changes
+   **auto-save** to `sessionStorage` and **debounced-reload** the messenger;
+   **Reload now** forces an immediate reinject. A note in the panel lists
+   **Attachments**, **Voice**, and **Proactive** as needing
+   `JVSPATIAL_JWT_SECRET_KEY` on the agent server.
+5. **Switch** — pick another agent from the dropdown to replace the injected script
+   and reload the messenger with the new agent (current config kept).
+6. **Logout** — clears auth `sessionStorage` and returns to the login form.
+
+### Security notes
+
+- All credentials stay in `sessionStorage` (cleared on tab close). Never in
+  `localStorage` or cookies.
+- The sandbox page itself sends `X-Frame-Options: DENY` — it is not embeddable.
+- The sandbox route (`GET /` and `GET /sandbox`) only activates when `--sandbox`
+  is passed; the normal `demo.html` flow is unchanged without the flag.
+- Uses the existing admin-auth `GET /api/agents` endpoint — no new public route.
+
+### CLI flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--sandbox` | off | Activate sandbox mode. |
+| `--url URL` | `http://127.0.0.1:8000` | jvagent server the sandbox logs in to. |
+| `--port`, `--host`, `--frame-ancestors`, `--no-browser` | unchanged | Same as non-sandbox mode. |
+
 ## Backend endpoints
 
 All are agent-scoped and `auth=False` (public). The messenger uses the existing
@@ -150,18 +314,23 @@ interact stream plus a small public surface:
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `POST /api/agents/{id}/interact` | session-token per mode | Streaming chat (SSE). |
+| `POST /api/agents/{id}/interact/session/open` | — | Create/resume web session + mint token (no utterance). |
 | `POST /api/agents/{id}/interact/session/refresh` | — | Renew the session token. |
 | `GET  /api/agents/{id}/profile` | none | Agent avatar + name + description (public branding). |
 | `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip, batch (reuses `BaseSTTAction`). |
-| `WS   /api/agents/{id}/voice/stt/stream` | **token query param required** | Real-time STT: stream mic audio → interim + final transcripts. |
+| `POST /api/agents/{id}/voice/stt/stream/ticket` | **X-Session-Token required** | Mint a short-lived WebSocket ticket (`?ticket=`). |
+| `WS   /api/agents/{id}/voice/stt/stream` | **ticket query param required** (legacy `token` accepted) | Real-time STT: stream mic audio → interim + final transcripts. |
 | `POST /api/agents/{id}/voice/tts` | **X-Session-Token required** | Synthesize speech (reuses `BaseTTSAction`). |
 | `POST /api/agents/{id}/uploads` | **X-Session-Token required** | Multipart upload → URL for the next interact `data`. |
 
-Voice + upload **always** require a valid `X-Session-Token` (minted by a prior
-interact turn) regardless of `JVAGENT_INTERACT_PUBLIC_AUTH` mode — so they are
-inert in `off` mode by design (no token is minted there). `/profile` is
-unauthenticated branding, served read-only. New public routes live in the
-interact package ([`voice_endpoints.py`](../jvagent/action/interact/voice_endpoints.py),
+Voice + upload **always** require a valid `X-Session-Token` (from
+`POST .../interact/session/open` or a prior interact turn) regardless of
+`JVAGENT_INTERACT_PUBLIC_AUTH` mode. Tokens are minted whenever
+`JVSPATIAL_JWT_SECRET_KEY` is set — including when interact auth is `off` —
+so attachments/voice work in local sandbox once the JWT secret is configured.
+Without that secret, voice/uploads stay inert. `/profile` is unauthenticated
+branding, served read-only. New public routes live in the interact package
+([`voice_endpoints.py`](../jvagent/action/interact/voice_endpoints.py),
 [`voice_stream_endpoints.py`](../jvagent/action/interact/voice_stream_endpoints.py),
 [`upload_endpoints.py`](../jvagent/action/interact/upload_endpoints.py),
 [`avatar_endpoints.py`](../jvagent/action/interact/avatar_endpoints.py)) and reuse
@@ -177,10 +346,14 @@ browser can't stream (no `MediaRecorder`, mic denied, socket refused, or the STT
 provider has no `stream_transcribe`), the mic **falls back** to the batch
 `POST /voice/stt` path automatically — no config needed.
 
-Because browsers can't set custom headers on a WebSocket handshake, the session
-token rides as the `?token=` query param (verified the same way as the header on
-the POST routes). **Serve over `wss://` in production** so the token isn't exposed
-in plaintext. The WS route is registered by wrapping the server's app factory
+Because browsers can't set custom headers on a WebSocket handshake, the messenger
+first `POST`s `/voice/stt/stream/ticket` with `X-Session-Token` (same header gate
+as the other voice routes) and opens the socket with the short-lived `?ticket=`
+query param — so the long-lived session capability token never lands in access
+logs or Referer chains. Older clients that still send `?token=` (the full session
+token) are accepted for compatibility. **Serve over `wss://` in production** so
+the credential isn't exposed in plaintext. The WS route is registered by wrapping
+the server's app factory
 ([`register_voice_ws_routes`](../jvagent/action/interact/voice_stream_endpoints.py)),
 because jvspatial's `@endpoint` is HTTP-only and app rebuilds replay only HTTP
 routes — the wrapper puts the route on every built app so it survives rebuilds.
@@ -192,17 +365,20 @@ routes — the wrapper puts the route on every built app so it survives rebuilds
   In dev, serve the messenger on an already-allowlisted origin (e.g. `:3000`) or
   add its origin to the list — otherwise the interact preflight fails with `400`.
 - **CORS headers:** the client sends the `X-Session-Token` header on resume /
-  voice / upload calls, so it must be in the allowed CORS headers. It is **not**
-  in the default set — add it via `JVSPATIAL_CORS_HEADERS` (include the defaults
-  too), e.g.
+  voice / upload calls. jvagent **auto-allowlists** that header when building the
+  server CORS config (`_ensure_session_token_header` in
+  [`server_config.py`](../jvagent/cli/server_config.py)), so you do not need to
+  add it manually via `JVSPATIAL_CORS_HEADERS` unless you are overriding the
+  header list yourself — in that case include it with the defaults, e.g.
   `JVSPATIAL_CORS_HEADERS="Accept,Authorization,Content-Type,X-API-Key,X-Session-Token"`.
   Symptom when missing: the first turn works but the next turn (which carries the
   token) fails the preflight and the client shows "Could not reach the agent."
 - **Framing:** set `--frame-ancestors` (or the server's `frame_ancestors`) to the
   customer origins — not `*`.
 - **Session auth:** run `JVAGENT_INTERACT_PUBLIC_AUTH=required` and set
-  `JVSPATIAL_JWT_SECRET_KEY`. Voice/uploads require a token, so they are inert in
-  `off` mode by design.
+  `JVSPATIAL_JWT_SECRET_KEY`. Voice/uploads need a token; the messenger opens a
+  session via `session/open` (or the first interact turn) whenever the JWT
+  secret is set — including when interact auth mode is still `off`.
 - **Uploads reachable by the model:** set `JVAGENT_PUBLIC_BASE_URL` so uploaded
   files resolve to absolute, fetchable URLs for the vision pipeline.
 - **Voice providers:** configure the agent's STT/TTS actions and their keys

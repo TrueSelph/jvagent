@@ -70,6 +70,17 @@ def test_normalize_folds_flattened_tool_args():
     assert args.get("steps") == [{"step": "A"}]
 
 
+def test_normalize_folds_flattened_query_arg():
+    # ``query`` is a real tool parameter (pageindex__search, find_tool) — must
+    # fold on flattened calls, not be treated as a reserved control key.
+    action, tool, args = OrchestratorInteractAction._normalize(
+        {"action": "tool", "tool": "pageindex__search", "query": "pricing"},
+        {"pageindex__search": object()},
+    )
+    assert (action, tool) == ("tool", "pageindex__search")
+    assert args.get("query") == "pricing"
+
+
 def test_normalize_does_not_fold_when_args_present():
     # A well-formed args dict is trusted as-is — no stray top-level keys folded.
     _, _, args = OrchestratorInteractAction._normalize(

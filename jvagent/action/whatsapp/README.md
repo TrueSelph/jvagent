@@ -261,14 +261,51 @@ Template tools are hard-gated: they only run on inbound `channel=whatsapp` **or*
 
 **Flows:** `whatsapp__list_flows` / `whatsapp__send_flow` send interactive Flow messages (`type: interactive`, `interactive.type: flow`) with the same WhatsApp text/call gate. Optional `flow_allowlist` (ids or names). Listing via jvconnect `GET /api/v1/meta/whatsapp/flows`. In the jvconnect **Flows** UI, the Send dialog can **Copy JSON** / **Copy jvconnect curl** for the Cloud API payload.
 
+**CTA URL buttons:** Meta/jvconnect providers support `send_cta_url_message` (interactive `cta_url`). From the ResponseBus, publish with channel `whatsapp` and metadata:
+
+```python
+await response_bus.publish(
+    session_id=session_id,
+    content="Your quote is ready",  # button body text
+    channel="whatsapp",
+    user_id=phone,
+    metadata={
+        "cta_url": "https://pay.example/invoice/Z1",
+        "cta_display_text": "Pay now",  # max 20 chars
+        "cta_header": "Invoice Z1",     # optional
+        "cta_footer": "Zoon",           # optional
+        # "cta_body": "...",            # optional override of content
+    },
+)
+```
+
+**Raw Cloud API passthrough:** for any Meta service message type without a typed helper (sticker, contacts, reaction, list, reply buttons, address, etc.), publish a full Cloud API body (minus or including envelope keys) under `whatsapp_cloud_message`. The adapter fills `messaging_product`, `recipient_type`, and `to` when missing and POSTs via jvconnect:
+
+```python
+await response_bus.publish(
+    session_id=session_id,
+    content="",  # ignored when cloud message is set
+    channel="whatsapp",
+    user_id=phone,
+    metadata={
+        "whatsapp_cloud_message": {
+            "type": "reaction",
+            "reaction": {"message_id": "wamid....", "emoji": "👍"},
+        },
+    },
+)
+```
+
+Adapter precedence: `whatsapp_cloud_message` → `cta_url` → media (`media_url` + `media_type`) → text. Document sends should set `filename` in metadata (e.g. `quotation_Z1.pdf`); Meta/jvconnect include it on the outbound `document` object so WhatsApp does not show "Untitled".
+
 **Flow prefill (navigate):** pass `screen` plus `screen_data` (object of field keys → values) on `whatsapp__send_flow`. That maps to Meta `flow_action_payload.data`. Keys must match bindings in the published Flow JSON; not valid with `flow_action=data_exchange` (INIT path).
 
 **Flow inbound paths (distinct from chat webhooks):**
 
 | Path | Transport | Agent handling |
 |------|-----------|----------------|
-| User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body) |
-| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler returns `{screen,data}` (or `endpoint_not_configured` for INIT). Prefer navigate Flows (“No data”) unless you implement INIT screens |
+| User completed Flow | Meta `messages` webhook → jvconnect forward → agent POST | `interactive` / `nfm_reply` becomes a chat utterance (`response_json` as body), unless `flow_data_exchange_action.should_ignore_flow_nfm_reply` returns true (create already finished on data exchange) |
+| Request-data / INIT screens | Meta Flow runtime → jvconnect `/api/flows/data/{phoneId}` → agent POST with `X-Jvconnect-Flow-Exchange: 1` | Slim handler on `WhatsAppAction.handle_flow_data_exchange`. Optional sibling via `flow_data_exchange_action` (entity type, same pattern as `stt_action` / `tts_action`) that implements `handle_flow_data_exchange` and returns `{screen,data}` (or `None` to fall through). Default stub returns `endpoint_not_configured` for INIT. Prefer navigate Flows (“No data”) unless you implement INIT screens |
 | Agent GET hub.challenge | Unused when `provider=meta` via jvconnect | Meta verifies jvconnect only (`FB_VERIFY_TOKEN`) |
 
 Configure `stt_action` and `tts_action` on the WhatsApp action (same as bridge providers) for voice note transcription and voice replies.
@@ -307,17 +344,35 @@ On startup (meta provider), jvagent registers via jvconnect (`POST /api/v1/meta/
 
 #### Purge and callback URLs
 
-`jvagent --purge` creates a **new agent node id** (`n.Agent.*`). Every Meta callback URL embeds that id, so after a purge you must realign **all three Meta routing layers**:
+**One API key = one phone.** Each `JVCONNECT_API_KEY` is bound to a single WhatsApp
+phone number id. Startup registration replaces **only that phone’s** row in
+jvconnect `webhook_forwards`. Messaging a different number (e.g. prod while
+registered with a staging key) still hits whatever stale forward that other phone
+has — often a previous `n.Agent.*` → HTTP 404 Agent not found even though
+register “succeeded.”
+
+`jvagent --purge` creates a **new agent node id** (`n.Agent.*`). Agent callback
+URLs embed that id. After a purge you must re-register **every phone you use**
+(restart or `POST .../meta/webhook-register` with each phone’s API key) so
+`webhook_forwards.callback_url` matches the current agent. Also realign Meta
+layers as needed:
 
 | Layer | Where it lives | Updated by jvagent? |
 |-------|----------------|---------------------|
-| `application` | Meta App Dashboard → WhatsApp → Configuration | **No** — manual update required |
-| `whatsapp_business_account` | WABA `subscribed_apps` override | Yes (when `waba_id` set) |
-| Phone override | Phone `webhook_configuration` | Yes (when `phone_number_id` set) |
+| `application` | Meta App Dashboard → WhatsApp → Configuration | **No** — manual; for `provider: meta` set to jvconnect `…/api/webhooks` |
+| `whatsapp_business_account` | WABA `subscribed_apps` override | Yes (via jvconnect register → Meta override to jvconnect) |
+| Phone override | Phone `webhook_configuration` | Yes (same) |
+| jvconnect forward | `webhook_forwards.callback_url` | Yes — **this** embeds `{agent_id}` |
 
-When both `waba_id` and `phone_number_id` are set, startup registers **both** overrides. If inbound POSTs still hit an old agent id (404 Agent not found), check `GET .../meta/webhook-status` → `stale_callbacks` and follow `dashboard_action` (usually: update App Dashboard callback + verify token, then restart or `POST .../meta/webhook-register`).
+With `provider: meta`, Meta Graph should point at jvconnect (`…/api/webhooks`), not
+the agent URL. `GET .../meta/webhook-status` → `stale_callbacks` flags Graph URLs
+that are not jvconnect’s ingress, and separately flags a forward whose agent id
+does not match the current agent (`jvconnect.forward.callback_url`). Follow
+`dashboard_action`.
 
-Avoid `--purge` on production unless you intentionally reset the database and can update Meta callbacks immediately.
+Avoid `--purge` on production unless you intentionally reset the database and can
+re-register every phone’s forward (and update the App Dashboard if needed)
+immediately.
 
 1. **Callback URL**: `{JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/interact/webhook/{agent_id}` — `{agent_id}` is the agent **node id** (e.g. `n.Agent.xxxx`), not the YAML path; no `api_key` query param.
 2. **Verify token**: derived automatically; `GET .../meta/webhook-url` (admin) shows the active token for debugging.
@@ -331,15 +386,15 @@ Avoid `--purge` on production unless you intentionally reset the database and ca
 
 **Retry idempotency (wamid dedup):**
 
-Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps an in-process cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
+Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps a cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
 
 Env tuning (optional):
 
+- `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default), `memory`, or `redis`. `auto` uses Redis when `JVSPATIAL_REDIS_URL` / `REDIS_URL` is set.
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — default **86400** (24h).
-- `WHATSAPP_META_WAMID_DEDUP_MAX` — default **10000** entries.
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process cache entries (default **10000**; Redis uses TTL only).
 
-For multi-worker deployments, consider a shared dedup store (not included in the default in-process cache).
-
+For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `REDIS_URL`) so wamid dedup is shared across processes.
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.

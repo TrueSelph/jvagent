@@ -7,6 +7,11 @@ description: >
   refuses web/chat. Prefer this over web search for those intents.
 spec: jv
 always-active: true
+# always-active pins allowed-tools every turn, so without a channel gate this
+# skill keeps whatsapp__send_flow visible on web/chat turns too.
+allowed-channels:
+  - whatsapp
+  - whatsapp_call
 requires-actions:
   - WhatsAppAction
 allowed-tools:

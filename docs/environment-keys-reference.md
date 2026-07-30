@@ -199,14 +199,15 @@ falls back to a sibling env var when its primary key is unset:
 - Meta Cloud API — **env**: `WHATSAPP_GRAPH_VERSION` (default `v25.0`; Graph version is pinned on jvconnect). `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET` / `WHATSAPP_APP_ID` are unused when using jvconnect.
 - **jvconnect proxy** (required for `provider: meta`): set `JVCONNECT_URL` and `JVCONNECT_API_KEY` only (create a phone-bound key in jvconnect API Credentials). Do **not** set `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_APP_SECRET`. After startup webhook registration, `JVCONNECT_WEBHOOK_SECRET` is persisted on the action (or set from jvconnect’s register response). Optional: `WHATSAPP_PROXY_URL` alias for `JVCONNECT_URL`. Routes under `/api/v1/meta/whatsapp/*` (room for messenger/instagram later).
 - Meta verify token: Meta verifies against jvconnect (`FB_VERIFY_TOKEN`); agent inbound uses the jvconnect-issued webhook secret
-- After `jvagent --purge`, agent id changes — update Meta App Dashboard callback URL to match `GET .../meta/webhook-status` `expected_callback_url` (Graph override alone does not update the `application` layer)
+- After `jvagent --purge`, agent id (`n.Agent.*`) changes — re-register with each phone’s `JVCONNECT_API_KEY` (one key = one phone; only that phone’s `webhook_forwards` row is replaced). For `provider: meta`, Meta Graph should point at jvconnect `…/api/webhooks`; the agent id lives in the forward URL. App Dashboard `application` layer is not updated by Graph override alone — set it to jvconnect’s webhook URL if stale. Check `GET .../meta/webhook-status` → `stale_callbacks` / `dashboard_action`.
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
 - Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional seconds before Meta Graph override on startup (default `0`; meta provider only)
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
-- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — in-process wamid dedup TTL for meta webhooks (default `86400`)
-- `WHATSAPP_META_WAMID_DEDUP_MAX` — max wamid dedup cache entries (default `10000`)
+- `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default) / `memory` / `redis`; `auto` uses Redis when `JVSPATIAL_REDIS_URL` or `REDIS_URL` is set
+- `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — wamid dedup TTL for meta webhooks (default `86400`)
+- `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process wamid dedup cache entries (default `10000`)
 - **Voice calls (jvvoice)**: subscribe Meta webhook field `calls`; enable Calling API. Requires `jvagent/whatsapp_voice_action` with `JVVOICE_BASE_URL` + `JVVOICE_API_KEY`, plus a deployed **jvvoice** service. See [`.planning/runbooks/whatsapp-voice-calls.md`](../.planning/runbooks/whatsapp-voice-calls.md).
 
 ### jvvoice delegation (WhatsApp voice calls)

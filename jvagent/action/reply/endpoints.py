@@ -23,6 +23,13 @@ from jvagent.core.agent import Agent
 
 logger = logging.getLogger(__name__)
 
+# Idle heartbeat for the long-lived subscribe stream. Comfortably under the
+# common 60s proxy read timeout, and doubles as the queue poll interval.
+SUBSCRIBE_KEEPALIVE_SECONDS = 20.0
+# Cap the backlog replayed on (re)connect. Streaming subscribers never drain the
+# session queue, so without this every reconnect re-sends the whole history.
+SUBSCRIBE_MAX_REPLAY = 50
+
 
 async def _get_agent_and_bus(agent_id: str) -> tuple[Agent, ResponseBus]:
     """Load the agent and return ``(agent, response_bus)``.
@@ -281,8 +288,17 @@ async def reply_subscribe_endpoint(
 
     if stream:
         # ── SSE: long-lived push ──
+        # This connection is expected to sit idle for minutes at a time, so it
+        # needs keepalives (proxies drop silent streams at 60-100s) and a
+        # bounded backlog replay: streaming subscribers never drain the session
+        # queue, so an unbounded replay re-sends everything on every reconnect.
         return create_sse_response(
-            stream_messages(session_id, bus),
+            stream_messages(
+                session_id,
+                bus,
+                keepalive_seconds=SUBSCRIBE_KEEPALIVE_SECONDS,
+                max_replay=SUBSCRIBE_MAX_REPLAY,
+            ),
             headers={"X-Session-ID": session_id},
         )
 

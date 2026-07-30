@@ -408,3 +408,38 @@ async def test_issue_session_token_persists_secret(test_db):
         assert reloaded.token_secret == conv.token_secret
     finally:
         await conv.delete(cascade=True)
+
+
+async def test_issue_session_token_mints_in_off_mode(test_db, monkeypatch):
+    """Voice/upload need tokens even when interact auth enforcement is off."""
+    monkeypatch.setenv("JVAGENT_INTERACT_PUBLIC_AUTH", "off")
+    from jvagent.action.interact.endpoints import _issue_session_token
+    from jvagent.memory.conversation import Conversation
+
+    conv = await Conversation.create(
+        session_id="sess-tok-off", user_id="u-off", channel="default"
+    )
+    try:
+        walker = SimpleNamespace(
+            conversation=conv,
+            session_id=conv.session_id,
+            user_id=conv.user_id,
+        )
+        token = await _issue_session_token(walker, "a1")
+        assert token
+        claims, err = st.verify_session_token(token, expected_agent_id="a1")
+        assert err is None and claims is not None
+    finally:
+        await conv.delete(cascade=True)
+
+
+def test_session_open_endpoint_declares_response_fields():
+    from jvagent.action.interact.endpoints import interact_session_open_endpoint
+
+    cfg = getattr(interact_session_open_endpoint, "_jvspatial_endpoint_config", None)
+    assert cfg is not None
+    schema = cfg.get("response")
+    assert schema is not None
+    declared = schema.data or {}
+    for field in ("session_id", "user_id", "session_token", "expires_in"):
+        assert field in declared

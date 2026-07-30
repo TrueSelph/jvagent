@@ -44,11 +44,18 @@ class FakeRequest:
 class FakeUpload:
     def __init__(self, content=b"data", content_type="image/png", filename="a.png"):
         self._content = content
+        self._pos = 0
         self.content_type = content_type
         self.filename = filename
 
-    async def read(self):
-        return self._content
+    async def read(self, size: int = -1):
+        if size is None or size < 0:
+            out = self._content[self._pos :]
+            self._pos = len(self._content)
+            return out
+        out = self._content[self._pos : self._pos + size]
+        self._pos += len(out)
+        return out
 
 
 class FakeSTT:
@@ -162,6 +169,21 @@ async def test_upload_rejects_bad_mime(monkeypatch):
         await upload_endpoints.upload_endpoint(req, "agent-1")
 
 
+async def test_upload_rejects_svg_xss(monkeypatch):
+    """SVG must not be accepted as an image — stored XSS via public file URL."""
+    _patch_gate(monkeypatch, upload_endpoints)
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    req = FakeRequest(
+        form={
+            "file": FakeUpload(
+                content=svg, content_type="image/svg+xml", filename="x.svg"
+            )
+        }
+    )
+    with pytest.raises(ValidationError):
+        await upload_endpoints.upload_endpoint(req, "agent-1")
+
+
 async def test_upload_rejects_oversize(monkeypatch):
     _patch_gate(monkeypatch, upload_endpoints)
     big = b"x" * (upload_endpoints.DEFAULT_MAX_UPLOAD_ITEM_BYTES + 1)
@@ -238,3 +260,22 @@ async def test_profile_nulls_when_no_action_or_agent(monkeypatch):
     monkeypatch.setattr(cache, "get_cached_agent", _agent)
     out = await avatar_endpoints.agent_profile_endpoint(FakeRequest(), "agent-1")
     assert out == {"avatar": None, "name": None, "description": None}
+
+
+async def test_profile_respects_rate_limit(monkeypatch):
+    from jvspatial.api.exceptions import RateLimitError
+
+    from jvagent.action.interact import avatar_endpoints
+
+    class _RL:
+        rate_limit_per_minute = 1
+
+        async def check_rate_limit(self, ip, agent_id):
+            return False
+
+        async def record_request(self, ip, agent_id):
+            raise AssertionError("must not record when over limit")
+
+    monkeypatch.setattr(avatar_endpoints, "get_rate_limiter", lambda: _RL())
+    with pytest.raises(RateLimitError):
+        await avatar_endpoints.agent_profile_endpoint(FakeRequest(), "agent-1")

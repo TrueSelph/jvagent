@@ -1,0 +1,23 @@
+schema: jvagent.use-case/v1
+id: rules.reply-through-tool
+title: A trivial turn answers via the reply tool and stops
+priority: P0
+tags: [orchestrator-rules, live, egress]
+traceability:
+  docs:
+    - docs/ORCHESTRATOR.md
+given:
+  channel: web
+  new_user: false
+turns:
+  # The cheapest possible turn. It guards two things at once: that the model
+  # delivers through the reply tool rather than a bare final, and that a greeting
+  # does not drag in tools or a skill it does not need.
+  - id: greeting
+    when:
+      user: "hey there"
+    then:
+      loop:
+        ended_via: reply
+        must_reply: true
+        min_substantive_tools: 0

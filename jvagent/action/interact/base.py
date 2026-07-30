@@ -330,6 +330,12 @@ class InteractAction(Action, ABC):
         Returns:
             ResponseMessage from ResponseBus.publish, or None if not published.
         """
+        # No scrub here. The ResponseBus is the single egress gate (see
+        # jvagent/action/egress_gate.py): every transport, streaming or not,
+        # leaves through it, so governance no longer depends on which caller
+        # remembered to apply it. Scrubbing here as well would be a second
+        # implementation to keep in sync — the exact arrangement that let a
+        # streamed reply out ungoverned.
         if not content and not allow_empty:
             logger.error("InteractAction.publish: content is required")
             return None

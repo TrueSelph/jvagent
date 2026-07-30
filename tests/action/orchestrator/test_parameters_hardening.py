@@ -21,7 +21,8 @@ from jvagent.action.parameters import (
 
 def test_orchestrator_native_core_is_orchestration_only():
     ex = OrchestratorInteractAction()
-    assert len(orchestration_parameters(ex.parameters)) == 1
+    keys = {p.get("key") for p in orchestration_parameters(ex.parameters)}
+    assert keys == {"safety.injection", "tools.selection", "memory.search_first"}
     assert len(response_parameters(ex.parameters)) == 0  # response is reply's job
 
 
@@ -83,6 +84,6 @@ async def test_accumulate_pools_all_actions_params(monkeypatch):
     inter = _Inter()
     await ex._accumulate_parameters(inter)
     # the executive's orchestration core + the contributed response param landed
-    assert len(orchestration_parameters(inter.parameters)) == 1
+    assert len(orchestration_parameters(inter.parameters)) == 3
     assert len(response_parameters(inter.parameters)) >= 1
     assert saved.get("ok") is True

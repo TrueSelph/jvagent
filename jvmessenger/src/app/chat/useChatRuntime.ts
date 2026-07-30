@@ -23,15 +23,29 @@ import {
   type SSEChunk,
 } from "../streaming/types";
 import {
+  answerText,
+  emptyTurn,
+  hasAnswer,
+  reduceMessage,
+  withError,
+  type ActivityEntry,
+  type TurnState,
+} from "../streaming/reducer";
+import {
   clearHistory,
+  clearSeenIds,
   clearSession,
   loadHistory,
+  loadSeenIds,
   loadSession,
+  openSession,
   refreshSessionToken,
   saveHistory,
+  saveSeenIds,
   saveSession,
   type SessionState,
 } from "../streaming/session";
+import { openSessionChannel } from "../streaming/channelClient";
 import type { UploadedAttachment } from "../streaming/uploadClient";
 import { playChime, primeAudio } from "../streaming/sound";
 
@@ -52,6 +66,19 @@ function attachmentsToData(
   return data;
 }
 
+/**
+ * Attach the host-page context to a turn's structured `data` payload. The agent
+ * decides what to do with it — the client deliberately draws no conclusions
+ * (thin-harness: no client-side intent classification).
+ */
+function withPageContext(
+  data: Record<string, unknown> | undefined,
+  pageContext: unknown | null
+): Record<string, unknown> | undefined {
+  if (!pageContext) return data;
+  return { ...(data ?? {}), page_context: pageContext };
+}
+
 let _id = 0;
 // Include a random suffix so ids don't collide with those restored from a
 // previous session after a page reload (the counter resets on reload).
@@ -66,18 +93,35 @@ function extractText(message: AppendMessage): string {
 }
 
 function assistantParts(
-  answer: string,
-  reasoning: string,
+  turn: TurnState,
   showReasoning: boolean
 ): ThreadMessageLike["content"] {
   const reason =
-    showReasoning && reasoning.trim()
-      ? [{ type: "reasoning" as const, text: reasoning }]
+    showReasoning && turn.reasoning.trim()
+      ? [{ type: "reasoning" as const, text: turn.reasoning }]
       : [];
-  return [...reason, { type: "text" as const, text: answer }];
+  // Components render *after* the text — the server flushes them post-reply, so
+  // this is the reading order the agent intended.
+  const components = turn.ui.map((env) => ({
+    type: "tool-call" as const,
+    toolCallId: env.id,
+    toolName: `ui_${env.component}`,
+    // The envelope is plain JSON by construction; assistant-ui types `args` as
+    // ReadonlyJSONObject, which our generic Record shape can't prove.
+    args: env as unknown as Readonly<Record<string, never>>,
+    argsText: "",
+  }));
+  return [
+    ...reason,
+    { type: "text" as const, text: answerText(turn) },
+    ...components,
+  ] as ThreadMessageLike["content"];
 }
 
-export function useChatRuntime(config: MessengerConfig) {
+export function useChatRuntime(
+  config: MessengerConfig,
+  pageContext?: unknown | null
+) {
   const session = useRef<SessionState>(loadSession(config.agentId));
   // Restore prior messages on mount, but only when they belong to the still-active
   // session (else start clean). Greeting stays on the welcome screen, so an empty
@@ -90,7 +134,69 @@ export function useChatRuntime(config: MessengerConfig) {
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   // Agent-driven follow-up chips from the last turn's message metadata.
   const [suggestions, setSuggestions] = useState<MessageAction[]>([]);
+  // Live tool/status progress for the in-flight turn. Ephemeral by design — it
+  // is never persisted to history.
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  // Ephemeral failure banner for the last turn (kept out of the message list).
+  const [turnError, setTurnError] = useState<string | null>(null);
+  // Aborts the in-flight stream when the user hits Stop.
+  const abortRef = useRef<AbortController | null>(null);
+  // Last user utterance + attachments, so regenerate can replay the turn.
+  const lastTurnRef = useRef<{ text: string; attachments: UploadedAttachment[] } | null>(
+    null
+  );
   const getToken = useCallback(() => session.current.sessionToken, []);
+  // True once a Mode B token is known (restored or opened) so attach/mic enable.
+  const [hasSession, setHasSession] = useState(() => !!session.current.sessionToken);
+
+  const ensureSession = useCallback(async (): Promise<string | null> => {
+    if (session.current.sessionToken) {
+      setHasSession(true);
+      return session.current.sessionToken;
+    }
+    const opened = await openSession(config.agentUrl, config.agentId, session.current);
+    if (!opened?.sessionToken) return null;
+    session.current = { ...session.current, ...opened };
+    saveSession(config.agentId, session.current);
+    setHasSession(true);
+    return opened.sessionToken;
+  }, [config.agentUrl, config.agentId]);
+
+  // Eager session open when uploads/voice/proactive need a token before first turn.
+  useEffect(() => {
+    if (!(config.attachments || config.voice || config.proactive)) return;
+    if (session.current.sessionToken) {
+      setHasSession(true);
+      return;
+    }
+    void ensureSession();
+  }, [
+    config.agentId,
+    config.attachments,
+    config.voice,
+    config.proactive,
+    ensureSession,
+  ]);
+
+  // Latest host-page context, refreshed by the loader. Held in a ref so a new
+  // snapshot doesn't re-create runTurn mid-conversation.
+  const pageContextRef = useRef<unknown | null>(pageContext ?? null);
+  pageContextRef.current = pageContext ?? pageContextRef.current;
+
+  // Ids of messages already rendered, so the channel's backlog replay and the
+  // interact stream can't double-render the same message.
+  const seenIds = useRef<Set<string>>(new Set(loadSeenIds(config.agentId)));
+  const markSeen = useCallback(
+    (id: string): boolean => {
+      if (seenIds.current.has(id)) return false;
+      seenIds.current.add(id);
+      saveSeenIds(config.agentId, seenIds.current);
+      return true;
+    },
+    [config.agentId]
+  );
+  // Count of proactive messages that arrived while the panel was closed.
+  const [unread, setUnread] = useState(0);
 
   // Persist the thread whenever it changes so a page refresh keeps the history.
   useEffect(() => {
@@ -98,6 +204,65 @@ export function useChatRuntime(config: MessengerConfig) {
       saveHistory(config.agentId, session.current.sessionId, messages);
     }
   }, [config.agentId, messages]);
+
+  /**
+   * Persistent session channel: lets the agent speak between turns.
+   *
+   * Deliberately **suspended while a turn is running** — the same response bus
+   * feeds both this channel and the interact stream, so leaving it open would
+   * deliver every turn message twice (id-dedup is the safety net, but the race
+   * can still produce a stray bubble before the turn's own message exists).
+   */
+  useEffect(() => {
+    if (!config.proactive || isRunning) return;
+    const sessionId = session.current.sessionId;
+    if (!sessionId || !session.current.sessionToken) return;
+
+    const channel = openSessionChannel({
+      agentUrl: config.agentUrl,
+      agentId: config.agentId,
+      sessionId,
+      getToken: () => session.current.sessionToken,
+      refreshToken: async () => {
+        const tok = session.current.sessionToken;
+        if (!tok) return null;
+        const fresh = await refreshSessionToken(config.agentUrl, config.agentId, tok);
+        if (fresh) {
+          session.current = { ...session.current, sessionToken: fresh };
+          saveSession(config.agentId, session.current);
+        }
+        return fresh;
+      },
+      handlers: {
+        onMessage: (msg) => {
+          // Only finished, user-facing text — the channel also carries thought
+          // rows and stream chunks from any agentic proactive turn.
+          if (msg.category !== "user") return;
+          if (msg.message_type !== "adhoc" && msg.message_type !== "final") return;
+          const content = (msg.content ?? "").trim();
+          const id = msg.id;
+          if (!content || !id || !markSeen(id)) return;
+
+          setMessages((prev) => [
+            ...prev,
+            { id, role: "assistant", content: [{ type: "text", text: content }] },
+          ]);
+          const chips = extractSuggestions(msg.metadata);
+          if (chips.length) setSuggestions(chips);
+          setUnread((n) => n + 1);
+        },
+      },
+    });
+    return () => channel.close();
+  }, [
+    config.proactive,
+    config.agentUrl,
+    config.agentId,
+    isRunning,
+    markSeen,
+    // Re-open once a session exists (the first turn mints it).
+    messages.length > 0,
+  ]);
 
   const runTurn = useCallback(
     async (userText: string) => {
@@ -115,9 +280,11 @@ export function useChatRuntime(config: MessengerConfig) {
       const effectiveText =
         trimmed || turnAttachments.map((a) => a.filename).join(", ");
       if (turnAttachments.length) setAttachments([]);
-      // Clear last turn's suggestions; collect this turn's below.
+      // Clear last turn's suggestions + error banner; this turn's are collected below.
       setSuggestions([]);
-      let turnSuggestions: MessageAction[] = [];
+      setTurnError(null);
+      setActivity([]);
+      lastTurnRef.current = { text: userText, attachments: turnAttachments };
 
       // Render the sent attachments in the bubble: images as thumbnails, other
       // files as chips (assistant-ui image/file parts). The filename fallback is
@@ -151,16 +318,13 @@ export function useChatRuntime(config: MessengerConfig) {
       ]);
       setIsRunning(true);
 
-      let answer = "";
-      let reasoning = "";
+      // The whole turn folds into this pure state (see streaming/reducer.ts).
+      let turn = emptyTurn();
       const update = () =>
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? {
-                  ...m,
-                  content: assistantParts(answer, reasoning, config.showReasoning),
-                }
+              ? { ...m, content: assistantParts(turn, config.showReasoning) }
               : m
           )
         );
@@ -169,25 +333,19 @@ export function useChatRuntime(config: MessengerConfig) {
         const data = chunk.message;
         if (!data || typeof data === "string") return;
         const msg = data as ResponseMessageData;
-        if (msg.category === "thought") {
-          // MASKED by default: only accumulate when reasoning is revealed.
-          if (config.showReasoning && msg.content) {
-            reasoning += (reasoning ? "\n" : "") + msg.content;
-            update();
-          }
-          return;
-        }
-        // Agent-driven follow-up chips ride on message metadata.
-        const s = extractSuggestions(msg.metadata);
-        if (s.length) turnSuggestions = s;
-        // category "user" → the visible answer.
-        if (msg.message_type === "stream_chunk" || msg.message_type === "adhoc") {
-          answer += msg.content ?? "";
-        } else if (!answer) {
-          answer = msg.content ?? "";
-        }
+        // Claim the id here too: the session channel replays the same backlog,
+        // and without this a reconnect would re-render this turn's reply.
+        if (msg.id) markSeen(msg.id);
+        const next = reduceMessage(turn, msg);
+        if (next === turn) return; // nothing changed — skip the re-render
+        turn = next;
+        setActivity(turn.activity);
         update();
       };
+
+      // Real cancellation: sseClient honours `signal`, but nothing ever passed one.
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       try {
         await streamInteract(
@@ -199,8 +357,12 @@ export function useChatRuntime(config: MessengerConfig) {
               utterance: effectiveText,
               user_id: session.current.userId,
               session_id: session.current.sessionId,
-              data: attachmentsToData(turnAttachments),
+              data: withPageContext(
+                attachmentsToData(turnAttachments),
+                pageContextRef.current
+              ),
             },
+            signal: controller.signal,
           },
           {
             onStart: (chunk) => {
@@ -210,22 +372,38 @@ export function useChatRuntime(config: MessengerConfig) {
                 sessionToken: chunk.session_token ?? session.current.sessionToken,
               };
               saveSession(config.agentId, session.current);
+              if (session.current.sessionToken) setHasSession(true);
             },
             onMessage,
             onError: (text) => {
-              answer = answer || `⚠️ ${text}`;
+              turn = withError(turn, text);
               update();
             },
           }
         );
-        // Subtle chime once the assistant reply has landed (skip on error).
-        if (config.sound && answer && !answer.startsWith("⚠️")) playChime();
-      } catch {
-        answer = answer || "⚠️ Connection error. Please try again.";
+        // Subtle chime once the assistant reply has actually landed.
+        if (config.sound && hasAnswer(turn) && !turn.error) playChime();
+      } catch (err) {
+        // A user-initiated abort is not an error — keep whatever streamed.
+        const aborted =
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError");
+        if (!aborted) {
+          turn = withError(turn, "Connection error. Please try again.");
+        }
         update();
       } finally {
+        abortRef.current = null;
         setIsRunning(false);
-        setSuggestions(turnSuggestions);
+        setActivity([]);
+        setSuggestions(turn.suggestions);
+        // Errors are surfaced as an ephemeral banner, never as assistant content:
+        // otherwise they persist into history and get read aloud by TTS.
+        setTurnError(turn.error ?? null);
+        if (turn.error && !hasAnswer(turn)) {
+          // Nothing streamed — drop the empty bubble rather than leaving a blank.
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        }
         // Proactively refresh the token for the next turn.
         const tok = session.current.sessionToken;
         if (tok) {
@@ -238,7 +416,7 @@ export function useChatRuntime(config: MessengerConfig) {
         }
       }
     },
-    [config, isRunning, attachments]
+    [config, isRunning, attachments, markSeen]
   );
 
   const onNew = useCallback(
@@ -248,10 +426,41 @@ export function useChatRuntime(config: MessengerConfig) {
     [runTurn]
   );
 
+  /** Abort the in-flight stream (the Stop button). */
+  const onCancel = useCallback(async () => {
+    abortRef.current?.abort();
+  }, []);
+
+  /**
+   * Regenerate: drop the last assistant turn and replay the preceding user
+   * message. `ActionBarPrimitive.Reload` was rendered but inert without this.
+   */
+  const onReload = useCallback(async () => {
+    const last = lastTurnRef.current;
+    if (!last || isRunning) return;
+    setMessages((prev) => {
+      const idx = prev.map((m) => m.role).lastIndexOf("user");
+      return idx === -1 ? prev : prev.slice(0, idx);
+    });
+    setAttachments(last.attachments);
+    await runTurn(last.text);
+  }, [isRunning, runTurn]);
+
+  /** Retry after a failed turn (surfaced on the error banner). */
+  const retry = useCallback(async () => {
+    const last = lastTurnRef.current;
+    if (!last || isRunning) return;
+    setTurnError(null);
+    setAttachments(last.attachments);
+    await runTurn(last.text);
+  }, [isRunning, runTurn]);
+
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning,
     onNew,
+    onCancel,
+    onReload,
     convertMessage: (m: ThreadMessageLike) => m,
   });
 
@@ -269,11 +478,17 @@ export function useChatRuntime(config: MessengerConfig) {
   const reset = useCallback(() => {
     clearHistory(config.agentId);
     clearSession(config.agentId);
+    clearSeenIds(config.agentId);
+    seenIds.current = new Set();
+    setUnread(0);
     session.current = {};
     setAttachments([]);
     setSuggestions([]);
     setMessages([]);
   }, [config.agentId]);
+
+  /** Zero the unread counter (the host badges the launcher from this). */
+  const clearUnread = useCallback(() => setUnread(0), []);
 
   const hasUserMessage = messages.some((m) => m.role === "user");
 
@@ -289,6 +504,11 @@ export function useChatRuntime(config: MessengerConfig) {
           if (p.type === "text") return p.text ?? "";
           if (p.type === "image") return "[image]";
           if (p.type === "file") return `[file: ${p.filename ?? "attachment"}]`;
+          if (p.type === "tool-call") {
+            // Components carry their own plain-text rendering.
+            const env = (p as { args?: { fallback?: string } }).args;
+            return env?.fallback ? `[${env.fallback}]` : "";
+          }
           return "";
         })
         .filter(Boolean)
@@ -322,10 +542,17 @@ export function useChatRuntime(config: MessengerConfig) {
       runtime,
       sendText: runTurn,
       getToken,
+      ensureSession,
+      hasSession,
       attachments,
       addAttachment,
       removeAttachment,
       suggestions,
+      activity,
+      turnError,
+      retry,
+      unread,
+      clearUnread,
       reset,
       hasUserMessage,
       downloadTranscript,
@@ -334,10 +561,17 @@ export function useChatRuntime(config: MessengerConfig) {
       runtime,
       runTurn,
       getToken,
+      ensureSession,
+      hasSession,
       attachments,
       addAttachment,
       removeAttachment,
       suggestions,
+      activity,
+      turnError,
+      retry,
+      unread,
+      clearUnread,
       reset,
       hasUserMessage,
       downloadTranscript,
