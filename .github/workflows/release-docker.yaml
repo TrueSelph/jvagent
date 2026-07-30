@@ -5,6 +5,7 @@ on:
     branches:
       - dev
       - main
+      - jb/dev
     paths:
       - "jvagent/version.py"
   workflow_dispatch:
