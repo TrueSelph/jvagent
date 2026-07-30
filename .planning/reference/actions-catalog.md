@@ -21,6 +21,7 @@ Path convention: `jvagent/action/{dir}/`. Implementation file is `{dir}/{name}.p
 > |---|---|
 > | jvagent/whatsapp | jvagent/whatsapp_action |
 > | jvagent/handoff | jvagent/handoff_interact_action |
+> | jvagent/artifact_handler | jvagent/artifact_handler_interact_action |
 > | jvagent/intro | jvagent/intro_interact_action |
 > | jvagent/interview | jvagent/interview_interact_action |
 > | jvagent/interview | jvagent/interview |

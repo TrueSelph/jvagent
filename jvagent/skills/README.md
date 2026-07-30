@@ -265,8 +265,9 @@ On activation the orchestrator stages the folder at `staged_skills/<name>/` insi
 caller's per-user sandbox and tells the model where to run it. Anything a script
 writes lands in that user's slice and is visible to the file tools. See
 [`pdf_generation`](pdf_generation), [`triage`](triage), [`research`](research),
-and [`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
-write-file detour) for working examples.
+[`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
+write-file detour), and [`artifact_handler`](artifact_handler) (private
+document ingest via jvforge / PageIndex) for working examples.
 
 **Requires the code-execution substrate.** Claude skills only execute when
 [`jvagent/code_execution`](../action/code_execution) is installed and **enabled**

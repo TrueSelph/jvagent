@@ -454,7 +454,11 @@ async def assimilate_document(
     # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
     if_add_node_summary = _to_yes_no(if_add_node_summary, get_pageindex_node_summary())
     if_add_node_text = _to_yes_no(if_add_node_text, get_pageindex_node_text())
-    generate_description = if_add_doc_description if if_add_doc_description is not None else get_pageindex_doc_description()
+    generate_description = (
+        if_add_doc_description
+        if if_add_doc_description is not None
+        else get_pageindex_doc_description()
+    )
     if max_token_num_each_node is None:
         max_token_num_each_node = get_pageindex_max_token_num_each_node()
     if summary_token_threshold is None:

@@ -215,6 +215,7 @@ def human_size(n: int) -> str:
 
 __all__ = [
     "DEFAULT_UPLOAD_KEYS",
+    "MAX_UPLOAD_ITEM_BYTES",
     "UploadItem",
     "classify_kind",
     "is_textual_mime",
