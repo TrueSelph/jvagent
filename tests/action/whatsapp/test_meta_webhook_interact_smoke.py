@@ -176,11 +176,11 @@ class TestMetaWebhookInteractSmoke:
 
 
 def test_message_payload_from_dict_roundtrip():
+    from jvagent.action.whatsapp.modules.base import MessagePayload
     from jvagent.action.whatsapp.utils.endpoint_helpers import (
         _convert_message_payload_to_dict,
         message_payload_from_dict,
     )
-    from jvagent.action.whatsapp.modules.base import MessagePayload
 
     original = MessagePayload(
         message_id="wamid.x",
