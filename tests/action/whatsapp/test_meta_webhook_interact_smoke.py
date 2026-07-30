@@ -62,6 +62,12 @@ def mock_meta_webhook_stack():
     )
     whatsapp_action.api = AsyncMock(return_value=meta_api)
 
+    async def _fake_create_task(coro_or_name, payload=None, **kw):
+        # Shape B passes a coroutine; Shape A passes a task-type string.
+        if hasattr(coro_or_name, "close"):
+            coro_or_name.close()
+        return None
+
     with (
         patch(
             "jvagent.action.whatsapp.endpoints._agent_and_whatsapp_action_for_webhook",
@@ -73,11 +79,15 @@ def mock_meta_webhook_stack():
         ),
         patch(
             "jvagent.action.whatsapp.endpoints.create_task",
-            AsyncMock(side_effect=lambda coro, **kw: (coro.close(), None)[1]),
+            AsyncMock(side_effect=_fake_create_task),
         ),
         patch(
             "jvagent.action.whatsapp.endpoints._batch_manager.flush_pending_batch_if_stale",
             AsyncMock(return_value=None),
+        ),
+        patch(
+            "jvagent.action.whatsapp.endpoints.is_serverless_mode",
+            return_value=False,
         ),
     ):
         yield agent, whatsapp_action, meta_api
@@ -126,3 +136,63 @@ class TestMetaWebhookInteractSmoke:
         text_req.state.raw_body = json.dumps(SAMPLE_TEXT_WEBHOOK).encode("utf-8")
         text_result = await whatsapp_interact(text_req, AGENT_ID)
         assert text_result == {"status": "received"}
+
+    @pytest.mark.asyncio
+    async def test_serverless_schedules_deferred_interact_shape_a(
+        self, mock_meta_webhook_stack
+    ):
+        """Lambda path: Shape A create_task + immediate 200 (no inline await)."""
+        _agent, _wa, meta_api = mock_meta_webhook_stack
+        meta_api.set_typing_status = AsyncMock(return_value={"ok": True})
+
+        create_calls = []
+
+        async def capture_create_task(coro_or_name, payload=None, **kw):
+            create_calls.append((coro_or_name, payload, kw))
+            if hasattr(coro_or_name, "close"):
+                coro_or_name.close()
+            return None
+
+        with (
+            patch(
+                "jvagent.action.whatsapp.endpoints.is_serverless_mode",
+                return_value=True,
+            ),
+            patch(
+                "jvagent.action.whatsapp.endpoints.create_task",
+                AsyncMock(side_effect=capture_create_task),
+            ),
+        ):
+            req = _meta_post_request(SAMPLE_TEXT_WEBHOOK)
+            req.state.raw_body = json.dumps(SAMPLE_TEXT_WEBHOOK).encode("utf-8")
+            result = await whatsapp_interact(req, AGENT_ID)
+
+        assert result == {"status": "received"}
+        assert len(create_calls) == 1
+        name, payload, _kw = create_calls[0]
+        assert name == "jvagent.whatsapp.interact"
+        assert payload["agent_id"] == AGENT_ID
+        assert payload["payload"]["message_id"] == WAMID
+
+
+def test_message_payload_from_dict_roundtrip():
+    from jvagent.action.whatsapp.utils.endpoint_helpers import (
+        _convert_message_payload_to_dict,
+        message_payload_from_dict,
+    )
+    from jvagent.action.whatsapp.modules.base import MessagePayload
+
+    original = MessagePayload(
+        message_id="wamid.x",
+        event_type="message",
+        message_type="chat",
+        author="1",
+        sender="1",
+        receiver="2",
+        body="hello",
+        sender_name="Ada",
+    )
+    rebuilt = message_payload_from_dict(_convert_message_payload_to_dict(original))
+    assert rebuilt.message_id == "wamid.x"
+    assert rebuilt.body == "hello"
+    assert rebuilt.sender_name == "Ada"

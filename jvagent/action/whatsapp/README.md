@@ -395,6 +395,8 @@ immediately.
 
 Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps a cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
 
+**Serverless interact (Lambda):** On `is_serverless_mode()`, text/voice interact is scheduled via Shape A `create_task("jvagent.whatsapp.interact", …)` and the webhook returns immediately. The deferred invoke (same LWA / `/api/_internal/deferred` path as media batch) runs the walker and WhatsApp send. This keeps jvconnect’s agent-forward under its timeout so it does not re-deliver the same envelope while PageIndex (or other slow tools) run. Non-serverless still uses Shape B background `create_task(coro)`.
+
 Env tuning (optional):
 
 - `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default), `memory`, or `redis`. `auto` uses Redis when `JVSPATIAL_REDIS_URL` / `REDIS_URL` is set.
