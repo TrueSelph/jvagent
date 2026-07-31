@@ -91,20 +91,53 @@ def _unsafe_purge_reason(target: Path, app_root: Path) -> Optional[str]:
     return None
 
 
+def _sqlite_store_root_for_purge(path: Path) -> Path:
+    """Map ``…/<store>/sqlite/<file>`` to ``…/<store>`` so the whole tree is wiped."""
+    resolved = path.resolve()
+    if resolved.parent.name == "sqlite":
+        store_root = resolved.parent.parent
+        if store_root != resolved.parent:
+            return store_root
+    return resolved
+
+
 def _remove_fs_target(path: Path) -> None:
-    """Remove a local database path (directory tree or single file)."""
-    if not path.exists():
-        logger.debug("Path not found (skipping): %s", path)
-        return
+    """Remove a local database path (directory tree, file, and SQLite WAL/SHM)."""
     try:
         if path.is_dir():
             shutil.rmtree(path)
             logger.info("Deleted directory: %s", path)
-        elif path.is_file():
-            path.unlink()
-            logger.info("Deleted file: %s", path)
+            return
+
+        removed_any = False
+        for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+            if not candidate.exists():
+                continue
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+                logger.info("Deleted directory: %s", candidate)
+            else:
+                candidate.unlink()
+                logger.info("Deleted file: %s", candidate)
+            removed_any = True
+        if not removed_any:
+            logger.debug("Path not found (skipping): %s", path)
     except Exception as e:
         logger.error("Failed to delete %s: %s", path, e)
+
+
+def _legacy_local_store_paths(app_root: Path) -> Set[Path]:
+    """Former jvagent defaults that may remain after path-default alignment."""
+    leftovers: Set[Path] = set()
+    for name in ("jvagent_db", "jvagent_logs"):
+        candidate = (app_root / name).resolve()
+        if (
+            candidate.exists()
+            or Path(f"{candidate}-wal").exists()
+            or Path(f"{candidate}-shm").exists()
+        ):
+            leftovers.add(candidate)
+    return leftovers
 
 
 def purge_app_data(app_root: str, assume_yes: bool = False) -> None:
@@ -177,8 +210,11 @@ def purge_app_data(app_root: str, assume_yes: bool = False) -> None:
                 pi_type,
             )
 
+    app_root_path = Path(app_root).resolve()
+    paths_to_purge = {_sqlite_store_root_for_purge(p) for p in paths_to_purge}
+    paths_to_purge |= _legacy_local_store_paths(app_root_path)
+
     # Refuse unsafe targets before touching the filesystem.
-    app_root_path = Path(app_root)
     safe_targets: Set[Path] = set()
     for target in paths_to_purge:
         reason = _unsafe_purge_reason(target, app_root_path)

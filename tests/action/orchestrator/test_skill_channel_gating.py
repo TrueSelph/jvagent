@@ -535,5 +535,5 @@ def test_real_quotation_and_pre_alert_hidden_on_default_channel(
             f"{p_doc.name}: {p_doc.deny_access_directive}",
         ],
     )
-    assert "You'll need WhatsApp for a quote" in section
-    assert "You'll need WhatsApp to check a tracking number" in section
+    assert "Message me on WhatsApp for a quote" in section
+    assert "Message me on WhatsApp to check a tracking number" in section

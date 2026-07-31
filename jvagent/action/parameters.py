@@ -580,16 +580,19 @@ def resolve_parameters(parameters: Optional[List[Any]]) -> List[Dict[str, Any]]:
         group = _group_of(param)
         if group in floors:
             if param is not floors[group]:
-                marker = f"{group}:{_source_of(param)}:{param.get('action_name')}"
-                if marker not in _CONFLICT_LOGGED:
-                    _CONFLICT_LOGGED.add(marker)
-                    logger.warning(
-                        "parameters: refusing to override inviolable rule %r — "
-                        "dropped a conflicting rule from %s %r",
-                        group[1],
-                        _source_of(param),
-                        param.get("action_name") or "?",
-                    )
+                # Duplicate ambient cores (pools re-union reply_core_parameters)
+                # are not override attempts — skip the conflict log.
+                if not (param.get("inviolable") and _source_of(param) == SOURCE_CORE):
+                    marker = f"{group}:{_source_of(param)}:{param.get('action_name')}"
+                    if marker not in _CONFLICT_LOGGED:
+                        _CONFLICT_LOGGED.add(marker)
+                        logger.warning(
+                            "parameters: refusing to override inviolable rule %r — "
+                            "dropped a conflicting rule from %s %r",
+                            group[1],
+                            _source_of(param),
+                            param.get("action_name") or "?",
+                        )
             continue
         # C5: a conditional rule refines, it does not replace. Without this,
         # "when X: be brief" silently becomes a global and kills the
