@@ -10,6 +10,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **WhatsApp Meta wamid dedup vs deferred schedule failure.** On serverless,
+  if Shape A `create_task("jvagent.whatsapp.interact", …, strict=True)` fails,
+  `forget_meta_wamid` clears the claim and the webhook returns **503** so Meta
+  / jvconnect can retry instead of silently dropping the message.
+
+- **WhatsApp Meta skip-if-healthy uses live callback URL.** Health check
+  compares jvconnect forward to `JVAGENT_PUBLIC_BASE_URL` + current agent id
+  (not a stale persisted `webhook_url`). `on_reload` skips Graph re-subscribe
+  when forward is already healthy (same as startup; avoids Meta #80008).
+
 - **Artifact handler notify SSRF / cross-agent key / replay (#127).** Vault URL
   fetches go through PageIndex `fetch_url_bytes_capped` (SSRF + redirect
   guards). Notify API keys are minted to the exact
@@ -31,6 +41,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `JVSPATIAL_JWT_SECRET_KEY`.
 
 ### Changed
+
+- **WhatsApp Meta webhook: skip Graph re-register when forward healthy.**
+  Startup and reload avoid burning WABA Business Management quota (#80008)
+  when jvconnect already forwards the live agent callback.
+
+- **WhatsApp interact deferred under serverless (Shape A).** Meta webhook
+  schedules `jvagent.whatsapp.interact` and returns immediately so jvconnect
+  does not time out and re-forward the same wamid.
 
 - **Session tokens mint whenever JWT secret is set.** Mode B tokens are no
   longer withheld in `JVAGENT_INTERACT_PUBLIC_AUTH=off`; interact *enforcement*

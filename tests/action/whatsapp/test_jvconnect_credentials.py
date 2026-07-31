@@ -193,11 +193,22 @@ async def test_meta_webhook_forward_is_healthy(monkeypatch):
                 },
             }
 
+    class FakeAgent:
+        id = "n.Agent.1"
+
     async def fake_api(self):
         return FakeApi()
 
+    async def fake_get_agent(self):
+        return FakeAgent()
+
     monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "get_agent", fake_get_agent)
     monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "jvagent.action.whatsapp.whatsapp_action.get_public_base_url",
+        lambda: "https://agent.example.com",
+    )
     assert await action._meta_webhook_forward_is_healthy() is True
 
 
@@ -216,12 +227,99 @@ async def test_meta_webhook_forward_unhealthy_when_missing(monkeypatch):
         async def get_webhook_override_status(self):
             return {"ok": True, "forward": None}
 
+    class FakeAgent:
+        id = "n.Agent.1"
+
     async def fake_api(self):
         return FakeApi()
 
+    async def fake_get_agent(self):
+        return FakeAgent()
+
     monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "get_agent", fake_get_agent)
     monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "jvagent.action.whatsapp.whatsapp_action.get_public_base_url",
+        lambda: "https://agent.example.com",
+    )
     assert await action._meta_webhook_forward_is_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_meta_webhook_forward_unhealthy_when_persisted_url_stale(monkeypatch):
+    """Forward matching stale webhook_url must not skip re-register."""
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://old.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+
+    class FakeApi:
+        async def get_webhook_override_status(self):
+            return {
+                "ok": True,
+                "forward": {
+                    "callback_url": (
+                        "https://old.example.com/api/whatsapp/interact/"
+                        "webhook/n.Agent.1"
+                    )
+                },
+            }
+
+    class FakeAgent:
+        id = "n.Agent.1"
+
+    async def fake_api(self):
+        return FakeApi()
+
+    async def fake_get_agent(self):
+        return FakeAgent()
+
+    monkeypatch.setattr(WhatsAppAction, "api", fake_api)
+    monkeypatch.setattr(WhatsAppAction, "get_agent", fake_get_agent)
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(
+        "jvagent.action.whatsapp.whatsapp_action.get_public_base_url",
+        lambda: "https://new.example.com",
+    )
+    assert await action._meta_webhook_forward_is_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+    register_calls = []
+
+    async def fake_register(self):
+        register_calls.append(1)
+        return {"status": "ok"}
+
+    async def fake_healthy(self):
+        return True
+
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(
+        WhatsAppAction, "_meta_webhook_forward_is_healthy", fake_healthy
+    )
+    monkeypatch.setattr(
+        WhatsAppAction, "register_meta_webhook_subscription", fake_register
+    )
+    monkeypatch.delenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", raising=False)
+
+    await action.on_reload()
+    assert register_calls == []
+    assert action._session_registered is True
 
 
 @pytest.mark.asyncio

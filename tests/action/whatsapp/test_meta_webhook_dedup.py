@@ -4,6 +4,7 @@ import pytest
 
 from jvagent.action.utils.meta_webhook_dedup import (
     clear_meta_wamid_cache,
+    forget_meta_wamid,
     remember_meta_wamid,
 )
 from jvagent.action.whatsapp.modules.meta_api import MetaWhatsAppAPI
@@ -47,6 +48,49 @@ class TestMetaWamidDedup:
         assert remember_meta_wamid("") is True
         assert remember_meta_wamid("") is True
         assert remember_meta_wamid(WAMID_A) is True
+
+    def test_forget_meta_wamid_allows_reclaim(self):
+        assert remember_meta_wamid(WAMID_A) is True
+        assert remember_meta_wamid(WAMID_A) is False
+        forget_meta_wamid(WAMID_A)
+        assert remember_meta_wamid(WAMID_A) is True
+
+    def test_redis_forget_deletes_key(self, monkeypatch):
+        class FakeRedis:
+            def __init__(self):
+                self.store = {}
+
+            def ping(self):
+                return True
+
+            def set(self, key, value, nx=False, ex=None):
+                if nx and key in self.store:
+                    return False
+                self.store[key] = value
+                return True
+
+            def delete(self, key):
+                self.store.pop(key, None)
+                return 1
+
+        fake = FakeRedis()
+
+        class FakeRedisModule:
+            @staticmethod
+            def from_url(*_a, **_k):
+                return fake
+
+        monkeypatch.setenv("WHATSAPP_META_WAMID_DEDUP_BACKEND", "redis")
+        monkeypatch.setenv("JVSPATIAL_REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setitem(__import__("sys").modules, "redis", FakeRedisModule)
+        clear_meta_wamid_cache()
+
+        assert remember_meta_wamid(WAMID_A) is True
+        forget_meta_wamid(WAMID_A)
+        assert remember_meta_wamid(WAMID_A) is True
+        clear_meta_wamid_cache()
+        monkeypatch.delenv("WHATSAPP_META_WAMID_DEDUP_BACKEND", raising=False)
+        monkeypatch.delenv("JVSPATIAL_REDIS_URL", raising=False)
 
     def test_redis_backend_uses_set_nx(self, monkeypatch):
         class FakeRedis:

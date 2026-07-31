@@ -156,6 +156,28 @@ def remember_meta_wamid(wamid: str) -> bool:
     return _remember_memory(key)
 
 
+def forget_meta_wamid(wamid: str) -> None:
+    """Drop a previously remembered wamid so Meta retries can be accepted.
+
+    Used when serverless deferred scheduling fails after ``remember_meta_wamid``
+    already claimed the id — otherwise the message is silently dropped.
+    """
+    key = (wamid or "").strip()
+    if not key:
+        return
+
+    with _lock:
+        _seen_wamids.pop(key, None)
+
+    client = _get_redis()
+    if client is None:
+        return
+    try:
+        client.delete(f"{_REDIS_KEY_PREFIX}{key}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Redis wamid forget failed (%s)", exc)
+
+
 def clear_meta_wamid_cache() -> None:
     """Clear in-process dedup cache (for tests). Does not flush Redis."""
     global _redis_client, _redis_init_attempted

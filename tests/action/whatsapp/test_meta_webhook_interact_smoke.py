@@ -169,10 +169,42 @@ class TestMetaWebhookInteractSmoke:
 
         assert result == {"status": "received"}
         assert len(create_calls) == 1
-        name, payload, _kw = create_calls[0]
+        name, payload, kw = create_calls[0]
         assert name == "jvagent.whatsapp.interact"
         assert payload["agent_id"] == AGENT_ID
         assert payload["payload"]["message_id"] == WAMID
+        assert kw.get("strict") is True
+
+    @pytest.mark.asyncio
+    async def test_serverless_schedule_failure_forgets_wamid(
+        self, mock_meta_webhook_stack
+    ):
+        """Failed Shape A schedule must not leave wamid claimed (silent drop)."""
+        from fastapi import HTTPException
+
+        from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
+
+        _agent, _wa, meta_api = mock_meta_webhook_stack
+        meta_api.set_typing_status = AsyncMock(return_value={"ok": True})
+
+        with (
+            patch(
+                "jvagent.action.whatsapp.endpoints.is_serverless_mode",
+                return_value=True,
+            ),
+            patch(
+                "jvagent.action.whatsapp.endpoints.create_task",
+                AsyncMock(side_effect=RuntimeError("noop scheduler")),
+            ),
+        ):
+            req = _meta_post_request(SAMPLE_TEXT_WEBHOOK)
+            req.state.raw_body = json.dumps(SAMPLE_TEXT_WEBHOOK).encode("utf-8")
+            with pytest.raises(HTTPException) as exc_info:
+                await whatsapp_interact(req, AGENT_ID)
+            assert exc_info.value.status_code == 503
+
+        # wamid must be free for Meta/jvconnect retry
+        assert remember_meta_wamid(WAMID) is True
 
 
 def test_message_payload_from_dict_roundtrip():

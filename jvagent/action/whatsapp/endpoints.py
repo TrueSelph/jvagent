@@ -23,7 +23,10 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.utils.meta_calls_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
-from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
+from jvagent.action.utils.meta_webhook_dedup import (
+    forget_meta_wamid,
+    remember_meta_wamid,
+)
 from jvagent.core.agent import Agent
 from jvagent.core.errors import log_classified_exception
 
@@ -760,18 +763,38 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
         if is_serverless_mode():
             # Shape A: schedule deferred invoke and return immediately so
             # jvconnect does not time out and re-forward the same wamid.
+            # If scheduling fails, forget the wamid claim so Meta/jvconnect
+            # retries are not blocked by dedup (silent drop).
             wamid = getattr(data, "message_id", "") or ""
-            await create_task(
-                "jvagent.whatsapp.interact",
-                {
-                    "agent_id": agent_id,
-                    "sender": sender,
-                    "sender_name": sender_name,
-                    "utterance": utterance or "",
-                    "payload": _convert_message_payload_to_dict(data),
-                },
-                name=f"whatsapp_interact_deferred_{wamid or sender}",
-            )
+            try:
+                await create_task(
+                    "jvagent.whatsapp.interact",
+                    {
+                        "agent_id": agent_id,
+                        "sender": sender,
+                        "sender_name": sender_name,
+                        "utterance": utterance or "",
+                        "payload": _convert_message_payload_to_dict(data),
+                    },
+                    name=f"whatsapp_interact_deferred_{wamid or sender}",
+                    strict=True,
+                )
+            except Exception as schedule_err:
+                if wamid:
+                    forget_meta_wamid(wamid)
+                logger.error(
+                    "WhatsApp interact deferred schedule failed "
+                    "(agent=%s sender=%s wamid=%s): %s",
+                    agent_id,
+                    sender,
+                    wamid or "(none)",
+                    schedule_err,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Deferred interact scheduling failed; retry later",
+                ) from schedule_err
             logger.info(
                 "WhatsApp interact deferred for serverless "
                 "(agent=%s sender=%s wamid=%s)",
