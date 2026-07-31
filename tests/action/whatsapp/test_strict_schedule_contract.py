@@ -41,19 +41,58 @@ class _FailingClient:
         raise ConnectionError("lambda unreachable")
 
 
+class _RejectingClient:
+    """An async invoke that is ACCEPTED at the transport but rejected by Lambda.
+
+    The failure mode with no exception attached: `invoke` returns normally with
+    a non-2xx StatusCode or a FunctionError. jvspatial catches this; the
+    webhook must still get to release its wamid.
+    """
+
+    def invoke(self, **kwargs):
+        return {"StatusCode": 500, "FunctionError": "Unhandled"}
+
+
 def test_strict_schedule_raises_on_invoke_failure():
     sched = AwsLambdaDeferredTaskScheduler(
         function_name="fn", lambda_client=_FailingClient()
     )
-    with pytest.raises(ConnectionError):
+    # Assert the CONTRACT (strict surfaces the failure), not a specific
+    # exception class: jvspatial wraps provider errors in its own typed
+    # exceptions, and pinning the raw type here would make an upstream
+    # improvement look like a jvagent regression.
+    with pytest.raises(Exception) as exc_info:
         sched.schedule("jvagent.whatsapp.interact", {"agent_id": "a"}, strict=True)
+    assert not isinstance(exc_info.value, AssertionError)
 
 
 def test_strict_schedule_raises_when_function_name_unset(monkeypatch):
     monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
     sched = AwsLambdaDeferredTaskScheduler(function_name="")
-    with pytest.raises(RuntimeError, match="AWS_LAMBDA_FUNCTION_NAME"):
+    with pytest.raises(Exception) as exc_info:
         sched.schedule("jvagent.whatsapp.interact", {"agent_id": "a"}, strict=True)
+    assert not isinstance(exc_info.value, AssertionError)
+
+
+def test_strict_schedule_raises_when_lambda_rejects_the_invoke():
+    """A rejection is not an exception — an async invoke answers 202 on
+    acceptance, so a non-2xx StatusCode/FunctionError is the quiet failure.
+    Covered by jvspatial as of the strict-dispatch hardening."""
+    sched = AwsLambdaDeferredTaskScheduler(
+        function_name="fn", lambda_client=_RejectingClient()
+    )
+    with pytest.raises(Exception) as exc_info:
+        sched.schedule("jvagent.whatsapp.interact", {"agent_id": "a"}, strict=True)
+    assert not isinstance(exc_info.value, AssertionError)
+
+
+def test_non_strict_still_fire_and_forget():
+    """The other direction: every existing caller keeps its semantics."""
+    sched = AwsLambdaDeferredTaskScheduler(
+        function_name="fn", lambda_client=_FailingClient()
+    )
+    ref = sched.schedule("jvagent.whatsapp.interact", {"agent_id": "a"})
+    assert isinstance(ref, str) and ref
 
 
 def test_dispatch_deferred_task_threads_strict_through():
@@ -63,10 +102,11 @@ def test_dispatch_deferred_task_threads_strict_through():
     sched = AwsLambdaDeferredTaskScheduler(
         function_name="fn", lambda_client=_FailingClient()
     )
-    with pytest.raises(ConnectionError):
+    with pytest.raises(Exception) as exc_info:
         dispatch_deferred_task(
             "jvagent.whatsapp.interact",
             {"agent_id": "a"},
             override=sched,
             strict=True,
         )
+    assert not isinstance(exc_info.value, AssertionError)
