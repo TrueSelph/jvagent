@@ -153,6 +153,21 @@ def test_refused_override_is_logged_once(caplog):
     assert "evil_skill" in refusals[0].getMessage()
 
 
+def test_duplicate_ambient_cores_do_not_warn(caplog):
+    """Pools re-union reply_core_parameters(); that is not an override attempt."""
+    import logging
+
+    from jvagent.action import parameters as mod
+    from jvagent.action.parameters import reply_core_parameters
+
+    mod._CONFLICT_LOGGED.clear()
+    cores = reply_core_parameters()
+    stamped = [{**p, "action_name": "ReplyAction"} for p in cores]
+    with caplog.at_level(logging.WARNING):
+        resolve_parameters(cores + stamped + cores)
+    assert not [r for r in caplog.records if "inviolable" in r.getMessage()]
+
+
 # --- C4: conflict is per scope ----------------------------------------------
 
 

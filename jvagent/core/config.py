@@ -308,6 +308,26 @@ def get_config_value(
     return default
 
 
+def _default_db_path_for_type(db_type: str) -> str:
+    """Type-aware filesystem default matching ``jvspatial.env.resolve_db_paths``."""
+    from jvspatial.env import resolve_db_paths
+
+    json_default, sqlite_default = resolve_db_paths()
+    if (db_type or "json").strip().lower() == "sqlite":
+        return sqlite_default
+    return json_default
+
+
+def _default_log_db_path_for_type(log_type: str) -> Optional[str]:
+    """Type-aware logging path default matching jvspatial logging config."""
+    normalized = (log_type or "json").strip().lower()
+    if normalized == "sqlite":
+        return "jvspatial_logs/sqlite/jvspatial_logs.db"
+    if normalized == "json":
+        return "./jvspatial_logs"
+    return None
+
+
 def resolve_db_path(
     app_root: str,
     config: dict,
@@ -315,7 +335,8 @@ def resolve_db_path(
 ) -> str:
     """Resolve database path from config and environment.
 
-    Priority: env ``JVSPATIAL_DB_PATH`` > ``config.database.path`` > default.
+    Priority: env ``JVSPATIAL_DB_PATH`` > ``config.database.path`` > type-aware
+    jvspatial defaults (``jvdb`` for json, ``jvdb/sqlite/jvspatial.db`` for sqlite).
     Relative paths are resolved against app_root.
 
     Args:
@@ -328,12 +349,9 @@ def resolve_db_path(
     """
     db_path = normalize_empty(os.getenv("JVSPATIAL_DB_PATH"))
     if not db_path:
-        db_path = normalize_empty(
-            get_config_value(
-                config, "database.path", "JVSPATIAL_DB_PATH", "./jvagent_db"
-            )
-        )
-    db_path = db_path or "./jvagent_db"
+        db_path = normalize_empty(get_config_value(config, "database.path", None, None))
+    if not db_path:
+        db_path = _default_db_path_for_type(db_type)
 
     app_root_path = Path(app_root).resolve()
     db_path_obj = Path(db_path)
@@ -346,6 +364,11 @@ def resolve_db_path(
 def resolve_log_db_path(app_root: str, config: dict) -> Optional[str]:
     """Resolve logging database path from config and environment.
 
+    Priority: env ``JVSPATIAL_LOG_DB_PATH`` > ``config.logging.database.path`` >
+    type-aware defaults (``./jvspatial_logs`` for json,
+    ``jvspatial_logs/sqlite/jvspatial_logs.db`` for sqlite). Returns None for
+    remote log backends when no path override is set.
+
     Args:
         app_root: Path to app root directory
         config: App config dict from load_app_config
@@ -353,11 +376,13 @@ def resolve_log_db_path(app_root: str, config: dict) -> Optional[str]:
     Returns:
         Resolved path or None if not configured
     """
-    log_db_path = normalize_empty(
-        get_config_value(
-            config, "logging.database.path", "JVSPATIAL_LOG_DB_PATH", "./jvagent_logs"
+    log_db_path = normalize_empty(os.getenv("JVSPATIAL_LOG_DB_PATH"))
+    if not log_db_path:
+        log_db_path = normalize_empty(
+            get_config_value(config, "logging.database.path", None, None)
         )
-    )
+    if not log_db_path:
+        log_db_path = _default_log_db_path_for_type(effective_log_db_type(config))
     if not log_db_path:
         return None
 

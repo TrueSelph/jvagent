@@ -10,6 +10,22 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **No WARNING when ambient core parameters are re-unioned.**
+  `resolve_parameters` still drops duplicate inviolable floors, but skips the
+  conflict log when the challenger is itself an ambient/core inviolable (pools
+  re-append `reply_core_parameters()`). Real skill/agent/action override attempts
+  still warn once. Coverage: `tests/action/test_parameter_precedence.py`.
+
+- **`--purge` missed live SQLite/JsonDB stores and left WAL/SHM leftovers**
+  (`jvagent/cli/server.py`, `jvagent/core/config.py`). Path resolvers defaulted
+  to `./jvagent_db` / `./jvagent_logs` for every type while jvspatial uses
+  type-aware `jvdb` / `jvspatial_logs/…`, so purge deleted the wrong paths.
+  Resolvers now follow jvspatial defaults when path env/config is unset; purge
+  expands `…/sqlite/*.db` to the store root, deletes `-wal`/`-shm` sidecars,
+  and also removes legacy `jvagent_db` / `jvagent_logs*` leftovers. Coverage:
+  `tests/cli/test_purge_safety.py`. (Empty orchestrator history on SQLite from
+  wiped Interactions is fixed in jvspatial — see that changelog.)
+
 - **WhatsApp Meta wamid dedup vs deferred schedule failure.** On serverless,
   if Shape A `create_task("jvagent.whatsapp.interact", …, strict=True)` fails,
   `forget_meta_wamid` clears the claim and the webhook returns **503** so Meta
@@ -41,6 +57,19 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `JVSPATIAL_JWT_SECRET_KEY`.
 
 ### Changed
+
+- **Library skill `artifact_handler` is opt-in, not always-active.** Removed
+  `always-active: true` so agents with `skills_source: both`/`library` no longer
+  auto-discover and then hide the skill when `ArtifactHandlerInteractAction` is
+  absent. Agents must list `artifact_handler` in orchestrator `skills:` and
+  install the interact action (QualiTEST/qvette today).
+
+- **Type-only local DB switch** (`resolve_db_path` / `resolve_log_db_path`).
+  With `JVSPATIAL_DB_PATH` / `JVSPATIAL_LOG_DB_PATH` unset, `json` → store
+  directories (`jvdb/`, `jvspatial_logs/`), `sqlite` → `…/sqlite/*.db`. CLI help in
+  `validate.py` updated. Flip `JVSPATIAL_DB_TYPE` / `JVSPATIAL_LOG_DB_TYPE`
+  only; `run` / `--update` / `--purge` share the same resolvers. Remote types
+  unchanged (purge still skips mongo/dynamo/postgres).
 
 - **WhatsApp Meta webhook: skip Graph re-register when forward healthy.**
   Startup and reload avoid burning WABA Business Management quota (#80008)

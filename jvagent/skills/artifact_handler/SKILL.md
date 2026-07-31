@@ -11,7 +11,6 @@ description: >-
   if unknown, faq selects via doc_description / Active document / unscoped
   search — do not ask which file first) or live web lookup (use web_search).
   Call check_ingest_status with no arguments (no doc_name, no url).
-always-active: true
 spec: jv
 requires-actions:
   - PageIndexAction
@@ -96,9 +95,9 @@ tags:
    after `check_ingest_status` reports ready/queued for that upload. Content
    Q&A goes to faq/search — not another ingest.
 7. **Do not mention retention duration.**
-8. Vault tools are pinned in AVAILABLE TOOLS via `always-active`. Prefer
-   calling them directly; use `find_tool('artifact_handler')` only if a tool
-   is unexpectedly missing from the list.
+8. After `use_skill('artifact_handler')`, call vault tools directly when
+   listed. Use `find_tool('artifact_handler')` only if a tool is unexpectedly
+   missing from the list.
 9. **Prefer natural file wording** ("your PDF", "your image", "your file")
    over quoting machine/hash filenames from WhatsApp.
 
