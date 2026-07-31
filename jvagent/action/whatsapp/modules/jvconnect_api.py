@@ -90,9 +90,11 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
                 }
             if not isinstance(data, dict):
                 data = {"ok": False, "error": "invalid response", "raw": data}
-            if resp.status >= 400 and "error" not in data:
+            data["http_status"] = resp.status
+            if resp.status >= 400:
                 data["ok"] = False
-                data["error"] = data.get("message") or f"HTTP {resp.status}"
+                if "error" not in data or data.get("error") in (None, ""):
+                    data["error"] = data.get("message") or f"HTTP {resp.status}"
             elif "ok" not in data and "error" not in data:
                 data["ok"] = True
             return data
@@ -247,6 +249,15 @@ class JvconnectWhatsAppAPI(MetaWhatsAppAPI):
             self.session = self.phone_number_id
         if result.get("waba_id"):
             self.waba_id = str(result["waba_id"])
+        if result.get("http_status") == 429 or result.get("code") == 80008:
+            result["ok"] = False
+            result["rate_limited"] = True
+            logger.warning(
+                "jvconnect webhook register rate-limited (#80008): %s (retry_after_sec=%s)",
+                result.get("error"),
+                result.get("retry_after_sec"),
+            )
+            return result
         if result.get("webhook_secret"):
             result["ok"] = True
             logger.info(

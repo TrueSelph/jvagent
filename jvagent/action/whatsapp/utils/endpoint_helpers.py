@@ -589,6 +589,103 @@ async def _process_interaction_async(
         await _clear_whatsapp_typing(agent, agent_id, sender, is_group)
 
 
+def message_payload_from_dict(payload: Dict[str, Any]) -> Any:
+    """Rebuild a ``MessagePayload`` from a deferred-task JSON dict."""
+    from ..modules.base import MessagePayload
+
+    return MessagePayload(
+        message_id=str(payload.get("message_id") or ""),
+        event_type=str(payload.get("event_type") or ""),
+        message_type=str(payload.get("message_type") or ""),
+        author=str(payload.get("author") or ""),
+        sender=str(payload.get("sender") or ""),
+        receiver=str(payload.get("receiver") or ""),
+        caption=str(payload.get("caption") or ""),
+        location=payload.get("location") or {},
+        fromMe=bool(payload.get("fromMe")),
+        isGroup=bool(payload.get("isGroup")),
+        isForwarded=bool(payload.get("isForwarded")),
+        sender_name=str(payload.get("sender_name") or ""),
+        mentionedIds=list(payload.get("mentionedIds") or []),
+        body=str(payload.get("body") or ""),
+        media=str(payload.get("media") or ""),
+        filename=str(payload.get("filename") or ""),
+        mime_type=str(payload.get("mime_type") or ""),
+        quoted_message=payload.get("quoted_message") or {},
+        contact=payload.get("contact") or {},
+        poll_id=str(payload.get("poll_id") or ""),
+        selectedOptions=str(payload.get("selectedOptions") or ""),
+    )
+
+
+async def handle_whatsapp_interact_deferred_event(
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Deferred-invoke handler for ``jvagent.whatsapp.interact`` (Lambda / LWA).
+
+    Webhook returns 200 immediately after scheduling this so jvconnect does not
+    hit its forward timeout and re-deliver the same Meta envelope.
+    """
+    from fastapi import HTTPException
+
+    from jvagent.core.agent import Agent
+
+    agent_id = str(event.get("agent_id") or "").strip()
+    sender = str(event.get("sender") or "").strip()
+    utterance = event.get("utterance")
+    if utterance is None:
+        utterance = ""
+    else:
+        utterance = str(utterance)
+    sender_name = event.get("sender_name")
+    if sender_name is not None:
+        sender_name = str(sender_name)
+    payload = event.get("payload")
+    if not agent_id or not sender or not isinstance(payload, dict):
+        logger.warning("Deferred whatsapp interact missing fields: %s", event)
+        raise HTTPException(
+            status_code=400, detail="Missing agent_id, sender, or payload"
+        )
+
+    agent = await Agent.get(agent_id)
+    if not agent:
+        logger.error("Deferred whatsapp interact: agent %s not found", agent_id)
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    data = message_payload_from_dict(payload)
+    logger.info(
+        "Deferred whatsapp interact invoked agent=%s sender=%s wamid=%s",
+        agent_id,
+        sender,
+        getattr(data, "message_id", "") or "",
+    )
+    await _process_interaction_async(
+        data,
+        utterance,
+        sender,
+        agent_id,
+        agent,
+        sender_name=sender_name,
+    )
+    return {"ok": True, "agent_id": agent_id, "sender": sender}
+
+
+# Register after definition (jvspatial deferred router / Lambda self-invoke).
+try:
+    from jvspatial import register_deferred_invoke_handler
+
+    register_deferred_invoke_handler(
+        "jvagent.whatsapp.interact",
+        handle_whatsapp_interact_deferred_event,
+    )
+except Exception:  # pragma: no cover - jvspatial always present in runtime
+    logger.debug(
+        "register_deferred_invoke_handler unavailable; serverless interact "
+        "deferral will fall back to inline await",
+        exc_info=True,
+    )
+
+
 async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
     """Determine if message is directed at the bot.
 

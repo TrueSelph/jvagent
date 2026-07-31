@@ -29,6 +29,7 @@ from .utils.meta_webhook_verify import (
     agent_id_from_callback_url,
     dashboard_action_for_stale,
     find_stale_callbacks,
+    normalize_callback_url,
 )
 
 # Re-exported for consumers/tests that import it from this module.
@@ -552,6 +553,19 @@ class WhatsAppAction(Action):
                     "(WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false)"
                 )
             else:
+                try:
+                    if await self._meta_webhook_forward_is_healthy():
+                        self._session_registered = True
+                        logger.info(
+                            "WhatsApp meta on_reload: forward already healthy; "
+                            "skipping re-register (avoids Meta #80008)"
+                        )
+                        return
+                except Exception as health_err:
+                    logger.warning(
+                        "WhatsApp meta on_reload health check failed: %s",
+                        health_err,
+                    )
                 reg = await self.register_meta_webhook_subscription()
                 if reg.get("status") not in ("ok", "skipped"):
                     logger.warning(
@@ -653,6 +667,20 @@ class WhatsAppAction(Action):
                         # Yield once so uvicorn finishes lifespan startup first.
                         await asyncio.sleep(0)
 
+                    try:
+                        if await self._meta_webhook_forward_is_healthy():
+                            self._session_registered = True
+                            logger.info(
+                                "WhatsApp Meta webhook forward already healthy; "
+                                "skipping startup re-register (avoids Meta #80008)"
+                            )
+                            return
+                    except Exception as health_err:
+                        logger.warning(
+                            "WhatsApp meta health check before register failed: %s",
+                            health_err,
+                        )
+
                     logger.info("Registering Meta WhatsApp webhook override on startup")
                     reg = await self.register_meta_webhook_subscription()
                     if reg.get("status") == "ok":
@@ -670,6 +698,12 @@ class WhatsAppAction(Action):
                         logger.info(
                             "WhatsApp Meta webhook registration skipped: %s",
                             reg.get("reason"),
+                        )
+                    elif reg.get("status") == "rate_limited":
+                        logger.warning(
+                            "WhatsApp Meta webhook registration rate-limited "
+                            "(#80008); not retrying this cycle: %s",
+                            reg.get("error") or reg,
                         )
                     else:
                         logger.warning(
@@ -736,6 +770,58 @@ class WhatsAppAction(Action):
             "stale_callbacks": stale,
             "dashboard_action": dashboard_action_for_stale(stale),
         }
+
+    async def _live_meta_callback_url(self) -> str:
+        """Expected Meta callback from live public base URL + agent id.
+
+        Prefer rebuilding from ``JVAGENT_PUBLIC_BASE_URL`` + current agent over
+        a persisted ``webhook_url`` that may point at a stale host or agent id.
+        """
+        base_url = (get_public_base_url() or "").strip().rstrip("/")
+        agent = await self.get_agent()
+        agent_id = str(agent.id) if agent else ""
+        if base_url and agent_id:
+            live = f"{base_url}/api/whatsapp/interact/webhook/{agent_id}"
+            return self.meta_callback_url_for_subscription(live)
+        callback = self.meta_callback_url_for_subscription(self.webhook_url or "")
+        if callback:
+            return callback
+        try:
+            url = await self.get_webhook_url()
+            return self.meta_callback_url_for_subscription(url)
+        except Exception:
+            return ""
+
+    async def _meta_webhook_forward_is_healthy(self) -> bool:
+        """True when jvconnect already forwards this agent's live callback URL.
+
+        Used on startup/reload to skip Meta ``subscribed_apps`` re-POSTs that burn
+        WABA Business Management API quota (#80008). Compares against the live
+        expected URL (public base + agent id), not a stale persisted webhook_url.
+        """
+        if not self.is_meta_provider() or not self.is_configured():
+            return False
+        callback = await self._live_meta_callback_url()
+        if not callback:
+            return False
+        agent = await self.get_agent()
+        agent_id = str(agent.id) if agent else ""
+        wa = await self.api()
+        status = await wa.get_webhook_override_status()
+        if not isinstance(status, dict):
+            return False
+        if status.get("error") or status.get("ok") is False:
+            return False
+        forward = status.get("forward")
+        if not isinstance(forward, dict):
+            return False
+        forward_cb = str(forward.get("callback_url") or "").strip()
+        if normalize_callback_url(forward_cb) != normalize_callback_url(callback):
+            return False
+        fwd_aid = agent_id_from_callback_url(forward_cb)
+        if agent_id and fwd_aid and fwd_aid != agent_id:
+            return False
+        return True
 
     async def get_meta_webhook_override_status(self) -> Dict[str, Any]:
         """Return Meta Graph state for WABA/phone webhook override (not App Dashboard)."""
@@ -1142,6 +1228,21 @@ class WhatsAppAction(Action):
             wa = await self.api()
             result = await wa.register_webhook_subscription(callback, verify)
             phone = ""
+            if isinstance(result, dict) and (
+                result.get("rate_limited")
+                or result.get("http_status") == 429
+                or result.get("code") == 80008
+            ):
+                return {
+                    "status": "rate_limited",
+                    "ok": False,
+                    "callback_url": callback,
+                    "agent_id": agent_id,
+                    "error": result.get("error"),
+                    "code": result.get("code") or 80008,
+                    "retry_after_sec": result.get("retry_after_sec"),
+                    "result": result,
+                }
             # Persist jvconnect binding + webhook HMAC secret for inbound verification
             if self.is_meta_provider() and isinstance(result, dict):
                 dirty = False

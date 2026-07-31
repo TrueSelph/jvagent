@@ -338,7 +338,14 @@ Bridge providers (`wwebjs`, `wppconnect`, `ultramsg`) are unchanged and do not u
 
 **Meta webhook callback** (automatic override on startup):
 
-On startup (meta provider), jvagent registers via jvconnect (`POST /api/v1/meta/whatsapp/webhook/register`) in a background task **after** uvicorn reports `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**). Meta points at jvconnect; jvconnect forwards to this agent.
+On startup (meta provider), jvagent checks jvconnect register status first. If
+`webhook_forwards` already points at this agent, it **skips** re-register (avoids
+burning Meta WABA `subscribed_apps` quota / `#80008` on every Lambda cold start).
+Otherwise it registers via jvconnect (`POST /api/v1/meta/whatsapp/webhook/register`)
+in a background task **after** uvicorn reports `Application startup complete`
+(optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`, default **0**). Meta points at
+jvconnect; jvconnect forwards to this agent. jvconnect also skips Meta Graph POSTs
+when the WABA/phone override already matches its `/api/webhooks` URL.
 
 **The Meta App Dashboard callback URL will not change automatically.** Dashboard shows the app default (`application` layer). Verify with `GET /api/actions/{action_id}/meta/webhook-status`.
 
@@ -388,6 +395,8 @@ immediately.
 
 Meta delivers webhooks **at-least-once** and may retry for up to 7 days. jvagent keeps a cache of seen inbound **`messages[].id`** (wamid) for the meta provider and returns `duplicate webhook` (HTTP 200) on replay so the agent does not reply twice.
 
+**Serverless interact (Lambda):** On `is_serverless_mode()`, text/voice interact is scheduled via Shape A `create_task("jvagent.whatsapp.interact", …)` and the webhook returns immediately. The deferred invoke (same LWA / `/api/_internal/deferred` path as media batch) runs the walker and WhatsApp send. This keeps jvconnect’s agent-forward under its timeout so it does not re-deliver the same envelope while PageIndex (or other slow tools) run. Non-serverless still uses Shape B background `create_task(coro)`.
+
 Env tuning (optional):
 
 - `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default), `memory`, or `redis`. `auto` uses Redis when `JVSPATIAL_REDIS_URL` / `REDIS_URL` is set.
@@ -398,6 +407,7 @@ For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `RED
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
+- **Lambda / frequent recycle mitigation:** set `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` so cold starts do not re-POST Meta `subscribed_apps` (WABA Business Management API quota / error `#80008`). Register once after deploy via the admin endpoint above. Even without this flag, startup now **skips re-register** when jvconnect already has a healthy forward for this agent, and treats Meta `#80008` / jvconnect `429` as non-fatal (no retry loop).
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional delay before override (default **0**).
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload.
 

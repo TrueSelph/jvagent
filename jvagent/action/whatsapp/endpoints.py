@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
-from jvspatial import create_task
+from jvspatial import create_task, is_serverless_mode
 from jvspatial.api import endpoint
 from jvspatial.api.constants import APIRoutes
 from jvspatial.api.endpoints.response import ResponseField, success_response
@@ -23,7 +23,10 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.access_control.access_control_action import log_access_denied
 from jvagent.action.utils.meta_calls_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
-from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
+from jvagent.action.utils.meta_webhook_dedup import (
+    forget_meta_wamid,
+    remember_meta_wamid,
+)
 from jvagent.core.agent import Agent
 from jvagent.core.errors import log_classified_exception
 
@@ -31,6 +34,7 @@ from .utils.endpoint_helpers import (
     _batch_manager,
     _build_utterance_with_quoted_context,
     _clear_whatsapp_typing,
+    _convert_message_payload_to_dict,
     _handle_media_message,
     _handle_voice_message,
     _process_interaction_async,
@@ -515,13 +519,17 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
     Meta Cloud API POST uses ``X-Hub-Signature-256`` (no ``api_key``). Bridge
     providers must pass ``?api_key=`` or ``X-API-Key``; validated in-handler.
 
-    AWS Lambda compatibility: In serverless mode, the webhook typically awaits the full
-    interaction (including response generation and WhatsApp send) before returning, so work
-    completes before the runtime freezes. jvspatial webhook middleware also avoids unsafe
-    fire-and-forget patterns when serverless.
+    AWS Lambda compatibility: In serverless mode the webhook schedules a
+    deferred interact task (``jvagent.whatsapp.interact``, same Shape A pattern
+    as media batching) and returns ``{"status":"received"}`` immediately so
+    jvconnect's forward timeout does not re-deliver the same Meta envelope.
+    The deferred invoke runs the full interaction (reply + WhatsApp send).
+    jvspatial webhook middleware also avoids unsafe fire-and-forget when
+    serverless.
 
-    On long-running servers (not serverless: SERVERLESS_MODE=false or unset on a non-serverless
-    platform), this handler may return early and finish work via a background task.
+    On long-running servers (not serverless: SERVERLESS_MODE=false or unset on a
+    non-serverless platform), this handler returns early and finishes work via a
+    background ``create_task`` (Shape B).
 
     Args:
         request: FastAPI request object
@@ -751,19 +759,63 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             )
             return {"status": "ignored", "response": "Utterance too long."}
 
-        task = await create_task(
-            _process_interaction_async(
-                data, utterance, sender, agent_id, agent, sender_name=sender_name
-            ),
-            name=f"whatsapp_interaction_{sender}",
-        )
-        if task is None:
-            logger.info(f"Processing interaction synchronously for {sender}")
+        task = None
+        if is_serverless_mode():
+            # Shape A: schedule deferred invoke and return immediately so
+            # jvconnect does not time out and re-forward the same wamid.
+            # If scheduling fails, forget the wamid claim so Meta/jvconnect
+            # retries are not blocked by dedup (silent drop).
+            wamid = getattr(data, "message_id", "") or ""
+            try:
+                await create_task(
+                    "jvagent.whatsapp.interact",
+                    {
+                        "agent_id": agent_id,
+                        "sender": sender,
+                        "sender_name": sender_name,
+                        "utterance": utterance or "",
+                        "payload": _convert_message_payload_to_dict(data),
+                    },
+                    name=f"whatsapp_interact_deferred_{wamid or sender}",
+                    strict=True,
+                )
+            except Exception as schedule_err:
+                if wamid:
+                    forget_meta_wamid(wamid)
+                logger.error(
+                    "WhatsApp interact deferred schedule failed "
+                    "(agent=%s sender=%s wamid=%s): %s",
+                    agent_id,
+                    sender,
+                    wamid or "(none)",
+                    schedule_err,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail="Deferred interact scheduling failed; retry later",
+                ) from schedule_err
+            logger.info(
+                "WhatsApp interact deferred for serverless "
+                "(agent=%s sender=%s wamid=%s)",
+                agent_id,
+                sender,
+                wamid or "(none)",
+            )
+        else:
+            task = await create_task(
+                _process_interaction_async(
+                    data, utterance, sender, agent_id, agent, sender_name=sender_name
+                ),
+                name=f"whatsapp_interaction_{sender}",
+            )
+            if task is None:
+                logger.info(f"Processing interaction synchronously for {sender}")
         t0 = getattr(request.state, "webhook_start", None)
         if t0 is not None:
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             if task is None:
-                logger.debug(f"Webhook: interaction done in {elapsed_ms}ms")
+                logger.debug(f"Webhook: interaction done/deferred in {elapsed_ms}ms")
             else:
                 logger.debug(f"Webhook: queued for async in {elapsed_ms}ms")
         return {"status": "received"}
