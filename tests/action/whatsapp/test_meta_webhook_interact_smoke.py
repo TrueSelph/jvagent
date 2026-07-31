@@ -172,8 +172,14 @@ class TestMetaWebhookInteractSmoke:
         name, payload, kw = create_calls[0]
         assert name == "jvagent.whatsapp.interact"
         assert payload["agent_id"] == AGENT_ID
-        assert payload["payload"]["message_id"] == WAMID
+        assert payload["wa_message"]["message_id"] == WAMID
         assert kw.get("strict") is True
+        # The message dict must NOT ride under a top-level "payload" key:
+        # jvspatial's Lambda/local transports flatten this dict into the invoke
+        # envelope, and normalize_deferred_envelope rebuilds the event from a
+        # top-level "payload" — discarding agent_id/sender/utterance. See
+        # test_deferred_envelope_roundtrip.py for the end-to-end proof.
+        assert "payload" not in payload
 
     @pytest.mark.asyncio
     async def test_serverless_schedule_failure_forgets_wamid(

@@ -299,6 +299,13 @@ async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
         "webhook_url",
         "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
     )
+    # Skipping is only legitimate when the jvconnect webhook secret is already
+    # on hand — registration is the sole code path that fetches it, and inbound
+    # signature verification 500s without it. This test originally omitted the
+    # secret and asserted the skip anyway, which pinned the fresh-deploy outage
+    # as correct behaviour. See test_meta_register_skip_guard.py for the
+    # no-secret direction.
+    object.__setattr__(action, "jvconnect_webhook_secret", "s3cret")
     register_calls = []
 
     async def fake_register(self):
