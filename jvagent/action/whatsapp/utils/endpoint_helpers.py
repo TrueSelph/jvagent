@@ -640,11 +640,28 @@ async def handle_whatsapp_interact_deferred_event(
     sender_name = event.get("sender_name")
     if sender_name is not None:
         sender_name = str(sender_name)
-    payload = event.get("payload")
+    # "wa_message" is the current key; "payload" is accepted for messages
+    # already in flight on the SQS transport at deploy time (the only transport
+    # where the old key ever arrived intact — Lambda/local flattened it into the
+    # envelope and normalize_deferred_envelope destroyed the event around it,
+    # which is why the key was renamed).
+    payload = event.get("wa_message")
+    if not isinstance(payload, dict):
+        payload = event.get("payload")
     if not agent_id or not sender or not isinstance(payload, dict):
-        logger.warning("Deferred whatsapp interact missing fields: %s", event)
+        # Log field PRESENCE, not the event: the event carries the user's
+        # message body, phone number, and possibly base64 media — none of
+        # which belongs in logs, least of all at WARNING on a hot path.
+        logger.warning(
+            "Deferred whatsapp interact missing fields: agent_id=%s sender=%s "
+            "wa_message=%s keys=%s",
+            "present" if agent_id else "MISSING",
+            "present" if sender else "MISSING",
+            "present" if isinstance(payload, dict) else "MISSING",
+            sorted(event.keys()),
+        )
         raise HTTPException(
-            status_code=400, detail="Missing agent_id, sender, or payload"
+            status_code=400, detail="Missing agent_id, sender, or wa_message"
         )
 
     agent = await Agent.get(agent_id)

@@ -774,7 +774,15 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                         "sender": sender,
                         "sender_name": sender_name,
                         "utterance": utterance or "",
-                        "payload": _convert_message_payload_to_dict(data),
+                        # NEVER name this key "payload". jvspatial's Lambda/local
+                        # transports flatten this dict into the invoke envelope,
+                        # and normalize_deferred_envelope treats a top-level
+                        # "payload" dict as an SQS-style envelope to rebuild
+                        # from — discarding agent_id/sender/utterance. The
+                        # deferred handler then 400s with the wamid already
+                        # claimed: silent, total message loss on every
+                        # non-SQS transport.
+                        "wa_message": _convert_message_payload_to_dict(data),
                     },
                     name=f"whatsapp_interact_deferred_{wamid or sender}",
                     strict=True,
