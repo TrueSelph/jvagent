@@ -214,8 +214,9 @@ async def test_missing_field_rejection_does_not_log_the_event(caplog):
     number, quoted base64 — at WARNING. It must log field presence only."""
     import logging
 
-    from jvagent.action.whatsapp.utils import endpoint_helpers
     from fastapi import HTTPException
+
+    from jvagent.action.whatsapp.utils import endpoint_helpers
 
     secret_body = "my very private message +15551234567"
     event = {"task_type": "jvagent.whatsapp.interact", "body_leak": secret_body}
