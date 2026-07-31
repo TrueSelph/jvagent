@@ -554,13 +554,26 @@ class WhatsAppAction(Action):
                 )
             else:
                 try:
+                    # A healthy forward alone is NOT sufficient to skip:
+                    # register_meta_webhook_subscription is also the only code
+                    # that fetches and persists jvconnect_webhook_secret, which
+                    # every inbound webhook needs to verify signatures. On a
+                    # fresh DB against an already-registered forward, skipping
+                    # here would leave the secret absent forever and 500 every
+                    # inbound message — with nothing ever re-registering.
                     if await self._meta_webhook_forward_is_healthy():
-                        self._session_registered = True
+                        if self._env_jvconnect_webhook_secret():
+                            self._session_registered = True
+                            logger.info(
+                                "WhatsApp meta on_reload: forward already healthy; "
+                                "skipping re-register (avoids Meta #80008)"
+                            )
+                            return
                         logger.info(
-                            "WhatsApp meta on_reload: forward already healthy; "
-                            "skipping re-register (avoids Meta #80008)"
+                            "WhatsApp meta on_reload: forward healthy but no "
+                            "jvconnect webhook secret on hand; registering to "
+                            "fetch it"
                         )
-                        return
                 except Exception as health_err:
                     logger.warning(
                         "WhatsApp meta on_reload health check failed: %s",
@@ -668,13 +681,23 @@ class WhatsAppAction(Action):
                         await asyncio.sleep(0)
 
                     try:
+                        # Same guard as on_reload: skipping is only safe when
+                        # the jvconnect webhook secret is already on hand —
+                        # registration is the sole code path that persists it,
+                        # and inbound signature verification dies without it.
                         if await self._meta_webhook_forward_is_healthy():
-                            self._session_registered = True
+                            if self._env_jvconnect_webhook_secret():
+                                self._session_registered = True
+                                logger.info(
+                                    "WhatsApp Meta webhook forward already healthy; "
+                                    "skipping startup re-register (avoids Meta #80008)"
+                                )
+                                return
                             logger.info(
-                                "WhatsApp Meta webhook forward already healthy; "
-                                "skipping startup re-register (avoids Meta #80008)"
+                                "WhatsApp Meta webhook forward healthy but no "
+                                "jvconnect webhook secret on hand; registering "
+                                "to fetch it"
                             )
-                            return
                     except Exception as health_err:
                         logger.warning(
                             "WhatsApp meta health check before register failed: %s",
