@@ -188,6 +188,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   no slot, renders verbatim, and keeps that deployment on its current text
   until `--update --source`.
 
+## [0.1.6] - 2026-07-31
+
+### Changed
+
+- **Require `jvspatial==0.0.15`.** Picks up the deferred-invoke loopback fix so
+  Lambda / LWA WhatsApp self-invoke no longer 401s on
+  `POST /api/_internal/deferred` when `JVSPATIAL_DEFERRED_INVOKE_SECRET` is unset.
+
 ## [0.1.3] - 2026-07-23
 
 ### Added
