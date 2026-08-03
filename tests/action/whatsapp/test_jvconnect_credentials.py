@@ -290,7 +290,44 @@ async def test_meta_webhook_forward_unhealthy_when_persisted_url_stale(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_meta_on_reload_skips_register_by_default(monkeypatch):
+    """Default: on_reload does not re-POST Meta webhook (no subscribe opt-in)."""
+    action = WhatsAppAction()
+    object.__setattr__(action, "provider", "meta")
+    object.__setattr__(action, "enabled", True)
+    object.__setattr__(
+        action,
+        "webhook_url",
+        "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
+    )
+    object.__setattr__(action, "jvconnect_webhook_secret", "s3cret")
+    register_calls = []
+
+    async def fake_register(self):
+        register_calls.append(1)
+        return {"status": "ok"}
+
+    async def fake_healthy(self):
+        return True
+
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
+    monkeypatch.setattr(
+        WhatsAppAction, "_meta_webhook_forward_is_healthy", fake_healthy
+    )
+    monkeypatch.setattr(
+        WhatsAppAction, "register_meta_webhook_subscription", fake_register
+    )
+    monkeypatch.delenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", raising=False)
+
+    await action.on_reload()
+    assert register_calls == []
+    # Default skip exits before the healthy-forward path marks session registered.
+    assert action._session_registered is False
+
+
+@pytest.mark.asyncio
 async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
+    """With subscribe opted in, healthy forward + secret still skips re-register."""
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
     object.__setattr__(action, "enabled", True)
@@ -322,7 +359,7 @@ async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
     monkeypatch.setattr(
         WhatsAppAction, "register_meta_webhook_subscription", fake_register
     )
-    monkeypatch.delenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", raising=False)
+    monkeypatch.setenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", "true")
 
     await action.on_reload()
     assert register_calls == []
