@@ -61,7 +61,9 @@ async def test_reload_skips_meta_subscribe_by_default():
         patch.object(WhatsAppAction, "is_configured", return_value=True),
         patch.object(WhatsAppAction, "is_meta_provider", return_value=True),
         patch.object(WhatsAppAction, "register_meta_webhook_subscription", register),
-        patch.dict("os.environ", {"WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE": ""}, clear=False),
+        patch.dict(
+            "os.environ", {"WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE": ""}, clear=False
+        ),
     ):
         import os
 
