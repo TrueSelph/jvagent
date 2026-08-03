@@ -202,7 +202,8 @@ falls back to a sibling env var when its primary key is unset:
 - After `jvagent --purge`, agent id (`n.Agent.*`) changes — re-register with each phone’s `JVCONNECT_API_KEY` (one key = one phone; only that phone’s `webhook_forwards` row is replaced). For `provider: meta`, Meta Graph should point at jvconnect `…/api/webhooks`; the agent id lives in the forward URL. App Dashboard `application` layer is not updated by Graph override alone — set it to jvconnect’s webhook URL if stale. Check `GET .../meta/webhook-status` → `stale_callbacks` / `dashboard_action`.
 - Meta media/voice outbound requires `JVAGENT_PUBLIC_BASE_URL` (files fetched from jvagent before Graph upload)
 - Meta typing uses inbound message wamid; configure `stt_action` / `tts_action` on the WhatsApp action for voice notes
-- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only)
+- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only). When unset on serverless/Lambda, skip by default (`serverless_default`). Set `false` to force register on every cold start.
+- `WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS` — fail-fast bound for startup Meta health check + register (default `5` on serverless, `60` otherwise)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional seconds before Meta Graph override on startup (default `0`; meta provider only)
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
 - `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default) / `memory` / `redis`; `auto` uses Redis when `JVSPATIAL_REDIS_URL` or `REDIS_URL` is set

@@ -407,7 +407,7 @@ For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `RED
 Env toggles:
 
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready.
-- **Lambda / frequent recycle mitigation:** set `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` so cold starts do not re-POST Meta `subscribed_apps` (WABA Business Management API quota / error `#80008`). Register once after deploy via the admin endpoint above. Even without this flag, startup now **skips re-register** when jvconnect already has a healthy forward for this agent, and treats Meta `#80008` / jvconnect `429` as non-fatal (no retry loop).
+- **Lambda / frequent recycle mitigation:** On serverless (`AWS_LAMBDA_FUNCTION_NAME` / `is_serverless_mode`), startup Meta webhook registration is **skipped by default** when the env is unset. Set `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` explicitly in production, or `=false` only to force re-register on every cold start. Register once after deploy via the admin endpoint above and persist `JVCONNECT_WEBHOOK_SECRET`. Even when registration is scheduled, startup **skips re-register** when jvconnect already has a healthy forward for this agent (including when the local secret is missing — set the secret via env or one-shot register), and treats Meta `#80008` / jvconnect `429` as non-fatal (no retry loop). Startup health/register is fail-fast (`WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS`, default **5s** on serverless).
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional delay before override (default **0**).
 - `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload.
 
