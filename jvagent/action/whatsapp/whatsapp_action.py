@@ -577,14 +577,30 @@ class WhatsAppAction(Action):
         return {"message": "Invalid token or mode", "code": 403}
 
     async def on_register(self) -> None:
-        """Called when action is registered. Validates configuration."""
+        """Called when action is registered. Validates configuration.
+
+        Meta webhook override registration is **not** done here: the HTTP
+        server is not listening yet. Registration runs once from
+        ``on_startup`` (deferred after uvicorn is up), and is skipped by
+        default on serverless cold starts. Prefer admin
+        ``POST .../meta/webhook-register`` after deploy rather than relying
+        on ``on_reload``.
+        """
         if not self.is_configured():
             logger.debug("WhatsApp action not configured")
             return
         logger.debug("WhatsApp action registered")
 
     async def on_reload(self) -> None:
-        """Called when action is reloaded. Re-registers session with current webhook URL."""
+        """Called when action is reloaded.
+
+        Meta provider: does **not** re-register the jvconnect/Meta webhook by
+        default (``WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`` defaults to ``false``).
+        Action-cache rebuilds and Lambda warm paths must not burn Meta Graph
+        quota. Set the env to ``true`` only when intentionally refreshing
+        the forward after a callback URL change. Bridge providers still
+        re-register their session unless skipped.
+        """
         if not self.is_configured():
             logger.debug("WhatsApp action not configured, skipping reload")
             return
@@ -592,14 +608,16 @@ class WhatsAppAction(Action):
         if self.is_meta_provider():
             if not self.webhook_url:
                 await self.get_webhook_url(regenerate=False)
+            # Default false: on_reload must not re-POST webhook/register.
             skip_subscribe = (
-                os.environ.get("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", "true").lower()
-                == "false"
+                os.environ.get("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", "false").lower()
+                != "true"
             )
             if skip_subscribe:
                 logger.info(
                     "WhatsApp meta on_reload: Graph webhook subscribe skipped "
-                    "(WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false)"
+                    "(WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE!=true). "
+                    "Use POST .../meta/webhook-register after deploy."
                 )
             else:
                 try:

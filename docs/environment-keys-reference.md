@@ -205,7 +205,7 @@ falls back to a sibling env var when its primary key is unset:
 - `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` — when `true`, skip deferred Meta webhook override on startup (meta provider only). When unset on serverless/Lambda, skip by default (`serverless_default`). Set `false` to force register on every cold start.
 - `WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS` — fail-fast bound for startup Meta health check + register (default `5` on serverless, `60` otherwise)
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional seconds before Meta Graph override on startup (default `0`; meta provider only)
-- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `false`, skip Meta webhook override on action reload (default subscribe on reload)
+- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` — when `true`, Meta webhook override on action reload (default **`false`** — do not re-register on reload; use startup/admin register instead)
 - `WHATSAPP_META_WAMID_DEDUP_BACKEND` — `auto` (default) / `memory` / `redis`; `auto` uses Redis when `JVSPATIAL_REDIS_URL` or `REDIS_URL` is set
 - `WHATSAPP_META_WAMID_DEDUP_TTL_SECONDS` — wamid dedup TTL for meta webhooks (default `86400`)
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process wamid dedup cache entries (default `10000`)

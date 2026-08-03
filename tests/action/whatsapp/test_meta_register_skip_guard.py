@@ -37,7 +37,12 @@ async def _run_reload_branch(action: WhatsAppAction) -> AsyncMock:
             AsyncMock(return_value=True),
         ),
         patch.object(WhatsAppAction, "register_meta_webhook_subscription", register),
-        patch.dict("os.environ", {}, clear=False),
+        # Opt in: default is skip on_reload; tests exercise the subscribe path.
+        patch.dict(
+            "os.environ",
+            {"WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE": "true"},
+            clear=False,
+        ),
         patch.object(
             WhatsAppAction,
             "_env_jvconnect_webhook_secret",
@@ -46,6 +51,23 @@ async def _run_reload_branch(action: WhatsAppAction) -> AsyncMock:
     ):
         await action.on_reload()
     return register
+
+
+async def test_reload_skips_meta_subscribe_by_default():
+    """CTO guidance: do not re-register Meta webhook on every on_reload."""
+    action = _action(secret="s3cret")
+    register = AsyncMock(return_value={"status": "ok"})
+    with (
+        patch.object(WhatsAppAction, "is_configured", return_value=True),
+        patch.object(WhatsAppAction, "is_meta_provider", return_value=True),
+        patch.object(WhatsAppAction, "register_meta_webhook_subscription", register),
+        patch.dict("os.environ", {"WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE": ""}, clear=False),
+    ):
+        import os
+
+        os.environ.pop("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", None)
+        await action.on_reload()
+    register.assert_not_awaited()
 
 
 async def test_healthy_forward_with_secret_skips_registration():
@@ -76,6 +98,11 @@ async def test_unhealthy_forward_registers_regardless_of_secret():
             AsyncMock(return_value=False),
         ),
         patch.object(WhatsAppAction, "register_meta_webhook_subscription", register),
+        patch.dict(
+            "os.environ",
+            {"WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE": "true"},
+            clear=False,
+        ),
     ):
         await action.on_reload()
     register.assert_awaited_once()
