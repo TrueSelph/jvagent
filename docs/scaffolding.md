@@ -192,6 +192,9 @@ the `jvagent/orchestrator` action via:
 - `denied_skills`: optional subtractive names/globs
 - `denied_tools`: optional subtractive tool-name globs (hard-exclude from the
   Orchestrator surface; not lean-hide — see `docs/ORCHESTRATOR.md`)
+- `skill_only_tools`: optional tool-name globs callable only inside a skill that
+  declares them (`allowed-tools`); not listed, `find_tool`-annotated, direct
+  calls refused. Fail-closed when no skill owns them.
 - `skills_source`: `library`, `app`, or `both`
 
 ### Skill commands

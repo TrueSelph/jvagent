@@ -45,6 +45,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Orchestrator `skill_only_tools`.** Fnmatch globs make matching tools callable
+  only while a skill that declares them in its `allowed-tools` is active. Not
+  listed in the prompt; `find_tool` annotates them `(via skill: …)`; a direct
+  call is refused with a steer to `use_skill`. Fail-closed when no available
+  skill owns the tool. `denied_tools` wins over it; a `pinned_tools` match
+  cannot un-gate. Channel-overridable via `channel_overrides.skill_only_tools`.
+  See ADR-0043.
+
 - **Library action `jvagent/artifact_handler_interact_action` + skill `artifact_handler`.**
   Session-private document/media ingest with jvforge async jobs (notify webhook
   imports into PageIndex), sync assimilate fallback, and `artifact_handler__*`
