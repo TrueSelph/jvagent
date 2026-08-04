@@ -80,6 +80,7 @@ from jvagent.action.orchestrator.prompts import (
     SAFEGUARDS_REMINDER_TEMPLATE,
     render_identity_section,
 )
+from jvagent.action.orchestrator.skill_gate import build_skill_gate, install_skill_gate
 from jvagent.action.orchestrator.skills import discover_skill_docs
 from jvagent.action.orchestrator.tools import (
     DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
@@ -1216,8 +1217,42 @@ class OrchestratorInteractAction(
             tools[name] = t
             visible.add(name)
 
+        # Skill-only gating (ADR-0043). The glob match + owner index are computed
+        # HERE so the catalog can annotate its hits; the guard wrapper is
+        # installed at the very END of assembly (after deny + pins) so precedence
+        # falls out of ordering rather than needing explicit rules.
+        skill_only = self._channel_cfg(
+            visitor, "skill_only_tools", self.skill_only_tools
+        )
+        gated = self._match_tool_globs(list(skill_only or []), set(tools.keys()))
+        # A pattern that matches nothing is the one silent failure this feature
+        # can have: the operator believes a sensitive tool is gated and it is
+        # freely callable. Fail-closed on unowned tools is meaningless if the
+        # glob never matched, so name the dead patterns.
+        dead = [
+            p
+            for p in (skill_only or [])
+            if str(p).strip() and not self._match_tool_globs([p], set(tools.keys()))
+        ]
+        if dead:
+            logger.warning(
+                "orchestrator: skill_only_tools patterns matched no tool — "
+                "nothing is gated by them: %s",
+                dead,
+            )
+        protected_gated = gated & _STEER_EXEMPT
+        if protected_gated:
+            logger.warning(
+                "orchestrator: skill_only_tools matched protected tools %s — ignored",
+                sorted(protected_gated),
+            )
+            gated -= _STEER_EXEMPT
+        gate = build_skill_gate(gated, docs)
+
         # Tool catalog (find_tool/load_tool — visible so hidden tools are reachable).
-        for name, t in build_catalog_tools(tools, visible).items():
+        for name, t in build_catalog_tools(
+            tools, visible, gated={n: gate.owners_for(n) for n in gated}
+        ).items():
             tools[name] = t
             visible.add(name)
 
@@ -1256,6 +1291,16 @@ class OrchestratorInteractAction(
                 tools.pop(name, None)
                 longtail.discard(name)
                 visible.discard(name)
+        # Skill-only gate install (ADR-0043), last: deny has already popped its
+        # matches from ``tools`` (so a denied tool is simply gone), and pins have
+        # already written to ``visible`` (so this discard is what survives — a
+        # pin grants visibility, never callability).
+        if gated:
+            gated &= set(tools.keys())
+            install_skill_gate(tools, gated, gate, activated)
+            for name in gated:
+                visible.discard(name)
+                longtail.discard(name)
         return tools
 
     @staticmethod

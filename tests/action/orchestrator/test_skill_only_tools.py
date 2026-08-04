@@ -237,3 +237,152 @@ async def test_catalog_gated_defaults_to_none():
     cat = build_catalog_tools(all_tools, visible=set())
     assert "(via skill" not in await cat["find_tool"].run({"query": ""})
     assert "(via skill" not in await cat["load_tool"].run({"name": "kb__search"})
+
+
+# --- integration: _assemble_tools ------------------------------------------
+
+
+class _ToolsAction:
+    """A plain action exposing namespaced capability tools (mirrors the fixture
+    in test_lean_surfacing.py)."""
+
+    def __init__(self, names_descs):
+        self._t = [
+            SimpleNamespace(name=n, description=d, call=None) for n, d in names_descs
+        ]
+
+    async def get_tools(self):
+        return self._t
+
+
+_PAY = [
+    ("pay__charge", "Charge a saved payment method."),
+    ("pay__refund", "Refund a settled charge."),
+    ("kb__search", "Search the knowledge base."),
+]
+
+
+def _wire_skills(monkeypatch, ex, docs):
+    """Surface ``docs`` as this agent's skills without touching the resolver."""
+    monkeypatch.setattr(ex, "_discover_skills", lambda _agent: list(docs))
+    monkeypatch.setattr(
+        "jvagent.action.orchestrator.skill_tasks.compose_skill_activate_hooks",
+        lambda *a, **k: (None, None),
+    )
+
+
+async def test_gated_tool_is_on_the_surface_but_not_listed(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0  # list everything, so absence is unambiguous
+    ex.skill_only_tools = ["pay__*"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge", "pay__refund"])])
+
+    visible: set = set()
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge me"), [], visible, None, "charge me", None, {}
+    )
+    assert "pay__charge" in tools  # still on the surface (find_tool reaches it)
+    assert "pay__charge" not in visible  # but not in the prompt
+    assert "kb__search" in visible  # ungated tools unaffected
+
+
+async def test_gated_dispatch_refuses_then_runs_after_activation(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    activated: list = []
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge me"),
+        activated,
+        set(),
+        None,
+        "charge me",
+        None,
+        {},
+    )
+    refused = await tools["pay__charge"].run({})
+    assert "only available inside a skill" in refused and "checkout" in refused
+
+    # use_skill mutates the same list the gate captured.
+    await tools["use_skill"].run({"name": "checkout"})
+    assert "checkout" in activated
+    opened = await tools["pay__charge"].run({})
+    assert "only available inside a skill" not in opened
+
+
+async def test_always_active_owner_opens_the_gate_on_tick_one(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    _wire_skills(
+        monkeypatch, ex, [_doc("checkout", ["pay__charge"], always_active=True)]
+    )
+
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge me"), [], set(), None, "charge me", None, {}
+    )
+    out = await tools["pay__charge"].run({})
+    assert "only available inside a skill" not in out
+
+
+async def test_orphaned_gated_tool_is_locked(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    # 'checkout' declares only pay__charge — pay__refund has no owner.
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="refund me"),
+        ["checkout"],
+        set(),
+        None,
+        "refund me",
+        None,
+        {},
+    )
+    out = await tools["pay__refund"].run({})
+    assert "no available skill provides it" in out
+
+
+async def test_find_tool_annotation_reaches_the_model(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__charge"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge"), [], set(), None, "charge", None, {}
+    )
+    hit = await tools["find_tool"].run({"query": "charge"})
+    assert "(via skill: checkout)" in hit
+
+
+async def test_dead_skill_only_pattern_is_warned(
+    monkeypatch, make_orchestrator, make_visitor, caplog
+):
+    """A glob that matches nothing is the one silent failure this feature can
+    have: the operator believes a tool is gated and it is freely callable."""
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["paay__*"]  # typo
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    with caplog.at_level(logging.WARNING):
+        await ex._assemble_tools(
+            make_visitor(utterance="charge"), [], set(), None, "charge", None, {}
+        )
+    assert "matched no tool" in caplog.text
+    assert "paay__*" in caplog.text
