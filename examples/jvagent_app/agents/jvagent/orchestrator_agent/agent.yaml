@@ -138,9 +138,10 @@ actions:
       # model would occasionally reach for them on a channel that can't send.
       pinned_tools: []
       # Skill-gated tools: globs callable ONLY while a skill that declares them
-      # in its `allowed-tools` is active. They stay off the prompt; find_tool
-      # shows them annotated with the owning skill, and a direct call is refused
-      # with a steer to use_skill. A gated tool no available skill declares is
+      # in its `allowed-tools` is active. While closed they stay off the prompt,
+      # find_tool shows them annotated with the owning skill, and a direct call
+      # is refused with a steer to use_skill; once an owner is active they are
+      # listed and unannotated. A gated tool no available skill declares is
       # uncallable (fail closed). denied_tools wins; a pinned_tools match cannot
       # un-gate. Empty here — this example gates nothing; set e.g.
       # ["payments__*"] to confine a sensitive capability to its owning skill.

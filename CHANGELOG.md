@@ -46,9 +46,11 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 ### Added
 
 - **Orchestrator `skill_only_tools`.** Fnmatch globs make matching tools callable
-  only while a skill that declares them in its `allowed-tools` is active. Not
-  listed in the prompt; `find_tool` annotates them `(via skill: …)`; a direct
-  call is refused with a steer to `use_skill`. Fail-closed when no available
+  only while a skill that declares them in its `allowed-tools` is active. While
+  closed they are kept off the prompt and out of the lean pre-surface pool,
+  `find_tool` annotates them `(via skill: …)`, and a direct call is refused with
+  a steer to `use_skill`; once an owner is active they are listed and
+  unannotated like any other tool. Fail-closed when no available
   skill owns the tool. `denied_tools` wins over it; a `pinned_tools` match
   cannot un-gate. Channel-overridable via `channel_overrides.skill_only_tools`.
   See ADR-0043.
