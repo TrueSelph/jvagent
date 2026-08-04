@@ -1224,7 +1224,8 @@ class OrchestratorInteractAction(
         skill_only = self._channel_cfg(
             visitor, "skill_only_tools", self.skill_only_tools
         )
-        gated = self._match_tool_globs(list(skill_only or []), set(tools.keys()))
+        tool_names = set(tools.keys())
+        gated = self._match_tool_globs(list(skill_only or []), tool_names)
         # A pattern that matches nothing is the one silent failure this feature
         # can have: the operator believes a sensitive tool is gated and it is
         # freely callable. Fail-closed on unowned tools is meaningless if the
@@ -1232,7 +1233,7 @@ class OrchestratorInteractAction(
         dead = [
             p
             for p in (skill_only or [])
-            if str(p).strip() and not self._match_tool_globs([p], set(tools.keys()))
+            if str(p).strip() and not self._match_tool_globs([p], tool_names)
         ]
         if dead:
             logger.warning(

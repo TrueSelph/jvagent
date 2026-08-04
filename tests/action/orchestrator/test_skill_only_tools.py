@@ -386,3 +386,201 @@ async def test_dead_skill_only_pattern_is_warned(
         )
     assert "matched no tool" in caplog.text
     assert "paay__*" in caplog.text
+
+
+# --- integration: precedence -----------------------------------------------
+
+
+async def test_denied_tools_beats_skill_only(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """A denied tool is gone entirely — gating never sees it, find_tool can't
+    return it, and no annotation is emitted."""
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    ex.denied_tools = ["pay__charge"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge", "pay__refund"])])
+
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge"), ["checkout"], set(), None, "charge", None, {}
+    )
+    assert "pay__charge" not in tools
+    hit = await tools["find_tool"].run({"query": "charge"})
+    assert "pay__charge" not in hit
+    # The other gated tool still exists and is gated.
+    assert "pay__refund" in tools
+
+
+async def test_pin_cannot_un_gate(monkeypatch, make_orchestrator, make_visitor):
+    """A pin grants visibility, never callability — and gating wins on both."""
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 15
+    ex.skill_only_tools = ["pay__charge"]
+    ex.pinned_tools = ["pay__charge"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    visible: set = set()
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="hello"), [], visible, None, "hello", None, {}
+    )
+    assert "pay__charge" not in visible
+    out = await tools["pay__charge"].run({})
+    assert "only available inside a skill" in out
+
+
+async def test_skill_only_cannot_gate_egress_or_meta(
+    monkeypatch, make_orchestrator, make_visitor, caplog
+):
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY), ReplyAction()])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["reply", "find_tool", "use_skill", "pay__*"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    visible: set = set()
+    with caplog.at_level(logging.WARNING):
+        tools = await ex._assemble_tools(
+            make_visitor(utterance="hi"), [], visible, None, "hi", None, {}
+        )
+    # Protected names stay listed and ungated.
+    assert "reply" in visible and "find_tool" in visible and "use_skill" in visible
+    assert "protected tools" in caplog.text
+    # The non-protected match is still gated.
+    assert "pay__charge" not in visible
+
+
+async def test_skill_only_channel_override_replaces_the_list(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    ex.channel_overrides = {"voice": {"skill_only_tools": ["kb__*"]}}
+    _wire_skills(
+        monkeypatch,
+        ex,
+        [_doc("checkout", ["pay__charge", "pay__refund"]), _doc("faq", ["kb__search"])],
+    )
+
+    visible_voice: set = set()
+    await ex._assemble_tools(
+        make_visitor(utterance="x", channel="voice"),
+        [],
+        visible_voice,
+        None,
+        "x",
+        None,
+        {},
+    )
+    assert "kb__search" not in visible_voice  # the channel's own list
+    assert "pay__charge" in visible_voice  # the action-level list is REPLACED
+
+    visible_web: set = set()
+    await ex._assemble_tools(
+        make_visitor(utterance="x", channel="web"), [], visible_web, None, "x", None, {}
+    )
+    assert "pay__charge" not in visible_web
+    assert "kb__search" in visible_web
+
+
+async def test_channel_blocked_owner_removes_its_tools_entirely(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """A skill blocked on this channel already has its declared tools dropped from
+    the surface by the ADR-0032 cleanup — gating never sees them, so there is no
+    orphan to reason about and nothing leaks."""
+    blocked = SimpleNamespace(
+        name="checkout",
+        requires_tools=("pay__charge",),
+        always_active=False,
+        allowed_channels=("web",),
+        denied_channels=(),
+        deny_access_directive="Not available here.",
+    )
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    _wire_skills(monkeypatch, ex, [blocked])
+
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge", channel="voice"),
+        [],
+        set(),
+        None,
+        "charge",
+        None,
+        {},
+    )
+    assert "pay__charge" not in tools
+
+
+# --- integration: turn-lock surface invariant -------------------------------
+
+
+async def test_task_lock_materialization_cannot_open_another_skills_gate(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """The turn-lock surface materializes a locked skill's declared tools from
+    raw actions, WITHOUT the gate. That is safe only because the materializer
+    activates the very doc whose tools it materializes ("declaring implies
+    owning"). Pin it: a locked skill must not be able to open a gated tool that
+    a DIFFERENT skill owns."""
+    from jvagent.action.orchestrator.skills import SkillDoc
+
+    checkout = SkillDoc(
+        name="checkout",
+        description="Take payment.",
+        body="Charge the card.",
+        requires_tools=("pay__charge",),
+    )
+    # ``intake`` holds the turn-lock. It declares kb__search only, so it is NOT
+    # an owner of pay__charge — but its lock_companions glob keeps pay__charge on
+    # the restricted surface, so the gate wrapper is what has to say no.
+    intake = SkillDoc(
+        name="intake",
+        description="Collect details.",
+        body="Ask the questions.",
+        requires_tools=("kb__search",),
+        task_lock=True,
+        lock_companions=("pay__*",),
+    )
+
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__charge"]
+    _wire_skills(monkeypatch, ex, [checkout, intake])
+
+    visitor = make_visitor(utterance="charge me")
+    activated: list = []
+    visible: set = set()
+    tools = await ex._assemble_tools(
+        visitor, activated, visible, None, "charge me", None, {}
+    )
+
+    locked_tools, locked_visible, section = await ex._apply_active_task_lock_skill(
+        intake,
+        [_ToolsAction(_PAY)],
+        visitor,
+        "charge me",
+        tools,
+        visible,
+        activated,
+        [],
+        skill_docs=[checkout, intake],
+    )
+
+    # The lock activated intake (not checkout), so checkout's gate stays shut.
+    assert "intake" in activated and "checkout" not in activated
+    assert "ACTIVE SKILL IN PROGRESS: intake" in section
+    # The companion glob keeps pay__charge reachable on the locked surface — so
+    # the guard wrapper (not the restriction) is what has to refuse. Note the
+    # turn-lock surface re-lists companions, so visibility alone is not the
+    # protection here; callability is.
+    assert "pay__charge" in locked_tools
+    out = await locked_tools["pay__charge"].run({})
+    assert "only available inside a skill" in out
+    assert "checkout" in out
+    # kb__search — intake's own, ungated — is unaffected.
+    assert "kb__search" in locked_tools
