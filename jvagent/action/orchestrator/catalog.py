@@ -55,6 +55,7 @@ def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -
         str(getattr(orch, "vision", "")),
         str(getattr(orch, "pinned_tools", "") or ""),
         str(getattr(orch, "denied_tools", "") or ""),
+        str(getattr(orch, "skill_only_tools", "") or ""),
         ",".join(sorted(enabled_action_ids)),
     ]
     digest = hashlib.sha256("|".join(parts).encode()).hexdigest()

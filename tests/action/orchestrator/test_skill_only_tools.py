@@ -150,3 +150,27 @@ def test_install_preserves_name_description_and_terminal():
     # terminal must survive: gating an IA-as-tool must not change end-of-turn
     # semantics once the tool is legitimately reached.
     assert wrapped.terminal is True
+
+
+# --- unit: config surface ---------------------------------------------------
+
+
+def test_attribute_defaults_empty():
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    assert OrchestratorInteractAction().skill_only_tools == []
+
+
+def test_config_hash_changes_with_skill_only_tools():
+    from jvagent.action.orchestrator.catalog import compute_tool_surface_config_hash
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    ex = OrchestratorInteractAction()
+    before = compute_tool_surface_config_hash(ex, ["A"])
+    ex.skill_only_tools = ["pay__*"]
+    after = compute_tool_surface_config_hash(ex, ["A"])
+    assert before != after

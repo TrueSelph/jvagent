@@ -612,7 +612,9 @@ class OrchestratorInteractAction(
         "max_statement_length, first_emit_timeout_ms, ack_statements, "
         "pinned_tools (REPLACES the action-level pin list on that channel, so a "
         "channel-specific capability isn't pinned onto every other channel), "
-        "denied_tools (REPLACES the action-level deny list on that channel), and "
+        "denied_tools (REPLACES the action-level deny list on that channel), "
+        "skill_only_tools (REPLACES the action-level skill-only list on that "
+        "channel), and "
         "system_prompt_extra (APPENDED after the base extra for that channel "
         "only). Lets a voice channel run a tighter/faster loop with its own "
         "spoken filler than chat without a second agent.",
@@ -675,6 +677,19 @@ class OrchestratorInteractAction(
         "(reply/respond/find_*/load_*/use_skill) cannot be denied. Empty by default. "
         "Channel-overridable via channel_overrides.denied_tools (replaces the "
         "action-level list on that channel).",
+    )
+    skill_only_tools: List[str] = attribute(
+        default_factory=list,
+        description="Tool-name globs (e.g. 'payments__*') callable ONLY while a "
+        "skill that declares them in its allowed-tools is active (activated this "
+        "turn, holding the turn-lock, or always-active). They are not listed in "
+        "the prompt; find_tool shows them annotated with the owning skill, and a "
+        "direct call is refused with a steer to use_skill. A gated tool no "
+        "available skill declares is uncallable (fail closed). denied_tools wins "
+        "over this; a pinned_tools match cannot un-gate. Egress and catalog "
+        "meta-tools cannot be gated. Empty by default. Channel-overridable via "
+        "channel_overrides.skill_only_tools (replaces the action-level list on "
+        "that channel).",
     )
 
     # -- MCP tool servers (via jvagent/mcp MCPAction; ADR-0015) -------------
