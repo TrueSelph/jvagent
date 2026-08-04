@@ -81,6 +81,10 @@ from jvagent.action.orchestrator.prompts import (
     render_identity_section,
 )
 from jvagent.action.orchestrator.skills import discover_skill_docs
+from jvagent.action.orchestrator.surface_policy import (
+    ToolSurfacePolicy,
+    mcp_action_names,
+)
 from jvagent.action.orchestrator.tools import (
     DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
     DEFAULT_OBSERVATION_FULL_RECENT,
@@ -884,6 +888,11 @@ class OrchestratorInteractAction(
         from jvagent.action.reply.reply_action import ReplyAction
 
         mcp_cls = self._mcp_action_class()
+        # One object carries this turn's exclusions (denied_tools, the
+        # tool_servers MCP gate) and the wrapping each family needs, so a later
+        # re-add (ensure_skill_tools_materialized) cannot re-derive a surface
+        # this assembly deliberately excluded.
+        policy = self._tool_surface_policy(visitor, actions, agent=agent)
         action_ids = sorted(
             getattr(a, "id", "") for a in actions if getattr(a, "id", None)
         )
@@ -923,13 +932,7 @@ class OrchestratorInteractAction(
                     tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
                     longtail.add(name)
             for name, tool in cached_surface.mcp_tools.items():
-                tools[name] = wrap_action_tool(
-                    tool,
-                    agent=agent,
-                    user_id=getattr(visitor, "user_id", None),
-                    channel=getattr(visitor, "channel", "default") or "default",
-                    access_label=delegate_resource_label(name),
-                )
+                tools[name] = policy.wrap_mcp(tool)
                 longtail.add(name)
         else:
             cache_entry = _ToolSurfaceCacheEntry(config_hash=config_hash)
@@ -1027,13 +1030,7 @@ class OrchestratorInteractAction(
                     # to the server, so a ``visitor`` kwarg would be serialized (and
                     # fail). Per-user routing comes from the dispatch context bound
                     # for the turn, not a kwarg.
-                    tools[name] = wrap_action_tool(
-                        tool,
-                        agent=agent,
-                        user_id=getattr(visitor, "user_id", None),
-                        channel=getattr(visitor, "channel", "default") or "default",
-                        access_label=delegate_resource_label(name),
-                    )
+                    tools[name] = policy.wrap_mcp(tool)
                     longtail.add(name)
 
             if agent and agent.id:
@@ -1227,9 +1224,8 @@ class OrchestratorInteractAction(
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
         # Hard exclude (wins over lean + pins): drop from tools so find_tool /
         # load_tool / dispatch cannot reach them. Applied last intentionally.
-        denied = self._channel_cfg(visitor, "denied_tools", self.denied_tools)
-        if denied:
-            drop = self._match_tool_globs(list(denied), set(tools.keys()))
+        if policy.denied_patterns:
+            drop = policy.denied_names(set(tools.keys()))
             protected = drop & _STEER_EXEMPT
             if protected:
                 logger.warning(
@@ -1242,6 +1238,39 @@ class OrchestratorInteractAction(
                 longtail.discard(name)
                 visible.discard(name)
         return tools
+
+    def _tool_surface_policy(
+        self,
+        visitor: Any,
+        actions: List[Any],
+        *,
+        agent: Any = None,
+    ) -> ToolSurfacePolicy:
+        """This turn's tool-surface exclusions + wrapping (single source).
+
+        Built from the channel-resolved config so ``_assemble_tools`` and any
+        later re-add (``ensure_skill_tools_materialized``) apply exactly the
+        same rules. Pure — safe to rebuild at each seam rather than threading
+        per-turn state through the loop.
+        """
+        selector = self.tool_servers
+        allowed_mcp: Optional[FrozenSet[str]]
+        if isinstance(selector, str) and selector.strip() == "-all":
+            allowed_mcp = None  # every enabled MCP server
+        else:
+            names: Set[str] = set()
+            for mcp_action in self._select_mcp_actions(actions):
+                names |= mcp_action_names(mcp_action)
+            allowed_mcp = frozenset(names)
+        denied = self._channel_cfg(visitor, "denied_tools", self.denied_tools)
+        return ToolSurfacePolicy(
+            denied_patterns=tuple(str(p) for p in (denied or [])),
+            allowed_mcp_names=allowed_mcp,
+            mcp_action_class=self._mcp_action_class(),
+            agent=agent,
+            user_id=getattr(visitor, "user_id", None),
+            channel=getattr(visitor, "channel", "default") or "default",
+        )
 
     @staticmethod
     def _match_tool_globs(patterns: List[str], names: Set[str]) -> Set[str]:
@@ -1462,6 +1491,7 @@ class OrchestratorInteractAction(
         """Turn-lock surface prep — delegated to generic skill_tasks helpers."""
         from jvagent.action.orchestrator.skill_tasks import apply_task_lock_turn
 
+        agent = await self._safe_agent()
         return await apply_task_lock_turn(
             skill_doc,
             loop_actions,
@@ -1472,6 +1502,7 @@ class OrchestratorInteractAction(
             activated=activated,
             observations=observations,
             skill_docs=skill_docs,
+            policy=self._tool_surface_policy(visitor, loop_actions, agent=agent),
         )
 
     async def _apply_task_lock_after_use_skill(
@@ -1677,8 +1708,14 @@ class OrchestratorInteractAction(
             ensure_skill_tools_materialized,
         )
 
+        agent = await self._safe_agent()
         await ensure_skill_tools_materialized(
-            doc, loop_actions, visitor, tools, visible
+            doc,
+            loop_actions,
+            visitor,
+            tools,
+            visible,
+            policy=self._tool_surface_policy(visitor, loop_actions, agent=agent),
         )
         if doc.name not in activated:
             activated.append(doc.name)
@@ -3083,19 +3120,7 @@ class OrchestratorInteractAction(
         )
         if not wanted:
             return []
-
-        def _names(a: Any) -> Set[str]:
-            out: Set[str] = set()
-            get_name = getattr(a, "get_class_name", None)
-            if callable(get_name):
-                out.add(get_name())
-            for attr in ("name", "package_name"):
-                val = getattr(a, attr, None)
-                if isinstance(val, str) and val:
-                    out.add(val)
-            return out
-
-        return [a for a in mcp_actions if _names(a) & wanted]
+        return [a for a in mcp_actions if mcp_action_names(a) & wanted]
 
     async def _collect_capabilities(self, skill_docs: List[Any]) -> List[str]:
         """The "WHAT YOU CAN DO" digest source: the agent's advertised abilities

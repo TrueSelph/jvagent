@@ -22,7 +22,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from jvagent.action.orchestrator.surface_policy import ToolSurfacePolicy
 
 from jvagent.action.skill_spec.task_lock import TaskLockPrep  # noqa: F401 — re-export
 from jvagent.core.errors import log_classified_exception, retry_if_transient
@@ -850,8 +850,20 @@ async def ensure_skill_tools_materialized(
     visitor: Any,
     tools: Dict[str, Any],
     visible: Set[str],
+    *,
+    policy: Optional["ToolSurfacePolicy"] = None,
 ) -> None:
-    """Re-add bound-action tools pruned before the interview session was ready."""
+    """Re-add bound-action tools pruned before the interview session was ready.
+
+    ``policy`` (``ToolSurfacePolicy``) carries the exclusions and wrapping the
+    turn's tool-surface assembly applied. Without it this re-derives tools from
+    raw ``get_tools()`` output and silently undoes those exclusions — a skill
+    naming a ``denied_tools`` entry (or an MCP tool from a server ``tool_servers``
+    excluded) in its ``allowed-tools`` would make it callable, and a re-wrapped
+    MCP tool would lose its AccessControl label. Production callers always pass
+    one; it stays optional so a policy-less caller keeps the old, permissive
+    behaviour rather than losing tools it legitimately needs.
+    """
     required = set(getattr(skill_doc, "requires_tools", ()) or ())
     missing = {name for name in required if name not in tools}
     if not missing:
@@ -859,6 +871,8 @@ async def ensure_skill_tools_materialized(
     from jvagent.action.orchestrator.tools import wrap_action_tool
 
     for action in enabled_actions(actions):
+        if policy is not None and not policy.allows_action(action):
+            continue
         get_tools = getattr(action, "get_tools", None)
         if not callable(get_tools):
             continue
@@ -877,10 +891,23 @@ async def ensure_skill_tools_materialized(
         )
         for tool in result or []:
             name = getattr(tool, "name", None)
-            if name and name in missing:
-                tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
-                visible.add(name)
-                missing.discard(name)
+            if not name or name not in missing:
+                continue
+            if policy is None:
+                wrapped: Optional[Any] = wrap_action_tool(tool, visitor=wrap_visitor)
+            else:
+                wrapped = policy.materialize(tool, action=action, visitor=visitor)
+            missing.discard(name)
+            if wrapped is None:
+                # Excluded on purpose by the surface policy — leave it unreachable.
+                logger.debug(
+                    "skill_tasks: skill %r requires excluded tool %r — not materialized",
+                    getattr(skill_doc, "name", "?"),
+                    name,
+                )
+                continue
+            tools[name] = wrapped
+            visible.add(name)
         if not missing:
             return
 
@@ -1003,8 +1030,13 @@ async def apply_task_lock_turn(
     activated: List[str],
     observations: List[Dict[str, Any]],
     skill_docs: Optional[List[Any]] = None,
+    policy: Optional["ToolSurfacePolicy"] = None,
 ) -> Tuple[Dict[str, Any], Set[str], str]:
-    """Session bootstrap + bound-action prep + turn-lock tool restriction."""
+    """Session bootstrap + bound-action prep + turn-lock tool restriction.
+
+    ``policy`` is the turn's :class:`ToolSurfacePolicy` — see
+    :func:`ensure_skill_tools_materialized` for why materialization needs it.
+    """
     note = await ensure_task_lock_session(
         skill_doc,
         actions,
@@ -1060,7 +1092,9 @@ async def apply_task_lock_turn(
             skill_doc, tools, visible, pending_directive=directive
         )
 
-    await ensure_skill_tools_materialized(skill_doc, actions, visitor, tools, visible)
+    await ensure_skill_tools_materialized(
+        skill_doc, actions, visitor, tools, visible, policy=policy
+    )
 
     companion_skills, companion_tool_globs = resolve_lock_companions(
         skill_doc, skill_docs or []
