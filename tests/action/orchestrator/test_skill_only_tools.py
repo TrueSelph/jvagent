@@ -137,6 +137,20 @@ async def test_gated_orphan_call_tells_the_model_not_to_retry():
     assert calls == []
 
 
+async def test_open_gate_propagates_inner_exceptions():
+    """The wrapper must not swallow a tool's failure into a steer string."""
+
+    async def _boom(args):
+        raise RuntimeError("inner exploded")
+
+    tools = {"pay__charge": SkillTool("pay__charge", "Charge.", run=_boom)}
+    gate = build_skill_gate({"pay__charge"}, [_doc("checkout", ["pay__charge"])])
+    install_skill_gate(tools, {"pay__charge"}, gate, ["checkout"])
+
+    with pytest.raises(RuntimeError, match="inner exploded"):
+        await tools["pay__charge"].run({})
+
+
 def test_install_preserves_name_description_and_terminal():
     tool = SkillTool(
         name="ia__interview", description="Run it", run=None, terminal=True
@@ -174,3 +188,52 @@ def test_config_hash_changes_with_skill_only_tools():
     ex.skill_only_tools = ["pay__*"]
     after = compute_tool_surface_config_hash(ex, ["A"])
     assert before != after
+
+
+# --- unit: catalog annotation -----------------------------------------------
+
+
+async def test_find_tool_annotates_gated_hits():
+    from jvagent.action.orchestrator.catalog import build_catalog_tools
+
+    all_tools = {
+        "pay__charge": SkillTool("pay__charge", "Charge a saved card.", run=None),
+        "pay__refund": SkillTool("pay__refund", "Refund a charge.", run=None),
+        "kb__search": SkillTool("kb__search", "Search the knowledge base.", run=None),
+    }
+    cat = build_catalog_tools(
+        all_tools,
+        visible=set(),
+        gated={"pay__charge": ("checkout",), "pay__refund": ()},
+    )
+    out = await cat["find_tool"].run({"query": ""})
+    assert "pay__charge: Charge a saved card. (via skill: checkout)" in out
+    assert (
+        "pay__refund: Refund a charge. (not directly callable; no skill provides it)"
+        in out
+    )
+    # An ungated tool is untouched.
+    assert "kb__search: Search the knowledge base." in out
+    assert "kb__search: Search the knowledge base. (" not in out
+
+
+async def test_load_tool_annotates_gated_tool():
+    from jvagent.action.orchestrator.catalog import build_catalog_tools
+
+    all_tools = {"pay__charge": SkillTool("pay__charge", "Charge a card.", run=None)}
+    cat = build_catalog_tools(
+        all_tools, visible=set(), gated={"pay__charge": ("checkout", "refunds")}
+    )
+    out = await cat["load_tool"].run({"name": "pay__charge"})
+    assert "Charge a card." in out
+    assert "(via skill: checkout, refunds)" in out
+
+
+async def test_catalog_gated_defaults_to_none():
+    """Existing call sites pass no ``gated`` and must be unaffected."""
+    from jvagent.action.orchestrator.catalog import build_catalog_tools
+
+    all_tools = {"kb__search": SkillTool("kb__search", "Search.", run=None)}
+    cat = build_catalog_tools(all_tools, visible=set())
+    assert "(via skill" not in await cat["find_tool"].run({"query": ""})
+    assert "(via skill" not in await cat["load_tool"].run({"name": "kb__search"})
