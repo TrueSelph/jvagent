@@ -55,6 +55,7 @@ def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -
         str(getattr(orch, "vision", "")),
         str(getattr(orch, "pinned_tools", "") or ""),
         str(getattr(orch, "denied_tools", "") or ""),
+        str(getattr(orch, "skill_only_tools", "") or ""),
         ",".join(sorted(enabled_action_ids)),
     ]
     digest = hashlib.sha256("|".join(parts).encode()).hexdigest()
@@ -133,10 +134,27 @@ def _rank_tools(query: str, all_tools: Dict[str, SkillTool]) -> List[SkillTool]:
     return [tool for _, _, tool in scored]
 
 
+def _gate_marker(name: str, gated: Optional[Dict[str, Tuple[str, ...]]]) -> str:
+    """Suffix telling the model a hit is skill-only (ADR-0043); "" when ungated."""
+    if not gated or name not in gated:
+        return ""
+    owning = gated.get(name) or ()
+    if not owning:
+        return " (not directly callable; no skill provides it)"
+    return f" (via skill: {', '.join(owning)})"
+
+
 def build_catalog_tools(
-    all_tools: Dict[str, SkillTool], visible: Set[str]
+    all_tools: Dict[str, SkillTool],
+    visible: Set[str],
+    gated: Optional[Dict[str, Tuple[str, ...]]] = None,
 ) -> Dict[str, SkillTool]:
-    """``find_tool`` / ``load_tool`` over the full ``all_tools`` surface."""
+    """``find_tool`` / ``load_tool`` over the full ``all_tools`` surface.
+
+    ``gated`` maps a skill-only tool name (ADR-0043) to the skills that own it
+    (empty tuple = orphan). Hits are annotated so the model learns the correct
+    move — ``use_skill`` — instead of dead-ending on a refused call.
+    """
 
     async def _find(args: Dict[str, Any]) -> str:
         q = ((args or {}).get("query") or "").strip().lower()
@@ -174,7 +192,12 @@ def build_catalog_tools(
             for t in groups[ns][:15]:
                 listed += 1
                 summary = _summarize(t.description)
-                lines.append(f"- {t.name}: {summary}" if summary else f"- {t.name}")
+                marker = _gate_marker(t.name, gated)
+                lines.append(
+                    f"- {t.name}: {summary}{marker}"
+                    if summary
+                    else f"- {t.name}{marker}"
+                )
         # Never let a cap silently masquerade as the whole answer: a model that
         # can't see it was truncated will conclude the tool it needs doesn't
         # exist and give up instead of searching more specifically.
@@ -193,7 +216,9 @@ def build_catalog_tools(
         if tool is None:
             return f"(no such tool: {name})"
         visible.add(name)
-        return f"Loaded tool '{name}': {tool.description}"
+        # Load still succeeds on a gated tool — it is a description fetch, and
+        # the guard wrapper is the actual gate.
+        return f"Loaded tool '{name}': {tool.description}{_gate_marker(name, gated)}"
 
     return {
         "find_tool": SkillTool(

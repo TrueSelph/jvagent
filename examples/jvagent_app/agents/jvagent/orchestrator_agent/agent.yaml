@@ -137,6 +137,17 @@ actions:
       # two unusable tools in every web/chat prompt — wasted tokens, and a weak
       # model would occasionally reach for them on a channel that can't send.
       pinned_tools: []
+      # Skill-gated tools: globs callable ONLY while a skill that declares them
+      # in its `allowed-tools` is active. While closed they stay off the prompt,
+      # find_tool shows them annotated with the owning skill, and a direct call
+      # is refused with a steer to use_skill; once an owner is active they are
+      # listed and unannotated. A gated tool no available skill declares is
+      # uncallable (fail closed). denied_tools wins; a pinned_tools match cannot
+      # un-gate. Empty here — this example gates nothing; set e.g.
+      # ["payments__*"] to confine a sensitive capability to its owning skill.
+      # Channel-overridable via channel_overrides.skill_only_tools (REPLACES
+      # this action-level list on that channel).
+      skill_only_tools: []
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
       ack_interval_ms: 12000             # delay between subsequent acks
