@@ -84,3 +84,69 @@ def test_orphan_is_never_open_and_warns(caplog):
         gate = build_skill_gate({"pay__refund"}, [_doc("checkout", ["pay__charge"])])
     assert gate.is_open("pay__refund", ["checkout"]) is False
     assert "pay__refund" in caplog.text
+
+
+# --- unit: guard wrapper ----------------------------------------------------
+
+
+def _spy_tool(name):
+    """A SkillTool whose runner records that it ran."""
+    calls: list = []
+
+    async def _run(args):
+        calls.append(args)
+        return "RAN"
+
+    return SkillTool(name=name, description=f"{name} description", run=_run), calls
+
+
+async def test_gated_call_refuses_and_names_the_skill():
+    tool, calls = _spy_tool("pay__charge")
+    tools = {"pay__charge": tool}
+    activated: list = []
+    gate = build_skill_gate({"pay__charge"}, [_doc("checkout", ["pay__charge"])])
+    install_skill_gate(tools, {"pay__charge"}, gate, activated)
+
+    out = await tools["pay__charge"].run({})
+    assert "only available inside a skill" in out
+    assert "checkout" in out
+    assert calls == []  # the real runner never ran
+
+
+async def test_gated_call_runs_once_owner_is_activated():
+    tool, calls = _spy_tool("pay__charge")
+    tools = {"pay__charge": tool}
+    activated: list = []
+    gate = build_skill_gate({"pay__charge"}, [_doc("checkout", ["pay__charge"])])
+    install_skill_gate(tools, {"pay__charge"}, gate, activated)
+
+    activated.append("checkout")  # what use_skill does, mid-loop
+    assert await tools["pay__charge"].run({"amount": 5}) == "RAN"
+    assert calls == [{"amount": 5}]
+
+
+async def test_gated_orphan_call_tells_the_model_not_to_retry():
+    tool, calls = _spy_tool("pay__refund")
+    tools = {"pay__refund": tool}
+    gate = build_skill_gate({"pay__refund"}, [_doc("checkout", ["pay__charge"])])
+    install_skill_gate(tools, {"pay__refund"}, gate, [])
+
+    out = await tools["pay__refund"].run({})
+    assert "no available skill provides it" in out
+    assert "do not retry" in out
+    assert calls == []
+
+
+def test_install_preserves_name_description_and_terminal():
+    tool = SkillTool(
+        name="ia__interview", description="Run it", run=None, terminal=True
+    )
+    tools = {"ia__interview": tool}
+    gate = build_skill_gate({"ia__interview"}, [_doc("intake", ["ia__interview"])])
+    install_skill_gate(tools, {"ia__interview"}, gate, [])
+    wrapped = tools["ia__interview"]
+    assert wrapped.name == "ia__interview"
+    assert wrapped.description == "Run it"
+    # terminal must survive: gating an IA-as-tool must not change end-of-turn
+    # semantics once the tool is legitimately reached.
+    assert wrapped.terminal is True
