@@ -44,6 +44,20 @@ def test_build_skill_gate_indexes_owners():
     assert gate.owners_for("email__send") == ()
 
 
+def test_owners_are_deduped_preserving_order():
+    gate = build_skill_gate(
+        {"pay__charge"},
+        [
+            _doc("checkout", ["pay__charge", "pay__charge"]),  # listed twice
+            _doc("refunds", ["pay__charge"]),
+        ],
+    )
+    assert gate.owners_for("pay__charge") == ("checkout", "refunds")
+    assert "checkout, refunds" in skill_only_steer(
+        "pay__charge", gate.owners_for("pay__charge")
+    )
+
+
 def test_build_skill_gate_collects_always_active():
     gate = build_skill_gate(
         {"pay__charge"}, [_doc("checkout", ["pay__charge"], always_active=True)]

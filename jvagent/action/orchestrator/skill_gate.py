@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import Any, Dict, Iterable, List, Set, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,9 @@ def build_skill_gate(gated: Set[str], docs: Iterable[Any]) -> SkillGate:
             continue
         for tool_name in getattr(doc, "requires_tools", ()) or ():
             if tool_name in gated:
-                owners[tool_name] = owners.get(tool_name, ()) + (name,)
+                existing = owners.get(tool_name, ())
+                if name not in existing:
+                    owners[tool_name] = existing + (name,)
         if getattr(doc, "always_active", False):
             always_on.add(name)
     orphans = sorted(set(gated) - set(owners))
@@ -108,7 +110,12 @@ def install_skill_gate(
         tools[name] = replace(tool, run=_gated_runner(name, tool.run, gate, activated))
 
 
-def _gated_runner(name, inner, gate: SkillGate, activated: List[str]):
+def _gated_runner(
+    name: str,
+    inner: Callable[[Dict[str, Any]], Awaitable[str]],
+    gate: SkillGate,
+    activated: List[str],
+):
     """Bind one tool's guard (a factory, so the loop variable isn't captured)."""
 
     async def _run(args: Dict[str, Any]) -> str:
