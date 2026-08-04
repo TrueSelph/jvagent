@@ -79,7 +79,7 @@ async def my_handler(...): ...
 
 ### 2.5 Persistence
 
-jvspatial supports four backends, selected via env vars:
+jvspatial supports four backends usable from jvagent, selected via env vars:
 
 | Backend | Use case | Env |
 |---|---|---|
@@ -87,6 +87,9 @@ jvspatial supports four backends, selected via env vars:
 | **SQLite** | Single-process serverless / embedded | `JVSPATIAL_DB_TYPE=sqlite` |
 | **MongoDB** | Production, multi-process | `JVSPATIAL_DB_TYPE=mongodb`, `JVSPATIAL_MONGODB_URI`, `JVSPATIAL_MONGODB_DB_NAME` |
 | **DynamoDB** | AWS Lambda / serverless | `JVSPATIAL_DB_TYPE=dynamodb`, table + AWS creds |
+| **PostgreSQL** | ⚠️ *blocked upstream* | `JVSPATIAL_DB_TYPE=postgres`, `JVSPATIAL_POSTGRES_DSN` |
+
+A fifth backend, `PostgresDB`, is implemented in jvspatial (`jvspatial/db/postgres.py`) and reachable via `create_database("postgres")`, but `DatabaseConfigurator.initialize_graph_context()` — the path `Server(...)` uses — rejects it with `ValueError: Unsupported database type: postgres` (`jvspatial/api/components/database_configurator.py:177`, unchanged through 0.0.15), and `PostgresDB._ensure_pool()` has no event-loop affinity, which jvagent's two-loop boot trips. Both are jvspatial's to fix per [§4](#4-the-boundary); details and verification in [`docs/postgres.md`](../../docs/postgres.md).
 
 CRUD via entity methods (no separate ORM):
 ```python

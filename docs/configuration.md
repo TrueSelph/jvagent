@@ -131,5 +131,6 @@ Do not commit real secret values in `app.yaml`.
 - [task-tracking.md](task-tracking.md) - `PROACTIVE` queue, `TaskMonitor`, scheduler bootstrap.
 - [proactive-messages.md](proactive-messages.md) - Canned `send_proactive_message` vs queued agentic tasks.
 - [environment-keys-reference.md](environment-keys-reference.md) - Canonical env key inventory.
+- [postgres.md](postgres.md) - PostgreSQL backend keys and the upstream gaps that currently block it.
 - [integrations-environment.md](integrations-environment.md) - Integration/vendor env keys.
 - [scaffolding.md](scaffolding.md) - CLI app and agent scaffolding flow.
