@@ -319,6 +319,9 @@ async def test_gated_dispatch_refuses_then_runs_after_activation(
 async def test_always_active_owner_opens_the_gate_on_tick_one(
     monkeypatch, make_orchestrator, make_visitor
 ):
+    """An always-active owner effectively un-gates its tools: callable, LISTED,
+    and un-annotated. Hiding an already-open tool (or telling the model to
+    use_skill for it) buys a discovery round-trip for a capability it has."""
     ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
     ex.lean_tool_threshold = 0
     ex.skill_only_tools = ["pay__*"]
@@ -326,11 +329,34 @@ async def test_always_active_owner_opens_the_gate_on_tick_one(
         monkeypatch, ex, [_doc("checkout", ["pay__charge"], always_active=True)]
     )
 
+    visible: set = set()
     tools = await ex._assemble_tools(
-        make_visitor(utterance="charge me"), [], set(), None, "charge me", None, {}
+        make_visitor(utterance="charge me"), [], visible, None, "charge me", None, {}
     )
     out = await tools["pay__charge"].run({})
     assert "only available inside a skill" not in out
+    assert "pay__charge" in visible  # already-open: a normal callable tool
+    hit = await tools["find_tool"].run({"query": "charge"})
+    assert "(via skill:" not in hit  # don't steer to use_skill for an open tool
+
+
+async def test_closed_gate_is_still_hidden_and_annotated(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """The mirror of the always-active case: with no owner active the tool is
+    off the prompt AND annotated. Pins the conditional so it can't invert."""
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__*"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    visible: set = set()
+    tools = await ex._assemble_tools(
+        make_visitor(utterance="charge me"), [], visible, None, "charge me", None, {}
+    )
+    assert "pay__charge" not in visible
+    hit = await tools["find_tool"].run({"query": "charge"})
+    assert "(via skill: checkout)" in hit
 
 
 async def test_orphaned_gated_tool_is_locked(
@@ -370,6 +396,82 @@ async def test_find_tool_annotation_reaches_the_model(
     assert "(via skill: checkout)" in hit
 
 
+# --- integration: lean budget ----------------------------------------------
+
+# 20 capability tools, several of them email-adjacent so a k-slot pre-surface
+# has more relevant candidates than slots (mirrors ``_many`` in
+# test_lean_surfacing.py).
+_LEAN = [
+    ("email__send", "Send an email message to a recipient."),
+    ("email__draft", "Draft an email message."),
+    ("email__list", "List email messages in the inbox."),
+    ("email__search", "Search email messages."),
+    ("calendar__create_event", "Create a calendar event/meeting."),
+    ("files__read", "Read a file from disk."),
+    ("files__write", "Write a file to disk."),
+    ("weather__current", "Get the current weather for a city."),
+] + [(f"misc__tool{i:02d}", f"Miscellaneous capability number {i}.") for i in range(12)]
+
+_LEAN_PREFIXES = ("email", "calendar", "files", "weather", "misc")
+
+
+async def test_gated_tool_does_not_consume_a_lean_presurface_slot(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """Under lean, a gated name must not win a top-k slot and then be discarded:
+    that shrinks the model's usable surface by one tool per gated name, with
+    nothing promoted in its place."""
+
+    async def _visible_longtail(skill_only):
+        ex = make_orchestrator(actions=[_ToolsAction(_LEAN)])
+        ex.lean_tool_threshold = 15
+        ex.lean_presurface_k = 3
+        ex.skill_only_tools = list(skill_only)
+        _wire_skills(monkeypatch, ex, [_doc("drafting", ["email__draft"])])
+        visible: set = set()
+        meta: dict = {}
+        await ex._assemble_tools(
+            make_visitor(utterance="send an email to the team"),
+            [],
+            visible,
+            None,
+            "send an email to the team",
+            None,
+            meta,
+        )
+        assert meta["lean"] is True
+        return {n for n in visible if n.startswith(_LEAN_PREFIXES)}
+
+    baseline = await _visible_longtail([])
+    assert len(baseline) == 3 and "email__draft" in baseline  # it wins a slot
+    gated = await _visible_longtail(["email__draft"])
+    assert "email__draft" not in gated
+    assert len(gated) == len(baseline)  # the slot was reused, not lost
+
+
+async def test_always_active_gated_tool_is_visible_under_lean(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """Excluding gated names from the lean pool must not hide an OPEN one — the
+    always-active pin puts it back."""
+    ex = make_orchestrator(actions=[_ToolsAction(_LEAN)])
+    ex.lean_tool_threshold = 15
+    ex.lean_presurface_k = 2
+    ex.skill_only_tools = ["weather__*"]
+    _wire_skills(
+        monkeypatch, ex, [_doc("forecast", ["weather__current"], always_active=True)]
+    )
+
+    visible: set = set()
+    meta: dict = {}
+    await ex._assemble_tools(
+        make_visitor(utterance="hello"), [], visible, None, "hello", None, meta
+    )
+    assert meta["lean"] is True
+    assert "weather__current" in visible  # open gate, pinned by its owner
+    assert "misc__tool00" not in visible  # lean otherwise preserved
+
+
 async def test_dead_skill_only_pattern_is_warned(
     monkeypatch, make_orchestrator, make_visitor, caplog
 ):
@@ -386,6 +488,28 @@ async def test_dead_skill_only_pattern_is_warned(
         )
     assert "matched no tool" in caplog.text
     assert "paay__*" in caplog.text
+
+
+async def test_meta_tool_pattern_is_reported_protected_not_dead(
+    monkeypatch, make_orchestrator, make_visitor, caplog
+):
+    """``find_tool``/``load_tool`` join ``tools`` after the glob match, so a
+    pattern naming one used to be diagnosed as a dead pattern — the wrong
+    message for a name that is protected, and misleading next to the correct
+    one ``reply``/``use_skill`` already get."""
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["find_tool"]
+    _wire_skills(monkeypatch, ex, [_doc("checkout", ["pay__charge"])])
+
+    with caplog.at_level(logging.WARNING):
+        tools = await ex._assemble_tools(
+            make_visitor(utterance="charge"), [], set(), None, "charge", None, {}
+        )
+    assert "protected tools" in caplog.text and "find_tool" in caplog.text
+    assert "matched no tool" not in caplog.text
+    # ...and nothing is actually gated, so no hit is annotated.
+    assert "(via skill" not in await tools["find_tool"].run({"query": "charge"})
 
 
 # --- integration: precedence -----------------------------------------------
@@ -446,6 +570,9 @@ async def test_skill_only_cannot_gate_egress_or_meta(
         )
     # Protected names stay listed and ungated.
     assert "reply" in visible and "find_tool" in visible and "use_skill" in visible
+    assert "only available inside a skill" not in await tools["reply"].run(
+        {"text": "hi"}
+    )
     assert "protected tools" in caplog.text
     # The non-protected match is still gated.
     assert "pay__charge" not in visible
@@ -584,3 +711,55 @@ async def test_task_lock_materialization_cannot_open_another_skills_gate(
     assert "checkout" in out
     # kb__search — intake's own, ungated — is unaffected.
     assert "kb__search" in locked_tools
+
+
+async def test_task_lock_owner_opens_its_own_gated_tool(
+    monkeypatch, make_orchestrator, make_visitor
+):
+    """The positive half: holding the turn-lock IS activation, so a locked skill
+    that DOES declare the gated tool opens it — including on the surface
+    assembled before the lock ran, since the gate holds ``activated`` by
+    reference."""
+    from jvagent.action.orchestrator.skills import SkillDoc
+
+    checkout = SkillDoc(
+        name="checkout",
+        description="Take payment.",
+        body="Charge the card.",
+        requires_tools=("pay__charge",),
+        task_lock=True,
+    )
+
+    ex = make_orchestrator(actions=[_ToolsAction(_PAY)])
+    ex.lean_tool_threshold = 0
+    ex.skill_only_tools = ["pay__charge"]
+    _wire_skills(monkeypatch, ex, [checkout])
+
+    visitor = make_visitor(utterance="charge me")
+    activated: list = []
+    visible: set = set()
+    tools = await ex._assemble_tools(
+        visitor, activated, visible, None, "charge me", None, {}
+    )
+    # Before the lock: no owner active, so the gate refuses.
+    assert "only available inside a skill" in await tools["pay__charge"].run({})
+
+    locked_tools, locked_visible, section = await ex._apply_active_task_lock_skill(
+        checkout,
+        [_ToolsAction(_PAY)],
+        visitor,
+        "charge me",
+        tools,
+        visible,
+        activated,
+        [],
+        skill_docs=[checkout],
+    )
+    assert "checkout" in activated
+    assert "ACTIVE SKILL IN PROGRESS: checkout" in section
+    assert "pay__charge" in locked_tools and "pay__charge" in locked_visible
+    assert "only available inside a skill" not in await locked_tools["pay__charge"].run(
+        {}
+    )
+    # The pre-lock wrapper sees the activation by reference — no re-assembly.
+    assert "only available inside a skill" not in await tools["pay__charge"].run({})

@@ -61,7 +61,17 @@ from `tools` and after pins have written to `visible`.
   skill's allowed names, so a gated tool matched by a `lock_companions` glob is
   re-listed in the prompt even though assembly had discarded it. The wrapper
   still refuses the call, so nothing leaks — but do not read "not listed" as an
-  invariant that holds on every surface.
+  invariant that holds on every surface. Two mid-loop paths re-list a gated name
+  the same way: `load_tool` promotes any name the model asks for
+  (`catalog.py`, `visible.add(name)`), and `block_raw_tool_invocation`'s
+  auto-promote adds a hidden-but-named tool to the visible set (`loop.py:1017`).
+- **An already-open gate stays listed and unannotated.** When an owner is
+  `always-active` (or was activated before assembly), the tool is a normal
+  callable tool for that turn: assembly keeps it in the prompt set and
+  `find_tool` / `load_tool` omit the `(via skill: …)` marker, so the model is
+  never steered into a `use_skill` round-trip for a tool it can already call.
+  Gated names are also excluded from the lean pre-surface candidate pool, so
+  gating a tool family never shrinks the visible long tail.
 
 ## 4. Relationship to the thin-harness principle
 

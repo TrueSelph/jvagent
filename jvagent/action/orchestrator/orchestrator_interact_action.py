@@ -1119,6 +1119,46 @@ class OrchestratorInteractAction(
             visible.add("reply")
             visible.add("respond")
 
+        # Skill-only gating (ADR-0043), part 1 — the GLOB MATCH. It runs HERE,
+        # before the lean policy, because a gated name must not win a lean
+        # pre-surface slot only to be discarded again at install time: gating one
+        # relevance-adjacent tool would then shrink the visible long tail by one
+        # with nothing promoted in its place. Everything a capability glob can
+        # legitimately match (core, egress, action and MCP tools) is already on
+        # ``tools`` at this point. The OWNER INDEX needs the skill docs and is
+        # built further down; the guard wrapper is installed at the very END of
+        # assembly (after deny + pins) so precedence falls out of ordering.
+        skill_only = self._channel_cfg(
+            visitor, "skill_only_tools", self.skill_only_tools
+        )
+        # Match against the protected names too, even though the catalog
+        # meta-tools are not on ``tools`` yet: a pattern naming one of them is
+        # protected-and-ignored, not dead, and must be reported as such.
+        matchable = set(tools.keys()) | _STEER_EXEMPT
+        gated = self._match_tool_globs(list(skill_only or []), matchable)
+        # A pattern that matches nothing is the one silent failure this feature
+        # can have: the operator believes a sensitive tool is gated and it is
+        # freely callable. Fail-closed on unowned tools is meaningless if the
+        # glob never matched, so name the dead patterns.
+        dead = [
+            p
+            for p in (skill_only or [])
+            if str(p).strip() and not self._match_tool_globs([p], matchable)
+        ]
+        if dead:
+            logger.warning(
+                "orchestrator: skill_only_tools patterns matched no tool — "
+                "nothing is gated by them: %s",
+                dead,
+            )
+        protected_gated = gated & _STEER_EXEMPT
+        if protected_gated:
+            logger.warning(
+                "orchestrator: skill_only_tools matched protected tools %s — ignored",
+                sorted(protected_gated),
+            )
+            gated -= _STEER_EXEMPT
+
         # Lean surfacing policy (ADR-0018): below the threshold list every
         # capability tool (unchanged); above it, keep only the relevance
         # pre-surfaced few + any the user named — the rest stay reachable via
@@ -1136,10 +1176,15 @@ class OrchestratorInteractAction(
             plan_steps = self._open_plan_step(visitor)
             if plan_steps:
                 relevance_text = f"{utterance}\n{plan_steps}"
+            # Gated names are excluded from the candidate pool: a closed gate is
+            # discarded from ``visible`` after assembly, so spending a slot on one
+            # costs the model a tool it could otherwise see. An OPEN gate's tools
+            # come back via the always-active pin block below.
+            candidates = longtail - gated
             keep = self._presurface_tools(
-                relevance_text, longtail, tools, int(self.lean_presurface_k)
+                relevance_text, candidates, tools, int(self.lean_presurface_k)
             )
-            keep |= set(self._user_named_tools(utterance, longtail))
+            keep |= set(self._user_named_tools(utterance, candidates))
             visible |= keep
         else:
             visible |= longtail
@@ -1217,42 +1262,27 @@ class OrchestratorInteractAction(
             tools[name] = t
             visible.add(name)
 
-        # Skill-only gating (ADR-0043). The glob match + owner index are computed
-        # HERE so the catalog can annotate its hits; the guard wrapper is
-        # installed at the very END of assembly (after deny + pins) so precedence
-        # falls out of ordering rather than needing explicit rules.
-        skill_only = self._channel_cfg(
-            visitor, "skill_only_tools", self.skill_only_tools
-        )
-        tool_names = set(tools.keys())
-        gated = self._match_tool_globs(list(skill_only or []), tool_names)
-        # A pattern that matches nothing is the one silent failure this feature
-        # can have: the operator believes a sensitive tool is gated and it is
-        # freely callable. Fail-closed on unowned tools is meaningless if the
-        # glob never matched, so name the dead patterns.
-        dead = [
-            p
-            for p in (skill_only or [])
-            if str(p).strip() and not self._match_tool_globs([p], tool_names)
-        ]
-        if dead:
-            logger.warning(
-                "orchestrator: skill_only_tools patterns matched no tool — "
-                "nothing is gated by them: %s",
-                dead,
-            )
-        protected_gated = gated & _STEER_EXEMPT
-        if protected_gated:
-            logger.warning(
-                "orchestrator: skill_only_tools matched protected tools %s — ignored",
-                sorted(protected_gated),
-            )
-            gated -= _STEER_EXEMPT
+        # Skill-only gating (ADR-0043), part 2 — the OWNER INDEX, built HERE
+        # because it needs the surfaced skill docs (post requires-actions, post
+        # per-channel gate) and because the catalog below annotates its hits from
+        # it. Re-intersect first: the channel gate above may have dropped a
+        # blocked skill's declared tools since the glob match, and a name that is
+        # no longer on the surface must not be reported as an orphan or annotated.
+        gated &= set(tools.keys())
         gate = build_skill_gate(gated, docs)
 
         # Tool catalog (find_tool/load_tool — visible so hidden tools are reachable).
+        # A gate that is ALREADY open (its owner is always-active, or was
+        # activated before assembly) is left out of the annotation map: telling
+        # the model to use_skill for a tool it can already call buys a wasted
+        # round-trip. ``activated`` is the live list and always-active owners are
+        # already in ``gate.always_on``, so ``is_open`` is accurate here.
         for name, t in build_catalog_tools(
-            tools, visible, gated={n: gate.owners_for(n) for n in gated}
+            tools,
+            visible,
+            gated={
+                n: gate.owners_for(n) for n in gated if not gate.is_open(n, activated)
+            },
         ).items():
             tools[name] = t
             visible.add(name)
@@ -1300,6 +1330,14 @@ class OrchestratorInteractAction(
             gated &= set(tools.keys())
             install_skill_gate(tools, gated, gate, activated)
             for name in gated:
+                # An already-open tool (its owner is always-active, or was
+                # activated before assembly) is a normal callable tool this
+                # turn — hiding it would make the model discover a capability
+                # it already has. Only closed gates come off the prompt; the
+                # wrapper still re-evaluates ``is_open`` on every call, so
+                # keeping an open one listed cannot open a hole.
+                if gate.is_open(name, activated):
+                    continue
                 visible.discard(name)
                 longtail.discard(name)
         return tools
