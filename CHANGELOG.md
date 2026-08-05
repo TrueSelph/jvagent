@@ -10,6 +10,11 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **`voice.closers` no longer strips trailing questions.** Scrub peel skipped
+  sentences ending in `?` / `?!` so prompts like “Could you let me know if you
+  need a quote?” stay intact; dropped the broad `let me know if` closer pattern
+  that caused false positives.
+
 - **No WARNING when ambient core parameters are re-unioned.**
   `resolve_parameters` still drops duplicate inviolable floors, but skips the
   conflict log when the challenger is itself an ambient/core inviolable (pools
@@ -67,6 +72,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `JVSPATIAL_JWT_SECRET_KEY`.
 
 ### Changed
+
+- **Lean PageIndex search hits.** `node_to_result` puts citation/identity fields
+  first (`doc_name`, pages, `node_id`, …) and omits bulk `text` /
+  `physical_index` / `enabled` by default so orchestrator middle-elision keeps
+  citations. Cap `content` and `summary`; request body text via
+  `include=["text"]` or `excerpt_source="text"`. Coverage:
+  `tests/action/pageindex/test_pageindex.py`.
+
+- **Compact `pageindex__list` tool payload.** Returns `{count, documents}` with
+  truncated descriptions (drops `doc_url` / `root_id` / collection) and shrinks
+  further to stay under the ~4000-char observation budget. `summary` defaults
+  to true; `summary=false` may add `access` / `chunks` when they still fit.
 
 - **Library skill `artifact_handler` is opt-in, not always-active.** Removed
   `always-active: true` so agents with `skills_source: both`/`library` no longer
