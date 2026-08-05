@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.12`.
+- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.16`.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
@@ -79,7 +79,7 @@ async def my_handler(...): ...
 
 ### 2.5 Persistence
 
-jvspatial supports four backends usable from jvagent, selected via env vars:
+jvspatial supports five backends usable from jvagent, selected via env vars:
 
 | Backend | Use case | Env |
 |---|---|---|
@@ -87,9 +87,9 @@ jvspatial supports four backends usable from jvagent, selected via env vars:
 | **SQLite** | Single-process serverless / embedded | `JVSPATIAL_DB_TYPE=sqlite` |
 | **MongoDB** | Production, multi-process | `JVSPATIAL_DB_TYPE=mongodb`, `JVSPATIAL_MONGODB_URI`, `JVSPATIAL_MONGODB_DB_NAME` |
 | **DynamoDB** | AWS Lambda / serverless | `JVSPATIAL_DB_TYPE=dynamodb`, table + AWS creds |
-| **PostgreSQL** | ⚠️ *blocked upstream* | `JVSPATIAL_DB_TYPE=postgres`, `JVSPATIAL_POSTGRES_DSN` |
+| **PostgreSQL** | Production, multi-process; managed Postgres (Neon / Aurora) | `JVSPATIAL_DB_TYPE=postgres`, `JVSPATIAL_POSTGRES_DSN` (requires `jvspatial >= 0.0.16` + `asyncpg`) |
 
-A fifth backend, `PostgresDB`, is implemented in jvspatial (`jvspatial/db/postgres.py`) and reachable via `create_database("postgres")`, but `DatabaseConfigurator.initialize_graph_context()` — the path `Server(...)` uses — rejects it with `ValueError: Unsupported database type: postgres` (`jvspatial/api/components/database_configurator.py:177`, unchanged through 0.0.15), and `PostgresDB._ensure_pool()` has no event-loop affinity, which jvagent's two-loop boot trips. Both are jvspatial's to fix per [§4](#4-the-boundary); details and verification in [`docs/postgres.md`](../../docs/postgres.md).
+Postgres was unreachable from `Server(...)` before jvspatial 0.0.16 — the config path rejected the type, and the asyncpg pool did not survive jvagent's bootstrap-loop → uvicorn-loop handoff. Both were fixed upstream in 0.0.16; setup, the full key surface, and a smoke script are in [`docs/postgres.md`](../../docs/postgres.md).
 
 CRUD via entity methods (no separate ORM):
 ```python
@@ -171,7 +171,7 @@ Things jvagent **owns**:
 
 ## 5. Version policy
 
-- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.12`.
+- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.16`.
 - When jvspatial introduces breaking changes (e.g., walker API rename, persistence shape change), bump the pin and update this section.
 - When adding a new dependency on a jvspatial feature, document the symbol + version it was introduced in. Helps downstream consumers know the floor.
 - Rationale: [`adr/0006-jvspatial-dependency.md`](../adr/0006-jvspatial-dependency.md).

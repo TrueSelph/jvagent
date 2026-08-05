@@ -95,7 +95,7 @@ These are commonly used by `jvagent` and should be configured in `jvagent` deplo
 - `JVSPATIAL_DYNAMODB_TABLE_NAME`
 - `JVSPATIAL_DYNAMODB_REGION`
 - `JVSPATIAL_DYNAMODB_ENDPOINT_URL`
-- `JVSPATIAL_POSTGRES_DSN` - PostgreSQL DSN. Env-only (no `app.yaml` path). Blocked upstream — see [postgres.md](postgres.md).
+- `JVSPATIAL_POSTGRES_DSN` - PostgreSQL DSN. Env-only (no `app.yaml` path). Requires `jvspatial >= 0.0.16` — see [postgres.md](postgres.md).
 - `JVSPATIAL_POSTGRES_MIN_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_MAX_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_POOLER_MODE` - `session` (default) or `transaction` for PgBouncer / RDS Proxy.
