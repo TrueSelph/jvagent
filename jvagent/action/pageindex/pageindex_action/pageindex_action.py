@@ -605,7 +605,10 @@ class PageIndexAction(Action):
         doc_name: Annotated[
             Optional[str], "Restrict search to a specific document name."
         ] = None,
-        limit: Annotated[int, "Max results to return (default 5)."] = 5,
+        limit: Annotated[
+            Optional[int],
+            "Max results to return. Uses the action's configured limit when omitted.",
+        ] = None,
         **kwargs: Any,
     ) -> str:
         """Search the internal knowledge base for documents matching a query."""
@@ -764,12 +767,15 @@ class PageIndexAction(Action):
         ] = None,
         summary: Annotated[
             bool,
-            "If true, return only document names and descriptions (lighter response for quick lookup).",
-        ] = False,
+            "If true (default), return only document names and short descriptions "
+            "(lighter response for quick lookup). If false, also include access "
+            "(and chunks when the catalog still fits the observation budget).",
+        ] = True,
     ) -> str:
         """List documents in the knowledge base. When access control is enabled,
-        only documents the current user can access are returned. Set summary=true
-        to get document names and descriptions for quick lookup."""
+        only documents the current user can access are returned. Returns a compact
+        ``{count, documents}`` payload (truncated descriptions) so the full catalog
+        fits in the orchestrator observation budget."""
         import json
 
         from jvagent.tooling.tool_executor import get_tool_visitor
@@ -782,7 +788,60 @@ class PageIndexAction(Action):
             session_id=getattr(visitor, "session_id", None) if visitor else None,
             summary=summary,
         )
-        return json.dumps(result, indent=2)
+        # Lean tool payload: keep under DEFAULT_OBSERVATION_MAX_CHARS (4000) so
+        # the orchestrator does not middle-elide middle catalog entries.
+        max_chars = 4000
+        desc_limit = 80
+
+        def _build(limit: int, include_chunks: bool) -> list:
+            docs: List[Dict[str, Any]] = []
+            for doc in result:
+                desc = doc.get("doc_description", "") or ""
+                if len(desc) > limit:
+                    desc = desc[: limit - 1] + "…"
+                entry: Dict[str, Any] = {
+                    "doc_name": doc.get("doc_name", ""),
+                    "doc_description": desc,
+                }
+                if not summary:
+                    if include_chunks and "chunks" in doc:
+                        entry["chunks"] = doc["chunks"]
+                    meta = doc.get("metadata")
+                    if isinstance(meta, dict) and "access" in meta:
+                        entry["access"] = meta["access"]
+                docs.append(entry)
+            return docs
+
+        include_chunks = not summary
+        documents = _build(desc_limit, include_chunks)
+        payload = json.dumps(
+            {"count": len(documents), "documents": documents},
+            separators=(",", ":"),
+        )
+        # Prefer dropping chunks over cutting names; then shrink descriptions.
+        if len(payload) > max_chars and include_chunks:
+            include_chunks = False
+            documents = _build(desc_limit, include_chunks)
+            payload = json.dumps(
+                {"count": len(documents), "documents": documents},
+                separators=(",", ":"),
+            )
+        while len(payload) > max_chars and desc_limit > 40:
+            desc_limit -= 10
+            documents = _build(desc_limit, include_chunks)
+            payload = json.dumps(
+                {"count": len(documents), "documents": documents},
+                separators=(",", ":"),
+            )
+        logger.info(
+            "pageindex__list returned %d document(s) (summary=%s, collection=%s, "
+            "payload_chars=%d)",
+            len(documents),
+            summary,
+            collection_name or self._resolve_collection(),
+            len(payload),
+        )
+        return payload
 
     @tool(name="pageindex__delete")
     async def _t_delete_doc(

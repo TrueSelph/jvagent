@@ -147,18 +147,21 @@ def node_to_result(
             or node.title
             or ""
         )
+    # Citation/identity fields first so orchestrator middle-elision keeps them;
+    # omit physical_index/enabled/text; cap large bodies last.
     return {
-        "node_id": node.id,
-        "title": node.title,
-        "text": node.text,
-        "summary": node.summary,
         "doc_name": node.doc_name,
+        "title": node.title,
+        "start_page": node.start_index,
+        "end_page": node.end_index,
+        "node_id": node.id,
         "structure": node.structure,
         "content": content[:_MAX_CONTENT_CHARS] if content else "",
-        "start_index": node.start_index,
-        "end_index": node.end_index,
-        "physical_index": node.physical_index,
-        "enabled": node_enabled(node),
+        "summary": (
+            (node.summary or "")[:_MAX_CONTENT_CHARS]
+            if node.summary is not None
+            else None
+        ),
     }
 
 
@@ -172,6 +175,8 @@ _INCLUDE_ATTR_GETTERS: Dict[str, Any] = {
     "line_num": lambda n: n.line_num,
     "start_index": lambda n: n.start_index,
     "end_index": lambda n: n.end_index,
+    "start_page": lambda n: n.start_index,
+    "end_page": lambda n: n.end_index,
     "physical_index": lambda n: n.physical_index,
     "enabled": lambda n: node_enabled(n),
     "content_type": lambda n: getattr(n, "content_type", None),

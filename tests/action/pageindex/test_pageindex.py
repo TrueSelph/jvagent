@@ -449,10 +449,24 @@ async def test_adapter_persists_distinct_summary_vs_text(pageindex_temp_db):
     assert len(results) >= 1
     node = next((r for r in results if r.get("doc_name") == "summary_test"), None)
     assert node is not None
-    assert node.get("text") == "Full section text content here"
+    assert "text" not in node
     assert node.get("summary") == "LLM-generated summary"
-    assert node["summary"] != node["text"]
     assert node.get("content") == "LLM-generated summary"
+
+    results_with_text = await search_documents(
+        query="section",
+        strategy="direct",
+        limit=5,
+        collection_name="col_summary",
+        include=["text"],
+    )
+    node_full = next(
+        (r for r in results_with_text if r.get("doc_name") == "summary_test"), None
+    )
+    assert node_full is not None
+    assert node_full.get("text") == "Full section text content here"
+    assert node_full.get("summary") == "LLM-generated summary"
+    assert node_full["summary"] != node_full["text"]
 
     set_pageindex_retrieval_excerpt_source("text")
     results_text = await search_documents(
@@ -477,6 +491,34 @@ def test_node_to_result_excerpt_source_explicit():
     n.summary = "short sum"
     assert node_to_result(n, excerpt_source="summary")["content"] == "short sum"
     assert node_to_result(n, excerpt_source="text")["content"] == "full body"
+
+
+def test_node_to_result_citation_fields_first_and_bodies_capped():
+    """Search hits put citation keys first; omit text/physical_index/enabled; cap bodies."""
+    from jvagent.action.pageindex.models import _MAX_CONTENT_CHARS
+
+    n = DocumentNode()
+    n.doc_name = "manual.pdf"
+    n.title = "Section"
+    n.text = "T" * (_MAX_CONTENT_CHARS + 500)
+    n.summary = "S" * (_MAX_CONTENT_CHARS + 500)
+    n.start_index = 3
+    n.end_index = 5
+    n.structure = "1.2"
+    n.physical_index = 3
+    result = node_to_result(n, excerpt_source="summary")
+    keys = list(result)
+    assert keys.index("doc_name") < keys.index("content")
+    assert keys.index("doc_name") < keys.index("summary")
+    assert "text" not in result
+    assert "physical_index" not in result
+    assert "enabled" not in result
+    assert result["doc_name"] == "manual.pdf"
+    assert result["start_page"] == 3
+    assert result["end_page"] == 5
+    assert len(result["content"]) <= _MAX_CONTENT_CHARS
+    assert len(result["summary"]) == _MAX_CONTENT_CHARS
+    assert result["summary"] == "S" * _MAX_CONTENT_CHARS
 
 
 def test_parse_llm_json_object_ignores_trailing_text():
@@ -2231,3 +2273,81 @@ async def test_search_access_public_plus_private_includes_both(
         "doc_public_tagged",
         "doc_private",
     }
+
+
+@pytest.mark.asyncio
+async def test_t_list_docs_compact_payload_fits_observation_budget(caplog):
+    """pageindex__list tool returns lean JSON so ~21 long descs fit under 4000 chars."""
+    import json
+    import logging
+
+    long_desc = (
+        "Quality Management System manual for Silvie's Industrial Solutions "
+        "covering departmental procedures, compliance, KPIs, and staff roles "
+        "across procurement, sales, accounts, and warehouse operations."
+    )
+    assert len(long_desc) > 80
+
+    listed = [
+        {
+            "doc_name": f"DOC_{i:02d} - SIS-MNL-{i:03d}.pdf",
+            "doc_description": long_desc,
+            "doc_url": f"https://docs.google.com/document/d/example{i}/edit",
+            "root_id": f"n.DocumentRootNode.{i:024d}",
+            "collection_name": "n.Agent.silvie",
+            "metadata": {"access": "private" if i % 2 else "public"},
+            "chunks": 100 + i,
+        }
+        for i in range(21)
+    ]
+
+    action = _make_pageindex_action(access_control=True)
+    object.__setattr__(action, "collection", "n.Agent.silvie")
+
+    with (
+        patch.object(
+            PageIndexAction,
+            "list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ),
+        patch.object(
+            PageIndexAction,
+            "_resolve_collection",
+            return_value="n.Agent.silvie",
+        ),
+        patch(
+            "jvagent.tooling.tool_executor.get_tool_visitor",
+            return_value=None,
+        ),
+        caplog.at_level(
+            logging.INFO,
+            logger="jvagent.action.pageindex.pageindex_action.pageindex_action",
+        ),
+    ):
+        summary_payload = await PageIndexAction._t_list_docs(action, summary=True)
+        full_payload = await PageIndexAction._t_list_docs(action, summary=False)
+
+    for payload, expect_extra in ((summary_payload, False), (full_payload, True)):
+        assert len(payload) <= 4000, len(payload)
+        parsed = json.loads(payload)
+        assert parsed["count"] == 21
+        assert len(parsed["documents"]) == 21
+        names = [d["doc_name"] for d in parsed["documents"]]
+        assert names == [f"DOC_{i:02d} - SIS-MNL-{i:03d}.pdf" for i in range(21)]
+        for entry in parsed["documents"]:
+            assert len(entry["doc_description"]) <= 80
+            assert "doc_url" not in entry
+            assert "root_id" not in entry
+            assert "collection_name" not in entry
+            if expect_extra:
+                assert "access" in entry
+            else:
+                assert "chunks" not in entry
+                assert "access" not in entry
+
+    assert any(
+        "pageindex__list returned 21 document(s)" in r.message
+        and "payload_chars=" in r.message
+        for r in caplog.records
+    )

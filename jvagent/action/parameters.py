@@ -737,7 +737,6 @@ _CLOSER_PATTERNS = [
         r"anything|need anything|further)\b",
         re.I,
     ),
-    re.compile(r"\blet me know if\b", re.I),
     re.compile(r"\bhope (this|that|it)\b[^.!?]*\bhelps?\b", re.I),
 ]
 
@@ -894,10 +893,25 @@ def _detect_drop_internal_disclosure(text: str) -> str:
     return _drop_matching(text, _INTERNAL_NAME_PATTERNS)
 
 
+def _is_question(sentence: str) -> bool:
+    """True if the sentence is a question (ends with '?' or contains a
+    mid-sentence '?' that makes it interrogative). Questions are never closers —
+    stripping 'Could you let me know if you need a quote?' is a false positive."""
+    s = sentence.strip()
+    if s.endswith("?") or s.endswith("?!"):
+        return True
+    return False
+
+
 def _detect_peel_closers(text: str) -> str:
     """Scrub detector for ``voice.closers``."""
     kept = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
-    while len(kept) > 1 and kept[-1].strip() and _is_closer(kept[-1]):
+    while (
+        len(kept) > 1
+        and kept[-1].strip()
+        and _is_closer(kept[-1])
+        and not _is_question(kept[-1])
+    ):
         kept.pop()
     return "".join(kept)
 
@@ -961,7 +975,20 @@ def vet_egress(
             continue
         for detector in detectors_for(param, ENFORCEMENT_SCRUB):
             try:
+                before = cleaned
                 cleaned = detector(cleaned)
+                if cleaned != before:
+                    logger.debug(
+                        "parameters: scrub detector %r for %r shortened text (%d -> %d chars)",
+                        (
+                            detector.__name__
+                            if hasattr(detector, "__name__")
+                            else detector
+                        ),
+                        param.get("key"),
+                        len(before),
+                        len(cleaned),
+                    )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(
                     "parameters: scrub detector for %r failed: %s",

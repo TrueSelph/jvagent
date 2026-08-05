@@ -92,8 +92,8 @@ def normalize_retrieval_excerpt_source(value: Any, fallback: str) -> str:
 
 def format_page_range(r: Dict[str, Any]) -> str:
     """Format page range from result dict, e.g. 'pp. 5-8' or 'p. 5'."""
-    start = r.get("start_index")
-    end = r.get("end_index")
+    start = r.get("start_page", r.get("start_index"))
+    end = r.get("end_page", r.get("end_index"))
     if start is not None and end is not None and start != end:
         return f"pp. {start}-{end}"
     if start is not None:
