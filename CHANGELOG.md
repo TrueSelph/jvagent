@@ -77,13 +77,20 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   first (`doc_name`, pages, `node_id`, …) and omits bulk `text` /
   `physical_index` / `enabled` by default so orchestrator middle-elision keeps
   citations. Cap `content` and `summary`; request body text via
-  `include=["text"]` or `excerpt_source="text"`. Coverage:
+  `include=["text"]` or `excerpt_source="text"`. `start_index` / `end_index`
+  are still returned alongside the new `start_page` / `end_page` aliases —
+  these rows are the public search endpoint's response, so dropping them would
+  break API clients for no budget saving. Coverage:
   `tests/action/pageindex/test_pageindex.py`.
 
 - **Compact `pageindex__list` tool payload.** Returns `{count, documents}` with
   truncated descriptions (drops `doc_url` / `root_id` / collection) and shrinks
-  further to stay under the ~4000-char observation budget. `summary` defaults
-  to true; `summary=false` may add `access` / `chunks` when they still fit.
+  further to stay under the orchestrator observation budget
+  (`DEFAULT_OBSERVATION_MAX_CHARS`). When even minimum-length descriptions do
+  not fit, whole entries are dropped and the payload reports `shown` +
+  `truncated: true` rather than silently returning a partial list. `summary`
+  defaults to true; `summary=false` may add `access` / `chunks` when they
+  still fit.
 
 - **Library skill `artifact_handler` is opt-in, not always-active.** Removed
   `always-active: true` so agents with `skills_source: both`/`library` no longer

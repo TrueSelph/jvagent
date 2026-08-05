@@ -788,17 +788,20 @@ class PageIndexAction(Action):
             session_id=getattr(visitor, "session_id", None) if visitor else None,
             summary=summary,
         )
-        # Lean tool payload: keep under DEFAULT_OBSERVATION_MAX_CHARS (4000) so
-        # the orchestrator does not middle-elide middle catalog entries.
-        max_chars = 4000
-        desc_limit = 80
+        # Lean tool payload: keep under the orchestrator's observation budget so
+        # it does not middle-elide catalog entries.
+        from jvagent.action.orchestrator.tools import DEFAULT_OBSERVATION_MAX_CHARS
 
-        def _build(limit: int, include_chunks: bool) -> list:
+        max_chars = DEFAULT_OBSERVATION_MAX_CHARS
+        desc_limit = 80
+        total = len(result)
+
+        def _build(limit: int, include_chunks: bool, keep: Optional[int]) -> list:
             docs: List[Dict[str, Any]] = []
-            for doc in result:
+            for doc in result[:keep] if keep is not None else result:
                 desc = doc.get("doc_description", "") or ""
                 if len(desc) > limit:
-                    desc = desc[: limit - 1] + "…"
+                    desc = desc[: limit - 3] + "..."
                 entry: Dict[str, Any] = {
                     "doc_name": doc.get("doc_name", ""),
                     "doc_description": desc,
@@ -812,31 +815,40 @@ class PageIndexAction(Action):
                 docs.append(entry)
             return docs
 
+        def _dump(docs: list) -> str:
+            body: Dict[str, Any] = {"count": total, "documents": docs}
+            if len(docs) < total:
+                # Say so explicitly: a model told it has 60 of 200 can ask for
+                # the rest, one silently handed 60 cannot.
+                body["shown"] = len(docs)
+                body["truncated"] = True
+            return json.dumps(body, separators=(",", ":"))
+
         include_chunks = not summary
-        documents = _build(desc_limit, include_chunks)
-        payload = json.dumps(
-            {"count": len(documents), "documents": documents},
-            separators=(",", ":"),
-        )
+        keep: Optional[int] = None
+        documents = _build(desc_limit, include_chunks, keep)
+        payload = _dump(documents)
         # Prefer dropping chunks over cutting names; then shrink descriptions.
         if len(payload) > max_chars and include_chunks:
             include_chunks = False
-            documents = _build(desc_limit, include_chunks)
-            payload = json.dumps(
-                {"count": len(documents), "documents": documents},
-                separators=(",", ":"),
-            )
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
         while len(payload) > max_chars and desc_limit > 40:
             desc_limit -= 10
-            documents = _build(desc_limit, include_chunks)
-            payload = json.dumps(
-                {"count": len(documents), "documents": documents},
-                separators=(",", ":"),
-            )
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
+        # Descriptions are as short as they go and it still does not fit, so the
+        # catalog itself is too long. Drop whole entries rather than return an
+        # oversized payload for the orchestrator to elide from the middle.
+        while len(payload) > max_chars and len(documents) > 1:
+            keep = max(1, len(documents) - max(1, len(documents) // 10))
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
         logger.info(
-            "pageindex__list returned %d document(s) (summary=%s, collection=%s, "
-            "payload_chars=%d)",
+            "pageindex__list returned %d of %d document(s) (summary=%s, "
+            "collection=%s, payload_chars=%d)",
             len(documents),
+            total,
             summary,
             collection_name or self._resolve_collection(),
             len(payload),

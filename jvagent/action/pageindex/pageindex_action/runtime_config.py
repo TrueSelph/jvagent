@@ -92,8 +92,12 @@ def normalize_retrieval_excerpt_source(value: Any, fallback: str) -> str:
 
 def format_page_range(r: Dict[str, Any]) -> str:
     """Format page range from result dict, e.g. 'pp. 5-8' or 'p. 5'."""
-    start = r.get("start_page", r.get("start_index"))
-    end = r.get("end_page", r.get("end_index"))
+    # ``dict.get(key, default)`` only falls back when the key is absent, and a
+    # row may carry an explicit ``None``; fall back on falsy-None too.
+    start = r.get("start_page")
+    start = r.get("start_index") if start is None else start
+    end = r.get("end_page")
+    end = r.get("end_index") if end is None else end
     if start is not None and end is not None and start != end:
         return f"pp. {start}-{end}"
     if start is not None:

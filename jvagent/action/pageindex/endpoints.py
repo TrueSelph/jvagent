@@ -1738,12 +1738,14 @@ async def delete_document_chunk_endpoint(
                 description="Search results with content and document metadata",
                 example=[
                     {
-                        "node_id": "n.DocumentNode.xyz",
-                        "title": "Section Title",
                         "doc_name": "my_doc",
-                        "content": "Excerpt...",
+                        "title": "Section Title",
+                        "start_page": 5,
+                        "end_page": 8,
                         "start_index": 5,
                         "end_index": 8,
+                        "node_id": "n.DocumentNode.xyz",
+                        "content": "Excerpt...",
                         "doc_url": "https://example.com/doc.pdf",
                     }
                 ],
@@ -1796,7 +1798,12 @@ async def search_documents_endpoint(
     | only_enabled | bool | No | When true (default), skip disabled chunks |
     | include | string[] | No | Extra fields per hit (e.g. hierarchy, content_type, pageindex_node_id) |
 
-    **Response:** `results` — array of `{node_id, title, doc_name, content, text, summary, start_index, end_index, physical_index, doc_url}`
+    **Response:** `results` — array of `{doc_name, title, start_page, end_page, start_index, end_index, node_id, structure, content, summary, doc_url}`
+
+    Citation/identity fields come first so truncation keeps them. Bulk `text`
+    (and `physical_index` / `enabled`) are omitted by default — request them
+    per hit with `include=["text", "physical_index", "enabled"]`. `start_page` /
+    `end_page` are aliases of `start_index` / `end_index`, both returned.
 
     Collection is determined by `agent_id` from the path.
     """

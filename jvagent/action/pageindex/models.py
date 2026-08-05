@@ -149,11 +149,19 @@ def node_to_result(
         )
     # Citation/identity fields first so orchestrator middle-elision keeps them;
     # omit physical_index/enabled/text; cap large bodies last.
+    #
+    # ``start_index`` / ``end_index`` are retained alongside the friendlier
+    # ``start_page`` / ``end_page`` because these rows are returned verbatim by
+    # the public search endpoint (``endpoints.py`` -> ``{"results": results}``).
+    # They are two small ints, so keeping them costs nothing against the
+    # observation budget — the bulk savings come from omitting ``text``.
     return {
         "doc_name": node.doc_name,
         "title": node.title,
         "start_page": node.start_index,
         "end_page": node.end_index,
+        "start_index": node.start_index,
+        "end_index": node.end_index,
         "node_id": node.id,
         "structure": node.structure,
         "content": content[:_MAX_CONTENT_CHARS] if content else "",

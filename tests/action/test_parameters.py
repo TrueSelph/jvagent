@@ -167,6 +167,23 @@ def test_vet_egress_keeps_specific_ask_and_questions():
     assert vet_egress("Happy to help!") == "Happy to help!"
 
 
+def test_vet_egress_keeps_trailing_questions_that_look_like_closers():
+    """A closer-shaped sentence is still a question if it asks something.
+
+    Stripping it leaves the user with no prompt to answer, which is how the
+    agent ends up talking past them.
+    """
+    a = "Your quote is ready. Could you let me know if you need a quote?"
+    assert vet_egress(a) == a
+    # Trailing quotes/brackets must not hide the question mark.
+    b = 'Shipping is free. Want me to check stock?"'
+    assert vet_egress(b) == b
+    c = "That's covered. Anything else I can help with?)"
+    assert vet_egress(c) == c
+    d = "All set. Need anything further?!"
+    assert vet_egress(d) == d
+
+
 def test_vet_egress_preserves_newlines_between_list_items():
     # Markdown list items live on their own lines. The scrub must NOT weld
     # consecutive sentences into one run (regression: "city center.Jan Thiel").

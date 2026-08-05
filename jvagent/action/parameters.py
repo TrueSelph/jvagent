@@ -894,13 +894,14 @@ def _detect_drop_internal_disclosure(text: str) -> str:
 
 
 def _is_question(sentence: str) -> bool:
-    """True if the sentence is a question (ends with '?' or contains a
-    mid-sentence '?' that makes it interrogative). Questions are never closers —
-    stripping 'Could you let me know if you need a quote?' is a false positive."""
-    s = sentence.strip()
-    if s.endswith("?") or s.endswith("?!"):
-        return True
-    return False
+    """True if the sentence ends in a question mark.
+
+    Questions are never closers — stripping "Could you let me know if you
+    need a quote?" is a false positive. Trailing quotes, brackets, and
+    emphasis are ignored so 'Need a hand?"' and 'Shall we?)' still count.
+    """
+    s = sentence.strip().rstrip("\"'’”)]}*_ \t")
+    return s.endswith("?") or s.endswith("?!")
 
 
 def _detect_peel_closers(text: str) -> str:

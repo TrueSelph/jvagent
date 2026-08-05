@@ -521,6 +521,39 @@ def test_node_to_result_citation_fields_first_and_bodies_capped():
     assert result["summary"] == "S" * _MAX_CONTENT_CHARS
 
 
+def test_node_to_result_keeps_index_keys_for_api_compatibility():
+    """These rows are returned verbatim by the search endpoint.
+
+    Renaming start_index -> start_page would break every existing API client
+    for no budget saving, so both spellings ship.
+    """
+    n = DocumentNode()
+    n.doc_name = "manual.pdf"
+    n.start_index = 3
+    n.end_index = 5
+    result = node_to_result(n)
+    assert result["start_index"] == 3
+    assert result["end_index"] == 5
+    assert result["start_page"] == result["start_index"]
+    assert result["end_page"] == result["end_index"]
+
+
+def test_format_page_range_falls_back_on_explicit_none():
+    """A row may carry start_page=None; dict.get's default would not fire."""
+    from jvagent.action.pageindex.pageindex_action.runtime_config import (
+        format_page_range,
+    )
+
+    assert format_page_range({"start_page": None, "start_index": 4}) == "p. 4"
+    assert (
+        format_page_range(
+            {"start_page": None, "end_page": None, "start_index": 4, "end_index": 6}
+        )
+        == "pp. 4-6"
+    )
+    assert format_page_range({"start_page": 7, "end_page": 9}) == "pp. 7-9"
+
+
 def test_parse_llm_json_object_ignores_trailing_text():
     raw = '{"thinking":"x","node_list":["0001"]}\n\nExtra thanks.'
     out = _parse_llm_json_object(raw)
@@ -2347,7 +2380,51 @@ async def test_t_list_docs_compact_payload_fits_observation_budget(caplog):
                 assert "access" not in entry
 
     assert any(
-        "pageindex__list returned 21 document(s)" in r.message
+        "pageindex__list returned 21 of 21 document(s)" in r.message
         and "payload_chars=" in r.message
         for r in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_t_list_docs_drops_entries_rather_than_overflow_budget():
+    """A catalog too large to fit even at minimum description length.
+
+    Shrinking descriptions bottoms out at 40 chars; past that the only way to
+    stay under the observation budget is to return fewer entries. Doing that
+    silently would be worse than not truncating at all, so the payload has to
+    say what it dropped.
+    """
+    import json
+
+    from jvagent.action.orchestrator.tools import DEFAULT_OBSERVATION_MAX_CHARS
+
+    listed = [
+        {
+            "doc_name": f"LONG_DOCUMENT_NAME_NUMBER_{i:04d}_procedures_manual.pdf",
+            "doc_description": "D" * 200,
+        }
+        for i in range(400)
+    ]
+
+    action = _make_pageindex_action(access_control=False)
+
+    with (
+        patch.object(
+            PageIndexAction,
+            "list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ),
+        patch.object(PageIndexAction, "_resolve_collection", return_value="col"),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        payload = await PageIndexAction._t_list_docs(action, summary=True)
+
+    assert len(payload) <= DEFAULT_OBSERVATION_MAX_CHARS
+    parsed = json.loads(payload)
+    # The true total survives even though the list does not.
+    assert parsed["count"] == 400
+    assert parsed["truncated"] is True
+    assert parsed["shown"] == len(parsed["documents"]) < 400
+    assert parsed["documents"][0]["doc_name"] == listed[0]["doc_name"]
