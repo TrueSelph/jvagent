@@ -1,8 +1,8 @@
 # Running jvagent on PostgreSQL
 
-> **Status: blocked upstream.** jvagent itself needs no changes to run on Postgres, and jvspatial ships a complete `PostgresDB` backend — but the code path `jvagent` uses to build its `Server` does not accept `db_type=postgres`. Two upstream gaps must be fixed in jvspatial first; both are described in [§3](#3-upstream-blockers). Until then, use `json`, `sqlite`, `mongodb`, or `dynamodb`.
+> **Requires `jvspatial >= 0.0.16`** (the pin in [`pyproject.toml`](../pyproject.toml)). On 0.0.15 and earlier, starting jvagent with `JVSPATIAL_DB_TYPE=postgres` fails outright — see [§3](#3-version-requirement).
 >
-> Verified against `jvspatial==0.0.15` (the pin in [`pyproject.toml`](../pyproject.toml)), and reproduced identically on 0.0.9 and 0.0.12.
+> jvagent needs no Postgres-specific code: the backend and every connection setting live in jvspatial. Verified end to end against the released 0.0.16 wheel — see [§4](#4-verifying-your-setup).
 
 ---
 
@@ -52,57 +52,51 @@ JVSPATIAL_LOG_DB_TYPE=json
 
 ```bash
 jvagent examples/jvagent_app bootstrap
+jvagent examples/jvagent_app
 ```
 
-As of `jvspatial==0.0.15` that bootstrap **fails**:
+The driver creates its schema on first use, so there is no migration step between those two commands.
+
+---
+
+## 3. Version requirement
+
+Postgres works from `jvspatial >= 0.0.16`. On **0.0.15 and earlier**, `Server` construction fails before the app ever boots:
 
 ```
 ❌ Failed to initialize GraphContext: Unsupported database type: postgres
 ValueError: Unsupported database type: postgres
 ```
 
----
+Two defects had to be fixed upstream, both shipped in 0.0.16 ([TrueSelph/jvspatial#35](https://github.com/TrueSelph/jvspatial/pull/35)). They are worth knowing about because the second one is invisible until a restart:
 
-## 3. Upstream blockers
+1. **`Server` rejected the type.** `DatabaseConfigurator.initialize_graph_context()` dispatched `db_type` through a hard-coded `json`/`mongodb`/`sqlite`/`dynamodb` chain. The backend underneath always worked — `create_database("postgres", ...)` was fine — so only the `Server` path, the one [`create_server_from_config()`](../jvagent/cli/server_config.py) uses, was closed.
 
-Both live in jvspatial. Per [`CLAUDE.md`](../CLAUDE.md) §4 and [`adr/0006`](../.planning/adr/0006-jvspatial-dependency.md), database adapter behavior is jvspatial's to own — do **not** work around either of these inside jvagent.
+2. **The asyncpg pool had no event-loop affinity.** `PostgresDB._ensure_pool()` memoized the pool and its lock for the life of the instance. This bites jvagent specifically, because jvagent boots across **two** loops: the CLI bootstraps the graph inside `asyncio.run(...)` ([`cli/main.py`](../jvagent/cli/main.py)), then hands off to uvicorn's own loop. The pool built during bootstrap stayed bound to the first, now-dead loop, and the first query on the server loop died with:
 
-### 3.1 `Server` path rejects `postgres`
+   ```
+   cannot perform operation: another operation is in progress
+   asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed in the middle of operation
+   ```
 
-`jvspatial/api/components/database_configurator.py:177` — `DatabaseConfigurator.initialize_graph_context()` dispatches on `db_type` through a hard-coded `json` / `mongodb` / `sqlite` / `dynamodb` if-chain and raises `ValueError: Unsupported database type: {db_type}` for anything else.
+   File-backed adapters never notice this. It is the same class of bug as the per-event-loop lock pattern jvagent already uses at [`core/app.py:100-124`](../jvagent/core/app.py).
 
-This is the path `Server(...)` takes, and therefore the path [`create_server_from_config()`](../jvagent/cli/server_config.py) takes. The layer beneath it is complete: `jvspatial/db/factory.py` handles `("postgres", "postgresql")`, reads `JVSPATIAL_POSTGRES_*` from env, and returns a fully functional `PostgresDB`. Calling `create_database("postgres")` directly and driving `Root` / `Node` CRUD against Postgres works today.
-
-**Fix:** add the missing `elif db_type in ("postgres", "postgresql")` branch to `initialize_graph_context()`, delegating to `create_database`.
-
-### 3.2 asyncpg pool has no event-loop affinity
-
-`jvspatial/db/postgres.py:353` — `PostgresDB._ensure_pool()` memoizes `self._pool` (created under `self._pool_lock`, itself constructed in `__init__`) and never revalidates which event loop that pool belongs to.
-
-This breaks jvagent specifically, because jvagent boots across **two** loops: the CLI bootstraps the application graph inside `asyncio.run(...)` ([`cli/main.py`](../jvagent/cli/main.py)), then hands off to uvicorn, which runs its own loop. The pool created during bootstrap stays bound to the first, now-dead loop, and the first query on the server loop fails:
-
-```
-❌ Database initialization failed: cannot perform operation: another operation is in progress
-asyncpg.exceptions.ConnectionDoesNotExistError: connection was closed in the middle of operation
-```
-
-File-based backends never notice; this is the same class of bug as the per-event-loop lock pattern jvagent already uses at [`core/app.py:100-124`](../jvagent/core/app.py).
-
-**Fix:** give `_ensure_pool()` loop affinity — record the loop the pool was created on, and when the running loop differs, drop the stale pool and its lock and rebuild.
+Per [`CLAUDE.md`](../CLAUDE.md) §4 and [`adr/0006`](../.planning/adr/0006-jvspatial-dependency.md), database adapter behavior is jvspatial's to own — if Postgres misbehaves, fix it there rather than working around it in jvagent.
 
 ---
 
-## 4. What was verified
+## 4. Verifying your setup
 
-With both gaps patched at runtime (monkeypatch only — no jvagent or jvspatial source changed), against `jvspatial==0.0.15` + `asyncpg==0.31.0` + `postgres:16-alpine`:
+[`scripts/smoke_postgres.sh`](../scripts/smoke_postgres.sh) drives a real app against a real database and checks what unit tests cannot:
 
-- `jvagent examples/jvagent_app bootstrap` completed; `App`, `Agents`, both example agents, and every installed action persisted to Postgres — 44 `node` rows, 43 `edge` rows, 3 `object` rows after bootstrap plus two conversation turns, with the driver creating all three tables and their indexes unattended.
-- Server started clean — `/health` reported `"database":"connected"`, lifecycle logged `📊 Database: PostgresDB | 🌳 Root: n.Root.root`.
-- Admin bootstrap wrote a `User` to Postgres; `POST /api/auth/login` returned a JWT against it.
-- `POST /api/agents/{id}/interact` ran full turns on the orchestrator example agent (`OrchestratorInteractAction` → `ReplyAction`), creating `User` / `Conversation` / `Interaction` nodes.
-- Conversation state survived a **full server restart** — a later turn recalled a value stated before the restart, read back out of Postgres rather than process memory.
+```bash
+scripts/smoke_postgres.sh                       # spins up its own container
+scripts/smoke_postgres.sh path/to/your_app      # against your app
+```
 
-So the blockers are strictly at the configuration boundary. Once jvspatial accepts `postgres` in the `Server` path and makes its pool loop-aware, jvagent runs on Postgres as-is.
+It bootstraps the graph, serves it, authenticates, runs an agent turn, **restarts the server**, and reads the conversation back. The restart is the point: it is the only step that exercises pool loop-affinity, and it is what failed before 0.0.16. Agent-turn checks are skipped when no model key is configured; the persistence checks still run.
+
+Against the released `jvspatial==0.0.16` with `asyncpg==0.31.0` and `postgres:16-alpine`, all 15 checks pass on `examples/jvagent_app`: the full graph persists (39 nodes at bootstrap, 44 nodes / 43 edges / 3 objects after two turns), `/health` reports `"database":"connected"`, lifecycle logs `📊 Database: PostgresDB`, JWT login resolves a Postgres-stored user, and a post-restart turn recalls a value stated before the restart — read back out of Postgres, not process memory.
 
 ---
 
