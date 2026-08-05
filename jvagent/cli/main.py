@@ -231,7 +231,7 @@ def main() -> None:
         elif args[0] == "bundle":
             handle_bundle_command(args[1:], app_root=app_root)
         elif args[0] == "validate":
-            sys.exit(run_validate(app_root))
+            sys.exit(run_validate(app_root, strict="--strict" in args))
         elif args[0] == "chat":
             from jvagent.cli.chat import handle_chat_command
 

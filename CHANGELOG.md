@@ -8,6 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **`jvagent validate` advisory for uncovered sibling channels.**
+  `channel_overrides` is matched on the exact `visitor.channel` string, so a
+  block written for `whatsapp` silently does nothing on a `whatsapp_call`
+  (voice) turn and the action-level value applies. Validation now advises when
+  a subtractive knob (`skill_only_tools`, `denied_tools`, `pinned_tools`) is set
+  for one channel of a family but not for its sibling, and that sibling is
+  reachable (its providing action is enabled on the agent). Both keys are valid
+  channels, so no key-validity check could catch this.
+
+  Advisories are a new severity: printed, but they do **not** affect the exit
+  code, so this cannot break an existing pipeline. `jvagent validate --strict`
+  promotes them to failures. Coverage:
+  `tests/core/test_channel_override_coverage.py`,
+  `tests/cli/test_validate_advisories.py`.
+
 ### Fixed
 
 - **No WARNING when ambient core parameters are re-unioned.**

@@ -176,7 +176,9 @@ async def test_channel_resolved_list_drives_the_lean_pool(
     """Under lean, gated names are excluded from the pre-surface candidate pool.
     That exclusion must follow the CHANNEL-resolved list, not the action-level
     one — otherwise a channel that ungates a tool still can't surface it."""
-    many = _PAY + [(f"misc__t{i:02d}", f"Miscellaneous capability {i}") for i in range(20)]
+    many = _PAY + [
+        (f"misc__t{i:02d}", f"Miscellaneous capability {i}") for i in range(20)
+    ]
     ex = make_orchestrator(actions=[_ToolsAction(many)])
     ex.lean_tool_threshold = 5  # force lean on
     ex.lean_presurface_k = 3
