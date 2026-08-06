@@ -3,7 +3,8 @@
 jvforge POSTs to ``/api/artifact_handler_action/notify/{agent_id}`` with a
 ``process_document_url`` when an async ingest job finishes. The vault
 downloads the artifact, imports the pageindex_graph into PageIndex, then
-sends two WhatsApp messages: a ready notice (immediate) and an answer
+sends a proactive notification (WhatsApp or Messenger) with a ready notice
+and an optional answer.
 (background, using call_model if there's a pending question).
 
 On failure the endpoint returns 503 + Retry-After so jvforge retries the
@@ -328,6 +329,190 @@ async def _publish_whatsapp_message(
         return False
 
 
+async def _publish_messenger_message(
+    *,
+    agent: Any,
+    user_id: str,
+    session_id: str,
+    conversation_id: str,
+    content: str,
+    display_doc: str,
+    job_id: str,
+    answered: bool = False,
+) -> bool:
+    """Send a Facebook Messenger message via the registered FacebookAction.
+
+    Creates an interaction for record-keeping, sets the response, and sends
+    via ``FacebookAPI.send_text_message()`` on the live FacebookAction held by
+    the registered MessengerAdapter — never via ``response_bus.publish``, which
+    would append a duplicate reply onto the interaction.
+    """
+    memory = await agent.get_memory()
+    if not memory:
+        logger.warning("_publish_messenger_message: agent has no memory, cannot send")
+        return False
+
+    conversation = None
+    if conversation_id:
+        try:
+            from jvagent.memory.conversation import Conversation
+
+            conversation = await Conversation.get(conversation_id)
+        except Exception:
+            conversation = None
+
+    if conversation is None:
+        user = await memory.get_user(user_id, create_if_missing=False)
+        if not user:
+            logger.warning(
+                "_publish_messenger_message: user not found user_id=%s", user_id
+            )
+            return False
+        if session_id:
+            conversation = await user.get_conversation_by_session(session_id)
+        if conversation is None:
+            logger.warning(
+                "_publish_messenger_message: conversation not found "
+                "user_id=%s session_id=%s conversation_id=%s",
+                user_id,
+                session_id,
+                conversation_id,
+            )
+            return False
+
+    effective_session_id = (
+        session_id or str(getattr(conversation, "session_id", "") or "").strip() or ""
+    )
+    if not effective_session_id:
+        logger.warning(
+            "_publish_messenger_message: no effective session_id "
+            "user_id=%s conversation_id=%s",
+            user_id,
+            conversation_id,
+        )
+        return False
+
+    interaction = await conversation.add_interaction(
+        utterance="",
+        channel="messenger",
+        session_id=effective_session_id,
+    )
+    if not interaction:
+        logger.warning(
+            "_publish_messenger_message: add_interaction returned None "
+            "user_id=%s conversation_id=%s",
+            user_id,
+            conversation_id,
+        )
+        return False
+
+    interaction.add_parameter(
+        {
+            "is_proactive": True,
+            "job_id": job_id,
+            "doc_name": display_doc,
+            "ready": True,
+            "answered": answered,
+        },
+        "ArtifactHandlerInteractAction",
+    )
+
+    if content and content.strip():
+        interaction.set_response(content.strip())
+
+    await interaction.save()
+
+    # Use the already-registered live FacebookAction held by MessengerAdapter
+    # (startup-resolved Page token). Never call api() on a fresh find_one instance.
+    try:
+        response_bus = await agent.get_response_bus()
+    except Exception:
+        logger.warning(
+            "_publish_messenger_message: get_response_bus failed",
+            exc_info=True,
+        )
+        return False
+    if not response_bus:
+        logger.warning("_publish_messenger_message: no response bus")
+        return False
+
+    adapter = response_bus._channel_adapters.get("messenger")
+    if not adapter or not getattr(adapter, "_initialized", False):
+        facebook_action = await agent.get_action_by_type("FacebookAction")
+        if facebook_action is None:
+            logger.warning(
+                "_publish_messenger_message: FacebookAction not found on agent"
+            )
+            return False
+        try:
+            await facebook_action.ensure_page_access_token()
+            await facebook_action.ensure_adapter_registered()
+        except Exception:
+            logger.warning(
+                "_publish_messenger_message: ensure adapter/token failed",
+                exc_info=True,
+            )
+            return False
+        adapter = response_bus._channel_adapters.get("messenger")
+        if not adapter:
+            logger.warning(
+                "_publish_messenger_message: MessengerAdapter not registered"
+            )
+            return False
+
+    facebook_action = getattr(adapter, "action", None)
+    if facebook_action is None:
+        logger.warning(
+            "_publish_messenger_message: MessengerAdapter has no FacebookAction"
+        )
+        return False
+
+    try:
+        if not facebook_action.is_configured():
+            logger.warning("_publish_messenger_message: FacebookAction not configured")
+            return False
+    except Exception:
+        logger.warning(
+            "_publish_messenger_message: FacebookAction is_configured() failed",
+            exc_info=True,
+        )
+        return False
+
+    try:
+        api = facebook_action.api()
+    except Exception:
+        logger.warning(
+            "_publish_messenger_message: FacebookAction.api() failed on "
+            "registered action",
+            exc_info=True,
+        )
+        return False
+
+    try:
+        result = await asyncio.to_thread(
+            api.send_text_message, user_id, content
+        )
+        if isinstance(result, dict) and result.get("error"):
+            logger.error(
+                "_publish_messenger_message: send_text_message error for "
+                "user_id=%s: %s",
+                user_id,
+                result.get("error"),
+            )
+            return False
+        logger.info(
+            "_publish_messenger_message: sent to user_id=%s job_id=%s", user_id, job_id
+        )
+        return True
+    except Exception:
+        logger.error(
+            "_publish_messenger_message: send_text_message exception for user_id=%s",
+            user_id,
+            exc_info=True,
+        )
+        return False
+
+
 _PROCESSING_STATUSES = frozenset({"queued", "processing", "pending", "submitted"})
 
 _RETRY_AFTER_SECONDS = 30
@@ -448,7 +633,7 @@ def _canned_ready_message(
     doc_description: Optional[str] = None,
     pending_question: Optional[str] = None,
 ) -> str:
-    """Fallback WhatsApp notification (single message, never 'file').
+    """Fallback notification message (single message, never 'file').
 
     When a pending question exists: ready → remind question → invite answer
     follow-up (no LLM answer available in this fallback).
@@ -477,7 +662,7 @@ def _canned_ready_message_multi(
     doc_descriptions: Optional[Dict[str, str]] = None,
     pending_questions: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Consolidated WhatsApp ready notice for multiple documents."""
+    """Consolidated ready notice for multiple documents."""
     if not display_docs:
         return "Your files are ready. Ask me anything about them."
     if len(display_docs) == 1:
@@ -582,7 +767,7 @@ async def _generate_ready_message(
 
     has_question = bool((utterance or "").strip())
     system_parts = [
-        "You write a single concise WhatsApp reply. Follow these rules exactly:",
+        "You write a single concise reply. Follow these rules exactly:",
         f"- Briefly state that the {kind} is ready (e.g. 'Your {type_word} is ready'). {name_guidance} Never call it a 'file'.",
     ]
     if has_question:
@@ -626,11 +811,11 @@ async def _generate_ready_message(
             f"\nSearch excerpts for doc_name={internal_doc_name!r}:\n{excerpts}"
         )
         user_parts.append(
-            "\nWrite one short WhatsApp message: ready → remind question → answer."
+            "\nWrite one short message: ready → remind question → answer."
         )
     else:
         user_parts.append(
-            "\nNo pending question. Write one short WhatsApp ready notice."
+            "\nNo pending question. Write one short ready notice."
         )
     user_prompt = "\n".join(user_parts)
 
@@ -718,7 +903,7 @@ async def _generate_ready_message_multi(
 
     filenames_line = ", ".join(repr(d) for d in display_docs)
     system_parts = [
-        "You write natural WhatsApp replies. Follow these rules exactly:",
+        "You write natural replies. Follow these rules exactly:",
         f"- Always tell the user their {kinds_label} {'are' if is_plural else 'is'} ready. "
         f"Refer to each document by its type word (e.g. 'your PDF', 'your image') "
         f"unless the filename is clearly meaningful and descriptive — if a "
@@ -779,11 +964,11 @@ async def _generate_ready_message_multi(
         user_parts.extend(search_parts)
         user_parts.append("")
         user_parts.append(
-            "Write one WhatsApp message: ready → remind question(s) → answer(s)."
+            "Write one message: ready → remind question(s) → answer(s)."
         )
     else:
         user_parts.append("")
-        user_parts.append("No pending questions. Write one WhatsApp ready notice.")
+        user_parts.append("No pending questions. Write one short ready notice.")
 
     user_prompt = "\n".join(user_parts)
 
@@ -836,7 +1021,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
         3. Download artifact from ``process_document_url`` and import into PageIndex.
         4. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        5. For WhatsApp: send ready notice + optional answer.
+        5. For WhatsApp/Messenger: send ready notice + optional answer.
         6. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
     """
     import hmac
@@ -942,6 +1127,13 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     session_id = str(entry.get("session_id") or "").strip()
     conversation_id = str(entry.get("conversation_id") or "").strip()
     channel = str(entry.get("channel") or "").strip().lower() or "default"
+    logger.info(
+        "artifact_handler_notify: job_id=%s channel=%s user_id=%s doc=%s",
+        job_id,
+        channel,
+        user_id,
+        doc_name,
+    )
     # Prefer PageIndex import name; fall back to vault job name normalized the
     # same way PageIndex does (strip_redundant_md_suffix).
     vault_doc_name = str(entry.get("doc_name") or doc_name or "").strip()
@@ -988,10 +1180,25 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                                     )
         except Exception:
             pass
-    # ── Send WhatsApp notifications (ready notice + answer).
+    # ── Send proactive notifications.
+    # WhatsApp and Messenger get push messages; web/default relies on
+    # check_ingest_status polling (TODO: add web push in a future phase).
     if user_id and channel == "whatsapp":
         asyncio.create_task(
             _send_whatsapp_notifications(
+                agent_id=agent_id,
+                job_id=job_id or "",
+                user_id=user_id,
+                session_id=session_id,
+                conversation_id=conversation_id,
+                internal_doc_name=internal_doc_name,
+                display_doc=display_doc,
+                pending_question=pending_question,
+            )
+        )
+    elif user_id and channel == "messenger":
+        asyncio.create_task(
+            _send_messenger_notifications(
                 agent_id=agent_id,
                 job_id=job_id or "",
                 user_id=user_id,
@@ -1013,7 +1220,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     return {
         "status": "imported",
         "job_id": job_id,
-        "notified": channel == "whatsapp" and bool(user_id),
+        "notified": channel in ("whatsapp", "messenger") and bool(user_id),
         "doc_name": imported_doc_name,
     }
 
@@ -1086,6 +1293,99 @@ async def _send_whatsapp_notifications(
     except Exception:
         logger.error(
             "_send_whatsapp_notifications: unexpected error agent_id=%s " "job_id=%s",
+            agent_id,
+            job_id,
+            exc_info=True,
+        )
+
+
+async def _send_messenger_notifications(
+    *,
+    agent_id: str,
+    job_id: str,
+    user_id: str,
+    session_id: str,
+    conversation_id: str,
+    internal_doc_name: str,
+    display_doc: str,
+    pending_question: str,
+) -> None:
+    """Send a single Messenger notification: ready notice, or ready + answer."""
+    logger.info(
+        "_send_messenger_notifications: starting agent_id=%s job_id=%s "
+        "user_id=%s doc=%s",
+        agent_id,
+        job_id,
+        user_id,
+        display_doc,
+    )
+    try:
+        from jvagent.core.agent import Agent
+
+        agent = await Agent.get(agent_id)
+        if agent is None:
+            logger.warning(
+                "_send_messenger_notifications: agent not found agent_id=%s",
+                agent_id,
+            )
+            return
+
+        action = await _resolve_action(agent_id)
+
+        single_entry = {
+            "internal_doc_name": internal_doc_name,
+            "display_doc": display_doc,
+            "pending_question": pending_question,
+        }
+        desc_lookup: Dict[str, str] = {}
+        try:
+            desc_lookup = await _doc_description_lookup(agent, [single_entry])
+        except Exception:
+            pass
+        doc_description = desc_lookup.get(internal_doc_name, "")
+
+        content: Optional[str] = None
+        answered = False
+
+        if pending_question and internal_doc_name and action is not None:
+            content = await _generate_ready_message(
+                agent=agent,
+                vault_action=action,
+                internal_doc_name=internal_doc_name,
+                display_doc=display_doc,
+                utterance=pending_question,
+                doc_description=doc_description or None,
+            )
+            if content:
+                answered = True
+
+        if not content:
+            content = _canned_ready_message(
+                display_doc,
+                doc_description=doc_description,
+                pending_question=pending_question or None,
+            )
+
+        logger.info(
+            "_send_messenger_notifications: publishing to user_id=%s "
+            "answered=%s content_len=%d",
+            user_id,
+            answered,
+            len(content) if content else 0,
+        )
+        await _publish_messenger_message(
+            agent=agent,
+            user_id=user_id,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            content=content,
+            display_doc=display_doc,
+            job_id=job_id,
+            answered=answered,
+        )
+    except Exception:
+        logger.error(
+            "_send_messenger_notifications: unexpected error agent_id=%s job_id=%s",
             agent_id,
             job_id,
             exc_info=True,
