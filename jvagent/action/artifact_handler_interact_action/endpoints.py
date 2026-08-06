@@ -489,9 +489,7 @@ async def _publish_messenger_message(
         return False
 
     try:
-        result = await asyncio.to_thread(
-            api.send_text_message, user_id, content
-        )
+        result = await asyncio.to_thread(api.send_text_message, user_id, content)
         if isinstance(result, dict) and result.get("error"):
             logger.error(
                 "_publish_messenger_message: send_text_message error for "
@@ -814,9 +812,7 @@ async def _generate_ready_message(
             "\nWrite one short message: ready → remind question → answer."
         )
     else:
-        user_parts.append(
-            "\nNo pending question. Write one short ready notice."
-        )
+        user_parts.append("\nNo pending question. Write one short ready notice.")
     user_prompt = "\n".join(user_parts)
 
     try:
@@ -963,9 +959,7 @@ async def _generate_ready_message_multi(
         user_parts.append("Search excerpts:")
         user_parts.extend(search_parts)
         user_parts.append("")
-        user_parts.append(
-            "Write one message: ready → remind question(s) → answer(s)."
-        )
+        user_parts.append("Write one message: ready → remind question(s) → answer(s).")
     else:
         user_parts.append("")
         user_parts.append("No pending questions. Write one short ready notice.")

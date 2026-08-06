@@ -83,9 +83,7 @@ async def test_publish_messenger_cold_start_registers_adapter(monkeypatch):
     response_bus = SimpleNamespace(_channel_adapters=adapters)
 
     async def _register():
-        adapters["messenger"] = SimpleNamespace(
-            _initialized=True, action=live_action
-        )
+        adapters["messenger"] = SimpleNamespace(_initialized=True, action=live_action)
         return True
 
     live_action.ensure_adapter_registered = AsyncMock(side_effect=_register)

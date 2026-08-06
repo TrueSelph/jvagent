@@ -705,8 +705,7 @@ class FacebookAction(Action):
             reg = await self.register_messenger_webhook_subscription()
             if reg.get("status") == "ok":
                 logger.info(
-                    "Facebook Messenger webhook registration succeeded: "
-                    "callback=%s",
+                    "Facebook Messenger webhook registration succeeded: " "callback=%s",
                     reg.get("callback_url") or self.webhook_url,
                 )
             elif reg.get("status") == "skipped":
