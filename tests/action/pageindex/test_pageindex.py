@@ -499,13 +499,11 @@ def test_node_to_result_excerpt_source_explicit():
 
 def test_node_to_result_citation_fields_first_and_bodies_capped():
     """Search hits put citation keys first; omit text/physical_index/enabled/hierarchy."""
-    from jvagent.action.pageindex.models import _MAX_CONTENT_CHARS
-
     n = DocumentNode()
     n.doc_name = "manual.pdf"
     n.title = "Section"
-    n.text = "T" * (_MAX_CONTENT_CHARS + 500)
-    n.summary = "S" * (_MAX_CONTENT_CHARS + 500)
+    n.text = "T" * 2500
+    n.summary = "S" * 2500
     n.start_index = 3
     n.end_index = 5
     n.structure = "1.2"
@@ -524,7 +522,7 @@ def test_node_to_result_citation_fields_first_and_bodies_capped():
     assert result["doc_name"] == "manual.pdf"
     assert result["start_index"] == 3
     assert result["end_index"] == 5
-    assert result["summary"] == "S" * (_MAX_CONTENT_CHARS + 500)
+    assert result["summary"] == "S" * 2500
 
 
 def test_node_to_result_keeps_index_keys_no_hierarchy():

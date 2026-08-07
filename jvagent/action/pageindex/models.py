@@ -4,7 +4,6 @@ DocumentNode, DocumentContentEdge, and DocumentRootNode extend jvspatial Node/Ed
 for graph-based persistence of document structure.
 """
 
-import logging
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
@@ -12,10 +11,6 @@ from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
 
 from .config import get_pageindex_retrieval_excerpt_source
-
-_logger = logging.getLogger(__name__)
-
-_MAX_CONTENT_CHARS = 2000
 
 
 class DocumentRootNode(Node):
@@ -155,18 +150,6 @@ def node_to_result(
             or node.text
             or node.title
             or ""
-        )
-
-    _CONTENT_WARN_THRESHOLD = _MAX_CONTENT_CHARS
-    if body_val and len(body_val) > _CONTENT_WARN_THRESHOLD:
-        _logger.warning(
-            "node_to_result: %s for node %s (%s) exceeds %d chars (%d). "
-            "Consider increasing observation_max_chars if the full content is needed.",
-            body_key,
-            node.node_id,
-            node.title[:80] if node.title else "",
-            _CONTENT_WARN_THRESHOLD,
-            len(body_val),
         )
 
     # Citation/identity fields first so orchestrator middle-elision keeps them.
