@@ -184,6 +184,24 @@ def test_vet_egress_keeps_trailing_questions_that_look_like_closers():
     assert vet_egress(d) == d
 
 
+def test_vet_egress_still_strips_declarative_let_me_know_closers():
+    """The question guard must not blanket-exempt the whole phrase.
+
+    "Let me know if ..." as a statement is exactly the generic sign-off this
+    rule exists to remove; only the interrogative form is a false positive.
+    """
+    a = "Your order ships Tuesday. Let me know if that works."
+    assert vet_egress(a) == "Your order ships Tuesday."
+    b = "The invoice is attached. Let me know if you need anything else."
+    assert vet_egress(b) == "The invoice is attached."
+    # …while the interrogative form of the same phrase survives.
+    c = "Your quote is ready. Could you let me know if you need a revision?"
+    assert vet_egress(c) == c
+    # A specific ask carries an object and was never a closer.
+    d = "Sure — let me know your email address."
+    assert vet_egress(d) == d
+
+
 def test_vet_egress_preserves_newlines_between_list_items():
     # Markdown list items live on their own lines. The scrub must NOT weld
     # consecutive sentences into one run (regression: "city center.Jan Thiel").

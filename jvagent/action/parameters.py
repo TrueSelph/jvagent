@@ -731,6 +731,12 @@ _CLOSER_PATTERNS = [
         r"further (assistance|help)|need (anything|any help)|more help)\b",
         re.I,
     ),
+    # Kept despite the "Could you let me know if you need a quote?" false
+    # positive that prompted the question guard: `_is_question` handles that
+    # case precisely, and dropping this pattern would also stop peeling
+    # declarative sign-offs like "Let me know if that works." A specific ask
+    # ("let me know your email address") has an object and does not match.
+    re.compile(r"\blet me know if\b", re.I),
     re.compile(r"\b(i'?m |i am )?(always |more than )?happy to (help|assist)\b", re.I),
     re.compile(
         r"\b(just )?let me know\b[^.!?]*\b(if|whenever|should|questions?|"

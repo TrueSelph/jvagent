@@ -2428,3 +2428,60 @@ async def test_t_list_docs_drops_entries_rather_than_overflow_budget():
     assert parsed["truncated"] is True
     assert parsed["shown"] == len(parsed["documents"]) < 400
     assert parsed["documents"][0]["doc_name"] == listed[0]["doc_name"]
+
+
+@pytest.mark.asyncio
+async def test_t_search_omitted_limit_uses_configured_limit():
+    """``pageindex__search`` without ``limit`` must honour the action's config.
+
+    The tool used to hardcode 5, which silently overrode an operator's
+    ``limit`` attribute. Passing None defers the decision to ``search()``,
+    where the configured value wins — so the tool and the HTTP endpoint agree.
+    """
+    action = _make_pageindex_action()
+    object.__setattr__(action, "limit", 7)
+    captured = {}
+
+    async def _fake_search(_self, query, **kwargs):
+        captured.update(kwargs)
+        captured["query"] = query
+        return [{"doc_name": "d", "content": "c"}]
+
+    with (
+        patch.object(PageIndexAction, "search", new=_fake_search),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        await PageIndexAction._t_search(action, query="anything")
+
+    # The tool forwards None; resolution belongs to search(), not the tool.
+    assert captured["limit"] is None
+
+
+@pytest.mark.asyncio
+async def test_t_search_explicit_limit_is_forwarded():
+    """An explicit limit from the model still wins over the configured one."""
+    action = _make_pageindex_action()
+    object.__setattr__(action, "limit", 7)
+    captured = {}
+
+    async def _fake_search(_self, query, **kwargs):
+        captured.update(kwargs)
+        return [{"doc_name": "d", "content": "c"}]
+
+    with (
+        patch.object(PageIndexAction, "search", new=_fake_search),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        await PageIndexAction._t_search(action, query="anything", limit=3)
+
+    assert captured["limit"] == 3
+
+
+def test_pageindex_default_limit_is_the_effective_search_default():
+    """Documents what an omitted tool limit now resolves to.
+
+    ``pageindex__search`` forwards None (pinned above) and ``search()``
+    resolves it to ``cfg["limit"] or self.limit``. So this attribute default
+    is the tool's effective default — it used to be a hardcoded 5.
+    """
+    assert PageIndexAction.model_fields["limit"].default == 10
