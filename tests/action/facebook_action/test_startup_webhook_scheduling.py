@@ -16,9 +16,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from jvagent.action.facebook_action.facebook_action import (
+    FacebookAction,
     _messenger_webhook_startup_hooks,
 )
-from jvagent.action.facebook_action.facebook_action import FacebookAction
 
 
 @pytest.fixture(autouse=True)
@@ -45,9 +45,7 @@ class TestStartupTimeout:
         assert FacebookAction._startup_webhook_register_timeout_seconds() == 60.0
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(
-            "FACEBOOK_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS", "12.5"
-        )
+        monkeypatch.setenv("FACEBOOK_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS", "12.5")
         assert FacebookAction._startup_webhook_register_timeout_seconds() == 12.5
 
     def test_garbage_falls_back_to_default(
@@ -86,8 +84,12 @@ class TestDeferredScheduling:
     def test_distinct_actions_each_register(self) -> None:
         server = MagicMock()
         with patch(self._SERVER, return_value=server):
-            _action("n.FacebookAction.a")._schedule_deferred_messenger_webhook_register()
-            _action("n.FacebookAction.b")._schedule_deferred_messenger_webhook_register()
+            _action(
+                "n.FacebookAction.a"
+            )._schedule_deferred_messenger_webhook_register()
+            _action(
+                "n.FacebookAction.b"
+            )._schedule_deferred_messenger_webhook_register()
         assert server.lifecycle_manager.add_startup_hook.call_count == 2
 
     def test_falls_back_to_create_task_without_lifecycle_manager(self) -> None:
