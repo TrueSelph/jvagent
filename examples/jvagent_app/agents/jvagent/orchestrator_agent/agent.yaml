@@ -145,8 +145,11 @@ actions:
       # uncallable (fail closed). denied_tools wins; a pinned_tools match cannot
       # un-gate. Empty here — this example gates nothing; set e.g.
       # ["payments__*"] to confine a sensitive capability to its owning skill.
-      # Channel-overridable via channel_overrides.skill_only_tools (REPLACES
-      # this action-level list on that channel).
+      # Channel-overridable via channel_overrides.skill_only_tools, which
+      # REPLACES this action-level list on that channel rather than adding to
+      # it — repeat any entry you still want gated there. Setting it for one
+      # channel of a family and not its sibling (whatsapp / whatsapp_call) is
+      # the common mistake; see the notes on channel_overrides below.
       skill_only_tools: []
       enable_transient_ack: true         # emit ack(s) only on COMPLEX turns (skill or multiple tools)
       first_emit_timeout_ms: 1200        # delay before the FIRST ack
@@ -164,6 +167,22 @@ actions:
       # -- Voice-call loop profile: WhatsApp calls run a tighter/faster loop
       # than chat (shorter history prompt, tick + wall-clock caps, per-tool
       # timeout, and a shorter spoken-reply cap). Chat turns are untouched.
+      #
+      # TWO RULES, both silent when you get them wrong (see
+      # docs/ORCHESTRATOR.md "Per-channel overrides"):
+      #
+      # 1. LIST KNOBS REPLACE, THEY DO NOT MERGE. pinned_tools, denied_tools
+      #    and skill_only_tools in a block stand in for the action-level list
+      #    on that channel — anything you still want must be repeated inside
+      #    the block. This is why a config that works with channel_overrides
+      #    commented out can stop working once it is uncommented. An explicit
+      #    [] means "none here", not "fall back". Scalars just take the value.
+      #
+      # 2. KEYS MATCH visitor.channel EXACTLY. No prefixes, no aliases:
+      #    `whatsapp` does NOT cover `whatsapp_call` — voice is its own
+      #    channel string. A mis-keyed block no-ops with nothing logged, which
+      #    reads as "channel overrides are broken" rather than as a typo.
+      #    Both blocks below are spelled out for exactly that reason.
       channel_overrides:
         # Pin the Flow send so signup/appointment intents work turn-1 under lean
         # surfacing (gpt-4.1-nano often skips use_skill / find_tool) — on the
