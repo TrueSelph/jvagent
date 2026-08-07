@@ -22,7 +22,19 @@ Notes:
 
 - **The driver is an extra.** `pip install asyncpg` (or `jvspatial[postgres]`); it is not pulled in by jvagent's base dependencies.
 - **`JVSPATIAL_DB_PATH` does not apply.** [`server_config.py:161`](../jvagent/cli/server_config.py) only exports a path for `json` / `sqlite`.
-- **The DSN reaches the driver via env only.** [`server_config.py:126-164`](../jvagent/cli/server_config.py) threads a connection string into jvspatial's `DatabaseConfig` for `mongodb` and table/region for `dynamodb`; there is no Postgres field, so `JVSPATIAL_POSTGRES_DSN` must be set in the environment — an `app.yaml` `database.uri` will **not** be picked up.
+- **`app.yaml` works too.** Every key above also resolves from the `config.database` stanza, with the usual precedence (env wins):
+
+  ```yaml
+  config:
+    database:
+      type: postgres
+      uri: ${JVSPATIAL_POSTGRES_DSN}   # or a literal DSN, but keep credentials in env
+      pooler_mode: transaction
+      min_pool_size: 2
+      max_pool_size: 10
+  ```
+
+  `database.uri` is shared with mongodb — `database.type` decides how it is read. A non-integer pool size is logged and ignored rather than taking the server down at startup.
 - **Logging DB has no Postgres branch.** jvspatial's `logging/config.py` falls through to a `json` file log for any unrecognized type — silently. Set `JVSPATIAL_LOG_DB_TYPE=json` (or `mongodb`) explicitly so the fallback is a decision rather than a surprise. See [logging.md](logging.md).
 - **PageIndex is a separate store** with its own `JVAGENT_PAGEINDEX_DB_TYPE` (`json` by default) and is unaffected by the main graph backend.
 
