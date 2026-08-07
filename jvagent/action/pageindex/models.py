@@ -4,6 +4,7 @@ DocumentNode, DocumentContentEdge, and DocumentRootNode extend jvspatial Node/Ed
 for graph-based persistence of document structure.
 """
 
+import logging
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,8 @@ from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
 
 from .config import get_pageindex_retrieval_excerpt_source
+
+_logger = logging.getLogger(__name__)
 
 _MAX_CONTENT_CHARS = 2000
 
@@ -132,6 +135,10 @@ def node_to_result(
     excerpt_source: 'summary' (prefer summary/prefix_summary, else text), 'text'
         (prefer body text, else summary), or None to use
         get_pageindex_retrieval_excerpt_source() (default 'summary').
+
+    In 'summary' mode the result key is 'summary' (never 'content').
+    In 'text' mode the result key is 'content' (never 'summary').
+    The two keys are mutually exclusive — they are never both present.
     """
     mode = (
         excerpt_source
@@ -139,38 +146,42 @@ def node_to_result(
         else get_pageindex_retrieval_excerpt_source()
     )
     if mode == "text":
-        content = node.text or node.summary or node.title or ""
+        body_key = "content"
+        body_val = node.text or node.summary or node.title or ""
     else:
-        content = (
+        body_key = "summary"
+        body_val = (
             (node.summary or node.prefix_summary or "").strip()
             or node.text
             or node.title
             or ""
         )
-    # Citation/identity fields first so orchestrator middle-elision keeps them;
-    # omit physical_index/enabled/text; cap large bodies last.
-    #
-    # ``start_index`` / ``end_index`` are retained alongside the friendlier
-    # ``start_page`` / ``end_page`` because these rows are returned verbatim by
-    # the public search endpoint (``endpoints.py`` -> ``{"results": results}``).
-    # They are two small ints, so keeping them costs nothing against the
-    # observation budget — the bulk savings come from omitting ``text``.
-    return {
+
+    _CONTENT_WARN_THRESHOLD = _MAX_CONTENT_CHARS
+    if body_val and len(body_val) > _CONTENT_WARN_THRESHOLD:
+        _logger.warning(
+            "node_to_result: %s for node %s (%s) exceeds %d chars (%d). "
+            "Consider increasing observation_max_chars if the full content is needed.",
+            body_key,
+            node.node_id,
+            node.title[:80] if node.title else "",
+            _CONTENT_WARN_THRESHOLD,
+            len(body_val),
+        )
+
+    # Citation/identity fields first so orchestrator middle-elision keeps them.
+    # Public API / search rows use start_index/end_index (original field names).
+    # pageindex__search remaps to start_page/end_page only when dumping into
+    # the agent user prompt — never both spellings on the same payload.
+    result = {
         "doc_name": node.doc_name,
         "title": node.title,
-        "start_page": node.start_index,
-        "end_page": node.end_index,
         "start_index": node.start_index,
         "end_index": node.end_index,
         "node_id": node.id,
-        "structure": node.structure,
-        "content": content[:_MAX_CONTENT_CHARS] if content else "",
-        "summary": (
-            (node.summary or "")[:_MAX_CONTENT_CHARS]
-            if node.summary is not None
-            else None
-        ),
+        body_key: body_val if body_val else "",
     }
+    return result
 
 
 _INCLUDE_ATTR_GETTERS: Dict[str, Any] = {
@@ -183,8 +194,6 @@ _INCLUDE_ATTR_GETTERS: Dict[str, Any] = {
     "line_num": lambda n: n.line_num,
     "start_index": lambda n: n.start_index,
     "end_index": lambda n: n.end_index,
-    "start_page": lambda n: n.start_index,
-    "end_page": lambda n: n.end_index,
     "physical_index": lambda n: n.physical_index,
     "enabled": lambda n: node_enabled(n),
     "content_type": lambda n: getattr(n, "content_type", None),
@@ -198,12 +207,13 @@ def copy_included_fields(
     base: Dict[str, Any],
     include: Optional[List[str]],
 ) -> Dict[str, Any]:
-    """Merge whitelisted metadata into a search result row (deep copy; never duplicates ``content``)."""
+    """Merge whitelisted metadata into a search result row (deep copy; never duplicates body field)."""
     if not include:
         return base
+    body_keys = {"content", "summary"}
     out = dict(base)
     for key in include:
-        if key == "content" or key in out:
+        if key in out or key in body_keys:
             continue
         getter = _INCLUDE_ATTR_GETTERS.get(key)
         if not getter:

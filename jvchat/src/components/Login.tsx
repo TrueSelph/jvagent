@@ -49,7 +49,7 @@ function normalizeServerUrlInput(
         "Please enter a valid URL (e.g., localhost:8000 or http://localhost:8000)",
     };
   }
-  return { ok: true, url: validatedUrl };
+  return { ok: true, url: validatedUrl.replace(/\/+$/, "") };
 }
 
 export function Login() {

@@ -450,8 +450,8 @@ async def test_adapter_persists_distinct_summary_vs_text(pageindex_temp_db):
     node = next((r for r in results if r.get("doc_name") == "summary_test"), None)
     assert node is not None
     assert "text" not in node
+    assert "content" not in node
     assert node.get("summary") == "LLM-generated summary"
-    assert node.get("content") == "LLM-generated summary"
 
     results_with_text = await search_documents(
         query="section",
@@ -489,12 +489,16 @@ def test_node_to_result_excerpt_source_explicit():
     n.title = "T"
     n.text = "full body"
     n.summary = "short sum"
-    assert node_to_result(n, excerpt_source="summary")["content"] == "short sum"
-    assert node_to_result(n, excerpt_source="text")["content"] == "full body"
+    result_summary = node_to_result(n, excerpt_source="summary")
+    assert "content" not in result_summary
+    assert result_summary["summary"] == "short sum"
+    result_text = node_to_result(n, excerpt_source="text")
+    assert "summary" not in result_text
+    assert result_text["content"] == "full body"
 
 
 def test_node_to_result_citation_fields_first_and_bodies_capped():
-    """Search hits put citation keys first; omit text/physical_index/enabled; cap bodies."""
+    """Search hits put citation keys first; omit text/physical_index/enabled/hierarchy."""
     from jvagent.action.pageindex.models import _MAX_CONTENT_CHARS
 
     n = DocumentNode()
@@ -508,34 +512,68 @@ def test_node_to_result_citation_fields_first_and_bodies_capped():
     n.physical_index = 3
     result = node_to_result(n, excerpt_source="summary")
     keys = list(result)
-    assert keys.index("doc_name") < keys.index("content")
     assert keys.index("doc_name") < keys.index("summary")
+    assert "content" not in result
     assert "text" not in result
     assert "physical_index" not in result
     assert "enabled" not in result
+    assert "start_page" not in result
+    assert "end_page" not in result
+    assert "structure" not in result
+    assert "hierarchy" not in result
     assert result["doc_name"] == "manual.pdf"
-    assert result["start_page"] == 3
-    assert result["end_page"] == 5
-    assert len(result["content"]) <= _MAX_CONTENT_CHARS
-    assert len(result["summary"]) == _MAX_CONTENT_CHARS
-    assert result["summary"] == "S" * _MAX_CONTENT_CHARS
+    assert result["start_index"] == 3
+    assert result["end_index"] == 5
+    assert result["summary"] == "S" * (_MAX_CONTENT_CHARS + 500)
 
 
-def test_node_to_result_keeps_index_keys_for_api_compatibility():
-    """These rows are returned verbatim by the search endpoint.
-
-    Renaming start_index -> start_page would break every existing API client
-    for no budget saving, so both spellings ship.
-    """
+def test_node_to_result_keeps_index_keys_no_hierarchy():
+    """API/search rows use start_index/end_index; hierarchy stays off by default."""
     n = DocumentNode()
     n.doc_name = "manual.pdf"
     n.start_index = 3
     n.end_index = 5
+    n.structure = "1.2"
     result = node_to_result(n)
     assert result["start_index"] == 3
     assert result["end_index"] == 5
-    assert result["start_page"] == result["start_index"]
-    assert result["end_page"] == result["end_index"]
+    assert "start_page" not in result
+    assert "end_page" not in result
+    assert "hierarchy" not in result
+
+    n2 = DocumentNode()
+    n2.doc_name = "manual.pdf"
+    n2.start_index = 7
+    n2.end_index = 9
+    n2.hierarchy = ["Chapter 1", "Section 1.2"]
+    result2 = node_to_result(n2)
+    assert "hierarchy" not in result2
+
+
+def test_prompt_page_aliases_renames_index_keys_for_user_prompt():
+    """Tool observations dump page aliases; never both spellings."""
+    from jvagent.action.pageindex.pageindex_action.runtime_config import (
+        prompt_page_aliases,
+    )
+
+    rows = [
+        {
+            "doc_name": "manual.pdf",
+            "title": "Section",
+            "start_index": 3,
+            "end_index": 5,
+            "node_id": "n.1",
+            "summary": "excerpt",
+        }
+    ]
+    projected = prompt_page_aliases(rows)
+    assert projected[0]["start_page"] == 3
+    assert projected[0]["end_page"] == 5
+    assert "start_index" not in projected[0]
+    assert "end_index" not in projected[0]
+    # Original search row unchanged.
+    assert rows[0]["start_index"] == 3
+    assert "start_page" not in rows[0]
 
 
 def test_format_page_range_falls_back_on_explicit_none():

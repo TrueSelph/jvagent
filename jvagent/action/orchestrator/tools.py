@@ -136,7 +136,7 @@ MAX_OBSERVATIONS_IN_PROMPT = 12
 # what it just fetched); older ones are elided hard, since by then their value is
 # "what happened", not the payload. Elision is middle-out and always marked, so
 # the model can see it was trimmed and re-run the tool if it truly needs the body.
-DEFAULT_OBSERVATION_MAX_CHARS = 4000
+DEFAULT_OBSERVATION_MAX_CHARS = 20000
 DEFAULT_STALE_OBSERVATION_MAX_CHARS = 600
 DEFAULT_OBSERVATION_FULL_RECENT = 3
 DEFAULT_OBSERVATION_ARGS_MAX_CHARS = 400

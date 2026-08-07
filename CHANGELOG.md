@@ -93,11 +93,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - **Lean PageIndex search hits.** `node_to_result` puts citation/identity fields
   first (`doc_name`, pages, `node_id`, …) and omits bulk `text` /
   `physical_index` / `enabled` by default so orchestrator middle-elision keeps
-  citations. Cap `content` and `summary`; request body text via
-  `include=["text"]` or `excerpt_source="text"`. `start_index` / `end_index`
-  are still returned alongside the new `start_page` / `end_page` aliases —
-  these rows are the public search endpoint's response, so dropping them would
-  break API clients for no budget saving. Coverage:
+  citations. Rows keep either `summary` or `content` (mutually exclusive by
+  excerpt source), never both. Request body text via `include=["text"]` or
+  `excerpt_source="text"`. Public search / API rows use `start_index` /
+  `end_index`; `pageindex__search` remaps those to `start_page` / `end_page`
+  only in the observation dumped into the agent user prompt (never both
+  spellings on one payload). Coverage:
   `tests/action/pageindex/test_pageindex.py`.
 
 - **`pageindex__search` honours the action's configured `limit`.** The tool

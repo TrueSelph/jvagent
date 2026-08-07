@@ -640,13 +640,14 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     Optional[str],
     Optional[str],
     Optional[str],
+    Optional[str],
 ]:
     """Parse multipart form-data from raw body without decoding file content.
 
     Returns (file_content, filename, doc_name, model, if_add_node_summary,
              collection_name, metadata, doc_description, doc_url,
              convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url,
-             use_jvforge, notification_url, notification_secret).
+             use_jvforge, notification_url, notification_secret, chunking_strategy).
     Uses latin-1 for headers to avoid UTF-8 decode errors on non-ASCII filenames or field values.
     """
     content_type_bytes = (
@@ -678,6 +679,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     use_jvforge: Optional[str] = None
     notification_url: Optional[str] = None
     notification_secret: Optional[str] = None
+    chunking_strategy: Optional[str] = None
 
     def _safe_str(b: bytes) -> str:
         try:
@@ -686,7 +688,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge, notification_url, notification_secret
+        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge, notification_url, notification_secret, chunking_strategy
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -720,6 +722,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             notification_url = value or None
         elif name == "notification_secret":
             notification_secret = value or None
+        elif name == "chunking_strategy":
+            chunking_strategy = value or None
 
     def on_file(f) -> None:
         nonlocal file_content, filename
@@ -759,6 +763,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         use_jvforge,
         notification_url,
         notification_secret,
+        chunking_strategy,
     )
 
 
@@ -943,6 +948,7 @@ async def ingest_document_endpoint(
         use_jvforge_raw,
         notification_url_raw,
         notification_secret_raw,
+        chunking_strategy_raw,
     ) = _parse_multipart_safe(body, content_type)
     collection_name = collection_name or agent_id
     metadata = _parse_metadata(metadata_raw)
@@ -961,6 +967,10 @@ async def ingest_document_endpoint(
     )
     bold_opt = _form_yes_no_optional(normalize_bold_headings_raw)
     normalize_bold_flag = False if bold_opt is None else bold_opt
+
+    chunking_strategy_eff = (chunking_strategy_raw or "").strip().lower() or "heading"
+    if chunking_strategy_eff not in ("heading", "llm_segment", "llm_direct"):
+        chunking_strategy_eff = "heading"
 
     file_url = (file_url_raw or "").strip()
     has_upload = len(content) > 0
@@ -1067,6 +1077,7 @@ async def ingest_document_endpoint(
                         notification_url=import_callback,
                         notification_secret=import_secret,
                         notify_delay_seconds=0,
+                        chunking_strategy=chunking_strategy_eff,
                     )
                     return {
                         "status": result["status"],
@@ -1096,6 +1107,7 @@ async def ingest_document_endpoint(
                     file_url=file_url,
                     filename=None,
                     content=None,
+                    chunking_strategy=chunking_strategy_eff,
                 )
             except ImportError as e:
                 raise ValidationError(str(e))
@@ -1209,6 +1221,7 @@ async def ingest_document_endpoint(
                         notification_url=import_callback,
                         notification_secret=import_secret,
                         notify_delay_seconds=0,
+                        chunking_strategy=chunking_strategy_eff,
                     )
 
                     # Return async response with queue position (root_id/description
@@ -1242,6 +1255,7 @@ async def ingest_document_endpoint(
                         llm_webhook_url=llm_wh_url,
                         filename=filename,
                         content=content,
+                        chunking_strategy=chunking_strategy_eff,
                     )
             else:
                 result = await _do_assimilate(
@@ -1739,13 +1753,11 @@ async def delete_document_chunk_endpoint(
                 example=[
                     {
                         "doc_name": "my_doc",
-                        "title": "Section Title",
-                        "start_page": 5,
-                        "end_page": 8,
+                        "title": "Chapter 1 > Section Title",
                         "start_index": 5,
                         "end_index": 8,
                         "node_id": "n.DocumentNode.xyz",
-                        "content": "Excerpt...",
+                        "summary": "Excerpt...",
                         "doc_url": "https://example.com/doc.pdf",
                     }
                 ],
@@ -1798,12 +1810,16 @@ async def search_documents_endpoint(
     | only_enabled | bool | No | When true (default), skip disabled chunks |
     | include | string[] | No | Extra fields per hit (e.g. hierarchy, content_type, pageindex_node_id) |
 
-    **Response:** `results` — array of `{doc_name, title, start_page, end_page, start_index, end_index, node_id, structure, content, summary, doc_url}`
+    **Response:** `results` — array of `{doc_name, title, start_index, end_index, node_id, summary or content, doc_url}`
 
-    Citation/identity fields come first so truncation keeps them. Bulk `text`
-    (and `physical_index` / `enabled`) are omitted by default — request them
-    per hit with `include=["text", "physical_index", "enabled"]`. `start_page` /
-    `end_page` are aliases of `start_index` / `end_index`, both returned.
+    Citation/identity fields come first so truncation keeps them. The result
+    contains either a ``summary`` key (default, when excerpt_source is
+    ``summary``) or a ``content`` key (when excerpt_source is ``text``),
+    never both. Bulk ``text`` (and ``physical_index`` / ``enabled``) are
+    omitted by default — request them per hit with
+    ``include=["text", "physical_index", "enabled"]``. The agent tool
+    ``pageindex__search`` remaps page numbers to ``start_page`` /
+    ``end_page`` only in the observation dumped into the user prompt.
 
     Collection is determined by `agent_id` from the path.
     """
