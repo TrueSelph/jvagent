@@ -580,6 +580,56 @@ class FacebookAction(Action):
             )
             return {"status": "error", "error": str(e)}
 
+    async def subscribe_app_to_page(self) -> Dict[str, Any]:
+        """Install the app on the Page so it receives Page-level webhook events.
+
+        Meta requires two steps for Page events (feed, comments, reactions):
+        1. App-level subscription via ``register_messenger_webhook_subscription``
+           (``POST /{app_id}/subscriptions``).
+        2. Per-page installation via this method (``POST /{page_id}/subscribed_apps``).
+
+        Without this second step, ``feed`` webhook events (comments on Page posts)
+        are not delivered even if ``feed`` is in the subscribed fields.
+
+        Requires ``pages_manage_metadata`` permission on the Page access token.
+        """
+        self._apply_env_defaults()
+        if not self.is_configured():
+            return {
+                "status": "skipped",
+                "reason": "Facebook action is not configured",
+                "issues": self._config_issues(),
+            }
+        page_token = self._page_access_token()
+        if not page_token:
+            await self._maybe_resolve_page_access_token()
+            page_token = self._page_access_token()
+        if not page_token:
+            return {
+                "status": "skipped",
+                "reason": "No page access token available (set FACEBOOK_PAGE_ACCESS_TOKEN or ensure user token has pages_show_list)",
+            }
+        try:
+
+            def _subscribe() -> Dict[str, Any]:
+                return self.api().subscribe_app_to_page()
+
+            result = await asyncio.to_thread(_subscribe)
+            if isinstance(result, dict) and result.get("error"):
+                logger.warning(
+                    "Meta app-to-page subscription Graph error: %s",
+                    result.get("error"),
+                )
+            else:
+                logger.info(
+                    "App subscribed to Page (page_id=%s) — feed/comment events enabled",
+                    self.page_id,
+                )
+            return {"status": "ok", "page_id": self.page_id, "result": result}
+        except Exception as e:
+            logger.error("subscribe_app_to_page failed: %s", e, exc_info=True)
+            return {"status": "error", "error": str(e)}
+
     async def on_register(self) -> None:
         self._apply_env_defaults()
         if self._base_graph_config_issues():
@@ -587,6 +637,9 @@ class FacebookAction(Action):
             return
         await self._maybe_resolve_page_access_token()
         await self._ensure_messenger_webhook_url()
+        sub = await self.subscribe_app_to_page()
+        if sub.get("status") not in ("ok", "skipped"):
+            logger.warning("FacebookAction on_register: subscribe_app_to_page: %s", sub)
         logger.debug("Facebook action registered")
 
     async def on_reload(self) -> None:
@@ -617,6 +670,11 @@ class FacebookAction(Action):
                 logger.warning(
                     "FacebookAction on_reload: register_messenger_webhook_subscription: %s",
                     reg,
+                )
+            sub = await self.subscribe_app_to_page()
+            if sub.get("status") not in ("ok", "skipped"):
+                logger.warning(
+                    "FacebookAction on_reload: subscribe_app_to_page: %s", sub
                 )
 
     async def on_startup(self) -> None:
@@ -658,6 +716,21 @@ class FacebookAction(Action):
 
         if not await MessengerAdapter(action=self).initialize(agent=agent):
             logger.error("MessengerAdapter initialization failed")
+
+        from .facebook_comment_adapter import FacebookCommentAdapter
+        from .facebook_comment_filter import FacebookCommentFilter
+        from .facebook_reaction_adapter import FacebookReactionAdapter
+
+        if not await FacebookCommentFilter(
+            channels=["facebook_comment"], priority=100
+        ).initialize(agent=agent):
+            logger.warning("FacebookCommentFilter initialization failed")
+
+        if not await FacebookCommentAdapter(action=self).initialize(agent=agent):
+            logger.error("FacebookCommentAdapter initialization failed")
+
+        if not await FacebookReactionAdapter(action=self).initialize(agent=agent):
+            logger.error("FacebookReactionAdapter initialization failed")
 
         skip_reg = (
             os.environ.get("FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION", "").lower()
@@ -718,6 +791,17 @@ class FacebookAction(Action):
                     "Facebook Messenger webhook registration: %s",
                     reg,
                 )
+
+            sub = await self.subscribe_app_to_page()
+            if sub.get("status") == "ok":
+                logger.info("Facebook app subscribed to Page for feed events")
+            elif sub.get("status") == "skipped":
+                logger.info(
+                    "Facebook app-to-page subscription skipped: %s",
+                    sub.get("reason"),
+                )
+            else:
+                logger.warning("Facebook app-to-page subscription: %s", sub)
         except Exception as e:
             logger.warning(
                 "Facebook Messenger startup webhook register failed: %s",
@@ -830,7 +914,7 @@ class FacebookAction(Action):
             _task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     async def ensure_adapter_registered(self) -> bool:
-        """Ensure Messenger ChannelAdapter is registered (e.g. Lambda cold start)."""
+        """Ensure Messenger, FacebookComment and FacebookReaction ChannelAdapters are registered."""
         if not self.is_configured():
             return False
         try:
@@ -840,12 +924,42 @@ class FacebookAction(Action):
             response_bus = await agent.get_response_bus()
             if not response_bus:
                 return False
-            existing = response_bus._channel_adapters.get("messenger")
-            if existing and getattr(existing, "_initialized", False):
-                return True
-            from .messenger_adapter import MessengerAdapter
 
-            return await MessengerAdapter(action=self).initialize(agent=agent)
+            messenger_ok = True
+            existing_messenger = response_bus._channel_adapters.get("messenger")
+            if not (
+                existing_messenger
+                and getattr(existing_messenger, "_initialized", False)
+            ):
+                from .messenger_adapter import MessengerAdapter
+
+                messenger_ok = await MessengerAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            comment_ok = True
+            existing_comment = response_bus._channel_adapters.get("facebook_comment")
+            if not (
+                existing_comment and getattr(existing_comment, "_initialized", False)
+            ):
+                from .facebook_comment_adapter import FacebookCommentAdapter
+
+                comment_ok = await FacebookCommentAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            reaction_ok = True
+            existing_reaction = response_bus._channel_adapters.get("facebook_reaction")
+            if not (
+                existing_reaction and getattr(existing_reaction, "_initialized", False)
+            ):
+                from .facebook_reaction_adapter import FacebookReactionAdapter
+
+                reaction_ok = await FacebookReactionAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            return bool(messenger_ok and comment_ok and reaction_ok)
         except Exception as e:
             logger.error(
                 "FacebookAction: ensure_adapter_registered failed: %s",

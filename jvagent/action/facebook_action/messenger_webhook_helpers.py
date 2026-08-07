@@ -549,3 +549,201 @@ async def process_messenger_interaction_async(
         logger.error(
             "Error in messenger interaction for %s: %s", sender, e, exc_info=True
         )
+
+
+# ---------------------------------------------------------------------------
+# Feed / comment webhook helpers (Facebook Page comment events)
+# ---------------------------------------------------------------------------
+
+FEED_COMMENT_UTTERANCE_MAX = 2000
+
+logger_feed = logging.getLogger(f"{__name__}.feed_comment")
+
+
+async def create_feed_comment_walker(
+    agent_id: str,
+    utterance: str,
+    sender: str,
+    data_dict: Dict[str, Any],
+    sender_name: Optional[str] = None,
+) -> Optional[InteractWalker]:
+    """Create an InteractWalker for a Facebook Page comment event.
+
+    Uses ``channel="facebook_comment"`` so the channel_gate can distinguish
+    comments from Messenger DMs.
+
+    Args:
+        agent_id: Agent ID to interact with.
+        utterance: Comment text (possibly empty if media-only).
+        sender: Facebook user ID of the commenter (not PSID — may be
+            a global user ID for Page commenters).
+        data_dict: Additional data dict (includes ``feed_payload``).
+        sender_name: Display name of the commenter.
+    """
+    try:
+        convo_obj = await get_conversation_with_lock(sender)
+
+        if convo_obj and getattr(convo_obj, "session_id", None):
+            return InteractWalker(
+                agent_id=agent_id,
+                utterance=utterance,
+                channel="facebook_comment",
+                data=data_dict,
+                session_id=convo_obj.session_id,
+                user_name=sender_name,
+                stream=False,
+            )
+        return InteractWalker(
+            agent_id=agent_id,
+            utterance=utterance,
+            channel="facebook_comment",
+            data=data_dict,
+            user_id=sender,
+            user_name=sender_name,
+            stream=False,
+        )
+    except Exception as e:
+        logger_feed.error("Error creating feed-comment walker for %s: %s", sender, e)
+        return None
+
+
+async def process_feed_comment_interaction_async(
+    utterance: str,
+    sender: str,
+    agent_id: str,
+    agent: Any,
+    data_dict: Dict[str, Any],
+    sender_name: Optional[str] = None,
+) -> None:
+    """Background task: adapter registration, walker spawn, finalize for a feed comment."""
+    fb_action: Any = None
+    try:
+        fb_action = await agent.get_action_by_type("FacebookAction")
+        if fb_action:
+            await fb_action.ensure_adapter_registered()
+    except Exception as e:
+        logger_feed.warning(
+            "Feed-comment adapter ensure failed for agent %s: %s", agent_id, e
+        )
+
+    try:
+        walker = await create_feed_comment_walker(
+            agent_id, utterance, sender, data_dict, sender_name=sender_name
+        )
+        if not walker:
+            return
+        await walker.spawn(agent)
+        await finalize_interaction_from_webhook(walker, agent_id, sender)
+    except DatabaseError:
+        raise
+    except Exception as e:
+        logger_feed.error(
+            "Error in feed-comment interaction for %s: %s", sender, e, exc_info=True
+        )
+
+
+# ---------------------------------------------------------------------------
+# Feed / reaction webhook helpers (Facebook Page reaction events)
+# ---------------------------------------------------------------------------
+
+REACTION_TYPE_LABELS: Dict[str, str] = {
+    "like": "👍 like",
+    "love": "❤️ love",
+    "wow": "😮 wow",
+    "haha": "😂 haha",
+    "sorry": "😢 sorry",
+    "anger": "😡 anger",
+}
+
+FEED_REACTION_UTTERANCE_MAX = 500
+
+logger_reaction = logging.getLogger(f"{__name__}.feed_reaction")
+
+
+def _synthesize_reaction_utterance(
+    reaction_type: str,
+    sender_name: str,
+    comment_id: str,
+    post_id: str,
+) -> str:
+    """Build a short utterance string that describes the reaction event."""
+    label = REACTION_TYPE_LABELS.get(reaction_type, reaction_type)
+    target = "a comment" if comment_id else "a post"
+    name = sender_name or "Someone"
+    return f"[REACTION] {name} reacted with {label} on {target}."
+
+
+async def create_feed_reaction_walker(
+    agent_id: str,
+    utterance: str,
+    sender: str,
+    data_dict: Dict[str, Any],
+    sender_name: Optional[str] = None,
+) -> Optional[InteractWalker]:
+    """Create an InteractWalker for a Facebook Page reaction event.
+
+    Uses ``channel="facebook_reaction"`` so the channel_gate and
+    FacebookReactionAdapter can distinguish reactions from comments and DMs.
+    """
+    try:
+        convo_obj = await get_conversation_with_lock(sender)
+
+        if convo_obj and getattr(convo_obj, "session_id", None):
+            return InteractWalker(
+                agent_id=agent_id,
+                utterance=utterance,
+                channel="facebook_reaction",
+                data=data_dict,
+                session_id=convo_obj.session_id,
+                user_name=sender_name,
+                stream=False,
+            )
+        return InteractWalker(
+            agent_id=agent_id,
+            utterance=utterance,
+            channel="facebook_reaction",
+            data=data_dict,
+            user_id=sender,
+            user_name=sender_name,
+            stream=False,
+        )
+    except Exception as e:
+        logger_reaction.error(
+            "Error creating feed-reaction walker for %s: %s", sender, e
+        )
+        return None
+
+
+async def process_feed_reaction_interaction_async(
+    utterance: str,
+    sender: str,
+    agent_id: str,
+    agent: Any,
+    data_dict: Dict[str, Any],
+    sender_name: Optional[str] = None,
+) -> None:
+    """Background task: adapter registration, walker spawn, finalize for a feed reaction."""
+    fb_action: Any = None
+    try:
+        fb_action = await agent.get_action_by_type("FacebookAction")
+        if fb_action:
+            await fb_action.ensure_adapter_registered()
+    except Exception as e:
+        logger_reaction.warning(
+            "Feed-reaction adapter ensure failed for agent %s: %s", agent_id, e
+        )
+
+    try:
+        walker = await create_feed_reaction_walker(
+            agent_id, utterance, sender, data_dict, sender_name=sender_name
+        )
+        if not walker:
+            return
+        await walker.spawn(agent)
+        await finalize_interaction_from_webhook(walker, agent_id, sender)
+    except DatabaseError:
+        raise
+    except Exception as e:
+        logger_reaction.error(
+            "Error in feed-reaction interaction for %s: %s", sender, e, exc_info=True
+        )

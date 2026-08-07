@@ -20,7 +20,12 @@ from .facebook_action import FacebookAction
 from .facebook_api import FacebookAPI
 from .messenger_message_coalescer import MessengerMessageCoalescer
 from .messenger_webhook_helpers import (
+    FEED_COMMENT_UTTERANCE_MAX,
+    FEED_REACTION_UTTERANCE_MAX,
+    _synthesize_reaction_utterance,
     prime_messenger_sender_actions,
+    process_feed_comment_interaction_async,
+    process_feed_reaction_interaction_async,
     process_messenger_interaction_async,
     resolve_messenger_inbound_event,
     verify_meta_messenger_signature,
@@ -664,7 +669,10 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     events = FacebookAPI.iter_messenger_user_text_events(payload)
-    if not events:
+    feed_comment_events = FacebookAPI.iter_feed_comment_events(payload)
+    feed_reaction_events = FacebookAPI.iter_feed_reaction_events(payload)
+
+    if not events and not feed_comment_events and not feed_reaction_events:
         return {"status": "ignored", "response": None}
 
     access_control_action = await agent.get_access_control_action()
@@ -748,6 +756,126 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
                 handle_merged_messenger_event,
             )
 
+    # Process feed/comment events (Facebook Page comments)
+    for comment_event in feed_comment_events:
+        sender = str(comment_event.get("sender_id") or "").strip()
+        if not sender:
+            continue
+        page_id = str(comment_event.get("page_id") or "").strip()
+        # Defense-in-depth: skip if sender is the Page itself (should already
+        # be filtered by iter_feed_comment_events, but guard here too).
+        if sender and page_id and sender == page_id:
+            logger.debug(
+                "Skipping feed comment from Page %s (self-reply loop prevention)",
+                sender,
+            )
+            continue
+        comment_text = str(comment_event.get("message") or "").strip()
+        if not comment_text:
+            continue
+        if len(comment_text) > FEED_COMMENT_UTTERANCE_MAX:
+            continue
+
+        comment_id = str(comment_event.get("comment_id") or "").strip()
+        post_id = str(comment_event.get("post_id") or "").strip()
+        sender_name = str(comment_event.get("sender_name") or "").strip() or None
+
+        feed_data_dict: Dict[str, Any] = {
+            "feed_payload": comment_event,
+            "facebook_comment": True,
+            "post_id": post_id,
+            "comment_id": comment_id,
+            "page_id": page_id,
+        }
+
+        has_access = True
+        if access_control_action:
+            has_access = await access_control_action.has_action_access(
+                user_id=sender,
+                action_label="FacebookAction",
+                channel="facebook_comment",
+            )
+        if not has_access:
+            log_access_denied(
+                agent_id=agent_id,
+                user_id=sender,
+                channel="facebook_comment",
+                action_label="FacebookAction",
+                stage="feed_comment",
+            )
+            continue
+
+        await process_feed_comment_interaction_async(
+            comment_text,
+            sender,
+            agent_id,
+            agent,
+            feed_data_dict,
+            sender_name=sender_name,
+        )
+
+    # Process feed/reaction events (Facebook Page reactions)
+    for reaction_event in feed_reaction_events:
+        sender = str(reaction_event.get("sender_id") or "").strip()
+        if not sender:
+            continue
+        page_id = str(reaction_event.get("page_id") or "").strip()
+        # Defense-in-depth: skip if sender is the Page itself.
+        if sender and page_id and sender == page_id:
+            logger.debug(
+                "Skipping feed reaction from Page %s (self-loop prevention)",
+                sender,
+            )
+            continue
+        reaction_type = str(reaction_event.get("reaction_type") or "").strip()
+        if not reaction_type:
+            continue
+
+        post_id = str(reaction_event.get("post_id") or "").strip()
+        comment_id = str(reaction_event.get("comment_id") or "").strip()
+        sender_name = str(reaction_event.get("sender_name") or "").strip() or None
+
+        utterance = _synthesize_reaction_utterance(
+            reaction_type, sender_name or "", comment_id, post_id
+        )
+        if len(utterance) > FEED_REACTION_UTTERANCE_MAX:
+            utterance = utterance[: FEED_REACTION_UTTERANCE_MAX - 3] + "..."
+
+        reaction_data_dict: Dict[str, Any] = {
+            "feed_payload": reaction_event,
+            "facebook_reaction": True,
+            "post_id": post_id,
+            "comment_id": comment_id,
+            "reaction_type": reaction_type,
+            "page_id": page_id,
+        }
+
+        has_access = True
+        if access_control_action:
+            has_access = await access_control_action.has_action_access(
+                user_id=sender,
+                action_label="FacebookAction",
+                channel="facebook_reaction",
+            )
+        if not has_access:
+            log_access_denied(
+                agent_id=agent_id,
+                user_id=sender,
+                channel="facebook_reaction",
+                action_label="FacebookAction",
+                stage="feed_reaction",
+            )
+            continue
+
+        await process_feed_reaction_interaction_async(
+            utterance,
+            sender,
+            agent_id,
+            agent,
+            reaction_data_dict,
+            sender_name=sender_name,
+        )
+
     return {"status": "received"}
 
 
@@ -805,3 +933,39 @@ async def facebook_register_webhook(
     )
     _raise_if_graph_error(action_id, result)
     return {"success": True, "result": result}
+
+
+@endpoint(
+    "/actions/{action_id}/facebook/page/subscribe-app",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["Facebook Action"],
+    summary="Install the app on the Page to receive feed/comment webhook events",
+)
+async def facebook_subscribe_app_to_page(
+    action_id: str,
+) -> Dict[str, Any]:
+    """Subscribe the app to the Facebook Page so it receives Page-level events.
+
+    This is required in addition to the app-level webhook subscription
+    (``/actions/{action_id}/facebook/webhook/register``). Meta requires both:
+
+    1. App-level subscription (``/{app_id}/subscriptions``) — registers
+       which fields (feed, messages, etc.) the webhook should receive.
+    2. Per-page installation (``/{page_id}/subscribed_apps``) — tells Meta
+       to deliver Page events for this specific Page.
+
+    Without step 2, ``feed`` events (comments, reactions) are not delivered
+    even if ``feed`` is in the webhook subscription fields.
+
+    Requires ``pages_manage_metadata`` permission on the Page access token.
+    """
+    action = await _require_facebook_action(action_id)
+    result = await action.subscribe_app_to_page()
+    if result.get("status") == "error":
+        raise ValidationError(
+            message=f"Failed to subscribe app to Page: {result.get('error', 'unknown')}",
+            details={"action_id": action_id, "result": result},
+        )
+    return result
