@@ -8,6 +8,11 @@ driver's own env read made a connection possible.
 
 import pytest
 
+# Building a Server with db_type=postgres instantiates PostgresDB, which imports
+# asyncpg. It ships in the [test] extra; skip rather than error for anyone
+# running the suite without it.
+pytest.importorskip("asyncpg")
+
 POSTGRES_APP_YAML = """
 app: pg_config_test
 context:

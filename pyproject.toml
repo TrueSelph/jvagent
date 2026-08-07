@@ -77,6 +77,10 @@ test = [
     # web_fetch tests (same stack as jvagent/action/web_fetch/info.yaml)
     "beautifulsoup4",
     "markdownify",
+    # PostgreSQL config tests build a real Server with db_type=postgres, which
+    # instantiates PostgresDB and therefore needs the driver. Without it the
+    # suite passes only on machines that happen to have asyncpg installed.
+    "asyncpg>=0.29.0",
 ]
 
 # Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).
