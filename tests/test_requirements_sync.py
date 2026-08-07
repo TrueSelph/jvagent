@@ -28,13 +28,8 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 REQUIREMENTS = ("requirements.txt", "requirements-all.txt")
 
 # Packages an action declares that requirements-all.txt deliberately omits.
-# Each needs a reason; an empty allowlist is the goal.
-ACTION_DEP_EXCEPTIONS = {
-    # jvagent/pageindex declares tiktoken>=0.11.0 while Dockerfile.base installs
-    # 'tiktoken<0.8.0'. Listing it would silently override the Dockerfile cap
-    # during the image build, so the contradiction is resolved first.
-    "tiktoken",
-}
+# Each needs a reason; empty is the goal, and it is currently empty.
+ACTION_DEP_EXCEPTIONS: set = set()
 
 _REQUIREMENT_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*(?:\[[^\]]+\])?)\s*(.*)$")
 
