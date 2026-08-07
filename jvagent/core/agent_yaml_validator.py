@@ -63,9 +63,28 @@ def _mk_advisory(path: str, message: str, hint: str = "") -> AgentYamlWarning:
     return AgentYamlWarning(path=path, message=message, hint=hint, severity="advisory")
 
 
+def _action_entry_enabled(entry: Dict[str, Any]) -> bool:
+    """False only when the entry explicitly sets ``context.enabled: false``.
+
+    Tolerant of a malformed ``context`` (a separate warning covers that) — this
+    helper must never raise, since it runs during validation of arbitrary YAML.
+    """
+    context = entry.get("context")
+    if not isinstance(context, dict):
+        return True
+    return context.get("enabled") is not False
+
+
 def _sets_override_key(cfg: Any, key: str) -> bool:
-    """True if a per-channel override block sets *key* at all."""
-    return isinstance(cfg, dict) and key in cfg
+    """True if a per-channel override block actually overrides *key*.
+
+    Mirrors ``_channel_cfg``'s resolution exactly, including the ``is not None``
+    test: a YAML null (``skill_only_tools:`` with its entries commented out) does
+    NOT override — the action-level value still applies. Treating "key present"
+    as "overridden" would make this lint miss precisely the silent fallback it
+    exists to catch.
+    """
+    return isinstance(cfg, dict) and key in cfg and cfg[key] is not None
 
 
 def _check_channel_override_coverage(
@@ -128,8 +147,16 @@ def _check_channel_override_coverage(
 
 
 def _warn_once(warnings: Iterable[AgentYamlWarning], source: str) -> None:
+    """Emit structural warnings on the runtime path — advisories are excluded.
+
+    Advisories are a config-time lint surfaced by ``jvagent validate``. Logging
+    them here too would put an unlabelled "validation warning" in the server's
+    boot output on every start for a config the operator chose deliberately,
+    which is exactly the runtime-warning behavior this feature set out not to
+    have.
+    """
     warn_once_generic(
-        warnings=warnings,
+        warnings=[w for w in warnings if w.severity != "advisory"],
         source=source,
         seen_keys=_SEEN_WARNING_KEYS,
         emit=lambda msg: logger.warning("agent.yaml validation warning %s", msg),
@@ -186,11 +213,15 @@ def validate_agent_yaml(data: Dict[str, Any]) -> List[AgentYamlWarning]:
 
     # Which action references this agent enables — needed before the per-entry
     # pass, since a channel's reachability depends on a *different* entry than
-    # the one carrying the override block.
+    # the one carrying the override block. ``context.enabled: false`` is honored
+    # at load time, so a disabled adapter's channel is genuinely unreachable and
+    # must not count.
     enabled_action_refs: Set[str] = {
         str(entry.get("action"))
         for entry in actions
-        if isinstance(entry, dict) and isinstance(entry.get("action"), str)
+        if isinstance(entry, dict)
+        and isinstance(entry.get("action"), str)
+        and _action_entry_enabled(entry)
     }
 
     orchestrator_count = 0

@@ -207,6 +207,93 @@ def test_malformed_override_block_is_ignored_not_crashed():
     assert _advisories(data) == []
 
 
+def test_disabled_sibling_action_is_not_reachable():
+    """``context.enabled: false`` is honored at load, so a disabled adapter's
+    channel cannot occur — advising about it would be a false positive on a
+    shape the bundled example app itself uses."""
+    data = _agent(
+        [
+            _orchestrator({"whatsapp": {"skill_only_tools": []}}),
+            {"action": "jvagent/whatsapp_voice_action", "context": {"enabled": False}},
+        ]
+    )
+    assert _advisories(data) == []
+
+
+def test_malformed_context_does_not_break_reachability():
+    """A non-dict context is someone else's warning; this must not raise."""
+    data = _agent(
+        [
+            _orchestrator({"whatsapp": {"skill_only_tools": []}}),
+            {"action": "jvagent/whatsapp_voice_action", "context": "not-a-mapping"},
+        ]
+    )
+    assert len(_advisories(data)) == 1  # treated as enabled, no crash
+
+
+def test_yaml_null_override_is_not_an_override():
+    """``skill_only_tools:`` with its entries commented out parses as None, and
+    ``_channel_cfg`` falls back to the action-level value — so the sibling is
+    NOT covered and the advisory must still fire. Treating key-presence as
+    coverage would make the lint miss the exact silent fallback it exists for."""
+    data = _agent(
+        [
+            _orchestrator(
+                {
+                    "whatsapp": {"skill_only_tools": []},
+                    "whatsapp_call": {"skill_only_tools": None},
+                }
+            ),
+            {"action": "jvagent/whatsapp_voice_action"},
+        ]
+    )
+    found = _advisories(data)
+    assert len(found) == 1
+    assert "'whatsapp_call'" in found[0].message
+
+
+def test_yaml_null_source_block_does_not_trigger():
+    """The mirror case: a null on the SOURCE side overrides nothing, so there is
+    no asymmetry to report."""
+    data = _agent(
+        [
+            _orchestrator({"whatsapp": {"skill_only_tools": None}}),
+            {"action": "jvagent/whatsapp_voice_action"},
+        ]
+    )
+    assert _advisories(data) == []
+
+
+def test_advisories_are_not_logged_on_the_runtime_path(caplog):
+    """``warn_agent_yaml`` runs at agent/action load. An advisory there would put
+    an unlabelled 'validation warning' in the server's boot output every start
+    for a deliberate config — the runtime warning this feature avoids."""
+    from jvagent.core.agent_yaml_validator import warn_agent_yaml
+
+    data = _agent(
+        [
+            _orchestrator({"whatsapp": {"skill_only_tools": []}}),
+            {"action": "jvagent/whatsapp_voice_action"},
+        ]
+    )
+    assert _advisories(data), "fixture must produce an advisory to be meaningful"
+
+    _reset_warning_cache_for_tests()
+    with caplog.at_level("WARNING"):
+        warn_agent_yaml(data, source="agent.yaml")
+    assert "channel_overrides" not in caplog.text
+
+
+def test_structural_warnings_still_reach_the_runtime_path(caplog):
+    """The advisory filter must not silence real structural warnings at load."""
+    from jvagent.core.agent_yaml_validator import warn_agent_yaml
+
+    _reset_warning_cache_for_tests()
+    with caplog.at_level("WARNING"):
+        warn_agent_yaml(_agent([{"action": "no_namespace"}]), source="agent.yaml")
+    assert "validation warning" in caplog.text
+
+
 def test_channel_providers_match_real_action_package_names():
     """Every CHANNEL_PROVIDERS ref must be a real action's ``package.name``.
 

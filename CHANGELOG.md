@@ -14,7 +14,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `channel_overrides` is matched on the exact `visitor.channel` string, so a
   block written for `whatsapp` silently does nothing on a `whatsapp_call`
   (voice) turn and the action-level value applies. Validation now advises when
-  a subtractive knob (`skill_only_tools`, `denied_tools`, `pinned_tools`) is set
+  a tool-surfacing knob (`skill_only_tools`, `denied_tools`, `pinned_tools`) is set
   for one channel of a family but not for its sibling, and that sibling is
   reachable (its providing action is enabled on the agent). Both keys are valid
   channels, so no key-validity check could catch this.
