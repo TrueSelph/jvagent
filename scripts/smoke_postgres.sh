@@ -31,7 +31,13 @@
 
 set -u
 
-APP_ROOT="examples/jvagent_app"
+# Resolve the default app relative to the REPO, not the caller's cwd. The app's
+# .env is gitignored, so a cwd-relative default silently yields a keyless app
+# when the script is run from a worktree or anywhere else — and a keyless run
+# still answers, with prompt scaffolding, so it fails three steps later at the
+# recall check instead of here.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_ROOT="$REPO_ROOT/examples/jvagent_app"
 USE_DOCKER=1
 for arg in "$@"; do
     case "$arg" in
@@ -189,15 +195,32 @@ AGENT=$(curl -s -m 15 "$BASE/api/agents" -H "Authorization: Bearer $TOK" |
     "$PYBIN" -c 'import sys,json; a=json.load(sys.stdin).get("agents",[]); print(a[0]["id"] if a else "")' 2>/dev/null)
 [ -n "$AGENT" ] && ok "agent listed ($AGENT)" || bad "no agents returned"
 
+# A reply is not automatically an answer. Without a model key the agent still
+# responds — by echoing the prompt scaffolding it was handed — so a bare
+# non-empty test passes on output that proves nothing, and the run only comes
+# apart at the recall check two steps later. Reject the scaffolding markers and
+# require the agent to have actually taken the utterance.
+reply_is_substantive() {
+    case "$1" in
+        *"MANDATORY directive"*|*"[Deliver every"*|*"User message:"*) return 1 ;;
+    esac
+    [ "${#1}" -ge 12 ]
+}
+
 step "4. agent turn"
 TURNS=1
 r1=$(say "$TOK" "$AGENT" "Remember the number 8675309.")
-if [ -n "$r1" ]; then
+if [ -z "$r1" ]; then
+    TURNS=0
+    note "agent turn — no reply (model key missing?); persistence checks continue"
+elif reply_is_substantive "$r1"; then
     printf 'agent: %s\n' "$r1"
     ok "turn produced a reply"
 else
     TURNS=0
-    note "agent turn — no reply (model key missing?); persistence checks continue"
+    printf 'agent: %s\n' "$r1"
+    note "agent turn — reply was prompt scaffolding, not an answer (model key \
+missing or misconfigured?); persistence checks continue"
 fi
 
 if [ "$USE_DOCKER" = "1" ] && [ "$TURNS" = "1" ]; then
