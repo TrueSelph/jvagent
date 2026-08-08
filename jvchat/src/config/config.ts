@@ -156,7 +156,7 @@ export function saveConfig(config: {
 }
 
 export function getJvagentUrl(): string {
-  return getConfig().jvagent.url
+  return getConfig().jvagent.url.replace(/\/+$/, '')
 }
 
 export function getJvagentTimeout(): number {

@@ -614,7 +614,6 @@ async def _agent_and_facebook_action_for_messenger_webhook(
     methods=["GET"],
     webhook=True,
     auth=False,
-    webhook_auth="api_key",  # Validates API key from query param or header
     tags=["Facebook Action", "Messenger"],
     summary="Meta Messenger webhook: GET hub challenge (subscription verify)",
 )
@@ -635,7 +634,6 @@ async def messenger_interact_webhook_verify(request: Request, agent_id: str) -> 
     methods=["POST"],
     webhook=True,
     auth=False,
-    webhook_auth="api_key",  # Validates API key from query param or header
     tags=["Facebook Action", "Messenger"],
     summary="Meta Messenger webhook: POST signed messaging events",
 )
@@ -644,7 +642,7 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
     agent, fb_action = await _agent_and_facebook_action_for_messenger_webhook(agent_id)
 
     fb_action._apply_env_defaults()
-    app_secret = str(fb_action.app_secret or "").strip()
+    app_secret = str(fb_action._app_secret() or "").strip()
     if not app_secret:
         raise HTTPException(
             status_code=500, detail="FACEBOOK_APP_SECRET is required for webhook POST"

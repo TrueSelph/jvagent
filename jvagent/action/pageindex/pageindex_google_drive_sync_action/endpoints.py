@@ -125,6 +125,12 @@ async def ingest_google_documents_endpoint(
             "natively on this server even if jvforge URL is set. Omit for env-driven behavior."
         ),
     ),
+    chunking_strategy: Optional[str] = Field(
+        default=None,
+        description=(
+            "Chunking strategy for jvforge: 'heading' (default), 'llm_segment', or 'llm_direct'."
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -171,6 +177,7 @@ async def ingest_google_documents_endpoint(
             normalize_bold_headings=normalize_bold_headings,
             skip_existing_documents=skip_existing_documents,
             use_jvforge=use_jvforge,
+            chunking_strategy=chunking_strategy,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -613,6 +620,13 @@ async def pageindex_google_drive_sync_action_interact(
         )
         use_jvforge_opt = _payload_optional_bool(request_data, "use_jvforge")
 
+        chunking_strategy_raw = request_data.get("chunking_strategy")
+        chunking_strategy_val = (
+            str(chunking_strategy_raw).strip().lower()
+            if chunking_strategy_raw is not None
+            else None
+        )
+
         ingest_kw: Dict[str, Any] = {
             "google_drive_folders": folders,
             "remove_deleted_documents": remove_deleted,
@@ -625,6 +639,12 @@ async def pageindex_google_drive_sync_action_interact(
         }
         if use_jvforge_opt is not None:
             ingest_kw["use_jvforge"] = use_jvforge_opt
+        if chunking_strategy_val and chunking_strategy_val in (
+            "heading",
+            "llm_segment",
+            "llm_direct",
+        ):
+            ingest_kw["chunking_strategy"] = chunking_strategy_val
 
         if is_serverless_mode():
             logger.info(
