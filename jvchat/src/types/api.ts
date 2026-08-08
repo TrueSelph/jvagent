@@ -32,6 +32,13 @@ export type TokenRefreshResponse = LoginResponse
 /** Docling PDF OCR backend for PageIndex / jvforge ingest (RapidOCR only). */
 export type DoclingOcrEngine = 'none' | 'rapidocr'
 
+/** Chunking strategy for jvforge document processing.
+ * - 'heading' — heading-based (no LLM cost)
+ * - 'llm_segment' — LLM-assisted segmentation (LLM finds section boundaries)
+ * - 'llm_direct' — LLM-directed chunking (LLM decides entire chunk tree)
+ */
+export type ChunkingStrategy = 'heading' | 'llm_segment' | 'llm_direct'
+
 export interface AgentsResponse {
   agents: Agent[]
   total: number

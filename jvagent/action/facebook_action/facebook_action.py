@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 # ones). AUDIT-actions (LOW).
 _BACKGROUND_TASKS: set = set()
 
+# Track which action IDs have already scheduled a deferred messenger webhook
+# registration via the jvspatial lifecycle hook (prevents double-registration).
+_messenger_webhook_startup_hooks: set = set()
+
 
 class FacebookAction(Action):
     """Action for Facebook Graph API (page management, Messenger, webhooks)."""
@@ -576,6 +580,56 @@ class FacebookAction(Action):
             )
             return {"status": "error", "error": str(e)}
 
+    async def subscribe_app_to_page(self) -> Dict[str, Any]:
+        """Install the app on the Page so it receives Page-level webhook events.
+
+        Meta requires two steps for Page events (feed, comments, reactions):
+        1. App-level subscription via ``register_messenger_webhook_subscription``
+           (``POST /{app_id}/subscriptions``).
+        2. Per-page installation via this method (``POST /{page_id}/subscribed_apps``).
+
+        Without this second step, ``feed`` webhook events (comments on Page posts)
+        are not delivered even if ``feed`` is in the subscribed fields.
+
+        Requires ``pages_manage_metadata`` permission on the Page access token.
+        """
+        self._apply_env_defaults()
+        if not self.is_configured():
+            return {
+                "status": "skipped",
+                "reason": "Facebook action is not configured",
+                "issues": self._config_issues(),
+            }
+        page_token = self._page_access_token()
+        if not page_token:
+            await self._maybe_resolve_page_access_token()
+            page_token = self._page_access_token()
+        if not page_token:
+            return {
+                "status": "skipped",
+                "reason": "No page access token available (set FACEBOOK_PAGE_ACCESS_TOKEN or ensure user token has pages_show_list)",
+            }
+        try:
+
+            def _subscribe() -> Dict[str, Any]:
+                return self.api().subscribe_app_to_page()
+
+            result = await asyncio.to_thread(_subscribe)
+            if isinstance(result, dict) and result.get("error"):
+                logger.warning(
+                    "Meta app-to-page subscription Graph error: %s",
+                    result.get("error"),
+                )
+            else:
+                logger.info(
+                    "App subscribed to Page (page_id=%s) — feed/comment events enabled",
+                    self.page_id,
+                )
+            return {"status": "ok", "page_id": self.page_id, "result": result}
+        except Exception as e:
+            logger.error("subscribe_app_to_page failed: %s", e, exc_info=True)
+            return {"status": "error", "error": str(e)}
+
     async def on_register(self) -> None:
         self._apply_env_defaults()
         if self._base_graph_config_issues():
@@ -583,6 +637,9 @@ class FacebookAction(Action):
             return
         await self._maybe_resolve_page_access_token()
         await self._ensure_messenger_webhook_url()
+        sub = await self.subscribe_app_to_page()
+        if sub.get("status") not in ("ok", "skipped"):
+            logger.warning("FacebookAction on_register: subscribe_app_to_page: %s", sub)
         logger.debug("Facebook action registered")
 
     async def on_reload(self) -> None:
@@ -613,6 +670,11 @@ class FacebookAction(Action):
                 logger.warning(
                     "FacebookAction on_reload: register_messenger_webhook_subscription: %s",
                     reg,
+                )
+            sub = await self.subscribe_app_to_page()
+            if sub.get("status") not in ("ok", "skipped"):
+                logger.warning(
+                    "FacebookAction on_reload: subscribe_app_to_page: %s", sub
                 )
 
     async def on_startup(self) -> None:
@@ -655,6 +717,21 @@ class FacebookAction(Action):
         if not await MessengerAdapter(action=self).initialize(agent=agent):
             logger.error("MessengerAdapter initialization failed")
 
+        from .facebook_comment_adapter import FacebookCommentAdapter
+        from .facebook_comment_filter import FacebookCommentFilter
+        from .facebook_reaction_adapter import FacebookReactionAdapter
+
+        if not await FacebookCommentFilter(
+            channels=["facebook_comment"], priority=100
+        ).initialize(agent=agent):
+            logger.warning("FacebookCommentFilter initialization failed")
+
+        if not await FacebookCommentAdapter(action=self).initialize(agent=agent):
+            logger.error("FacebookCommentAdapter initialization failed")
+
+        if not await FacebookReactionAdapter(action=self).initialize(agent=agent):
+            logger.error("FacebookReactionAdapter initialization failed")
+
         skip_reg = (
             os.environ.get("FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION", "").lower()
             == "true"
@@ -666,9 +743,157 @@ class FacebookAction(Action):
                 "Use admin GET .../facebook/messenger/webhook-url or register manually."
             )
         elif self.base_url and str(self.base_url).strip():
+            self._schedule_deferred_messenger_webhook_register()
+
+    @staticmethod
+    def _startup_webhook_register_timeout_seconds() -> float:
+        """Fail-fast bound for startup Messenger webhook registration (seconds)."""
+        try:
+            raw = os.environ.get(
+                "FACEBOOK_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS", ""
+            ).strip()
+            if raw:
+                return max(1.0, float(raw))
+        except (ValueError, TypeError):
+            pass
+        return 60.0
+
+    async def _run_startup_messenger_webhook_register(self) -> None:
+        """Health-check then register Messenger webhook (startup path only).
+
+        Unlike ``on_reload``, this path is reserved for first boot and will
+        always attempt registration if not already done.
+        """
+        try:
+            if not self.webhook_url or "?api_key=" not in (self.webhook_url or ""):
+                await self.get_webhook_url()
+
+            if not self.webhook_url:
+                logger.warning(
+                    "FacebookAction: cannot register webhook — webhook_url is empty"
+                )
+                return
+
+            logger.info("Registering Facebook Messenger webhook on startup")
+            reg = await self.register_messenger_webhook_subscription()
+            if reg.get("status") == "ok":
+                logger.info(
+                    "Facebook Messenger webhook registration succeeded: " "callback=%s",
+                    reg.get("callback_url") or self.webhook_url,
+                )
+            elif reg.get("status") == "skipped":
+                logger.info(
+                    "Facebook Messenger webhook registration skipped: %s",
+                    reg.get("reason"),
+                )
+            else:
+                logger.warning(
+                    "Facebook Messenger webhook registration: %s",
+                    reg,
+                )
+
+            sub = await self.subscribe_app_to_page()
+            if sub.get("status") == "ok":
+                logger.info("Facebook app subscribed to Page for feed events")
+            elif sub.get("status") == "skipped":
+                logger.info(
+                    "Facebook app-to-page subscription skipped: %s",
+                    sub.get("reason"),
+                )
+            else:
+                logger.warning("Facebook app-to-page subscription: %s", sub)
+        except Exception as e:
+            logger.warning(
+                "Facebook Messenger startup webhook register failed: %s",
+                e,
+                exc_info=True,
+            )
+
+    def _schedule_deferred_messenger_webhook_register(self) -> None:
+        """Register Messenger webhook after the HTTP server is listening.
+
+        ``on_startup`` runs inside ``asyncio.run(pre_startup_bootstrap)``; a bare
+        ``asyncio.create_task`` there may fire before uvicorn is listening, causing
+        Meta's verification GET to fail. Hook into the jvspatial server lifecycle
+        instead (same pattern as WhatsAppAction). Falls back to asyncio.create_task
+        if lifecycle_manager is unavailable.
+        """
+        action_id = str(getattr(self, "id", "") or "")
+        if action_id and action_id in _messenger_webhook_startup_hooks:
+            logger.debug(
+                "FacebookAction id=%s: deferred webhook register already scheduled",
+                action_id,
+            )
+            return
+
+        try:
+            from jvspatial.api.context import get_current_server
+
+            server = get_current_server()
+            if not server or not hasattr(server, "lifecycle_manager"):
+                logger.warning(
+                    "FacebookAction: cannot schedule webhook registration via "
+                    "lifecycle_manager (server not ready); falling back to asyncio.create_task"
+                )
+                raise RuntimeError("lifecycle_manager unavailable")
 
             async def _deferred_messenger_webhook_register() -> None:
-                """Let the HTTP server and any tunnel come up before Meta probes the URL."""
+                """Schedule Messenger webhook registration after uvicorn startup."""
+                try:
+                    delay_raw = os.environ.get(
+                        "FACEBOOK_WEBHOOK_REGISTER_DELAY_SECONDS", "0"
+                    )
+                    delay_sec = max(0.0, float(delay_raw))
+                except (ValueError, TypeError):
+                    delay_sec = 0.0
+
+                async def _run_after_startup() -> None:
+                    if delay_sec > 0:
+                        logger.info(
+                            "Deferring Facebook Messenger webhook registration by %.1fs "
+                            "(after Application startup complete)",
+                            delay_sec,
+                        )
+                        await asyncio.sleep(delay_sec)
+                    else:
+                        await asyncio.sleep(0)
+
+                    timeout = self._startup_webhook_register_timeout_seconds()
+                    try:
+                        await asyncio.wait_for(
+                            self._run_startup_messenger_webhook_register(),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Facebook Messenger startup webhook register timed out "
+                            "after %.1fs. Set FACEBOOK_SKIP_STARTUP_WEBHOOK_REGISTRATION=true "
+                            "or register via admin POST .../facebook/webhook/register.",
+                            timeout,
+                        )
+
+                asyncio.create_task(
+                    _run_after_startup(),
+                    name="facebook_messenger_webhook_register",
+                )
+
+            server.lifecycle_manager.add_startup_hook(
+                _deferred_messenger_webhook_register
+            )
+            if action_id:
+                _messenger_webhook_startup_hooks.add(action_id)
+            logger.info(
+                "FacebookAction id=%s: scheduled deferred webhook registration "
+                "via lifecycle_manager",
+                action_id,
+            )
+        except Exception:
+            logger.warning(
+                "FacebookAction: failed to schedule deferred webhook registration "
+                "via lifecycle_manager; falling back to asyncio.create_task"
+            )
+
+            async def _fallback_deferred() -> None:
                 try:
                     delay_raw = os.environ.get(
                         "FACEBOOK_WEBHOOK_REGISTER_DELAY_SECONDS", "8"
@@ -678,33 +903,18 @@ class FacebookAction(Action):
                     delay_sec = 8.0
                 if delay_sec > 0:
                     logger.info(
-                        "Deferring Meta webhook subscription by %.1fs (%s)",
+                        "Deferring Meta webhook subscription by %.1fs (fallback)",
                         delay_sec,
-                        "FACEBOOK_WEBHOOK_REGISTER_DELAY_SECONDS",
                     )
                     await asyncio.sleep(delay_sec)
-                if not self.webhook_url or "?api_key=" not in (self.webhook_url or ""):
-                    logger.warning(
-                        "FacebookAction id=%s: webhook_url still empty before deferred "
-                        "Meta subscribe; register_messenger_webhook_subscription will try "
-                        "get_webhook_url",
-                        getattr(self, "id", None),
-                    )
-                reg = await self.register_messenger_webhook_subscription()
-                if reg.get("status") not in ("ok",):
-                    logger.warning(
-                        "Facebook deferred webhook registration: %s",
-                        reg,
-                    )
+                await self._run_startup_messenger_webhook_register()
 
-            # Retain a strong reference: asyncio holds only a weak one, so a bare
-            # create_task() can be GC'd mid-flight. AUDIT-actions (LOW).
-            _task = asyncio.create_task(_deferred_messenger_webhook_register())
+            _task = asyncio.create_task(_fallback_deferred())
             _BACKGROUND_TASKS.add(_task)
             _task.add_done_callback(_BACKGROUND_TASKS.discard)
 
     async def ensure_adapter_registered(self) -> bool:
-        """Ensure Messenger ChannelAdapter is registered (e.g. Lambda cold start)."""
+        """Ensure Messenger, FacebookComment and FacebookReaction ChannelAdapters are registered."""
         if not self.is_configured():
             return False
         try:
@@ -714,12 +924,42 @@ class FacebookAction(Action):
             response_bus = await agent.get_response_bus()
             if not response_bus:
                 return False
-            existing = response_bus._channel_adapters.get("messenger")
-            if existing and getattr(existing, "_initialized", False):
-                return True
-            from .messenger_adapter import MessengerAdapter
 
-            return await MessengerAdapter(action=self).initialize(agent=agent)
+            messenger_ok = True
+            existing_messenger = response_bus._channel_adapters.get("messenger")
+            if not (
+                existing_messenger
+                and getattr(existing_messenger, "_initialized", False)
+            ):
+                from .messenger_adapter import MessengerAdapter
+
+                messenger_ok = await MessengerAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            comment_ok = True
+            existing_comment = response_bus._channel_adapters.get("facebook_comment")
+            if not (
+                existing_comment and getattr(existing_comment, "_initialized", False)
+            ):
+                from .facebook_comment_adapter import FacebookCommentAdapter
+
+                comment_ok = await FacebookCommentAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            reaction_ok = True
+            existing_reaction = response_bus._channel_adapters.get("facebook_reaction")
+            if not (
+                existing_reaction and getattr(existing_reaction, "_initialized", False)
+            ):
+                from .facebook_reaction_adapter import FacebookReactionAdapter
+
+                reaction_ok = await FacebookReactionAdapter(action=self).initialize(
+                    agent=agent
+                )
+
+            return bool(messenger_ok and comment_ok and reaction_ok)
         except Exception as e:
             logger.error(
                 "FacebookAction: ensure_adapter_registered failed: %s",
