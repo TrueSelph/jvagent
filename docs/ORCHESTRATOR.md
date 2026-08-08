@@ -318,6 +318,59 @@ actions:
 
 Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
 
+### Per-channel overrides (`channel_overrides`)
+
+A voice call and a web chat can run one agent with different loop knobs —
+`channel_overrides` keys a block of overrides by `visitor.channel`:
+
+```yaml
+      skill_only_tools: ["pay__*"]        # applies wherever no override exists
+      pinned_tools: ["kb__search"]
+
+      channel_overrides:
+        whatsapp_call:
+          history_limit: 6                # additive knobs: just set them
+          max_duration_seconds: 30
+          skill_only_tools:               # LIST knobs REPLACE — see below
+            - "pay__*"                    # repeat what you still want gated
+            - "wa__*"
+```
+
+Two properties account for most "channel overrides don't work" reports. Both are
+by design, and neither announces itself at runtime.
+
+**1. List knobs REPLACE, they do not merge.** `pinned_tools`, `denied_tools` and
+`skill_only_tools` in a channel block *replace* the action-level list on that
+channel. Anything you still want must be repeated inside the block. Omit it and
+it is silently absent there — which is why a config that works with
+`channel_overrides` commented out can stop working when it is uncommented: the
+block is not adding to the global list, it is standing in for it. An explicit
+`[]` means "none here", not "fall back". Scalar knobs (`history_limit`,
+`tool_call_timeout`, …) simply take the channel value.
+
+**2. Keys match `visitor.channel` exactly.** There is no prefix matching and no
+aliasing, so a block written for `whatsapp` does **not** cover `whatsapp_call` —
+voice is its own channel string, and both are valid. A mis-keyed block no-ops
+and the action-level value applies, with nothing logged. When a turn behaves as
+though the override were absent, confirm the channel string of *that* turn
+first.
+
+For `skill_only_tools` specifically, a third failure is possible and does log:
+gating a tool that no *reachable* skill declares makes it uncallable (fail
+closed). Skills can themselves be channel-gated, so a skill that owns a gated
+tool on web but is not offered on voice leaves that tool gated-and-ownerless
+there. The assembly warnings distinguish the cases:
+
+| Log line | Meaning |
+|---|---|
+| `skill_only_tools patterns matched no tool` | globs are dead — **nothing is gated** |
+| `matched tools no available skill declares` | gated but ownerless — **uncallable this turn** |
+| *(silent)* | override key never matched the channel |
+
+Covered by `tests/wire/test_channel_overrides_replace.py`, which asserts the
+resolution against an orchestrator read back out of a real graph rather than one
+constructed in memory.
+
 ### Model gearing (ADR-0016 / ADR-0041)
 
 Optional: pair a **light** completion model with the **heavy** reasoning model so single-dimensional turns don't pay the reasoning tax. The existing `model*`/`reasoning_*` are the heavy profile; set `light_model` (+ `light_model_action_type`, `light_model_temperature`, `light_model_max_tokens`) to engage gearing — empty leaves the agent single-model.
