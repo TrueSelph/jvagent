@@ -21,7 +21,13 @@
 # (`pip install asyncpg`). Agent-turn checks need a model key in the app's
 # .env; without one they are skipped and the persistence checks still run.
 #
-# Exits non-zero with the number of failed checks. See docs/postgres.md.
+# The jvagent entrypoint is derived from $PYTHON (default python3) so the run
+# exercises the same environment as PYBIN, not whatever `jvagent` PATH happens
+# to resolve to. Container name and ports are unique per run, and the server is
+# tracked by PID, so concurrent runs do not kill each other.
+#
+# Exits non-zero with the number of failed checks. The temp workdir (bootstrap
+# and server logs) is kept when any check fails. See docs/postgres.md.
 
 set -u
 
@@ -30,17 +36,35 @@ USE_DOCKER=1
 for arg in "$@"; do
     case "$arg" in
         --no-docker) USE_DOCKER=0 ;;
-        -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) APP_ROOT="$arg" ;;
     esac
 done
 
-CONTAINER="${JVAGENT_SMOKE_CONTAINER:-jvagent-smoke-pg}"
-PGPORT="${JVAGENT_SMOKE_PGPORT:-55432}"
-PORT="${JVAGENT_SMOKE_PORT:-8123}"
-BASE="http://127.0.0.1:$PORT"
 WORKDIR="$(mktemp -d)"
 PYBIN="${PYTHON:-python3}"
+
+# Run the *same* install PYBIN belongs to. A bare `jvagent` off PATH can be a
+# different environment entirely (different jvspatial, missing asyncpg), which
+# turns an environment problem into a wall of bogus check failures.
+PYBIN_PATH="$(command -v "$PYBIN" 2>/dev/null || printf '%s' "$PYBIN")"
+if [ -x "$(dirname "$PYBIN_PATH")/jvagent" ]; then
+    JVAGENT_CMD=("$(dirname "$PYBIN_PATH")/jvagent")
+else
+    JVAGENT_CMD=("$PYBIN" -m jvagent)
+fi
+
+# Everything externally visible is per-run unique so two overlapping runs do not
+# fight over a container name, a port, or each other's server process.
+RUN_ID=$$
+port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
+pick_port() { local p=$1; while port_in_use "$p"; do p=$((p + 1)); done; printf '%s' "$p"; }
+
+CONTAINER="${JVAGENT_SMOKE_CONTAINER:-jvagent-smoke-pg-$RUN_ID}"
+PGPORT="${JVAGENT_SMOKE_PGPORT:-$(pick_port $((55432 + RUN_ID % 1000)))}"
+PORT="${JVAGENT_SMOKE_PORT:-$(pick_port $((8123 + RUN_ID % 1000)))}"
+BASE="http://127.0.0.1:$PORT"
+SERVER_PID=""
 
 pass=0
 fail=0
@@ -50,10 +74,40 @@ ok()   { printf 'PASS  %s\n' "$1"; pass=$((pass + 1)); }
 bad()  { printf 'FAIL  %s\n' "$1"; fail=$((fail + 1)); }
 note() { printf 'SKIP  %s\n' "$1"; skip=$((skip + 1)); }
 
+start_server() {
+    nohup "${JVAGENT_CMD[@]}" "$APP_ROOT" > "$WORKDIR/server_$1.log" 2>&1 &
+    SERVER_PID=$!
+    for _ in $(seq 1 30); do
+        curl -s -m 2 "$BASE/health" >/dev/null 2>&1 && return 0
+        kill -0 "$SERVER_PID" 2>/dev/null || return 1  # died before serving
+        sleep 3
+    done
+    return 1
+}
+# Kill by PID, never `pkill -f jvagent <app root>` — that pattern matches every
+# concurrent run's server too. The trailing redirect swallows bash's
+# "Terminated: 15" job report, which is expected here, not a failure.
+stop_server() {
+    [ -n "$SERVER_PID" ] || return 0
+    pkill -P "$SERVER_PID"
+    kill "$SERVER_PID"
+    for _ in $(seq 1 15); do
+        kill -0 "$SERVER_PID" 2>/dev/null || break
+        sleep 1
+    done
+    kill -9 "$SERVER_PID"
+    wait "$SERVER_PID"
+    SERVER_PID=""
+} 2>/dev/null
+
 cleanup() {
-    pkill -f "jvagent $APP_ROOT" 2>/dev/null
+    stop_server
     [ "$USE_DOCKER" = "1" ] && docker rm -f "$CONTAINER" >/dev/null 2>&1
-    rm -rf "$WORKDIR"
+    if [ "$fail" -gt 0 ]; then
+        printf '\nlogs kept: %s\n' "$WORKDIR"
+    else
+        rm -rf "$WORKDIR"
+    fi
 }
 trap cleanup EXIT
 
@@ -92,22 +146,6 @@ export JVSPATIAL_ENVIRONMENT=development
 
 psql_q() { docker exec "$CONTAINER" psql -U jvagent -d jvagent_smoke -tA -c "$1" 2>/dev/null; }
 
-start_server() {
-    nohup jvagent "$APP_ROOT" > "$WORKDIR/server_$1.log" 2>&1 &
-    for _ in $(seq 1 30); do
-        curl -s -m 2 "$BASE/health" >/dev/null 2>&1 && return 0
-        sleep 3
-    done
-    return 1
-}
-stop_server() {
-    pkill -f "jvagent $APP_ROOT" 2>/dev/null
-    for _ in $(seq 1 15); do
-        pgrep -f "jvagent $APP_ROOT" >/dev/null || return 0
-        sleep 1
-    done
-}
-
 login() {
     curl -s -m 15 -X POST "$BASE/api/auth/login" -H 'Content-Type: application/json' \
         -d "{\"email\":\"$JVAGENT_ADMIN_EMAIL\",\"password\":\"$JVAGENT_ADMIN_PASSWORD\"}" |
@@ -122,11 +160,11 @@ say() {  # token agent utterance
 }
 
 step "1. bootstrap graph onto Postgres"
-if jvagent "$APP_ROOT" bootstrap > "$WORKDIR/bootstrap.log" 2>&1; then
+if "${JVAGENT_CMD[@]}" "$APP_ROOT" bootstrap > "$WORKDIR/bootstrap.log" 2>&1; then
     ok "jvagent bootstrap"
 else
     bad "jvagent bootstrap — see $WORKDIR/bootstrap.log"
-    grep -E "ValueError|Unsupported database type" "$WORKDIR/bootstrap.log" | head -2
+    grep -E "ValueError|Unsupported database type|ImportError" "$WORKDIR/bootstrap.log" | head -2
 fi
 
 if [ "$USE_DOCKER" = "1" ]; then
