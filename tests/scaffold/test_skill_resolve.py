@@ -430,3 +430,63 @@ class TestFrontmatterKeySpelling:
             )
         assert meta["team_owner"] == "platform"
         assert not caplog.records
+
+
+class TestShippedFrontmatterFixture:
+    """The example app carries a deliberately malformed SKILL.md.
+
+    The inline cases above build their own files, so they keep passing even if
+    the shipped fixture is quietly normalised by an editor that strips BOMs on
+    save — and then nothing exercises the real discovery path against a real
+    file on disk. These assert on the shipped bytes themselves.
+    """
+
+    FIXTURE = (
+        Path(__file__).resolve().parents[2]
+        / "examples"
+        / "jvagent_app"
+        / "agents"
+        / "jvagent"
+        / "orchestrator_agent"
+        / "skills"
+        / "smoke_frontmatter"
+    )
+
+    def test_fixture_is_still_malformed(self) -> None:
+        """Guards the guard: a stripped BOM makes this suite silently weaker."""
+        raw = (self.FIXTURE / "SKILL.md").read_bytes()
+        assert raw.startswith(
+            b"\xef\xbb\xbf"
+        ), "the UTF-8 BOM is the point of this file"
+        assert b"allowed_tools:" in raw, "underscore spelling is the point of this file"
+        assert b"requires_actions:" in raw
+
+    def test_shipped_fixture_parses_through_discovery(self) -> None:
+        from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+        data = parse_skill_bundle(self.FIXTURE, source="app")
+        assert data is not None
+        assert data["allowed_tools"] == [
+            "file_interface__list_directory",
+            "file_interface__read_file",
+        ]
+        assert data["requires_actions"] == ["FileInterfaceAction"]
+        # The body explains the bug, so it legitimately mentions "allowed-tools:".
+        # Assert on tokens that only ever appear inside the frontmatter block.
+        content = data["content"]
+        assert content.startswith("# Frontmatter Smoke")
+        assert "name: smoke_frontmatter" not in content
+        assert "spec: jv" not in content
+        assert "allowed_tools:\n" not in content
+
+    def test_fixture_is_exposed_by_the_example_agent(self) -> None:
+        """A fixture no agent loads is not exercising discovery at all."""
+        import yaml
+
+        agent_yaml = self.FIXTURE.parents[1] / "agent.yaml"
+        data = yaml.safe_load(agent_yaml.read_text(encoding="utf-8"))
+        skills: list = []
+        for entry in data.get("actions") or []:
+            if isinstance(entry, dict):
+                skills += (entry.get("context") or {}).get("skills") or []
+        assert "smoke_frontmatter" in skills
