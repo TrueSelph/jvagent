@@ -60,6 +60,21 @@ def _ensure_session_token_header(cors_headers: Optional[list]) -> list:
     return base
 
 
+def _optional_int(value: Any, key: str) -> Optional[int]:
+    """Coerce a config/env value to ``int``, or ``None`` if unusable.
+
+    A typo'd pool size should not take the server down before it starts —
+    warn and fall through to the driver's own default instead.
+    """
+    if normalize_empty(value) is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning("%s is not an integer (%r); ignoring it.", key, value)
+        return None
+
+
 def _set_db_env_from_config(app_root: str) -> None:
     """Set database environment variables from app config.
 
@@ -132,6 +147,55 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
 
     if normalize_empty(mongodb_uri) is None:
         mongodb_uri = env("JVSPATIAL_MONGODB_URI", default="mongodb://localhost:27017")
+
+    # PostgreSQL configuration (jvspatial >= 0.0.16). ``database.uri`` is shared
+    # with mongodb — ``database.type`` decides how it is read.
+    is_postgres = db_type in ("postgres", "postgresql")
+    postgres_dsn = (
+        normalize_empty(
+            get_config_value(app_config, "database.uri", "JVSPATIAL_POSTGRES_DSN", None)
+        )
+        if is_postgres
+        else None
+    )
+    postgres_pooler_mode = (
+        normalize_empty(
+            get_config_value(
+                app_config,
+                "database.pooler_mode",
+                "JVSPATIAL_POSTGRES_POOLER_MODE",
+                None,
+            )
+        )
+        if is_postgres
+        else None
+    )
+    postgres_min_pool_size = (
+        _optional_int(
+            get_config_value(
+                app_config,
+                "database.min_pool_size",
+                "JVSPATIAL_POSTGRES_MIN_POOL_SIZE",
+                None,
+            ),
+            "JVSPATIAL_POSTGRES_MIN_POOL_SIZE",
+        )
+        if is_postgres
+        else None
+    )
+    postgres_max_pool_size = (
+        _optional_int(
+            get_config_value(
+                app_config,
+                "database.max_pool_size",
+                "JVSPATIAL_POSTGRES_MAX_POOL_SIZE",
+                None,
+            ),
+            "JVSPATIAL_POSTGRES_MAX_POOL_SIZE",
+        )
+        if is_postgres
+        else None
+    )
 
     # DynamoDB configuration
     dynamodb_table_name = get_config_value(
@@ -325,6 +389,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
         dynamodb_secret_access_key=(
             dynamodb_secret_access_key if db_type == "dynamodb" else None
         ),
+        # Unset values stay None so PostgresDB's own defaults still apply.
+        postgres_dsn=postgres_dsn,
+        postgres_pooler_mode=postgres_pooler_mode,
+        postgres_min_pool_size=postgres_min_pool_size,
+        postgres_max_pool_size=postgres_max_pool_size,
     )
 
     # Auth configuration - merge default exempt paths with app-specific (auth.exempt_paths)

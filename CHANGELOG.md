@@ -25,6 +25,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `tests/core/test_channel_override_coverage.py`,
   `tests/cli/test_validate_advisories.py`.
 
+- **PostgreSQL settings resolve from `app.yaml`, not just env** (`jvagent/cli/server_config.py`).
+  `create_server_from_config` now threads `database.uri` / `pooler_mode` /
+  `min_pool_size` / `max_pool_size` into jvspatial's `DatabaseConfig` when
+  `database.type` is `postgres`/`postgresql`, alongside the mongodb and dynamodb
+  settings that were already wired. Previously the DSN reached the driver only
+  through jvspatial's own env read, so an `app.yaml` `database.uri` was silently
+  ignored for Postgres. Unset values stay `None` so `PostgresDB`'s defaults still
+  apply, and a non-integer pool size is logged and ignored rather than failing
+  startup. Requires `jvspatial >= 0.0.17` (pin bumped), which is where
+  `DatabaseConfig` began accepting values by field name. Coverage:
+  `tests/cli/test_server_config_postgres.py`.
+
 ### Fixed
 
 - **`voice.closers` no longer strips trailing questions.** Scrub peel now skips
