@@ -256,6 +256,8 @@ actions:
         - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
         - whatsapp_flows      # Meta Flow interactive send (WhatsApp text / voice-call)
         - whatsapp_service_flows  # signup/signin + appointment booking Flow intents
+        - smoke_frontmatter   # regression fixture: its SKILL.md is deliberately
+                              # BOM-prefixed with underscore keys — do not 'fix' it
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
