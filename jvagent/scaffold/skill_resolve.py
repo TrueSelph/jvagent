@@ -24,12 +24,20 @@ SELECTOR_ALL = "-all"
 
 
 def _parse_frontmatter(raw: str, skill_path: Path) -> Tuple[Dict[str, Any], str]:
-    """Parse optional YAML frontmatter and return (meta, content)."""
-    content = raw.strip()
-    if not raw.startswith("---"):
+    """Parse optional YAML frontmatter and return (meta, content).
+
+    The delimiter check runs on the *stripped* text, and a UTF-8 BOM is
+    removed first. Testing ``raw`` directly meant a leading blank line, a
+    stray indent, or an editor-inserted BOM made the whole frontmatter block
+    parse as body: ``allowed-tools`` was then never read (so the skill owned
+    no tools) *and* the frontmatter text reached the rendered procedure. Both
+    halves are silent. ``sop_extend`` already strips before this check.
+    """
+    content = raw.lstrip("﻿").strip()
+    if not content.startswith("---"):
         return {}, content
 
-    parts = raw.split("---", 2)
+    parts = content.split("---", 2)
     if len(parts) < 3:
         raise ValueError(f"Invalid frontmatter format in {skill_path}")
 

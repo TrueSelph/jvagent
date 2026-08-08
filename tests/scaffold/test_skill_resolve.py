@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
     resolve_agent_skills,
@@ -238,3 +240,81 @@ SOP content.
     data = parse_skill_bundle(skill_dir, source="builtin")
     assert data is not None
     assert data["requires_actions"] == ["GoogleCalendarAction"]
+
+
+class TestFrontmatterLeadingCharacters:
+    """A SKILL.md whose ``---`` is not the very first byte.
+
+    ``_parse_frontmatter`` tested ``raw.startswith("---")`` on the UNSTRIPPED
+    text while using the stripped text for everything else. A leading blank
+    line, indentation, or an editor-inserted UTF-8 BOM therefore made the whole
+    frontmatter block read as body, which fails twice over:
+
+    - ``allowed-tools`` is never parsed, so the skill declares no tools and
+      cannot own anything ``skill_only_tools`` gates
+    - the frontmatter text lands in the rendered procedure, so ``allowed-tools:``
+      shows up verbatim in the prompt
+
+    ``sop_extend.py`` already strips before the check; this is the outlier.
+    """
+
+    BODY = (
+        "---\n"
+        "name: doc_helper\n"
+        "description: helps with docs\n"
+        "allowed-tools:\n"
+        "  - pageindex__search\n"
+        "  - pageindex__list\n"
+        "---\n"
+        "\n"
+        "# Procedure\n"
+        "Do the thing.\n"
+    )
+
+    @pytest.mark.parametrize(
+        "label,prefix",
+        [
+            ("leading newline", "\n"),
+            ("leading blank lines", "\n\n"),
+            ("leading spaces", "  "),
+            ("utf-8 bom", "﻿"),
+            ("bom then newline", "﻿\n"),
+        ],
+    )
+    def test_frontmatter_is_parsed_despite_leading_characters(
+        self, label: str, prefix: str
+    ) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter(prefix + self.BODY, Path("SKILL.md"))
+        assert meta.get("allowed-tools") == [
+            "pageindex__search",
+            "pageindex__list",
+        ], f"{label}: allowed-tools must still be parsed"
+        assert (
+            "allowed-tools" not in content
+        ), f"{label}: frontmatter must not leak into the rendered body"
+        assert content.startswith("# Procedure"), f"{label}: body should start clean"
+
+    def test_clean_file_still_parses(self) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter(self.BODY, Path("SKILL.md"))
+        assert meta["name"] == "doc_helper"
+        assert content.startswith("# Procedure")
+
+    def test_body_horizontal_rule_is_not_a_delimiter(self) -> None:
+        """``---`` as a markdown rule in the body must survive intact."""
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        raw = self.BODY + "\nSection\n\n---\n\nMore\n"
+        _meta, content = _parse_frontmatter(raw, Path("SKILL.md"))
+        assert "---" in content
+        assert content.rstrip().endswith("More")
+
+    def test_file_without_frontmatter_is_untouched(self) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter("# Just a doc\n\nbody\n", Path("SKILL.md"))
+        assert meta == {}
+        assert content == "# Just a doc\n\nbody"
