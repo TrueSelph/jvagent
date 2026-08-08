@@ -24,7 +24,11 @@ RUN set -eux && \
     /var/lang/bin/python3.12 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'numpy>=1.26.0,<2.0' && \
-    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tiktoken<0.8.0' && \
+    # litellm (pulled in by jvagent/pageindex) requires tiktoken>=0.8.0,<1.0, and
+    # pageindex itself declares >=0.11.0 — the old 'tiktoken<0.8.0' cap could not
+    # satisfy either. cp312 manylinux wheels exist across this range, so
+    # --only-binary still resolves.
+    /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tiktoken>=0.11.0,<1.0' && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'pydantic[email]' && \
     # /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'docling>=2.0.0' && \
     # /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tabulate>=0.9.0' && \

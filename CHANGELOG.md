@@ -10,6 +10,21 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **`jvagent validate` advisory for uncovered sibling channels.**
+  `channel_overrides` is matched on the exact `visitor.channel` string, so a
+  block written for `whatsapp` silently does nothing on a `whatsapp_call`
+  (voice) turn and the action-level value applies. Validation now advises when
+  a tool-surfacing knob (`skill_only_tools`, `denied_tools`, `pinned_tools`) is set
+  for one channel of a family but not for its sibling, and that sibling is
+  reachable (its providing action is enabled on the agent). Both keys are valid
+  channels, so no key-validity check could catch this.
+
+  Advisories are a new severity: printed, but they do **not** affect the exit
+  code, so this cannot break an existing pipeline. `jvagent validate --strict`
+  promotes them to failures. Coverage:
+  `tests/core/test_channel_override_coverage.py`,
+  `tests/cli/test_validate_advisories.py`.
+
 - **PostgreSQL settings resolve from `app.yaml`, not just env** (`jvagent/cli/server_config.py`).
   `create_server_from_config` now threads `database.uri` / `pooler_mode` /
   `min_pool_size` / `max_pool_size` into jvspatial's `DatabaseConfig` when
@@ -23,6 +38,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `tests/cli/test_server_config_postgres.py`.
 
 ### Fixed
+
+- **`voice.closers` no longer strips trailing questions.** Scrub peel now skips
+  sentences ending in `?` / `?!` (ignoring trailing quotes or brackets), so
+  prompts like “Could you let me know if you need a quote?” stay intact. The
+  `let me know if` closer pattern is deliberately kept: the question guard fixes
+  the false positive precisely, while dropping the pattern would also stop
+  peeling declarative sign-offs like “Let me know if that works.” Coverage:
+  `tests/action/test_parameters.py`.
 
 - **No WARNING when ambient core parameters are re-unioned.**
   `resolve_parameters` still drops duplicate inviolable floors, but skips the
@@ -81,6 +104,47 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `JVSPATIAL_JWT_SECRET_KEY`.
 
 ### Changed
+
+- **Proactive artifact notifications reach Facebook Messenger.** When an
+  artifact job finishes, `_publish_messenger_message` records an interaction and
+  sends through the live `FacebookAction` held by the registered
+  `MessengerAdapter` (`FacebookAPI.send_text_message`), rather than
+  `response_bus.publish` — which would append a duplicate reply onto the same
+  interaction. Cold start registers the adapter first. Messenger webhook
+  registration is also deferred onto the server lifecycle instead of running
+  inside `on_startup`, where Meta's verification GET could reach a socket that
+  was not accepting yet; a `create_task` fallback covers hosts with no
+  lifecycle manager, and repeat scheduling for one action is suppressed so a
+  reload does not re-POST to Meta. Coverage:
+  `tests/action/artifact_handler_interact_action/test_publish_messenger_message.py`,
+  `tests/action/facebook_action/test_startup_webhook_scheduling.py`.
+
+- **Lean PageIndex search hits.** `node_to_result` puts citation/identity fields
+  first (`doc_name`, pages, `node_id`, …) and omits bulk `text` /
+  `physical_index` / `enabled` by default so orchestrator middle-elision keeps
+  citations. Rows keep either `summary` or `content` (mutually exclusive by
+  excerpt source), never both. Request body text via `include=["text"]` or
+  `excerpt_source="text"`. Public search / API rows use `start_index` /
+  `end_index`; `pageindex__search` remaps those to `start_page` / `end_page`
+  only in the observation dumped into the agent user prompt (never both
+  spellings on one payload). Coverage:
+  `tests/action/pageindex/test_pageindex.py`.
+
+- **`pageindex__search` honours the action's configured `limit`.** The tool
+  hardcoded `limit=5`, which silently overrode an operator's `limit` attribute
+  and disagreed with the HTTP search endpoint. It now passes `None` and lets
+  `search()` resolve, so the effective default is the configured value
+  (`10` unless changed) and tool and endpoint agree. Per-call limits from the
+  model still win. Coverage: `tests/action/pageindex/test_pageindex.py`.
+
+- **Compact `pageindex__list` tool payload.** Returns `{count, documents}` with
+  truncated descriptions (drops `doc_url` / `root_id` / collection) and shrinks
+  further to stay under the orchestrator observation budget
+  (`DEFAULT_OBSERVATION_MAX_CHARS`). When even minimum-length descriptions do
+  not fit, whole entries are dropped and the payload reports `shown` +
+  `truncated: true` rather than silently returning a partial list. `summary`
+  defaults to true; `summary=false` may add `access` / `chunks` when they
+  still fit.
 
 - **Library skill `artifact_handler` is opt-in, not always-active.** Removed
   `always-active: true` so agents with `skills_source: both`/`library` no longer

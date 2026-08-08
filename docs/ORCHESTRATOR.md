@@ -101,6 +101,7 @@ Two further knobs/notes:
 - **Always-visible pins (turn-1 immediacy).** The relevance pre-surface is lexical, so a tool that must be callable on the first turn *regardless of phrasing* (e.g. a filing tool) can fall behind a `find_tool` round-trip. Rather than un-leaning the whole surface with `lean_tool_threshold: 0`, pin just the few that need it — `pinned_tools: ["filing__*"]` (tool-name globs) or a `SKILL.md` with `always-active: true` (pins that skill's `allowed-tools`). Both are merged into the visible set *after* the lean policy, every turn, and default off. (`always-active` previously did nothing to tool visibility under the orchestrator — it now pins, per [ADR-0018 §5](../.planning/adr/0018-lean-tool-surfacing.md).)
 - **Hard deny (capability gate).** `denied_tools: ["file_interface__*"]` (fnmatch globs) removes matching tools from the assembled surface entirely — not listed, not discoverable via `find_tool`, not dispatchable. Applied after pins so a deny wins. Mirrors `denied_skills`. Egress and catalog meta-tools cannot be denied. Channel-overridable via `channel_overrides.denied_tools`. Prefer this over disabling a whole action when only some of its tools should be unavailable; MCP servers still have their own per-server `denied_tools`.
 - **Skill-only (procedure gate).** `skill_only_tools: ["payments__*"]` (fnmatch globs) makes matching tools callable **only while a skill that declares them in its `allowed-tools` is active** — activated via `use_skill`, holding the turn-lock, or `always-active: true`. While the gate is **closed** the tool is kept off the prompt, `find_tool` shows it annotated `(via skill: checkout)`, and a direct call is refused with a steer to `use_skill` rather than running; gated names are also excluded from the lean pre-surface pool, so gating a family never shrinks the visible long tail. Once an owner is active the gate is **open** and the tool behaves normally — listed, and unannotated, so the model is never steered into a redundant `use_skill` for a tool it can already call. A gated tool no available skill declares is uncallable (fail closed, warned at assembly); a glob matching no tool at all is warned too. Precedence: `denied_tools` wins over this, and this wins over `pinned_tools` (a pin cannot un-gate). Egress and catalog meta-tools cannot be gated. Channel-overridable via `channel_overrides.skill_only_tools`. Use this when a capability must always run inside its SOP — a payment charge, a destructive write — where hard deny would also break the skill that legitimately needs it. See [ADR-0043](../.planning/adr/0043-skill-only-tools.md).
+- **Channel overrides key on the EXACT channel string.** `channel_overrides` is looked up by `visitor.channel` verbatim — no prefix matching, no aliasing. A voice turn runs on its own channel (`whatsapp_call`), which is **not** covered by a `whatsapp` block, so an override written under the wrong key silently no-ops and the action-level list applies instead. This bites hardest on the subtractive knobs (`denied_tools`, `skill_only_tools`), where the symptom is "the override does nothing" rather than an error. When an override appears to be ignored, check the channel string first. Note also that each override **replaces** the action-level list for that key rather than merging with it — an explicit `[]` means "nothing here", not "fall back". Pinned by `tests/action/orchestrator/test_skill_only_channel_overrides.py`. `jvagent validate` emits an **advisory** when a tool-surfacing knob (`skill_only_tools`, `denied_tools`, `pinned_tools`) is set for one channel of a family but not for its reachable sibling — e.g. `whatsapp` configured while `whatsapp_call` is not, with the voice action installed. Advisories are printed but do not fail validation; `jvagent validate --strict` treats them as failures.
 - **Plan-aware pre-surface.** When `planning: true` and a multi-step plan is in progress, the lean relevance signal is the user's message **plus the active plan's checklist**. A plan resumed on a low-signal turn ("Well?", "continue") would otherwise surface nothing and force `find_tool` round-trips for the tools the next step needs (e.g. `pageindex__assimilate` for "add to knowledge base"); folding the checklist into the signal keeps those tools visible without a round-trip.
 - **Naming a hidden tool just runs it.** If the model names a tool that's real but lean-hidden, the loop auto-promotes it to visible and dispatches it (an implicit `load_tool`) rather than rejecting it — hiding is a prompt-size optimization, not a capability gate. `find_tool` is for *discovering* a tool whose exact name you don't know; an unknown/hallucinated name is bounced there with examples.
 - **Tolerant decision parsing.** The loop normalizer salvages the common malformed shapes a model emits so a step isn't wasted: text in `answer`/`content` instead of `args.text`; a skill addressed as if it were a tool (`{"tool":"research"}` → `use_skill`); and a **flattened** call where tool args sit at the decision top level instead of under `args` (`{"tool":"update_plan","steps":[...]}`) — when no `args` object is supplied, the non-reserved top-level keys are folded in. `update_plan` additionally accepts its list under many key aliases / a bare string / a single inline step.
@@ -316,6 +317,59 @@ actions:
 ```
 
 Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
+
+### Per-channel overrides (`channel_overrides`)
+
+A voice call and a web chat can run one agent with different loop knobs —
+`channel_overrides` keys a block of overrides by `visitor.channel`:
+
+```yaml
+      skill_only_tools: ["pay__*"]        # applies wherever no override exists
+      pinned_tools: ["kb__search"]
+
+      channel_overrides:
+        whatsapp_call:
+          history_limit: 6                # additive knobs: just set them
+          max_duration_seconds: 30
+          skill_only_tools:               # LIST knobs REPLACE — see below
+            - "pay__*"                    # repeat what you still want gated
+            - "wa__*"
+```
+
+Two properties account for most "channel overrides don't work" reports. Both are
+by design, and neither announces itself at runtime.
+
+**1. List knobs REPLACE, they do not merge.** `pinned_tools`, `denied_tools` and
+`skill_only_tools` in a channel block *replace* the action-level list on that
+channel. Anything you still want must be repeated inside the block. Omit it and
+it is silently absent there — which is why a config that works with
+`channel_overrides` commented out can stop working when it is uncommented: the
+block is not adding to the global list, it is standing in for it. An explicit
+`[]` means "none here", not "fall back". Scalar knobs (`history_limit`,
+`tool_call_timeout`, …) simply take the channel value.
+
+**2. Keys match `visitor.channel` exactly.** There is no prefix matching and no
+aliasing, so a block written for `whatsapp` does **not** cover `whatsapp_call` —
+voice is its own channel string, and both are valid. A mis-keyed block no-ops
+and the action-level value applies, with nothing logged. When a turn behaves as
+though the override were absent, confirm the channel string of *that* turn
+first.
+
+For `skill_only_tools` specifically, a third failure is possible and does log:
+gating a tool that no *reachable* skill declares makes it uncallable (fail
+closed). Skills can themselves be channel-gated, so a skill that owns a gated
+tool on web but is not offered on voice leaves that tool gated-and-ownerless
+there. The assembly warnings distinguish the cases:
+
+| Log line | Meaning |
+|---|---|
+| `skill_only_tools patterns matched no tool` | globs are dead — **nothing is gated** |
+| `matched tools no available skill declares` | gated but ownerless — **uncallable this turn** |
+| *(silent)* | override key never matched the channel |
+
+Covered by `tests/wire/test_channel_overrides_replace.py`, which asserts the
+resolution against an orchestrator read back out of a real graph rather than one
+constructed in memory.
 
 ### Model gearing (ADR-0016 / ADR-0041)
 

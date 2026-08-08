@@ -7,15 +7,23 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-def run_validate(app_root: str) -> int:
+def run_validate(app_root: str, strict: bool = False) -> int:
     """Validate ``app.yaml`` and discovered ``agent.yaml`` files.
 
     Runs the same structural checks as runtime (``validate_*`` helpers).
     Prints issues to the log and returns 1 if any warning-level issue is found
     (suitable for CI).
 
+    Findings come in two severities. **Warnings** are structural problems and
+    fail the run. **Advisories** are heuristic — a likely misconfiguration that
+    may well be deliberate (e.g. a channel override set for one sibling channel
+    but not another). They are printed but do not affect the exit code, so
+    adding a heuristic lint cannot break an existing pipeline; ``strict``
+    promotes them to warnings for teams that want them enforced.
+
     Args:
         app_root: Application root directory containing ``app.yaml``.
+        strict: Treat advisories as warnings (exit 1 if any are found).
 
     Returns:
         0 if no issues, 1 otherwise.
@@ -60,6 +68,7 @@ def run_validate(app_root: str) -> int:
 
     data = resolve_env_placeholders(raw)
     issues: List[str] = []
+    advisories: List[str] = []
     for w in validate_app_yaml_descriptor(data):
         suffix = f" Hint: {w.hint}" if w.hint else ""
         issues.append(f"app.yaml [{w.path}] {w.message}{suffix}")
@@ -79,15 +88,29 @@ def run_validate(app_root: str) -> int:
         agent_data = resolve_env_placeholders(agent_raw)
         for agent_issue in validate_agent_yaml(agent_data):
             suffix = f" Hint: {agent_issue.hint}" if agent_issue.hint else ""
-            issues.append(
-                f"{agent_file} [{agent_issue.path}] {agent_issue.message}{suffix}"
-            )
+            line = f"{agent_file} [{agent_issue.path}] {agent_issue.message}{suffix}"
+            if getattr(agent_issue, "severity", "warning") == "advisory" and not strict:
+                advisories.append(line)
+            else:
+                issues.append(line)
+
+    for line in advisories:
+        logger.warning("validate advisory: %s", line)
 
     if issues:
         for line in issues:
             logger.error("validate: %s", line)
         logger.error("validate failed: %d issue(s) in %s", len(issues), root)
         return 1
+
+    if advisories:
+        logger.info(
+            "validate OK: %s (%d advisory finding(s) — re-run with --strict to "
+            "treat them as failures)",
+            root,
+            len(advisories),
+        )
+        return 0
 
     logger.info("validate OK: %s", root)
     return 0
@@ -107,7 +130,9 @@ jvagent - Agentive Platform
     jvagent [run] [--debug] --stress-seed --user-memory-nodes N --interactions-per-user-memory-node M ...
                                 After bootstrap, populate the memory graph, then start the server (same DB)
     jvagent [<app_root>] status             Show application status
-    jvagent [<app_root>] validate         Check app.yaml and agent.yaml structure (exit 1 if issues; for CI)
+    jvagent [<app_root>] validate [--strict]  Check app.yaml and agent.yaml structure (exit 1 if issues; for CI)
+                                  --strict: also fail on advisory findings (heuristic lints,
+                                            e.g. a channel override missing its sibling channel)
     jvagent [<app_root>] stress-seed --user-memory-nodes N --interactions-per-user-memory-node M
                                   Seed synthetic User + Interaction graph (stress testing)
     jvagent [<app_root>] bootstrap [--update]  Bootstrap application graph

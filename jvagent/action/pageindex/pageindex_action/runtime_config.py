@@ -1,6 +1,6 @@
 """Shared ingestion/retrieval config push helpers for PageIndex actions."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from jvagent.action.pageindex.config import (
     set_pageindex_candidate_k,
@@ -92,13 +92,34 @@ def normalize_retrieval_excerpt_source(value: Any, fallback: str) -> str:
 
 def format_page_range(r: Dict[str, Any]) -> str:
     """Format page range from result dict, e.g. 'pp. 5-8' or 'p. 5'."""
-    start = r.get("start_index")
-    end = r.get("end_index")
+    # ``dict.get(key, default)`` only falls back when the key is absent, and a
+    # row may carry an explicit ``None``; fall back on falsy-None too.
+    start = r.get("start_page")
+    start = r.get("start_index") if start is None else start
+    end = r.get("end_page")
+    end = r.get("end_index") if end is None else end
     if start is not None and end is not None and start != end:
         return f"pp. {start}-{end}"
     if start is not None:
         return f"p. {start}"
     return ""
+
+
+def prompt_page_aliases(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remap start_index/end_index → start_page/end_page for agent prompt dumps.
+
+    Canonical search rows keep the API field names. Only the observation string
+    that lands in the user prompt should use the page aliases — never both.
+    """
+    out: List[Dict[str, Any]] = []
+    for row in results:
+        projected = dict(row)
+        if "start_index" in projected:
+            projected["start_page"] = projected.pop("start_index")
+        if "end_index" in projected:
+            projected["end_page"] = projected.pop("end_index")
+        out.append(projected)
+    return out
 
 
 async def ensure_ingestion_config_for_agent(agent_id: str) -> None:

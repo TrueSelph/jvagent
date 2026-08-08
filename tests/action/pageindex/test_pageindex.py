@@ -449,10 +449,24 @@ async def test_adapter_persists_distinct_summary_vs_text(pageindex_temp_db):
     assert len(results) >= 1
     node = next((r for r in results if r.get("doc_name") == "summary_test"), None)
     assert node is not None
-    assert node.get("text") == "Full section text content here"
+    assert "text" not in node
+    assert "content" not in node
     assert node.get("summary") == "LLM-generated summary"
-    assert node["summary"] != node["text"]
-    assert node.get("content") == "LLM-generated summary"
+
+    results_with_text = await search_documents(
+        query="section",
+        strategy="direct",
+        limit=5,
+        collection_name="col_summary",
+        include=["text"],
+    )
+    node_full = next(
+        (r for r in results_with_text if r.get("doc_name") == "summary_test"), None
+    )
+    assert node_full is not None
+    assert node_full.get("text") == "Full section text content here"
+    assert node_full.get("summary") == "LLM-generated summary"
+    assert node_full["summary"] != node_full["text"]
 
     set_pageindex_retrieval_excerpt_source("text")
     results_text = await search_documents(
@@ -475,8 +489,105 @@ def test_node_to_result_excerpt_source_explicit():
     n.title = "T"
     n.text = "full body"
     n.summary = "short sum"
-    assert node_to_result(n, excerpt_source="summary")["content"] == "short sum"
-    assert node_to_result(n, excerpt_source="text")["content"] == "full body"
+    result_summary = node_to_result(n, excerpt_source="summary")
+    assert "content" not in result_summary
+    assert result_summary["summary"] == "short sum"
+    result_text = node_to_result(n, excerpt_source="text")
+    assert "summary" not in result_text
+    assert result_text["content"] == "full body"
+
+
+def test_node_to_result_citation_fields_first_and_bodies_capped():
+    """Search hits put citation keys first; omit text/physical_index/enabled/hierarchy."""
+    n = DocumentNode()
+    n.doc_name = "manual.pdf"
+    n.title = "Section"
+    n.text = "T" * 2500
+    n.summary = "S" * 2500
+    n.start_index = 3
+    n.end_index = 5
+    n.structure = "1.2"
+    n.physical_index = 3
+    result = node_to_result(n, excerpt_source="summary")
+    keys = list(result)
+    assert keys.index("doc_name") < keys.index("summary")
+    assert "content" not in result
+    assert "text" not in result
+    assert "physical_index" not in result
+    assert "enabled" not in result
+    assert "start_page" not in result
+    assert "end_page" not in result
+    assert "structure" not in result
+    assert "hierarchy" not in result
+    assert result["doc_name"] == "manual.pdf"
+    assert result["start_index"] == 3
+    assert result["end_index"] == 5
+    assert result["summary"] == "S" * 2500
+
+
+def test_node_to_result_keeps_index_keys_no_hierarchy():
+    """API/search rows use start_index/end_index; hierarchy stays off by default."""
+    n = DocumentNode()
+    n.doc_name = "manual.pdf"
+    n.start_index = 3
+    n.end_index = 5
+    n.structure = "1.2"
+    result = node_to_result(n)
+    assert result["start_index"] == 3
+    assert result["end_index"] == 5
+    assert "start_page" not in result
+    assert "end_page" not in result
+    assert "hierarchy" not in result
+
+    n2 = DocumentNode()
+    n2.doc_name = "manual.pdf"
+    n2.start_index = 7
+    n2.end_index = 9
+    n2.hierarchy = ["Chapter 1", "Section 1.2"]
+    result2 = node_to_result(n2)
+    assert "hierarchy" not in result2
+
+
+def test_prompt_page_aliases_renames_index_keys_for_user_prompt():
+    """Tool observations dump page aliases; never both spellings."""
+    from jvagent.action.pageindex.pageindex_action.runtime_config import (
+        prompt_page_aliases,
+    )
+
+    rows = [
+        {
+            "doc_name": "manual.pdf",
+            "title": "Section",
+            "start_index": 3,
+            "end_index": 5,
+            "node_id": "n.1",
+            "summary": "excerpt",
+        }
+    ]
+    projected = prompt_page_aliases(rows)
+    assert projected[0]["start_page"] == 3
+    assert projected[0]["end_page"] == 5
+    assert "start_index" not in projected[0]
+    assert "end_index" not in projected[0]
+    # Original search row unchanged.
+    assert rows[0]["start_index"] == 3
+    assert "start_page" not in rows[0]
+
+
+def test_format_page_range_falls_back_on_explicit_none():
+    """A row may carry start_page=None; dict.get's default would not fire."""
+    from jvagent.action.pageindex.pageindex_action.runtime_config import (
+        format_page_range,
+    )
+
+    assert format_page_range({"start_page": None, "start_index": 4}) == "p. 4"
+    assert (
+        format_page_range(
+            {"start_page": None, "end_page": None, "start_index": 4, "end_index": 6}
+        )
+        == "pp. 4-6"
+    )
+    assert format_page_range({"start_page": 7, "end_page": 9}) == "pp. 7-9"
 
 
 def test_parse_llm_json_object_ignores_trailing_text():
@@ -2231,3 +2342,182 @@ async def test_search_access_public_plus_private_includes_both(
         "doc_public_tagged",
         "doc_private",
     }
+
+
+@pytest.mark.asyncio
+async def test_t_list_docs_compact_payload_fits_observation_budget(caplog):
+    """pageindex__list tool returns lean JSON so ~21 long descs fit under 4000 chars."""
+    import json
+    import logging
+
+    long_desc = (
+        "Quality Management System manual for Silvie's Industrial Solutions "
+        "covering departmental procedures, compliance, KPIs, and staff roles "
+        "across procurement, sales, accounts, and warehouse operations."
+    )
+    assert len(long_desc) > 80
+
+    listed = [
+        {
+            "doc_name": f"DOC_{i:02d} - SIS-MNL-{i:03d}.pdf",
+            "doc_description": long_desc,
+            "doc_url": f"https://docs.google.com/document/d/example{i}/edit",
+            "root_id": f"n.DocumentRootNode.{i:024d}",
+            "collection_name": "n.Agent.silvie",
+            "metadata": {"access": "private" if i % 2 else "public"},
+            "chunks": 100 + i,
+        }
+        for i in range(21)
+    ]
+
+    action = _make_pageindex_action(access_control=True)
+    object.__setattr__(action, "collection", "n.Agent.silvie")
+
+    with (
+        patch.object(
+            PageIndexAction,
+            "list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ),
+        patch.object(
+            PageIndexAction,
+            "_resolve_collection",
+            return_value="n.Agent.silvie",
+        ),
+        patch(
+            "jvagent.tooling.tool_executor.get_tool_visitor",
+            return_value=None,
+        ),
+        caplog.at_level(
+            logging.INFO,
+            logger="jvagent.action.pageindex.pageindex_action.pageindex_action",
+        ),
+    ):
+        summary_payload = await PageIndexAction._t_list_docs(action, summary=True)
+        full_payload = await PageIndexAction._t_list_docs(action, summary=False)
+
+    for payload, expect_extra in ((summary_payload, False), (full_payload, True)):
+        assert len(payload) <= 4000, len(payload)
+        parsed = json.loads(payload)
+        assert parsed["count"] == 21
+        assert len(parsed["documents"]) == 21
+        names = [d["doc_name"] for d in parsed["documents"]]
+        assert names == [f"DOC_{i:02d} - SIS-MNL-{i:03d}.pdf" for i in range(21)]
+        for entry in parsed["documents"]:
+            assert len(entry["doc_description"]) <= 80
+            assert "doc_url" not in entry
+            assert "root_id" not in entry
+            assert "collection_name" not in entry
+            if expect_extra:
+                assert "access" in entry
+            else:
+                assert "chunks" not in entry
+                assert "access" not in entry
+
+    assert any(
+        "pageindex__list returned 21 of 21 document(s)" in r.message
+        and "payload_chars=" in r.message
+        for r in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_t_list_docs_drops_entries_rather_than_overflow_budget():
+    """A catalog too large to fit even at minimum description length.
+
+    Shrinking descriptions bottoms out at 40 chars; past that the only way to
+    stay under the observation budget is to return fewer entries. Doing that
+    silently would be worse than not truncating at all, so the payload has to
+    say what it dropped.
+    """
+    import json
+
+    from jvagent.action.orchestrator.tools import DEFAULT_OBSERVATION_MAX_CHARS
+
+    listed = [
+        {
+            "doc_name": f"LONG_DOCUMENT_NAME_NUMBER_{i:04d}_procedures_manual.pdf",
+            "doc_description": "D" * 200,
+        }
+        for i in range(400)
+    ]
+
+    action = _make_pageindex_action(access_control=False)
+
+    with (
+        patch.object(
+            PageIndexAction,
+            "list_documents",
+            new_callable=AsyncMock,
+            return_value=listed,
+        ),
+        patch.object(PageIndexAction, "_resolve_collection", return_value="col"),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        payload = await PageIndexAction._t_list_docs(action, summary=True)
+
+    assert len(payload) <= DEFAULT_OBSERVATION_MAX_CHARS
+    parsed = json.loads(payload)
+    # The true total survives even though the list does not.
+    assert parsed["count"] == 400
+    assert parsed["truncated"] is True
+    assert parsed["shown"] == len(parsed["documents"]) < 400
+    assert parsed["documents"][0]["doc_name"] == listed[0]["doc_name"]
+
+
+@pytest.mark.asyncio
+async def test_t_search_omitted_limit_uses_configured_limit():
+    """``pageindex__search`` without ``limit`` must honour the action's config.
+
+    The tool used to hardcode 5, which silently overrode an operator's
+    ``limit`` attribute. Passing None defers the decision to ``search()``,
+    where the configured value wins — so the tool and the HTTP endpoint agree.
+    """
+    action = _make_pageindex_action()
+    object.__setattr__(action, "limit", 7)
+    captured = {}
+
+    async def _fake_search(_self, query, **kwargs):
+        captured.update(kwargs)
+        captured["query"] = query
+        return [{"doc_name": "d", "content": "c"}]
+
+    with (
+        patch.object(PageIndexAction, "search", new=_fake_search),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        await PageIndexAction._t_search(action, query="anything")
+
+    # The tool forwards None; resolution belongs to search(), not the tool.
+    assert captured["limit"] is None
+
+
+@pytest.mark.asyncio
+async def test_t_search_explicit_limit_is_forwarded():
+    """An explicit limit from the model still wins over the configured one."""
+    action = _make_pageindex_action()
+    object.__setattr__(action, "limit", 7)
+    captured = {}
+
+    async def _fake_search(_self, query, **kwargs):
+        captured.update(kwargs)
+        return [{"doc_name": "d", "content": "c"}]
+
+    with (
+        patch.object(PageIndexAction, "search", new=_fake_search),
+        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+    ):
+        await PageIndexAction._t_search(action, query="anything", limit=3)
+
+    assert captured["limit"] == 3
+
+
+def test_pageindex_default_limit_is_the_effective_search_default():
+    """Documents what an omitted tool limit now resolves to.
+
+    ``pageindex__search`` forwards None (pinned above) and ``search()``
+    resolves it to ``cfg["limit"] or self.limit``. So this attribute default
+    is the tool's effective default — it used to be a hardcoded 5.
+    """
+    assert PageIndexAction.model_fields["limit"].default == 10

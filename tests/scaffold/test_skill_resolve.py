@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
     resolve_agent_skills,
@@ -238,3 +240,193 @@ SOP content.
     data = parse_skill_bundle(skill_dir, source="builtin")
     assert data is not None
     assert data["requires_actions"] == ["GoogleCalendarAction"]
+
+
+class TestFrontmatterLeadingCharacters:
+    """A SKILL.md whose ``---`` is not the very first byte.
+
+    ``_parse_frontmatter`` tested ``raw.startswith("---")`` on the UNSTRIPPED
+    text while using the stripped text for everything else. A leading blank
+    line, indentation, or an editor-inserted UTF-8 BOM therefore made the whole
+    frontmatter block read as body, which fails twice over:
+
+    - ``allowed-tools`` is never parsed, so the skill declares no tools and
+      cannot own anything ``skill_only_tools`` gates
+    - the frontmatter text lands in the rendered procedure, so ``allowed-tools:``
+      shows up verbatim in the prompt
+
+    ``sop_extend.py`` already strips before the check; this is the outlier.
+    """
+
+    BODY = (
+        "---\n"
+        "name: doc_helper\n"
+        "description: helps with docs\n"
+        "allowed-tools:\n"
+        "  - pageindex__search\n"
+        "  - pageindex__list\n"
+        "---\n"
+        "\n"
+        "# Procedure\n"
+        "Do the thing.\n"
+    )
+
+    @pytest.mark.parametrize(
+        "label,prefix",
+        [
+            ("leading newline", "\n"),
+            ("leading blank lines", "\n\n"),
+            ("leading spaces", "  "),
+            ("utf-8 bom", "﻿"),
+            ("bom then newline", "﻿\n"),
+        ],
+    )
+    def test_frontmatter_is_parsed_despite_leading_characters(
+        self, label: str, prefix: str
+    ) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter(prefix + self.BODY, Path("SKILL.md"))
+        assert meta.get("allowed-tools") == [
+            "pageindex__search",
+            "pageindex__list",
+        ], f"{label}: allowed-tools must still be parsed"
+        assert (
+            "allowed-tools" not in content
+        ), f"{label}: frontmatter must not leak into the rendered body"
+        assert content.startswith("# Procedure"), f"{label}: body should start clean"
+
+    def test_clean_file_still_parses(self) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter(self.BODY, Path("SKILL.md"))
+        assert meta["name"] == "doc_helper"
+        assert content.startswith("# Procedure")
+
+    def test_body_horizontal_rule_is_not_a_delimiter(self) -> None:
+        """``---`` as a markdown rule in the body must survive intact."""
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        raw = self.BODY + "\nSection\n\n---\n\nMore\n"
+        _meta, content = _parse_frontmatter(raw, Path("SKILL.md"))
+        assert "---" in content
+        assert content.rstrip().endswith("More")
+
+    def test_file_without_frontmatter_is_untouched(self) -> None:
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        meta, content = _parse_frontmatter("# Just a doc\n\nbody\n", Path("SKILL.md"))
+        assert meta == {}
+        assert content == "# Just a doc\n\nbody"
+
+
+class TestFrontmatterKeySpelling:
+    """Underscore spellings of hyphenated frontmatter keys.
+
+    ``task_lock``, ``allowed_channels``, ``requires_tasks``,
+    ``lock_companions`` and ``deny_access_directive`` were each given an
+    explicit underscore fallback at their read site, but ``allowed_tools`` and
+    the rest were not. The inconsistency is invisible: a skill written with
+    ``allowed_tools:`` parses fine, loads fine, and owns no tools — the same end
+    state as the BOM bug, reached a different way. Underscores are now accepted
+    for every known key.
+    """
+
+    @staticmethod
+    def _write(tmp_path: Path, frontmatter: str) -> Path:
+        skill_dir = tmp_path / "spelling_skill"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\n{frontmatter}---\n\n# Procedure\nDo the thing.\n",
+            encoding="utf-8",
+        )
+        return skill_dir
+
+    def test_allowed_tools_underscore_is_accepted(self, tmp_path: Path) -> None:
+        from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+        skill_dir = self._write(
+            tmp_path,
+            "name: doc_helper\n"
+            "description: helps with docs\n"
+            "allowed_tools:\n"
+            "  - pageindex__search\n"
+            "  - pageindex__list\n",
+        )
+        data = parse_skill_bundle(skill_dir, source="builtin")
+        assert data is not None
+        assert data["allowed_tools"] == ["pageindex__search", "pageindex__list"]
+
+    @pytest.mark.parametrize(
+        "written,canonical",
+        [
+            ("disabled_tools", "disabled_tools"),
+            ("requires_actions", "requires_actions"),
+            ("coactivate_with", "coactivate_with"),
+        ],
+    )
+    def test_other_list_keys_accept_underscores(
+        self, tmp_path: Path, written: str, canonical: str
+    ) -> None:
+        from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+        skill_dir = self._write(
+            tmp_path,
+            f"name: doc_helper\ndescription: d\n{written}:\n  - alpha\n",
+        )
+        data = parse_skill_bundle(skill_dir, source="builtin")
+        assert data is not None
+        assert data[canonical] == ["alpha"]
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "allowed_tools:\n  - underscore_tool\nallowed-tools:\n  - hyphen_tool\n",
+            "allowed-tools:\n  - hyphen_tool\nallowed_tools:\n  - underscore_tool\n",
+        ],
+        ids=["underscore-first", "hyphen-first"],
+    )
+    def test_hyphenated_spelling_wins_when_both_are_present(
+        self, tmp_path: Path, block: str
+    ) -> None:
+        """A file carrying both spellings must not depend on YAML key order."""
+        from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+        skill_dir = self._write(tmp_path, f"name: doc_helper\ndescription: d\n{block}")
+        data = parse_skill_bundle(skill_dir, source="builtin")
+        assert data is not None
+        assert data["allowed_tools"] == ["hyphen_tool"]
+
+    def test_near_miss_key_is_reported(self, caplog: pytest.LogCaptureFixture) -> None:
+        """A typo'd key is still ignored — but it no longer goes unmentioned."""
+        import logging
+
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        with caplog.at_level(logging.WARNING, logger="jvagent.scaffold.skill_resolve"):
+            meta, _content = _parse_frontmatter(
+                "---\nname: s\nallowed-tool:\n  - a\n---\n\nbody\n",
+                Path("SKILL.md"),
+            )
+        assert "allowed-tool" in meta, "unknown keys are preserved, not dropped"
+        assert "allowed-tools" not in meta, "a typo must not silently take effect"
+        assert any(
+            "allowed-tool" in record.message and "allowed-tools" in record.message
+            for record in caplog.records
+        ), "the near-miss should name the key it was probably meant to be"
+
+    def test_unrelated_unknown_key_is_left_alone(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Custom keys are legal; only near-misses are worth a warning."""
+        import logging
+
+        from jvagent.scaffold.skill_resolve import _parse_frontmatter
+
+        with caplog.at_level(logging.WARNING, logger="jvagent.scaffold.skill_resolve"):
+            meta, _content = _parse_frontmatter(
+                "---\nname: s\nteam_owner: platform\n---\n\nbody\n",
+                Path("SKILL.md"),
+            )
+        assert meta["team_owner"] == "platform"
+        assert not caplog.records
