@@ -12,8 +12,6 @@ from jvspatial.core.annotations import attribute
 
 from .config import get_pageindex_retrieval_excerpt_source
 
-_MAX_CONTENT_CHARS = 2000
-
 
 class DocumentRootNode(Node):
     """Root node for a document; links to top-level section nodes.
@@ -132,6 +130,10 @@ def node_to_result(
     excerpt_source: 'summary' (prefer summary/prefix_summary, else text), 'text'
         (prefer body text, else summary), or None to use
         get_pageindex_retrieval_excerpt_source() (default 'summary').
+
+    In 'summary' mode the result key is 'summary' (never 'content').
+    In 'text' mode the result key is 'content' (never 'summary').
+    The two keys are mutually exclusive — they are never both present.
     """
     mode = (
         excerpt_source
@@ -139,27 +141,30 @@ def node_to_result(
         else get_pageindex_retrieval_excerpt_source()
     )
     if mode == "text":
-        content = node.text or node.summary or node.title or ""
+        body_key = "content"
+        body_val = node.text or node.summary or node.title or ""
     else:
-        content = (
+        body_key = "summary"
+        body_val = (
             (node.summary or node.prefix_summary or "").strip()
             or node.text
             or node.title
             or ""
         )
-    return {
-        "node_id": node.id,
-        "title": node.title,
-        "text": node.text,
-        "summary": node.summary,
+
+    # Citation/identity fields first so orchestrator middle-elision keeps them.
+    # Public API / search rows use start_index/end_index (original field names).
+    # pageindex__search remaps to start_page/end_page only when dumping into
+    # the agent user prompt — never both spellings on the same payload.
+    result = {
         "doc_name": node.doc_name,
-        "structure": node.structure,
-        "content": content[:_MAX_CONTENT_CHARS] if content else "",
+        "title": node.title,
         "start_index": node.start_index,
         "end_index": node.end_index,
-        "physical_index": node.physical_index,
-        "enabled": node_enabled(node),
+        "node_id": node.id,
+        body_key: body_val if body_val else "",
     }
+    return result
 
 
 _INCLUDE_ATTR_GETTERS: Dict[str, Any] = {
@@ -185,12 +190,13 @@ def copy_included_fields(
     base: Dict[str, Any],
     include: Optional[List[str]],
 ) -> Dict[str, Any]:
-    """Merge whitelisted metadata into a search result row (deep copy; never duplicates ``content``)."""
+    """Merge whitelisted metadata into a search result row (deep copy; never duplicates body field)."""
     if not include:
         return base
+    body_keys = {"content", "summary"}
     out = dict(base)
     for key in include:
-        if key == "content" or key in out:
+        if key in out or key in body_keys:
             continue
         getter = _INCLUDE_ATTR_GETTERS.get(key)
         if not getter:

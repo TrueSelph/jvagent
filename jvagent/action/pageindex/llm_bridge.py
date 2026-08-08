@@ -13,7 +13,7 @@ import contextvars
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -78,16 +78,41 @@ async def llm_acompletion(
     _real_impl=None,
 ) -> str:
     """Async litellm-style call: jvagent model when in context, else core utils."""
+    text, _ = await llm_acompletion_with_usage(model, prompt, _real_impl=_real_impl)
+    return text
+
+
+async def llm_acompletion_with_usage(
+    model: str,
+    prompt: str,
+    _real_impl=None,
+) -> Tuple[str, Dict[str, int]]:
+    """Async litellm-style call returning (text, usage_dict).
+
+    usage_dict contains prompt_tokens, completion_tokens, total_tokens (0 if unknown).
+    """
+    usage: Dict[str, int] = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
     check_pageindex_cancelled()
     action = get_pageindex_model_action()
     if action:
         try:
-            # PageIndex algorithm relies on deterministic single-shot output
-            # (TOC detection, JSON tree-search node selection, fuzzy title
-            # match). Pin temperature=0 the same way upstream litellm path
-            # does; the model action's own default is typically 0.7.
             result = await action.query_sync(prompt, temperature=0)
-            return await result.get_response() if result else ""
+            text = await result.get_response() if result else ""
+            if (
+                result
+                and hasattr(result, "metrics")
+                and isinstance(result.metrics, dict)
+            ):
+                usage["prompt_tokens"] = result.metrics.get("prompt_tokens", 0) or 0
+                usage["completion_tokens"] = (
+                    result.metrics.get("completion_tokens", 0) or 0
+                )
+                usage["total_tokens"] = result.metrics.get("total_tokens", 0) or 0
+            return text, usage
         except PageIndexCancelled:
             raise
         except Exception as e:
@@ -95,11 +120,13 @@ async def llm_acompletion(
                 f"PageIndex jvagent LLM call failed, falling back to direct: {e}"
             )
             if _real_impl:
-                return await _real_impl(model, prompt)
-            return ""
+                text = await _real_impl(model, prompt)
+                return text, usage
+            return "", usage
     if _real_impl:
-        return await _real_impl(model, prompt)
-    return ""
+        text = await _real_impl(model, prompt)
+        return text, usage
+    return "", usage
 
 
 def llm_completion(

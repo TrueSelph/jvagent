@@ -198,6 +198,25 @@ the `jvagent/orchestrator` action via:
   owns them.
 - `skills_source`: `library`, `app`, or `both`
 
+### `SKILL.md` frontmatter parsing
+
+The frontmatter block is what declares a skill's tools (`allowed-tools`), its
+hard action requirements (`requires-actions`), and everything else the
+orchestrator gates on. A block that fails to parse is not an error the model
+sees — the skill loads owning nothing *and* the raw frontmatter text lands in
+the rendered procedure. Two tolerances exist so that stays unlikely:
+
+- **Leading characters are ignored.** A blank first line, an indent, or a UTF-8
+  BOM (invisible; Notepad and some Office exports add one) no longer pushes the
+  opening `---` out of position.
+- **Underscores are accepted for every known key.** `allowed_tools` is read as
+  `allowed-tools` and logged at INFO. Hyphens remain canonical, and win if a
+  file somehow carries both.
+
+A key that is *nearly* a known one — `allowed-tool`, say — is still ignored,
+but now logs a WARNING naming what it was probably meant to be. Unrecognized
+keys that resemble nothing are passed through untouched.
+
 ### Skill commands
 
 ```bash
