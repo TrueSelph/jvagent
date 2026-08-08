@@ -8,15 +8,14 @@ a new comment on the original post (``/{post_id}/comments``) when only
 
 import asyncio
 import logging
-import re
 from typing import Any, Dict
 
 from jvagent.action.response.channel_adapter import ChannelAdapter
 from jvagent.action.response.message import ResponseMessage
 
-logger = logging.getLogger(__name__)
+from .facebook_comment_text import to_facebook_comment_text
 
-FACEBOOK_COMMENT_MAX_LENGTH = 9000
+logger = logging.getLogger(__name__)
 
 
 class FacebookCommentAdapter(ChannelAdapter):
@@ -51,18 +50,12 @@ class FacebookCommentAdapter(ChannelAdapter):
 
     @staticmethod
     def _strip_markdown(text: str) -> str:
-        """Reduce markdown to plain-text suitable for a public Facebook comment."""
-        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-        text = re.sub(r"\*(.+?)\*", r"\1", text)
-        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-        text = text.replace("<br/>", "\n").replace("<br>", "\n")
-        text = text.replace("<b>", "").replace("</b>", "")
-        text = text.replace("<i>", "").replace("</i>", "")
-        text = text.replace("<p>", "\n").replace("</p>", "")
-        if len(text) > FACEBOOK_COMMENT_MAX_LENGTH:
-            text = text[: FACEBOOK_COMMENT_MAX_LENGTH - 3] + "..."
-        return text.strip()
+        """Reduce markdown to plain text for a public Facebook comment.
+
+        Delegates to the shared helper so this and ``FacebookCommentFilter``
+        cannot drift apart.
+        """
+        return to_facebook_comment_text(text)
 
     async def send(self, message: ResponseMessage) -> bool:
         if not self.action or not self.action.is_configured():

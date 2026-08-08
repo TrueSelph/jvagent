@@ -774,11 +774,29 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
         if not comment_text:
             continue
         if len(comment_text) > FEED_COMMENT_UTTERANCE_MAX:
-            continue
+            # Truncate rather than drop, matching the reaction path below.
+            # Dropping left a commenter with no reply and no log line to
+            # explain it, and Facebook comments run far longer than this cap.
+            logger.info(
+                "Feed comment %s truncated for the agent turn (%d > %d chars)",
+                str(comment_event.get("comment_id") or "?"),
+                len(comment_text),
+                FEED_COMMENT_UTTERANCE_MAX,
+            )
+            comment_text = comment_text[: FEED_COMMENT_UTTERANCE_MAX - 3] + "..."
 
         comment_id = str(comment_event.get("comment_id") or "").strip()
         post_id = str(comment_event.get("post_id") or "").strip()
         sender_name = str(comment_event.get("sender_name") or "").strip() or None
+
+        # Meta delivers at-least-once and retries. Without this a redelivery
+        # posts a SECOND public reply under the same comment — the same guard
+        # the Messenger path applies to `mid` above. comment_id is stable per
+        # comment, and only verb == "add" reaches here, so an edit cannot
+        # masquerade as a new comment.
+        if comment_id and not remember_meta_wamid(f"fbcomment:{comment_id}"):
+            logger.debug("Facebook duplicate comment ignored: %s", comment_id)
+            continue
 
         feed_data_dict: Dict[str, Any] = {
             "feed_payload": comment_event,
@@ -805,14 +823,31 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
             )
             continue
 
-        await process_feed_comment_interaction_async(
-            comment_text,
-            sender,
-            agent_id,
-            agent,
-            feed_data_dict,
-            sender_name=sender_name,
+        # Background the turn like the Messenger path: awaiting a full
+        # orchestrator turn here holds the webhook response open, Meta times
+        # the delivery out and retries, and the retry arrives as another
+        # inbound comment. create_task returns None where the runtime cannot
+        # background (serverless), where awaiting inline is the only option.
+        comment_task = await create_task(
+            process_feed_comment_interaction_async(
+                comment_text,
+                sender,
+                agent_id,
+                agent,
+                feed_data_dict,
+                sender_name=sender_name,
+            ),
+            name=f"facebook_comment_interaction_{sender}",
         )
+        if comment_task is None:
+            await process_feed_comment_interaction_async(
+                comment_text,
+                sender,
+                agent_id,
+                agent,
+                feed_data_dict,
+                sender_name=sender_name,
+            )
 
     # Process feed/reaction events (Facebook Page reactions)
     for reaction_event in feed_reaction_events:
@@ -841,6 +876,24 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
         if len(utterance) > FEED_REACTION_UTTERANCE_MAX:
             utterance = utterance[: FEED_REACTION_UTTERANCE_MAX - 3] + "..."
 
+        # Same at-least-once delivery guard as comments. A reaction carries no
+        # id of its own, so the key is composed — and it INCLUDES the event
+        # timestamp on purpose: a retry repeats the timestamp, while a user who
+        # removes and re-adds a reaction produces a new one and is still heard.
+        reaction_key = ":".join(
+            (
+                "fbreaction",
+                post_id,
+                comment_id,
+                sender,
+                reaction_type,
+                str(reaction_event.get("timestamp") or ""),
+            )
+        )
+        if not remember_meta_wamid(reaction_key):
+            logger.debug("Facebook duplicate reaction ignored: %s", reaction_key)
+            continue
+
         reaction_data_dict: Dict[str, Any] = {
             "feed_payload": reaction_event,
             "facebook_reaction": True,
@@ -867,14 +920,26 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
             )
             continue
 
-        await process_feed_reaction_interaction_async(
-            utterance,
-            sender,
-            agent_id,
-            agent,
-            reaction_data_dict,
-            sender_name=sender_name,
+        reaction_task = await create_task(
+            process_feed_reaction_interaction_async(
+                utterance,
+                sender,
+                agent_id,
+                agent,
+                reaction_data_dict,
+                sender_name=sender_name,
+            ),
+            name=f"facebook_reaction_interaction_{sender}",
         )
+        if reaction_task is None:
+            await process_feed_reaction_interaction_async(
+                utterance,
+                sender,
+                agent_id,
+                agent,
+                reaction_data_dict,
+                sender_name=sender_name,
+            )
 
     return {"status": "received"}
 

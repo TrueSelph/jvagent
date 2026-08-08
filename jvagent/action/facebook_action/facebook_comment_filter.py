@@ -6,22 +6,23 @@ comment length limit.
 """
 
 import logging
-import re
 from typing import List, Optional
 
 from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage
 
-logger = logging.getLogger(__name__)
+from .facebook_comment_text import to_facebook_comment_text
 
-FACEBOOK_COMMENT_MAX_LENGTH = 9000
+logger = logging.getLogger(__name__)
 
 
 class FacebookCommentFilter(ChannelFilter):
     """Transform markdown/HTML to plain text suitable for Facebook Page comments.
 
     Facebook comments are plain text — no markdown, no HTML.  This filter
-    strips common formatting artifacts left by the ReplyAction voice.
+    strips common formatting artifacts left by the ReplyAction voice. The
+    transformation lives in ``facebook_comment_text`` so the adapter applies
+    exactly the same one.
     """
 
     def __init__(
@@ -34,21 +35,4 @@ class FacebookCommentFilter(ChannelFilter):
     async def filter(self, message: ResponseMessage) -> None:
         if not message.content:
             return
-        text = str(message.content)
-        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-        text = re.sub(r"\*(.+?)\*", r"\1", text)
-        text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-        text = (
-            text.replace("<br/>", "\n")
-            .replace("<br>", "\n")
-            .replace("<b>", "")
-            .replace("</b>", "")
-            .replace("<i>", "")
-            .replace("</i>", "")
-            .replace("<p>", "\n")
-            .replace("</p>", "")
-        )
-        if len(text) > FACEBOOK_COMMENT_MAX_LENGTH:
-            text = text[: FACEBOOK_COMMENT_MAX_LENGTH - 3] + "..."
-        message.content = text.strip()
+        message.content = to_facebook_comment_text(str(message.content))
