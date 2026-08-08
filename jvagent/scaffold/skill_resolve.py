@@ -6,6 +6,7 @@ import fnmatch
 import importlib
 import logging
 import os
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -23,13 +24,98 @@ BUILTIN_SKILLS_PACKAGE = "jvagent.skills"
 SELECTOR_ALL = "-all"
 
 
+_KNOWN_FRONTMATTER_KEYS = frozenset(
+    {
+        "allowed-channels",
+        "allowed-tools",
+        "always-active",
+        "coactivate-with",
+        "denied-channels",
+        "deny-access-directive",
+        "dependencies",
+        "description",
+        "disabled-tools",
+        "dispatch",
+        "exports",
+        "extends",
+        "imports",
+        "interview",
+        "license",
+        "lock-companions",
+        "name",
+        "parameters",
+        "requires-actions",
+        "requires-jvagent",
+        "requires-tasks",
+        "spec",
+        "tags",
+        "task-lock",
+        "verbatim-final",
+        "version",
+    }
+)
+
+
+def _normalize_frontmatter_keys(
+    meta: Dict[str, Any], skill_path: Path
+) -> Dict[str, Any]:
+    """Accept underscore spellings, and name a key that is nearly right.
+
+    A handful of keys already tolerated both spellings (``task_lock``,
+    ``allowed_channels``, …) while the rest did not, so ``allowed_tools``
+    parsed to nothing and the skill loaded owning no tools — silently, and
+    indistinguishably from a skill that declares none. Underscores are now
+    accepted for every known key, and a near-miss is logged rather than
+    dropped: a declaration that does not take effect should say so.
+    """
+    if not meta:
+        return meta
+    out: Dict[str, Any] = {}
+    for key, value in meta.items():
+        name = str(key)
+        if name in _KNOWN_FRONTMATTER_KEYS:
+            out[name] = value
+            continue
+        hyphenated = name.replace("_", "-").lower()
+        if hyphenated in _KNOWN_FRONTMATTER_KEYS:
+            # Silent acceptance would hide a real inconsistency; say what was
+            # assumed so the file can be corrected.
+            logger.info(
+                "Skill %s: frontmatter key %r read as %r",
+                skill_path,
+                name,
+                hyphenated,
+            )
+            out.setdefault(hyphenated, value)
+            continue
+        close = get_close_matches(hyphenated, sorted(_KNOWN_FRONTMATTER_KEYS), 1, 0.8)
+        if close:
+            logger.warning(
+                "Skill %s: unknown frontmatter key %r is ignored — did you mean "
+                "%r? Nothing it declares takes effect.",
+                skill_path,
+                name,
+                close[0],
+            )
+        out[name] = value
+    return out
+
+
 def _parse_frontmatter(raw: str, skill_path: Path) -> Tuple[Dict[str, Any], str]:
-    """Parse optional YAML frontmatter and return (meta, content)."""
-    content = raw.strip()
-    if not raw.startswith("---"):
+    """Parse optional YAML frontmatter and return (meta, content).
+
+    The delimiter check runs on the *stripped* text, and a UTF-8 BOM is
+    removed first. Testing ``raw`` directly meant a leading blank line, a
+    stray indent, or an editor-inserted BOM made the whole frontmatter block
+    parse as body: ``allowed-tools`` was then never read (so the skill owned
+    no tools) *and* the frontmatter text reached the rendered procedure. Both
+    halves are silent. ``sop_extend`` already strips before this check.
+    """
+    content = raw.lstrip("﻿").strip()
+    if not content.startswith("---"):
         return {}, content
 
-    parts = raw.split("---", 2)
+    parts = content.split("---", 2)
     if len(parts) < 3:
         raise ValueError(f"Invalid frontmatter format in {skill_path}")
 
@@ -39,7 +125,7 @@ def _parse_frontmatter(raw: str, skill_path: Path) -> Tuple[Dict[str, Any], str]
     if not isinstance(parsed, dict):
         raise ValueError(f"Frontmatter must be a YAML mapping in {skill_path}")
 
-    return parsed, parts[2].strip()
+    return _normalize_frontmatter_keys(parsed, skill_path), parts[2].strip()
 
 
 def _normalize_allowed_tools(raw_value: Any, skill_path: Path) -> List[str]:

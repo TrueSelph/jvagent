@@ -156,6 +156,47 @@ class FacebookAPI:
             "POST", endpoint, params=params, data=body, json_body=None
         )
 
+    def subscribe_app_to_page(self) -> Dict:
+        """Install the app on the Page so it receives Page-level webhook events.
+
+        Meta requires **two** steps for Page events (feed, comments, reactions):
+        1. App-level subscription via ``register_session`` (``/{app_id}/subscriptions``).
+        2. Per-page installation via this method (``/{page_id}/subscribed_apps``).
+
+        Without this second step, ``feed`` webhook events (comments on Page posts)
+        are not delivered, even if ``feed`` is in the subscribed fields.
+
+        Uses the **page access token** (requires ``pages_manage_metadata`` permission).
+
+        Returns:
+            Graph API response dict. On success Meta returns ``{"success": true}``.
+        """
+        endpoint = f"{self.page_id}/subscribed_apps"
+        fields_val = (
+            self.fields
+            or "feed,messages,messaging_postbacks,message_deliveries,standby,mention"
+        )
+        if isinstance(fields_val, list):
+            fields_val = ",".join(str(x) for x in fields_val)
+        params = {
+            "access_token": self._token_for_page(),
+            "subscribed_fields": str(fields_val),
+        }
+        return self.send_rest_request("POST", endpoint, params=params)
+
+    def list_subscribed_apps(self) -> Union[List, Dict]:
+        """List apps installed on the Page that receive webhook events.
+
+        Uses the page access token (requires ``pages_manage_metadata`` or
+        ``pages_read_engagement`` permission).
+
+        Returns:
+            List of app dicts or error dict.
+        """
+        endpoint = f"{self.page_id}/subscribed_apps"
+        params = {"access_token": self._token_for_page()}
+        return self.send_rest_request("GET", endpoint, params=params)
+
     @staticmethod
     def _messenger_coordinate_value(coords: Any, *keys: str) -> Optional[float]:
         if not isinstance(coords, dict):
@@ -409,6 +450,192 @@ class FacebookAPI:
                 f"Facebook API: Error processing inbound message: {e}"
             )
             return {"ok": False, "error": str(e)}
+
+    @staticmethod
+    def iter_feed_comment_events(
+        request: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Parse Meta Page webhook JSON and return inbound **feed comment** events.
+
+        This is the feed/comment counterpart to
+        :meth:`iter_messenger_user_text_events`. It processes entries with
+        ``"changes"`` (feed events) and extracts comment events where
+        ``item == "comment"``.
+
+        Skips: ``messaging`` entries (DMs), reactions, status changes, and
+        non-comment feed items.
+
+        Each returned dict includes:
+        ``sender_id``, ``sender_name``, ``page_id``, ``comment_id``,
+        ``post_id``, ``message`` (comment text), ``message_type`` (always
+        ``"comment"``), ``parent_id`` (parent post or comment ID),
+        ``data`` (raw request payload for downstream channel_gate parsing),
+        ``timestamp``.
+        """
+        out: List[Dict[str, Any]] = []
+        if not isinstance(request, dict):
+            return out
+        if request.get("object") != "page":
+            return out
+        entries = request.get("entry")
+        if not isinstance(entries, list):
+            return out
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            page_id = str(entry.get("id", ""))
+            changes = entry.get("changes")
+            if not isinstance(changes, list):
+                continue
+            for change in changes:
+                if not isinstance(change, dict):
+                    continue
+                value = change.get("value")
+                if not isinstance(value, dict):
+                    continue
+                item = str(value.get("item", "")).strip().lower()
+                if item != "comment":
+                    continue
+                verb = str(value.get("verb", "")).strip().lower()
+                if verb not in ("add",):
+                    continue
+                from_obj = value.get("from") or {}
+                sender_id = (
+                    str(from_obj.get("id", "")) if isinstance(from_obj, dict) else ""
+                )
+                sender_name = (
+                    str(from_obj.get("name", "")) if isinstance(from_obj, dict) else ""
+                )
+                # Skip Page's own comments to prevent self-reply loops.
+                # When the Page replies via reply_to_comment(), Meta sends a
+                # webhook event with from.id == page_id — processing it would
+                # trigger another agent turn and an infinite reply loop.
+                if sender_id and sender_id == page_id:
+                    FacebookAPI.logger.debug(
+                        "iter_feed_comment_events: skipping Page's own comment "
+                        "sender_id=%s == page_id=%s",
+                        sender_id,
+                        page_id,
+                    )
+                    continue
+                message = str(value.get("message", "") or "").strip()
+                comment_id = str(
+                    value.get("comment_id", "") or value.get("id", "") or ""
+                ).strip()
+                post_id = str(value.get("post_id", "") or "").strip()
+                parent_id = str(value.get("parent_id", "") or post_id or "").strip()
+                ts = value.get("created_time") or value.get("timestamp")
+                try:
+                    timestamp = int(ts) if ts is not None else 0
+                except (TypeError, ValueError):
+                    timestamp = 0
+                out.append(
+                    {
+                        "sender_id": sender_id,
+                        "sender_name": sender_name,
+                        "page_id": page_id,
+                        "comment_id": comment_id,
+                        "post_id": post_id,
+                        "message_type": "comment",
+                        "message": message,
+                        "parent_id": parent_id,
+                        "timestamp": timestamp,
+                        "data": request,
+                        "verb": verb,
+                    }
+                )
+        return out
+
+    @staticmethod
+    def iter_feed_reaction_events(
+        request: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Parse Meta Page webhook JSON and return inbound **feed reaction** events.
+
+        Processes entries with ``"changes"`` (feed events) and extracts
+        reaction events where ``item == "reaction"`` and ``verb == "add"``.
+
+        Skips: ``messaging`` entries (DMs), comments, status changes, remove
+        reactions, and the Page's own reactions (self-loop prevention).
+
+        Each returned dict includes:
+        ``sender_id``, ``sender_name``, ``page_id``, ``post_id``,
+        ``comment_id`` (empty string if reaction is on a post, not a comment),
+        ``reaction_type`` (like, love, wow, haha, sorry, anger),
+        ``message_type`` (always ``"reaction"``), ``data`` (raw request payload),
+        ``timestamp``.
+        """
+        out: List[Dict[str, Any]] = []
+        if not isinstance(request, dict):
+            return out
+        if request.get("object") != "page":
+            return out
+        entries = request.get("entry")
+        if not isinstance(entries, list):
+            return out
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            page_id = str(entry.get("id", ""))
+            changes = entry.get("changes")
+            if not isinstance(changes, list):
+                continue
+            for change in changes:
+                if not isinstance(change, dict):
+                    continue
+                value = change.get("value")
+                if not isinstance(value, dict):
+                    continue
+                item = str(value.get("item", "")).strip().lower()
+                if item != "reaction":
+                    continue
+                verb = str(value.get("verb", "")).strip().lower()
+                if verb != "add":
+                    continue
+                from_obj = value.get("from") or {}
+                sender_id = (
+                    str(from_obj.get("id", "")) if isinstance(from_obj, dict) else ""
+                )
+                sender_name = (
+                    str(from_obj.get("name", "")) if isinstance(from_obj, dict) else ""
+                )
+                # Skip Page's own reactions to prevent self-loop.
+                if sender_id and sender_id == page_id:
+                    FacebookAPI.logger.debug(
+                        "iter_feed_reaction_events: skipping Page's own reaction "
+                        "sender_id=%s == page_id=%s",
+                        sender_id,
+                        page_id,
+                    )
+                    continue
+                reaction_type = (
+                    str(value.get("reaction_type", "") or "").strip().lower()
+                )
+                post_id = str(value.get("post_id", "") or "").strip()
+                comment_id = str(value.get("comment_id", "") or "").strip()
+                ts = value.get("created_time") or value.get("timestamp")
+                try:
+                    timestamp = int(ts) if ts is not None else 0
+                except (TypeError, ValueError):
+                    timestamp = 0
+                out.append(
+                    {
+                        "sender_id": sender_id,
+                        "sender_name": sender_name,
+                        "page_id": page_id,
+                        "post_id": post_id,
+                        "comment_id": comment_id,
+                        "reaction_type": reaction_type,
+                        "message_type": "reaction",
+                        "message": reaction_type,
+                        "timestamp": timestamp,
+                        "data": request,
+                        "verb": verb,
+                    }
+                )
+        return out
 
     def send_text_message(self, recipient_id: str, message: str) -> Dict:
         """Send text message to a Facebook user via Messenger."""
