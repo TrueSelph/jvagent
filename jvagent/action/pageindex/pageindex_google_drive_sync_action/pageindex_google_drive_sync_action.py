@@ -251,6 +251,7 @@ class DriveIngestConfig:
     normalize_bold_headings: bool = False
     skip_existing_documents: bool = True
     use_jvforge: Optional[bool] = None
+    chunking_strategy: Optional[str] = None
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -533,6 +534,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     notification_url=llm_wh_url,
                     notify_delay_seconds=0,
                     emergency=False,
+                    chunking_strategy=cfg.chunking_strategy,
                 )
                 return {
                     "doc_name": doc_name,
@@ -556,6 +558,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 docling_ocr_engine=cfg.docling_ocr_engine,
                 normalize_bold_headings=cfg.normalize_bold_headings,
                 llm_webhook_url=llm_wh_url,
+                chunking_strategy=cfg.chunking_strategy,
             )
             return {"doc_name": doc_name}
         # assimilate_document expects threading.Event (worker-thread cancel); not asyncio.Event.
@@ -794,6 +797,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         normalize_bold_headings: bool = False,
         skip_existing_documents: bool = True,
         use_jvforge: Optional[bool] = None,
+        chunking_strategy: Optional[str] = None,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -859,6 +863,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 normalize_bold_headings=normalize_bold_headings,
                 skip_existing_documents=skip_existing_documents,
                 use_jvforge=use_jvforge,
+                chunking_strategy=chunking_strategy,
             )
 
     async def _phase_sync_google_drive_folders(
@@ -1265,6 +1270,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         normalize_bold_headings: bool = False,
         skip_existing_documents: bool = True,
         use_jvforge: Optional[bool] = None,
+        chunking_strategy: Optional[str] = None,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
@@ -1310,6 +1316,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             normalize_bold_headings=normalize_bold_headings,
             skip_existing_documents=skip_existing_documents,
             use_jvforge=use_jvforge,
+            chunking_strategy=chunking_strategy,
         )
 
         await self._phase_sync_google_drive_folders(

@@ -37,7 +37,7 @@ from ..webhook_auth import (
     WEBHOOK_PERMISSION,
     get_or_create_system_user,
 )
-from .runtime_config import format_page_range
+from .runtime_config import format_page_range, prompt_page_aliases
 
 if TYPE_CHECKING:
     from jvagent.action.interact.interact_walker import InteractWalker
@@ -214,7 +214,12 @@ class PageIndexAction(Action):
             )
 
     async def handle_webhook_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """LLM completion for jvforge (prompt + optional model / image)."""
+        """LLM completion for jvforge (prompt + optional model / image).
+
+        Returns ``{"text": ..., "model": ..., "usage": {...}}`` where usage
+        contains ``prompt_tokens``, ``completion_tokens``, and ``total_tokens``
+        when available.
+        """
         prompt = (payload.get("prompt") or "").strip()
         if not prompt:
             raise ValidationError(
@@ -239,6 +244,11 @@ class PageIndexAction(Action):
             str(payload.get("mime_type") or "image/jpeg").strip() or "image/jpeg"
         )
 
+        usage: Dict[str, int] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
         model_action = await self.get_model_action(required=False)
         try:
             if image_base64:
@@ -247,17 +257,25 @@ class PageIndexAction(Action):
                         message="Language model action is required for image completion",
                         details={},
                     )
-                # Prefer data-URI so mime_type is honored (create_image_content
-                # defaults base64 parts to image/jpeg).
                 data_uri = f"data:{mime_type};base64,{image_base64}"
                 content = model_action.create_image_content(prompt, image_url=data_uri)
                 result = await model_action.query_sync(
                     content, temperature=0, model=model
                 )
                 text = await result.get_response() if result else ""
+                if (
+                    result
+                    and hasattr(result, "metrics")
+                    and isinstance(result.metrics, dict)
+                ):
+                    usage["prompt_tokens"] = result.metrics.get("prompt_tokens", 0) or 0
+                    usage["completion_tokens"] = (
+                        result.metrics.get("completion_tokens", 0) or 0
+                    )
+                    usage["total_tokens"] = result.metrics.get("total_tokens", 0) or 0
             else:
                 llm_bridge.set_pageindex_model_action(model_action)
-                text = await llm_bridge.llm_acompletion(
+                text, usage = await llm_bridge.llm_acompletion_with_usage(
                     model,
                     prompt,
                     _real_impl=pageindex_core_utils.llm_acompletion,
@@ -265,7 +283,10 @@ class PageIndexAction(Action):
         finally:
             llm_bridge.set_pageindex_model_action(None)
 
-        return {"text": text or "", "model": model}
+        result_dict: Dict[str, Any] = {"text": text or "", "model": model}
+        if usage.get("total_tokens"):
+            result_dict["usage"] = usage
+        return result_dict
 
     async def _ensure_jvforge_llm_webhook_if_configured(self) -> None:
         """Provision inbound LLM webhook only when jvforge is configured (jvforge node-summary callback)."""
@@ -417,7 +438,7 @@ class PageIndexAction(Action):
         eff_res = (
             retrieval_excerpt_source
             if retrieval_excerpt_source is not None
-            else cfg.get("retrieval_excerpt_source")
+            else (cfg.get("retrieval_excerpt_source") or self.retrieval_excerpt_source)
         )
         if eff_res is not None:
             set_pageindex_retrieval_excerpt_source(eff_res)
@@ -605,7 +626,10 @@ class PageIndexAction(Action):
         doc_name: Annotated[
             Optional[str], "Restrict search to a specific document name."
         ] = None,
-        limit: Annotated[int, "Max results to return (default 5)."] = 5,
+        limit: Annotated[
+            Optional[int],
+            "Max results to return. Uses the action's configured limit when omitted.",
+        ] = None,
         **kwargs: Any,
     ) -> str:
         """Search the internal knowledge base for documents matching a query."""
@@ -635,7 +659,8 @@ class PageIndexAction(Action):
         )
         if not results:
             return "No matching documents found."
-        return json.dumps(results, indent=2)
+        # Agent prompt sees start_page/end_page; API/search rows keep index keys.
+        return json.dumps(prompt_page_aliases(results), indent=2)
 
     @tool(name="pageindex__assimilate")
     async def _t_assimilate(
@@ -764,12 +789,15 @@ class PageIndexAction(Action):
         ] = None,
         summary: Annotated[
             bool,
-            "If true, return only document names and descriptions (lighter response for quick lookup).",
-        ] = False,
+            "If true (default), return only document names and short descriptions "
+            "(lighter response for quick lookup). If false, also include access "
+            "(and chunks when the catalog still fits the observation budget).",
+        ] = True,
     ) -> str:
         """List documents in the knowledge base. When access control is enabled,
-        only documents the current user can access are returned. Set summary=true
-        to get document names and descriptions for quick lookup."""
+        only documents the current user can access are returned. Returns a compact
+        ``{count, documents}`` payload (truncated descriptions) so the full catalog
+        fits in the orchestrator observation budget."""
         import json
 
         from jvagent.tooling.tool_executor import get_tool_visitor
@@ -782,7 +810,72 @@ class PageIndexAction(Action):
             session_id=getattr(visitor, "session_id", None) if visitor else None,
             summary=summary,
         )
-        return json.dumps(result, indent=2)
+        # Lean tool payload: keep under the orchestrator's observation budget so
+        # it does not middle-elide catalog entries.
+        from jvagent.action.orchestrator.tools import DEFAULT_OBSERVATION_MAX_CHARS
+
+        max_chars = DEFAULT_OBSERVATION_MAX_CHARS
+        desc_limit = 80
+        total = len(result)
+
+        def _build(limit: int, include_chunks: bool, keep: Optional[int]) -> list:
+            docs: List[Dict[str, Any]] = []
+            for doc in result[:keep] if keep is not None else result:
+                desc = doc.get("doc_description", "") or ""
+                if len(desc) > limit:
+                    desc = desc[: limit - 3] + "..."
+                entry: Dict[str, Any] = {
+                    "doc_name": doc.get("doc_name", ""),
+                    "doc_description": desc,
+                }
+                if not summary:
+                    if include_chunks and "chunks" in doc:
+                        entry["chunks"] = doc["chunks"]
+                    meta = doc.get("metadata")
+                    if isinstance(meta, dict) and "access" in meta:
+                        entry["access"] = meta["access"]
+                docs.append(entry)
+            return docs
+
+        def _dump(docs: list) -> str:
+            body: Dict[str, Any] = {"count": total, "documents": docs}
+            if len(docs) < total:
+                # Say so explicitly: a model told it has 60 of 200 can ask for
+                # the rest, one silently handed 60 cannot.
+                body["shown"] = len(docs)
+                body["truncated"] = True
+            return json.dumps(body, separators=(",", ":"))
+
+        include_chunks = not summary
+        keep: Optional[int] = None
+        documents = _build(desc_limit, include_chunks, keep)
+        payload = _dump(documents)
+        # Prefer dropping chunks over cutting names; then shrink descriptions.
+        if len(payload) > max_chars and include_chunks:
+            include_chunks = False
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
+        while len(payload) > max_chars and desc_limit > 40:
+            desc_limit -= 10
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
+        # Descriptions are as short as they go and it still does not fit, so the
+        # catalog itself is too long. Drop whole entries rather than return an
+        # oversized payload for the orchestrator to elide from the middle.
+        while len(payload) > max_chars and len(documents) > 1:
+            keep = max(1, len(documents) - max(1, len(documents) // 10))
+            documents = _build(desc_limit, include_chunks, keep)
+            payload = _dump(documents)
+        logger.info(
+            "pageindex__list returned %d of %d document(s) (summary=%s, "
+            "collection=%s, payload_chars=%d)",
+            len(documents),
+            total,
+            summary,
+            collection_name or self._resolve_collection(),
+            len(payload),
+        )
+        return payload
 
     @tool(name="pageindex__delete")
     async def _t_delete_doc(
@@ -969,7 +1062,9 @@ class PageIndexAction(Action):
     def _format_directive_plain(self, results: List[Dict[str, Any]]) -> str:
         parts = []
         for r in results:
-            content = r.get("content", r.get("text", r.get("title", "")))
+            content = r.get(
+                "content", r.get("summary", r.get("text", r.get("title", "")))
+            )
             title = r.get("title", "")
             doc = r.get("doc_name", "")
             prefix = f"[{doc}] {title}: " if doc or title else ""
@@ -1003,7 +1098,9 @@ class PageIndexAction(Action):
 
         excerpt_lines: List[str] = []
         for r in results:
-            content = r.get("content", r.get("text", r.get("title", "")))
+            content = r.get(
+                "content", r.get("summary", r.get("text", r.get("title", "")))
+            )
             title = r.get("title", "")
             doc = r.get("doc_name", "")
             page_range = format_page_range(r)

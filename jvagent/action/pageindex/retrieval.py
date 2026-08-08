@@ -814,7 +814,7 @@ async def search_documents(
         include: Optional extra node metadata keys per hit (e.g. hierarchy, content_type, pageindex_node_id)
 
     Returns:
-        List of dicts with title, text, summary, doc_name, node_id, structure, content,
+        List of dicts with title, text, summary, doc_name, node_id, hierarchy, content,
         start_index, end_index, physical_index, and doc_url when include_references is True
     """
     # Lazy DB init (mirrors documents.py / endpoints.py): retrieval may be the

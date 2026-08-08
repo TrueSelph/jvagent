@@ -42,6 +42,7 @@ import type {
   GraphSubgraphResponse,
   GoogleDriveListResponse,
   DoclingOcrEngine,
+  ChunkingStrategy,
 } from '../types/api'
 import * as graphService from './api/graph'
 
@@ -66,7 +67,7 @@ class ApiClient {
     this.jvforgeBaseUrls = this._buildBaseUrls(getJvforgeUrl())
 
     this.client = axios.create({
-      baseURL: baseURL,
+      baseURL: this.baseUrls[0],
       timeout: getJvagentTimeout(),
       // Remove default Content-Type header to avoid preflights on GET requests
       // Headers will be set per-request in the interceptor
@@ -77,8 +78,9 @@ class ApiClient {
 
     // Update baseURL when async config loads
     getConfigAsync().then((config) => {
-      if (config.jvagent.url !== baseURL) {
-        this.updateBaseUrl(config.jvagent.url)
+      const asyncUrl = config.jvagent.url.replace(/\/+$/, '')
+      if (asyncUrl !== baseURL) {
+        this.updateBaseUrl(asyncUrl)
       }
       this.jvforgeBaseUrls = this._buildBaseUrls(config.jvforge.url.replace(/\/$/, ''))
     }).catch((err) => {
@@ -341,9 +343,10 @@ class ApiClient {
   }
 
   private _buildBaseUrls(primary: string): string[] {
-    const urls = [primary]
-    const swapped = this._swapHost(primary)
-    if (swapped && swapped !== primary) {
+    const normalized = primary.replace(/\/+$/, '')
+    const urls = [normalized]
+    const swapped = this._swapHost(normalized)
+    if (swapped && swapped !== normalized) {
       urls.push(swapped)
     }
     return urls
@@ -1392,6 +1395,8 @@ class ApiClient {
       skip_existing_documents?: boolean
       /** When true, require jvforge. When false, native ingest even if jvforge URL is set. */
       use_jvforge?: boolean
+      /** Chunking strategy: 'heading' (default), 'llm_segment', or 'llm_direct'. */
+      chunking_strategy?: ChunkingStrategy
     }
   ): Promise<{ message?: string; result?: unknown }> {
     const response = await this._withFallback(async (baseURL) => {
@@ -1564,6 +1569,8 @@ class ApiClient {
       /** When set, sent as multipart ``use_jvforge`` (yes/no). False = always native on jvagent. */
       useJvforge?: boolean
       emergency?: boolean  // NEW: Mark as emergency priority
+      /** Chunking strategy: 'heading' (default, no LLM), 'llm_segment' (LLM finds boundaries), 'llm_direct' (LLM decides full tree). */
+      chunkingStrategy?: ChunkingStrategy
     }
   ): Promise<PageIndexUploadResponse & {
     status?: 'queued' | 'already_queued'
@@ -1604,6 +1611,9 @@ class ApiClient {
     }
     if (options?.emergency !== undefined) {
       formData.append('emergency', options.emergency ? 'true' : 'false')
+    }
+    if (options?.chunkingStrategy && options.chunkingStrategy !== 'heading') {
+      formData.append('chunking_strategy', options.chunkingStrategy)
     }
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`
