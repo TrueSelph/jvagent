@@ -72,6 +72,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   "heading" (jvagent) or return HTTP 400 (jvforge). All three validators now
   accept `"flash"` and pass it through to the extraction pipeline.
 
+- **Flash chunking strategy now requires a PDF.**
+  Selecting `flash` for a non-PDF file (`.docx`, `.md`, etc.) was silently
+  falling through to the LLM-based `markdown_enriched` pipeline in jvforge,
+  incurring unexpected token costs. Both jvagent and jvforge now log a
+  warning and fall back to `heading` when flash is requested on a non-PDF.
+  In jvchat, the Flash dropdown option is labeled "Flash — LLM-free (PDF only)".
+
 ## [0.1.7] - 2026-08-09
 
 ### Added

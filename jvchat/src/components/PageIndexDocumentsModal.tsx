@@ -2135,7 +2135,7 @@ export function PageIndexDocumentsModal({
                           <option value="llm_direct">
                             LLM-directed chunking
                           </option>
-                          <option value="flash">Flash — LLM-free</option>
+                          <option value="flash">Flash — LLM-free (PDF only)</option>
                         </select>
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -3551,7 +3551,7 @@ export function PageIndexDocumentsModal({
                   <option value="heading">Heading-based</option>
                   <option value="llm_segment">LLM-assisted segmentation</option>
                   <option value="llm_direct">LLM-directed chunking</option>
-                  <option value="flash">Flash — LLM-free</option>
+                  <option value="flash">Flash — LLM-free (PDF only)</option>
                 </select>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">

@@ -36,7 +36,7 @@ export type DoclingOcrEngine = 'none' | 'rapidocr'
  * - 'heading' — heading-based (no LLM cost)
  * - 'llm_segment' — LLM-assisted segmentation (LLM finds section boundaries)
  * - 'llm_direct' — LLM-directed chunking (LLM decides entire chunk tree)
- * - 'flash' — LLM-free PDF extraction (fastest, heuristic-based)
+ * - 'flash' — LLM-free PDF extraction (fastest, PDF only, heuristic-based)
  */
 export type ChunkingStrategy = 'heading' | 'llm_segment' | 'llm_direct' | 'flash'
 

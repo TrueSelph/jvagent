@@ -1169,6 +1169,13 @@ async def ingest_document_endpoint(
                 f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
             )
 
+        if chunking_strategy_eff == "flash" and ext != ".pdf":
+            logger.warning(
+                "flash strategy requires PDF; got %s — falling back to heading",
+                ext,
+            )
+            chunking_strategy_eff = "heading"
+
         if not content:
             raise ValidationError("Empty file")
 
