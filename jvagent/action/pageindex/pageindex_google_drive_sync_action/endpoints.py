@@ -128,7 +128,7 @@ async def ingest_google_documents_endpoint(
     chunking_strategy: Optional[str] = Field(
         default=None,
         description=(
-            "Chunking strategy for jvforge: 'heading' (default), 'llm_segment', or 'llm_direct'."
+            "Chunking strategy for jvforge: 'heading' (default), 'llm_segment', 'llm_direct', or 'flash' (LLM-free)."
         ),
     ),
 ) -> Dict[str, Any]:
@@ -643,6 +643,7 @@ async def pageindex_google_drive_sync_action_interact(
             "heading",
             "llm_segment",
             "llm_direct",
+            "flash",
         ):
             ingest_kw["chunking_strategy"] = chunking_strategy_val
 

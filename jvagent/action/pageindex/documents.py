@@ -254,7 +254,7 @@ def _pdf_page_index_worker(
     if_add_node_id: str,
     if_add_node_text: str,
     if_add_node_summary: str,
-    generate_description: bool,
+    if_add_doc_description: str,
 ) -> Dict[str, Any]:
     """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge).
 
@@ -277,7 +277,7 @@ def _pdf_page_index_worker(
             if_add_node_id=if_add_node_id,
             if_add_node_text=if_add_node_text,
             if_add_node_summary=if_add_node_summary,
-            generate_description=generate_description,
+            if_add_doc_description=if_add_doc_description,
         )
     finally:
         try:
@@ -454,10 +454,8 @@ async def assimilate_document(
     # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
     if_add_node_summary = _to_yes_no(if_add_node_summary, get_pageindex_node_summary())
     if_add_node_text = _to_yes_no(if_add_node_text, get_pageindex_node_text())
-    generate_description = (
-        if_add_doc_description
-        if if_add_doc_description is not None
-        else get_pageindex_doc_description()
+    if_add_doc_description_str = _to_yes_no(
+        if_add_doc_description, get_pageindex_doc_description()
     )
     if max_token_num_each_node is None:
         max_token_num_each_node = get_pageindex_max_token_num_each_node()
@@ -632,7 +630,7 @@ async def assimilate_document(
                     if_add_node_id=if_add_node_id,
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
-                    generate_description=generate_description,
+                    if_add_doc_description=if_add_doc_description_str,
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
@@ -666,7 +664,7 @@ async def assimilate_document(
                 if_add_node_id=if_add_node_id,
                 if_add_node_text=if_add_node_text,
                 if_add_node_summary=if_add_node_summary,
-                generate_description=generate_description,
+                if_add_doc_description=if_add_doc_description_str,
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
             )

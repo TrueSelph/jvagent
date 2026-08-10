@@ -28,6 +28,12 @@ if not os.getenv("OPENAI_API_KEY"):
 
 litellm.drop_params = True
 
+_UNRECOVERABLE_STATUS = frozenset({401, 403, 404})
+
+
+def _is_unrecoverable(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) in _UNRECOVERABLE_STATUS
+
 
 def count_tokens(text, model=None):
     if not text:
@@ -59,6 +65,8 @@ def llm_completion(model, prompt, chat_history=None, return_finish_reason=False)
                 return content, finish_reason
             return content
         except Exception as e:
+            if _is_unrecoverable(e):
+                raise
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
@@ -82,6 +90,8 @@ async def llm_acompletion(model, prompt):
             )
             return response.choices[0].message.content
         except Exception as e:
+            if _is_unrecoverable(e):
+                raise
             print("************* Retrying *************")
             logging.error(f"Error: {e}")
             if i < max_retries - 1:
@@ -141,6 +151,60 @@ def extract_json(content):
     except Exception as e:
         logging.error(f"Unexpected error while extracting JSON: {e}")
         return {}
+
+
+def _reply_json(reply):
+    if not isinstance(reply, str) or not reply.strip():
+        return None
+    text = reply.strip()
+    if "```" in text:
+        text = re.sub(r"^.*?```(?:json)?\s*", "", text, flags=re.S).split("```")[0]
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    obj = text[start : end + 1]
+    collapsed = " ".join(obj.split())
+    for candidate in (obj, collapsed, collapsed.replace(",]", "]").replace(",}", "}")):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def parse_summary(reply):
+    if not isinstance(reply, str) or not reply.strip():
+        return ""
+    parsed = _reply_json(reply)
+    if isinstance(parsed, dict) and "summary" in parsed:
+        summary = parsed["summary"]
+        if isinstance(summary, list):
+            summary = " ".join(
+                str(item).strip() for item in summary if str(item).strip()
+            )
+        return str(summary).strip() if summary else ""
+    return reply.strip()
+
+
+def parse_title(reply):
+    parsed = _reply_json(reply)
+    if not isinstance(parsed, dict):
+        return ""
+    title = parsed.get("title")
+    if isinstance(title, list):
+        title = " ".join(str(item).strip() for item in title if str(item).strip())
+    return " ".join(str(title).split()) if title else ""
+
+
+def strip_internal_keys(structure):
+    nodes = structure if isinstance(structure, list) else [structure]
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node.pop("_same_page", None)
+        if node.get("nodes"):
+            strip_internal_keys(node["nodes"])
+    return structure
 
 
 def write_node_id(data, node_id=0):
@@ -358,11 +422,7 @@ def list_to_tree(data):
 
     for item in data:
         structure = item.get("structure")
-        node = {"nodes": []}
-        for key, value in item.items():
-            if key == "nodes":
-                continue
-            node[key] = value
+        node = {**item, "nodes": []}
 
         nodes[structure] = node
 
@@ -631,27 +691,130 @@ async def generate_summaries_for_structure(structure, model=None):
     return structure
 
 
-_MAX_TEXT_FOR_DESCRIPTION = 500
+SUMMARY_CONCURRENCY = 64
+SUMMARY_RAW_TEXT_TOKENS = 200
+SUMMARY_INTRO_MAX_PAGES = 3
+
+
+def get_intro_text(node, pdf_pages, max_pages=SUMMARY_INTRO_MAX_PAGES):
+    children = node.get("nodes") or []
+    first = children[0].get("start_index") if children else None
+    if not isinstance(first, int) or first <= node["start_index"]:
+        return ""
+    end = min(first - 1, node["start_index"] + max_pages - 1)
+    return get_text_of_pdf_pages(pdf_pages, node["start_index"], end)
+
+
+async def summarize_tree(
+    structure,
+    pdf_pages,
+    model=None,
+    small_node_tokens=SUMMARY_RAW_TEXT_TOKENS,
+    max_intro_pages=SUMMARY_INTRO_MAX_PAGES,
+    concurrency=None,
+):
+    semaphore = asyncio.Semaphore(concurrency or SUMMARY_CONCURRENCY)
+
+    async def ask(prompt):
+        async with semaphore:
+            return await llm_acompletion(model, prompt)
+
+    async def leaf_summary(node):
+        text = get_text_of_pdf_pages(pdf_pages, node["start_index"], node["end_index"])
+        if count_tokens(text, model="gpt-4o") < small_node_tokens:
+            return text.strip()
+
+        retitle = bool(node.get("_same_page"))
+        titles = "; ".join(node.get("key_items") or [])
+        ask_title = (
+            f"\n    The text is one page holding several short sections: {titles}. "
+            f"Also return a short title, at most 12 words, naming what the "
+            f"whole page covers."
+            if retitle
+            else ""
+        )
+        title_field = (
+            '\n        "title": <a short title naming what the whole page covers>,'
+            if retitle
+            else ""
+        )
+
+        prompt = f"""You are given a text chunk from a document.
+Your task is to generate a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content.
+Keep the description concise and to the point, avoiding unnecessary details.{ask_title}
+
+Given Text: {text}
+
+Reply strictly in the following JSON format:
+{{{title_field}
+    "points": <a list of points covered in the text>,
+    "summary": <a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content>
+}}
+
+Follow strictly the above JSON return format. Do not include any other text!
+"""
+        reply = await ask(prompt)
+        if retitle:
+            written = parse_title(reply)
+            if written:
+                node["title"] = written
+        return parse_summary(reply)
+
+    async def parent_summary(node):
+        children = node["nodes"]
+        intro = get_intro_text(node, pdf_pages, max_pages=max_intro_pages)
+        listing = json.dumps(
+            [
+                {"title": c.get("title", ""), "summary": c.get("summary", "")}
+                for c in children
+            ],
+            ensure_ascii=False,
+        )
+        prompt = f"""You are given a section of a document: the text that opens the section (possibly empty) and the titles and summaries of its subsections.
+Your task is to generate a concise description of everything that is covered in the whole section, summarizing all its points without omitting any type of content.
+Keep the description concise and to the point, avoiding unnecessary details.
+
+Section Title: {node.get('title', '')}
+
+Opening Text: {intro}
+
+Subsection Titles and Summaries: {listing}
+
+Reply strictly in the following JSON format:
+{{
+    "points": <a list of points covered in the section>,
+    "summary": <a concise description of everything that is covered in the section, summarizing all its points without omitting any type of content>
+}}
+
+Follow strictly the above JSON return format. Do not include any other text!
+"""
+        return parse_summary(await ask(prompt))
+
+    async def visit(node):
+        children = node.get("nodes") or []
+        if children:
+            await asyncio.gather(*(visit(child) for child in children))
+        if node.get("summary"):
+            return
+        node["summary"] = await (
+            parent_summary(node) if children else leaf_summary(node)
+        )
+
+    await asyncio.gather(*(visit(root) for root in structure))
+    strip_internal_keys(structure)
+    return structure
 
 
 def create_clean_structure_for_description(structure):
-    """
-    Create a clean structure for document description generation,
-    including truncated text so the description reflects actual content.
-    """
     if isinstance(structure, dict):
         clean_node = {}
         for key in ["title", "node_id", "summary", "prefix_summary"]:
             if key in structure:
                 clean_node[key] = structure[key]
-        text = structure.get("text")
-        if text and isinstance(text, str) and text.strip():
-            clean_node["text"] = text.strip()[:_MAX_TEXT_FOR_DESCRIPTION]
         if "nodes" in structure and structure["nodes"]:
             clean_node["nodes"] = create_clean_structure_for_description(
                 structure["nodes"]
             )
-
         return clean_node
     elif isinstance(structure, list):
         return [create_clean_structure_for_description(item) for item in structure]
@@ -661,7 +824,7 @@ def create_clean_structure_for_description(structure):
 
 def generate_doc_description(structure, model=None):
     prompt = f"""You are an expert in generating descriptions for a document.
-You are given a structure of a document including its text content and summaries. Your task is to generate a one-sentence description of what the document is about, based on its actual content.
+You are given a structure of a document. Your task is to generate a one-sentence description for the document, which makes it easy to distinguish the document from other documents.
 
 Document Structure: {structure}
 
@@ -722,3 +885,35 @@ class ConfigLoader:
         self._validate_keys(user_dict)
         merged = {**self._default_dict, **user_dict}
         return config(**merged)
+
+
+def create_node_mapping(tree):
+    mapping = {}
+
+    def _walk(nodes):
+        for node in nodes:
+            nid = node.get("node_id")
+            if nid is not None:
+                mapping[nid] = node
+            if node.get("nodes"):
+                _walk(node["nodes"])
+
+    _walk(tree if isinstance(tree, list) else [tree])
+    return mapping
+
+
+def print_tree(tree, indent=0):
+    for node in tree if isinstance(tree, list) else [tree]:
+        summary_preview = (node.get("summary") or "")[:60]
+        print(
+            "  " * indent
+            + f"{node.get('node_id', '?')} {node.get('title', '?')}  {summary_preview}"
+        )
+        if node.get("nodes"):
+            print_tree(node["nodes"], indent + 1)
+
+
+def print_wrapped(text, width=80):
+    import textwrap
+
+    print("\n".join(textwrap.wrap(text, width)))

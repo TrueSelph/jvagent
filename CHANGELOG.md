@@ -8,6 +8,70 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **PageIndex: LLM-free "Flash" extraction mode.**
+  A new `chunking_strategy="flash"` option uses heuristic layout analysis
+  (heading detection, column detection, embedded TOC/bookmarks) to build a
+  document tree without any LLM calls. This is orders of magnitude faster
+  than LLM-based strategies and has zero token cost, making it ideal for
+  bulk ingestion or cost-sensitive pipelines. Available in jvchat's Upload
+  and Google Sync dropdowns as "Flash — LLM-free (fastest)".
+
+- **PageIndex: tree optimization pass after extraction.**
+  The new `tree_optimize.py` module runs a post-extraction merge/expand pass
+  that collapses single-child chains, merges overlapping sibling ranges, and
+  optionally summarizes merged nodes. This produces cleaner, shallower trees
+  that are easier for RAG to navigate.
+
+- **PageIndex: prompt injection hardening.**
+  User-supplied document text is now sanitized before being included in LLM
+  prompts. Patterns that mimic system instructions (role-plays, ignore
+  directives, etc.) are detected and neutralized, preventing adversarial
+  PDFs from hijacking the extraction prompt.
+
+- **PageIndex: physical page index validation.**
+  LLM-generated page numbers are now cross-checked against the actual PDF
+  page count. Hallucinated or out-of-range indices are clamped or dropped,
+  so retrieval no longer breaks on documents where the model invented a
+  page 47 in a 12-page PDF.
+
+- **PageIndex: robustness fixes for TOC parsing and JSON extraction.**
+  Table-of-contents extraction now uses `for…else` continuation loops so a
+  bad page doesn't abort the entire TOC. LLM JSON responses are parsed with
+  `.get()` defaults instead of bare key access, preventing `KeyError` crashes
+  on malformed model output. Bold heading detection and `level` capture in
+  Markdown extraction also improved.
+
+- **PageIndex: separate summary model.**
+  New `summary_model` parameter lets you specify a different (typically
+  cheaper/faster) model for generating node summaries, keeping the main
+  extraction model free for structure decisions.
+
+- **jvchat: `key_items` field on chunks.**
+  The `PageIndexChunk` type now includes an optional `key_items` array,
+  populated by tree optimization when nodes are merged. This surfaces the
+  most important phrases from each chunk for search and display.
+
+### Changed
+
+- **PageIndex: `generate_description` → `if_add_doc_description`.**
+  The boolean `generate_description` parameter is replaced by a string
+  `if_add_doc_description` accepting `"yes"` or `"no"`. This aligns with
+  the existing `if_add_node_summary` convention and makes the intent clearer.
+  `documents.py` and `md_tree_enriched.py` updated; jvforge API endpoints
+  accept both parameter names for backward compatibility.
+
+### Fixed
+
+- **`chunking_strategy="flash"` was silently rejected by validation gates.**
+  The Upload endpoint (`endpoints.py`), Google Drive sync endpoint, and
+  jvforge `/v1/process` route all validated `chunking_strategy` against a
+  whitelist that only allowed `heading`, `llm_segment`, and `llm_direct`.
+  Selecting "Flash" in jvchat would either be silently downgraded to
+  "heading" (jvagent) or return HTTP 400 (jvforge). All three validators now
+  accept `"flash"` and pass it through to the extraction pipeline.
+
 ## [0.1.7] - 2026-08-09
 
 ### Added

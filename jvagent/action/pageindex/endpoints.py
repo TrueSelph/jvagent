@@ -969,7 +969,7 @@ async def ingest_document_endpoint(
     normalize_bold_flag = False if bold_opt is None else bold_opt
 
     chunking_strategy_eff = (chunking_strategy_raw or "").strip().lower() or "heading"
-    if chunking_strategy_eff not in ("heading", "llm_segment", "llm_direct"):
+    if chunking_strategy_eff not in ("heading", "llm_segment", "llm_direct", "flash"):
         chunking_strategy_eff = "heading"
 
     file_url = (file_url_raw or "").strip()
