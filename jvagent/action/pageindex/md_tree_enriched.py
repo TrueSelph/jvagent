@@ -569,12 +569,12 @@ async def md_to_tree(
     md_path,
     if_thinning=False,
     min_token_threshold=None,
-    if_add_node_summary="no",
+    if_add_node_summary=False,
     summary_token_threshold=None,
     model=None,
-    if_add_doc_description="no",
-    if_add_node_text="no",
-    if_add_node_id="yes",
+    if_add_doc_description=False,
+    if_add_node_text=False,
+    if_add_node_id=True,
 ):
     with open(md_path, "r", encoding="utf-8") as f:
         markdown_content = f.read()
@@ -618,12 +618,12 @@ async def md_to_tree(
     print("Building tree from nodes...")
     tree_structure = build_tree_from_nodes(nodes_with_content)
 
-    if if_add_node_id == "yes":
+    if if_add_node_id:
         write_node_id(tree_structure)
 
     print("Formatting tree structure...")
 
-    if if_add_node_summary == "yes":
+    if if_add_node_summary:
         tree_structure = format_structure(tree_structure, order=_FORMAT_ORDER_WITH_TEXT)
 
         print("Generating summaries for each node...")
@@ -633,12 +633,12 @@ async def md_to_tree(
             model=model,
         )
 
-        if if_add_node_text == "no":
+        if not if_add_node_text:
             tree_structure = format_structure(
                 tree_structure, order=_FORMAT_ORDER_NO_TEXT
             )
 
-        if if_add_doc_description == "yes":
+        if if_add_doc_description:
             print("Generating document description...")
             clean_structure = create_clean_structure_for_description(tree_structure)
             doc_description = generate_doc_description(clean_structure, model=model)
@@ -650,7 +650,7 @@ async def md_to_tree(
                 "_heading_line_offset": heading_line_offset,
             }
     else:
-        if if_add_node_text == "yes":
+        if if_add_node_text:
             tree_structure = format_structure(
                 tree_structure, order=_FORMAT_ORDER_WITH_TEXT
             )

@@ -1,4 +1,6 @@
 # `pre-commit install` also installs the pre-push hook (pytest below).
+# Vendored upstream PageIndex (jvagent/action/pageindex/core/) is excluded from
+# formatters/linters so it stays identical to PageIndex upstream.
 default_install_hook_types: [pre-commit, pre-push]
 
 repos:
@@ -12,17 +14,17 @@ repos:
         exclude: "(^|/)pnpm-lock\\.yaml$"
       - id: check-json
       - id: trailing-whitespace
-        exclude: "^venv/"
+        exclude: "^(venv|jvagent/action/pageindex/core)/"
   - repo: https://github.com/psf/black
     rev: 24.8.0
     hooks:
       - id: black
-        exclude: "^(venv|examples)/"
+        exclude: "^(venv|examples|jvagent/action/pageindex/core)/"
   - repo: https://github.com/PyCQA/isort
     rev: 6.0.0
     hooks:
       - id: isort
-        exclude: "^(venv|examples)/"
+        exclude: "^(venv|examples|jvagent/action/pageindex/core)/"
         args: ["--profile", "black"]
   - repo: https://github.com/PyCQA/flake8
     rev: 7.3.0
@@ -38,12 +40,12 @@ repos:
             flake8_annotations==3.2.0,
             flake8_simplify==0.30.0,
           ]
-        exclude: "^(venv|examples|tests)/"
+        exclude: "^(venv|examples|tests|jvagent/action/pageindex/core)/"
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.10.1
     hooks:
       - id: mypy
-        exclude: "^(venv|tests|examples)/"
+        exclude: "^(venv|tests|examples|jvagent/action/pageindex/core)/"
         pass_filenames: false
         args:
           - --follow-imports=silent
@@ -77,4 +79,4 @@ repos:
         args: ["scan", "."]
         files: \.(py|txt|yaml|json)$
         # pnpm-lock.yaml (and similar) embed sha512 integrity strings that trip Base64HighEntropyString.
-        exclude: "^(venv|.mypy_cache|.test_dbs|tests|examples)/|(^|/)pnpm-lock\\.yaml$"
+        exclude: "^(venv|.mypy_cache|.test_dbs|tests|examples|jvagent/action/pageindex/core)/|(^|/)pnpm-lock\\.yaml$"

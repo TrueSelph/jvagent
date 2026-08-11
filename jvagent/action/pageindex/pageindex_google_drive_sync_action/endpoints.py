@@ -131,6 +131,14 @@ async def ingest_google_documents_endpoint(
             "Chunking strategy for jvforge: 'heading' (default), 'llm_segment', 'llm_direct', or 'flash' (LLM-free)."
         ),
     ),
+    doc_description: Optional[str] = Field(
+        default=None,
+        description="Human-readable document description.",
+    ),
+    add_doc_description: Optional[bool] = Field(
+        default=None,
+        description="Whether to generate a document description via LLM. Defaults to true.",
+    ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -178,6 +186,8 @@ async def ingest_google_documents_endpoint(
             skip_existing_documents=skip_existing_documents,
             use_jvforge=use_jvforge,
             chunking_strategy=chunking_strategy,
+            doc_description=doc_description,
+            add_doc_description=add_doc_description,
         )
 
         response = result.get("message") or "No pending documents to ingest"
@@ -646,6 +656,10 @@ async def pageindex_google_drive_sync_action_interact(
             "flash",
         ):
             ingest_kw["chunking_strategy"] = chunking_strategy_val
+
+        doc_description_raw = request_data.get("doc_description")
+        if doc_description_raw and isinstance(doc_description_raw, str):
+            ingest_kw["doc_description"] = doc_description_raw.strip()
 
         if is_serverless_mode():
             logger.info(

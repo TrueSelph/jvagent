@@ -15,7 +15,8 @@ exclude =
     dist,
     docs,
     migrations,
-    examples
+    examples,
+    jvagent/action/pageindex/core
 per-file-ignores =
     tests/*: E402
     # __init__.py re-exports and side-effect imports (endpoint registration)

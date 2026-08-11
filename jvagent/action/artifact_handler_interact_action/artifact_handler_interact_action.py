@@ -1165,7 +1165,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             agent_id=agent_id,
             doc_name=doc_name,
             model=None,
-            if_add_node_summary="yes",
+            if_add_node_summary=True,
             collection_name=agent_id,
             metadata=metadata,
             doc_description=None,

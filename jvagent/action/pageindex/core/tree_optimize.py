@@ -19,7 +19,7 @@ merge() - for a node that already has a subtree, decided bottom-up:
 
     merge_cost    = S(v)
     tree_cost(v)  = S(v)                                           if v is a frontier node
-                   = R(v) + max(S_residual(v), max_c tree_cost(c))  if v is expanded
+                  = R(v) + max(S_residual(v), max_c tree_cost(c))  if v is expanded
     merge iff      merge_cost <= tree_cost(v)                       (ties merge)
     merge_gain    = tree_cost(v) - merge_cost
 
@@ -45,20 +45,34 @@ when the node is large enough to earn one.
 
 merge is deterministic and needs no LLM; expand proposes subsections with the
 model configured as `summary_model` (falling back to `model`) in config.yaml.
+
+Usage:
+    python3 -m pageindex.tree_optimize --pdf doc.pdf --structure tree.json --plan
+    python3 -m pageindex.tree_optimize --pdf doc.pdf --structure tree.json --no-expand
+    python3 -m pageindex.tree_optimize --pdf doc.pdf --structure tree.json --out out.json
 """
 
+import argparse
+import asyncio
+import copy
 import json
 import os
 import re
 import sys
 from types import SimpleNamespace
 
-from .utils import ConfigLoader, llm_acompletion, strip_internal_keys
+from .utils import (
+    ConfigLoader,
+    _is_openai_model,
+    _is_unrecoverable,
+    llm_acompletion,
+    strip_internal_keys,
+)
 
-TRIGGER_PAGES = 5
-ROUTING_COST = 1
-PAGE_CHARS = 6000
-TITLE_MAX_CHARS = 200
+TRIGGER_PAGES = 5  # only look ahead on nodes larger than this
+ROUTING_COST = 1  # R(v), in pages
+PAGE_CHARS = 6000  # per-page text handed to the model
+TITLE_MAX_CHARS = 200  # a union title longer than this falls back to a page label
 
 EXPAND_PROMPT = """You are splitting an over-long section of a PDF into its subsections.
 
@@ -81,14 +95,13 @@ Reply with JSON only:
 {{"subsections": [{{"title": "<verbatim heading>", "page": <int>}}]}}"""
 
 
-def _is_openai_model(model):
-    """Check if a model name looks like an OpenAI model (no provider prefix or openai/ prefix)."""
-    if "/" not in model:
-        return True
-    return model.startswith("openai/")
+# --------------------------------------------------------------------------
+# basics
+# --------------------------------------------------------------------------
 
 
 def note(enabled, message):
+    """Progress line on stderr; stdout keeps only the metrics and the summary."""
     if enabled:
         print(message, file=sys.stderr, flush=True)
 
@@ -98,6 +111,7 @@ def normalize(text):
 
 
 def flatten(nodes, parent=None):
+    """Depth-first walk yielding (node, parent) for every node in the tree."""
     for node in nodes:
         yield node, parent
         yield from flatten(node.get("nodes") or [], node)
@@ -106,6 +120,7 @@ def flatten(nodes, parent=None):
 def extract_json(content):
     """Pull a JSON object out of a model reply, fenced or not."""
     if not content:
+        # providers can return content=None (empty completion, filtered reply)
         raise ValueError("model returned no content")
     text = content.strip()
     if "```" in text:
@@ -140,7 +155,18 @@ def load_pages(pdf_path):
     return text, lines
 
 
+# --------------------------------------------------------------------------
+# tree geometry
+# --------------------------------------------------------------------------
+
+
 def subtree_end(node):
+    """Last page covered by this node or any descendant.
+
+    A node's own end_index already spans its whole subtree (union semantics);
+    the walk keeps legacy trees working, where a parent's end_index stopped at
+    its first child.
+    """
     end = node["end_index"]
     for child, _ in flatten(node.get("nodes") or []):
         end = max(end, child["end_index"])
@@ -152,6 +178,7 @@ def is_frontier(node):
 
 
 def heading_at_page_start(lines, page_no, heading):
+    """Is the heading the first line on its page?"""
     page = lines[page_no - 1]
     if not page:
         return False
@@ -159,6 +186,10 @@ def heading_at_page_start(lines, page_no, heading):
 
 
 def assign_ends(node, children, lines):
+    """end_index for a candidate level, without committing it to the node.
+
+    end = next.start - 1 when the next heading opens its page, else next.start.
+    """
     sized = [dict(c) for c in children]
     old_end = subtree_end(node)
     for index, child in enumerate(sized):
@@ -174,12 +205,23 @@ def assign_ends(node, children, lines):
 
 
 def attach_children(node, children, lines):
+    # union semantics: the parent's end_index already covers the subtree span,
+    # so gaining children leaves it unchanged
     sized = assign_ends(node, children, lines)
     node["nodes"] = sized
     return sized
 
 
 def relabel(structure, width=4):
+    """Renumber every node_id in document order: 0000, 0001, 0002, ...
+
+    Expansion mints ids like "0266.1" to show provenance; once the tree is final
+    those are replaced by a flat sequence. flatten() is pre-order depth-first,
+    which is document order for a well-formed tree.
+
+    Returns the old -> new mapping so a log written against the old ids can still
+    be followed.
+    """
     mapping = {}
     for counter, (node, _) in enumerate(flatten(structure)):
         old = node.get("node_id")
@@ -190,15 +232,22 @@ def relabel(structure, width=4):
     return mapping
 
 
+# --------------------------------------------------------------------------
+# cost model
+# --------------------------------------------------------------------------
+
+
 def pages_of(node):
     return set(range(node["start_index"], subtree_end(node) + 1))
 
 
 def S(node):
+    """Pages to scan linearly if this node were collapsed."""
     return subtree_end(node) - node["start_index"] + 1
 
 
 def S_residual(node):
+    """Pages of the node covered by no child."""
     children = node.get("nodes") or []
     if not children:
         return S(node)
@@ -209,6 +258,7 @@ def S_residual(node):
 
 
 def tree_cost(node, routing=ROUTING_COST):
+    """Worst-case search cost of the subtree as it currently stands."""
     if is_frontier(node):
         return S(node)
     branches = [tree_cost(c, routing) for c in node["nodes"]]
@@ -219,6 +269,10 @@ def tree_cost(node, routing=ROUTING_COST):
 
 
 def frontier_costs(node, distance=0):
+    """Every branch as (routing distance, scan pages, label) - the frontier form.
+
+    Distances are returned unweighted; the caller multiplies by R.
+    """
     if is_frontier(node):
         return [(distance, S(node), node.get("node_id"))]
     entries = []
@@ -236,6 +290,7 @@ def tree_cost_via_frontier(node, routing=ROUTING_COST):
 
 
 def expand_cost(node, children, routing=ROUTING_COST):
+    """Cost after one-step lookahead, children treated as collapsed."""
     covered = set()
     for child in children:
         covered |= set(range(child["start_index"], child["end_index"] + 1))
@@ -244,7 +299,18 @@ def expand_cost(node, children, routing=ROUTING_COST):
     return routing + max([residual] + scans), residual
 
 
+# --------------------------------------------------------------------------
+# search-complexity metrics over a whole tree
+# --------------------------------------------------------------------------
+
+
 def frontier_nodes(structure, root_depth=1):
+    """(node, depth) for every frontier node of the tree.
+
+    depth counts routing visits on the way in. root_depth=1 charges one visit for
+    routing at the document level, so a top-level frontier node costs
+    1 + pages(u) - the same convention as tree_cost() applied from the document.
+    """
     found = []
 
     def visit(node, depth):
@@ -254,6 +320,8 @@ def frontier_nodes(structure, root_depth=1):
         for child in node["nodes"]:
             visit(child, depth + 1)
         if S_residual(node):
+            # pages held by the node itself are reached by routing into it, then
+            # scanning what no child covers
             found.append((node, depth + 1))
 
     for root in structure:
@@ -262,10 +330,12 @@ def frontier_nodes(structure, root_depth=1):
 
 
 def pages(node):
+    """Pages that must be scanned once search arrives at this frontier node."""
     return S_residual(node) if not is_frontier(node) else S(node)
 
 
 def worst_case_search_complexity(structure, root_depth=1, routing=ROUTING_COST):
+    """max over frontier u [ R * depth(u) + pages(u) ]"""
     entries = frontier_nodes(structure, root_depth)
     if not entries:
         return 0
@@ -275,6 +345,12 @@ def worst_case_search_complexity(structure, root_depth=1, routing=ROUTING_COST):
 def average_search_complexity(
     structure, total_pages, root_depth=1, routing=ROUTING_COST
 ):
+    """sum over frontier u [ p(u) * (R * depth(u) + (pages(u)+1)/2) ]
+
+    p(u) = pages(u) / total_pages, the chance the target lies in u; the expected
+    position of a uniformly placed target inside a linear scan of n pages is
+    (n+1)/2.
+    """
     if not total_pages:
         return 0.0, 0.0
     total = 0.0
@@ -290,6 +366,7 @@ def average_search_complexity(
 def normalized_worst_case_complexity(
     structure, total_pages, root_depth=1, routing=ROUTING_COST
 ):
+    """worst_case_search_complexity(T) / total_pages"""
     if not total_pages:
         return 0.0
     return worst_case_search_complexity(structure, root_depth, routing) / total_pages
@@ -309,6 +386,7 @@ def print_metrics(heading, metrics):
 
 
 def complexity(structure, total_pages, root_depth=1, routing=ROUTING_COST):
+    """The three search-complexity metrics for the whole tree."""
     entries = frontier_nodes(structure, root_depth)
     worst = worst_case_search_complexity(structure, root_depth, routing)
     average, weight = average_search_complexity(
@@ -328,8 +406,15 @@ def complexity(structure, total_pages, root_depth=1, routing=ROUTING_COST):
         ),
         "max_depth": max(depths) if depths else 0,
         "mean_depth": round(sum(depths) / len(depths), 2) if depths else 0,
+        # 1.0 when frontier pages partition the document; above 1.0 means frontier
+        # ranges overlap (the end_index convention lets a section share a page)
         "probability_mass": round(weight, 4),
     }
+
+
+# --------------------------------------------------------------------------
+# validation
+# --------------------------------------------------------------------------
 
 
 def structural_issues(node, parent, page_count):
@@ -349,6 +434,8 @@ def structural_issues(node, parent, page_count):
     if start > end:
         issues.append(f"start_index {start} is after end_index {end}")
 
+    # legacy trees let children extend past the parent's end_index, so only the
+    # start is checked against the parent
     if parent and isinstance(parent.get("start_index"), int):
         if start < parent["start_index"]:
             issues.append(
@@ -366,6 +453,7 @@ def _sibling_groups(nodes, parent_id=None):
 
 
 def ordering_issues(nodes):
+    """Siblings must be listed in the order they appear in the document."""
     found = {}
     for _, group in _sibling_groups(nodes):
         previous = None
@@ -400,12 +488,27 @@ def validate(structure, page_count):
     return issues
 
 
+# --------------------------------------------------------------------------
+# MERGE
+# --------------------------------------------------------------------------
+
+
 def page_label(node):
+    """A node's page span, for use as a title of last resort."""
     start, end = node["start_index"], subtree_end(node)
     return f"p.{start}" if start == end else f"p.{start}-{end}"
 
 
 def union_title(titles, node):
+    """The titles of merged same-page siblings, joined.
+
+    Falls back to a page label when the join is empty or too long to serve as a
+    title - PRML, for instance, extracts whole exercise bodies as headings, and
+    two of those joined run past a thousand characters. Titles reach the model
+    (the parent summary prompt lists them, and they survive `format_structure`),
+    so this is the field that has to stay readable; `key_items` keeps the
+    untruncated original.
+    """
     joined = "; ".join(title for title in titles if title)
     if not joined or len(joined) > TITLE_MAX_CHARS:
         return page_label(node)
@@ -413,6 +516,12 @@ def union_title(titles, node):
 
 
 def merge_same_page(structure, log):
+    """Collapse frontier siblings that cover exactly the same pages.
+
+    Deterministic and free. Runs before merge() because a narrower tree changes
+    its ancestors' tree_cost, and before expand() because children an expand pass
+    lands on one page are the same redundancy arriving later.
+    """
     changed = False
 
     def visit(nodes):
@@ -430,7 +539,7 @@ def merge_same_page(structure, log):
                 continue
             keeper, dropped = group[0], group[1:]
             titles = []
-            for node in group:
+            for node in group:  # document order, key_items carried forward
                 titles.append(node["title"])
                 titles.extend(node.get("key_items") or [])
             log.append(
@@ -445,6 +554,8 @@ def merge_same_page(structure, log):
             )
             keeper["key_items"] = titles
             keeper["title"] = union_title(titles, keeper)
+            # tells summarize_tree this title was synthesized and may be rewritten;
+            # stripped from the output once summaries are done
             keeper["_same_page"] = True
             for node in dropped:
                 nodes.remove(node)
@@ -455,6 +566,11 @@ def merge_same_page(structure, log):
 
 
 def merge(structure, routing, log, frozen, progress=False):
+    """Collapse any subtree whose structure does not beat a linear scan.
+
+    Bottom-up: merging a deep subtree changes its ancestors' tree_cost, so the
+    deepest decisions have to be made first.
+    """
     changed = False
 
     def visit(node):
@@ -463,14 +579,17 @@ def merge(structure, routing, log, frozen, progress=False):
             return
         for child in list(node.get("nodes") or []):
             visit(child)
-        if is_frontier(node):
+        if is_frontier(node):  # every child collapsed away
             return
 
         cost = tree_cost(node, routing)
         checked = tree_cost_via_frontier(node, routing)
         span = S(node)
         if span <= cost:
+            # trees arrive here before ids are assigned in the main pipeline
             removed = [c.get("node_id") for c, _ in flatten(node["nodes"])]
+            # titles are routing information; keep them on the parent, in document
+            # order, carrying forward anything an earlier merge already folded in
             titles = []
             for child, _ in flatten(node["nodes"]):
                 titles.append(child["title"])
@@ -510,15 +629,25 @@ def merge(structure, routing, log, frozen, progress=False):
 
 
 def merge_tree(structure):
+    """Deterministic merge over a structure list; the no-LLM default path.
+
+    One bottom-up pass reaches the fixpoint: every decision is made after the
+    subtree below it is final.
+    """
     merge(structure, ROUTING_COST, [], set())
     return structure
 
 
+# --------------------------------------------------------------------------
+# EXPAND
+# --------------------------------------------------------------------------
+
+
 def load_headings_cache(path):
+    """page -> [heading, ...] from a per-page detection pass, or None."""
     if not path or not os.path.exists(path):
         return None
-    with open(path) as f:
-        data = json.load(f)
+    data = json.load(open(path))
     index = {}
     for record in data.get("pages") or []:
         if record.get("headings"):
@@ -527,6 +656,7 @@ def load_headings_cache(path):
 
 
 def children_from_cache(node, cache, kinds):
+    """Candidate level taken from a cached per-page detection - no API call."""
     if not cache:
         return []
     start, end = node["start_index"], subtree_end(node)
@@ -549,6 +679,7 @@ def children_from_cache(node, cache, kinds):
 
 
 async def propose_children(node, pages, args):
+    """Generate one temporary level of children via the model. Validated, not committed."""
     start, end = node["start_index"], subtree_end(node)
     block = "\n".join(
         f"<page_{n}>\n{pages[n - 1][:PAGE_CHARS]}\n</page_{n}>"
@@ -565,7 +696,7 @@ async def propose_children(node, pages, args):
         if not isinstance(page, int) or not start <= page <= end or not title:
             continue
         if normalize(title) not in normalize(pages[page - 1]):
-            continue
+            continue  # the heading must be printed on that page
         if normalize(title) in seen or normalize(title) == normalize(node["title"]):
             continue
         if accepted and page < accepted[-1]["start_index"]:
@@ -583,6 +714,13 @@ async def propose_children(node, pages, args):
 
 
 async def expand(structure, pages, lines, args, log, frozen):
+    """One-step lookahead on every collapsed node over the trigger, recursively.
+
+    Candidate levels come from every available source - a cached per-page
+    detection and the model itself. Neither is reliably better (detection wins on
+    prose, a whole-node prompt wins on dense tables), so all candidates are
+    priced with expand_cost and the cheapest is kept.
+    """
     changed = False
     queue = [n for n, _ in flatten(structure)]
 
@@ -593,7 +731,7 @@ async def expand(structure, pages, lines, args, log, frozen):
 
         span = S(node)
         if span <= args.trigger_pages:
-            continue
+            continue  # below the trigger, stay collapsed
 
         note(
             args.progress,
@@ -611,10 +749,8 @@ async def expand(structure, pages, lines, args, log, frozen):
             try:
                 proposed = await propose_children(node, pages, args)
             except Exception as exc:
-                from .utils import _is_unrecoverable
-
                 if _is_unrecoverable(exc):
-                    raise
+                    raise  # every remaining node would fail identically
                 log.append(
                     {
                         "op": "expand",
@@ -627,7 +763,7 @@ async def expand(structure, pages, lines, args, log, frozen):
                 continue
             if proposed:
                 candidates.append((f"llm:{attempts}", proposed))
-                break
+                break  # an empty answer is retried, not trusted
 
         if not candidates:
             note(args.progress, f"           -> no children found, kept collapsed")
@@ -705,11 +841,17 @@ async def expand(structure, pages, lines, args, log, frozen):
         if keep:
             changed = True
             attach_children(node, best["children"], lines)
-            queue.extend(node["nodes"])
+            queue.extend(node["nodes"])  # recurse into the kept children
     return changed
 
 
+# --------------------------------------------------------------------------
+# driver
+# --------------------------------------------------------------------------
+
+
 def default_model():
+    """Expand follows the summary model: both are cheap text-extraction calls."""
     opt = ConfigLoader().load({})
     return getattr(opt, "summary_model", None) or opt.model
 
@@ -732,6 +874,16 @@ async def optimize(
     do_relabel=True,
     progress=False,
 ):
+    """Run merge and expand over a tree until neither changes anything.
+
+    Mutates `structure` in place and returns a summary.
+
+    A round is merge then expand, repeated because children created by expand
+    have not been merge-checked yet, and a subtree collapsed by merge changes its
+    ancestors' tree_cost. Nodes decided by either operator are frozen for the rest
+    of the run, so a node cannot be collapsed and re-expanded in alternating
+    rounds.
+    """
     if do_expand and pages is None:
         raise ValueError(
             "expand needs the PDF pages; pass pages/lines or do_expand=False"
@@ -805,11 +957,8 @@ def optimize_tree(doc, pdf_path=None, model=None, do_expand=None, **kwargs):
     keys are preserved). Without `pdf_path` only merge runs; expand needs the
     page text. Returns the run summary; the refined tree is doc["structure"].
     """
-    import asyncio
-
     if isinstance(doc, str):
-        with open(doc) as f:
-            doc = json.load(f)
+        doc = json.load(open(doc))
     structure = doc["structure"]
     pages = lines = None
     page_count = kwargs.pop("page_count", None)
@@ -851,3 +1000,185 @@ def report_costs(structure, routing, trigger):
     merges = [r for r in rows if not r["frontier"] and r["S"] <= r["tree_cost"]]
     triggers = [r for r in rows if r["frontier"] and r["S"] > trigger]
     return rows, merges, triggers
+
+
+async def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--pdf", required=True, help="source document")
+    parser.add_argument("--structure", required=True, help="input tree JSON")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="model for expand (default: summary_model from config.yaml)",
+    )
+    parser.add_argument(
+        "--trigger-pages",
+        type=int,
+        default=TRIGGER_PAGES,
+        help=f"only look ahead above this page count (default {TRIGGER_PAGES})",
+    )
+    parser.add_argument(
+        "--routing",
+        type=int,
+        default=ROUTING_COST,
+        help="R(v), cost of visiting a node, in pages (default 1)",
+    )
+    parser.add_argument(
+        "--min-gain-ratio",
+        type=float,
+        default=0.0,
+        help="require expand_gain / S(v) to reach this (e.g. 0.10)",
+    )
+    parser.add_argument(
+        "--headings",
+        default=None,
+        help="per-page detection cache used as an extra candidate source",
+    )
+    parser.add_argument(
+        "--kinds",
+        default="section,table",
+        help="heading kinds accepted from the cache (default section,table)",
+    )
+    parser.add_argument(
+        "--empty-retries",
+        type=int,
+        default=1,
+        help="extra lookahead attempts when the model returns no children",
+    )
+    parser.add_argument(
+        "--no-relabel",
+        dest="relabel",
+        action="store_false",
+        help="keep provenance ids like 0266.1 instead of renumbering",
+    )
+    parser.add_argument("--no-merge", dest="merge", action="store_false")
+    parser.add_argument("--no-expand", dest="expand", action="store_false")
+    parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument(
+        "--plan", action="store_true", help="costs and decisions, no API calls"
+    )
+    parser.add_argument(
+        "--out", default=None, help="output tree (default: <structure>.optimized.json)"
+    )
+    parser.add_argument(
+        "--log", help="write the per-decision log here (off by default)"
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", help="no progress lines on stderr"
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="also list the merge and expand candidates before running",
+    )
+    args = parser.parse_args()
+
+    model = args.model or default_model()
+    if (
+        args.expand
+        and not args.plan
+        and _is_openai_model(model)
+        and not os.getenv("OPENAI_API_KEY")
+    ):
+        sys.exit(f"OPENAI_API_KEY is not set (expand model: {model}).")
+
+    original = json.load(open(args.structure))
+    structure = copy.deepcopy(original["structure"])
+    pages, lines = load_pages(args.pdf)
+    page_count = len(pages)
+    out_path = args.out or re.sub(
+        r"(\.json)?$", ".optimized.json", args.structure, count=1
+    )
+
+    rows, merges, triggers = report_costs(structure, args.routing, args.trigger_pages)
+    metrics = complexity(structure, page_count, routing=args.routing)
+    print(
+        f"{len(rows)} nodes | R={args.routing} | trigger>{args.trigger_pages} pages | "
+        f"{page_count} pages"
+    )
+    if args.plan:
+        print()
+        print_metrics("Metrics", metrics)
+    if args.verbose or args.plan:
+        print(f"\nmerge candidates, S(v) <= tree_cost(v): {len(merges)}")
+        for r in sorted(merges, key=lambda r: -(r["tree_cost"] - r["S"]))[:10]:
+            print(
+                f"   {r['node_id']:>8} S={r['S']:>3} tree_cost={r['tree_cost']:>3} "
+                f"gain={r['tree_cost'] - r['S']:>3} kids={r['children']:<2} {r['title'][:40]}"
+            )
+        print(f"\nexpand candidates, collapsed and over the trigger: {len(triggers)}")
+        for r in sorted(triggers, key=lambda r: -r["S"])[:10]:
+            print(f"   {r['node_id']:>8} S={r['S']:>3} {r['title'][:52]}")
+
+    if args.plan:
+        pre = validate(structure, page_count)
+        print(f"\nvalidation on input: {len(pre)} issue(s)")
+        for issue in pre[:10]:
+            print(f"  {issue}")
+        return 0
+
+    result = await optimize(
+        structure,
+        pages,
+        lines,
+        model=model,
+        routing=args.routing,
+        trigger_pages=args.trigger_pages,
+        min_gain_ratio=args.min_gain_ratio,
+        do_merge=args.merge,
+        do_expand=args.expand,
+        max_rounds=args.rounds,
+        page_count=page_count,
+        cache=load_headings_cache(args.headings),
+        kinds=[k.strip() for k in args.kinds.split(",") if k.strip()],
+        empty_retries=args.empty_retries,
+        do_relabel=args.relabel,
+        progress=not args.quiet,
+    )
+
+    print(
+        f"\nrounds={result['rounds']} merges={result['merges']} "
+        f"expands={result['expands']} kept_collapsed={result['kept_collapsed']}"
+    )
+    print(
+        f"nodes {len(list(flatten(original['structure'])))} -> "
+        f"{len(list(flatten(structure)))}"
+    )
+    print()
+    print_metrics("Before optimize", result["before"])
+    print()
+    print_metrics("After optimize", result["after"])
+    if result["new_issues"]:
+        print(f"\nnew validation issues: {result['new_issues']}")
+
+    strip_internal_keys(structure)
+    refined = dict(original)
+    refined["structure"] = structure
+    json.dump(refined, open(out_path, "w"), indent=2, ensure_ascii=False)
+    print(f"\nstructure: {out_path}")
+
+    if args.log:
+        json.dump(
+            {
+                "routing": args.routing,
+                "trigger_pages": args.trigger_pages,
+                "min_gain_ratio": args.min_gain_ratio,
+                "model": model,
+                "before": result["before"],
+                "after": result["after"],
+                "id_map": result["id_map"],
+                "events": result["log"],
+            },
+            open(args.log, "w"),
+            indent=2,
+            ensure_ascii=False,
+        )
+        print(f"log:       {args.log}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

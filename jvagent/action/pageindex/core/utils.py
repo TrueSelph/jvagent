@@ -3,31 +3,61 @@ import copy
 import json
 import logging
 import os
-import re
+import textwrap
 import time
 from datetime import datetime
 from io import BytesIO
 
-import litellm
-import pymupdf
-import pypdf
+import PyPDF2
 from dotenv import load_dotenv
-from jvspatial.env import env
 
 load_dotenv()
+import logging
+import re
 from pathlib import Path
 from types import SimpleNamespace as config
 
 import yaml
 
+# litellm is imported inside the functions that use it; eager import is slow
+# and fetches a remote model-cost map.
+
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
-if not os.getenv("OPENAI_API_KEY"):
-    openai_key = env("OPENAI_API_KEY")
-    if openai_key:
-        os.environ["OPENAI_API_KEY"] = openai_key
+if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
 
-litellm.drop_params = True
 
+def count_tokens(text, model=None):
+    if not text:
+        return 0
+    import litellm
+
+    return litellm.token_counter(model=model, text=text)
+
+
+def _strip_prefix(s, prefix):
+    if s.startswith(prefix):
+        return s[len(prefix) :]
+    return s
+
+
+def _is_openai_model(model):
+    """Models without a provider prefix (no '/') use the openai SDK directly.
+    For other providers, use 'provider/model' format (e.g. 'anthropic/claude-sonnet-4-6').
+    """
+    if not model or model.startswith("litellm/"):
+        return False
+    return "/" not in model or model.startswith("openai/")
+
+
+_openai_sync_client = None
+_openai_async_client = None
+
+
+# Misconfiguration: no retry can fix a rejected key or a model that does not
+# exist, and every later call fails the same way. Deliberately not 400, which
+# also carries context_length_exceeded, a per-prompt failure the caller absorbs
+# today. An unknown status is a transport failure and stays retryable.
 _UNRECOVERABLE_STATUS = frozenset({401, 403, 404})
 
 
@@ -35,26 +65,40 @@ def _is_unrecoverable(exc: Exception) -> bool:
     return getattr(exc, "status_code", None) in _UNRECOVERABLE_STATUS
 
 
-def count_tokens(text, model=None):
-    if not text:
-        return 0
-    return litellm.token_counter(model=model, text=text)
-
-
 def llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
+    use_openai_sdk = _is_openai_model(model)
+    if model:
+        model = _strip_prefix(model, "litellm/")
+        if use_openai_sdk:
+            model = _strip_prefix(model, "openai/")
     max_retries = 10
     messages = (
         list(chat_history) + [{"role": "user", "content": prompt}]
         if chat_history
         else [{"role": "user", "content": prompt}]
     )
+    if use_openai_sdk:
+        global _openai_sync_client
+        if _openai_sync_client is None:
+            import openai
+
+            _openai_sync_client = openai.OpenAI(max_retries=0)
     for i in range(max_retries):
         try:
-            response = litellm.completion(
-                model=model,
-                messages=messages,
-                temperature=0,
-            )
+            if use_openai_sdk:
+                response = _openai_sync_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+            else:
+                import litellm
+
+                response = litellm.completion(
+                    model=model,
+                    messages=messages,
+                    temperature=0,
+                    drop_params=True,
+                )
             content = response.choices[0].message.content
             if return_finish_reason:
                 finish_reason = (
@@ -72,22 +116,41 @@ def llm_completion(model, prompt, chat_history=None, return_finish_reason=False)
             if i < max_retries - 1:
                 time.sleep(1)
             else:
-                logging.error("Max retries reached for prompt: " + prompt)
-                if return_finish_reason:
-                    return "", "error"
-                return ""
+                raise RuntimeError(
+                    f"LLM completion failed after {max_retries} retries"
+                ) from e
 
 
 async def llm_acompletion(model, prompt):
+    use_openai_sdk = _is_openai_model(model)
+    if model:
+        model = _strip_prefix(model, "litellm/")
+        if use_openai_sdk:
+            model = _strip_prefix(model, "openai/")
     max_retries = 10
     messages = [{"role": "user", "content": prompt}]
+    if use_openai_sdk:
+        global _openai_async_client
+        if _openai_async_client is None:
+            import openai
+
+            _openai_async_client = openai.AsyncOpenAI(max_retries=0)
     for i in range(max_retries):
         try:
-            response = await litellm.acompletion(
-                model=model,
-                messages=messages,
-                temperature=0,
-            )
+            if use_openai_sdk:
+                response = await _openai_async_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+            else:
+                import litellm
+
+                response = await litellm.acompletion(
+                    model=model,
+                    messages=messages,
+                    temperature=0,
+                    drop_params=True,
+                )
             return response.choices[0].message.content
         except Exception as e:
             if _is_unrecoverable(e):
@@ -97,8 +160,9 @@ async def llm_acompletion(model, prompt):
             if i < max_retries - 1:
                 await asyncio.sleep(1)
             else:
-                logging.error("Max retries reached for prompt: " + prompt)
-                return ""
+                raise RuntimeError(
+                    f"LLM completion failed after {max_retries} retries"
+                ) from e
 
 
 def get_json_content(response):
@@ -145,66 +209,12 @@ def extract_json(content):
             # Remove any trailing commas before closing brackets/braces
             json_content = json_content.replace(",]", "]").replace(",}", "}")
             return json.loads(json_content)
-        except Exception as e:
-            logging.error("Failed to parse JSON even after cleanup: %s", e)
+        except Exception:
+            logging.error("Failed to parse JSON even after cleanup")
             return {}
     except Exception as e:
         logging.error(f"Unexpected error while extracting JSON: {e}")
         return {}
-
-
-def _reply_json(reply):
-    if not isinstance(reply, str) or not reply.strip():
-        return None
-    text = reply.strip()
-    if "```" in text:
-        text = re.sub(r"^.*?```(?:json)?\s*", "", text, flags=re.S).split("```")[0]
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    obj = text[start : end + 1]
-    collapsed = " ".join(obj.split())
-    for candidate in (obj, collapsed, collapsed.replace(",]", "]").replace(",}", "}")):
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-    return None
-
-
-def parse_summary(reply):
-    if not isinstance(reply, str) or not reply.strip():
-        return ""
-    parsed = _reply_json(reply)
-    if isinstance(parsed, dict) and "summary" in parsed:
-        summary = parsed["summary"]
-        if isinstance(summary, list):
-            summary = " ".join(
-                str(item).strip() for item in summary if str(item).strip()
-            )
-        return str(summary).strip() if summary else ""
-    return reply.strip()
-
-
-def parse_title(reply):
-    parsed = _reply_json(reply)
-    if not isinstance(parsed, dict):
-        return ""
-    title = parsed.get("title")
-    if isinstance(title, list):
-        title = " ".join(str(item).strip() for item in title if str(item).strip())
-    return " ".join(str(title).split()) if title else ""
-
-
-def strip_internal_keys(structure):
-    nodes = structure if isinstance(structure, list) else [structure]
-    for node in nodes:
-        if not isinstance(node, dict):
-            continue
-        node.pop("_same_page", None)
-        if node.get("nodes"):
-            strip_internal_keys(node["nodes"])
-    return structure
 
 
 def write_node_id(data, node_id=0):
@@ -301,7 +311,7 @@ def get_last_node(structure):
 
 
 def extract_text_from_pdf(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     ###return text not list
     text = ""
     for page_num in range(len(pdf_reader.pages)):
@@ -311,14 +321,14 @@ def extract_text_from_pdf(pdf_path):
 
 
 def get_pdf_title(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     meta = pdf_reader.metadata
     title = meta.title if meta and meta.title else "Untitled"
     return title
 
 
 def get_text_of_pages(pdf_path, start_page, end_page, tag=True):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     text = ""
     for page_num in range(start_page - 1, end_page):
         page = pdf_reader.pages[page_num]
@@ -362,7 +372,7 @@ def get_pdf_name(pdf_path):
     if isinstance(pdf_path, str):
         pdf_name = os.path.basename(pdf_path)
     elif isinstance(pdf_path, BytesIO):
-        pdf_reader = pypdf.PdfReader(pdf_path)
+        pdf_reader = PyPDF2.PdfReader(pdf_path)
         meta = pdf_reader.metadata
         pdf_name = meta.title if meta and meta.title else "Untitled"
         pdf_name = sanitize_filename(pdf_name)
@@ -422,7 +432,12 @@ def list_to_tree(data):
 
     for item in data:
         structure = item.get("structure")
-        node = {**item, "nodes": []}
+        node = {
+            "title": item.get("title"),
+            "start_index": item.get("start_index"),
+            "end_index": item.get("end_index"),
+            "nodes": [],
+        }
 
         nodes[structure] = node
 
@@ -466,9 +481,11 @@ def add_preface_if_needed(data):
     return data
 
 
-def get_page_tokens(pdf_path, model=None, pdf_parser="pypdf"):
-    if pdf_parser == "pypdf":
-        pdf_reader = pypdf.PdfReader(pdf_path)
+def get_page_tokens(pdf_path, model=None, pdf_parser="PyPDF2"):
+    import litellm
+
+    if pdf_parser == "PyPDF2":
+        pdf_reader = PyPDF2.PdfReader(pdf_path)
         page_list = []
         for page_num in range(len(pdf_reader.pages)):
             page = pdf_reader.pages[page_num]
@@ -477,6 +494,8 @@ def get_page_tokens(pdf_path, model=None, pdf_parser="pypdf"):
             page_list.append((page_text, token_length))
         return page_list
     elif pdf_parser == "PyMuPDF":
+        import pymupdf
+
         if isinstance(pdf_path, BytesIO):
             pdf_stream = pdf_path
             doc = pymupdf.open(stream=pdf_stream, filetype="pdf")
@@ -497,6 +516,8 @@ def get_page_tokens(pdf_path, model=None, pdf_parser="pypdf"):
 
 
 def get_text_of_pdf_pages(pdf_pages, start_page, end_page):
+    if start_page is None or end_page is None:
+        return ""
     text = ""
     for page_num in range(start_page - 1, end_page):
         text += pdf_pages[page_num][0]
@@ -504,6 +525,8 @@ def get_text_of_pdf_pages(pdf_pages, start_page, end_page):
 
 
 def get_text_of_pdf_pages_with_labels(pdf_pages, start_page, end_page):
+    if start_page is None or end_page is None:
+        return ""
     text = ""
     for page_num in range(start_page - 1, end_page):
         text += f"<physical_index_{page_num+1}>\n{pdf_pages[page_num][0]}\n<physical_index_{page_num+1}>\n"
@@ -511,7 +534,7 @@ def get_text_of_pdf_pages_with_labels(pdf_pages, start_page, end_page):
 
 
 def get_number_of_pages(pdf_path):
-    pdf_reader = pypdf.PdfReader(pdf_path)
+    pdf_reader = PyPDF2.PdfReader(pdf_path)
     num = len(pdf_reader.pages)
     return num
 
@@ -551,11 +574,21 @@ def clean_structure_post(data):
     return data
 
 
-def remove_fields(data, fields=["text"]):
+def remove_fields(data, fields=["text"], max_len=None):
     if isinstance(data, dict):
-        return {k: remove_fields(v, fields) for k, v in data.items() if k not in fields}
+        return {
+            k: remove_fields(v, fields, max_len)
+            for k, v in data.items()
+            if k not in fields
+        }
     elif isinstance(data, list):
-        return [remove_fields(item, fields) for item in data]
+        return [remove_fields(item, fields, max_len) for item in data]
+    elif isinstance(data, str):
+        return (
+            data[:max_len] + "..."
+            if max_len is not None and len(data) > max_len
+            else data
+        )
     return data
 
 
@@ -684,25 +717,101 @@ async def generate_node_summary(node, model=None):
 async def generate_summaries_for_structure(structure, model=None):
     nodes = structure_to_list(structure)
     tasks = [generate_node_summary(node, model=model) for node in nodes]
-    summaries = await asyncio.gather(*tasks)
+    summaries = await asyncio.gather(*tasks, return_exceptions=True)
 
     for node, summary in zip(nodes, summaries):
-        node["summary"] = summary
+        node["summary"] = "" if isinstance(summary, BaseException) else summary
+    if nodes and not any(node["summary"] for node in nodes):
+        raise RuntimeError(
+            "Summary generation failed for all nodes "
+            "(check LLM credentials and model availability)"
+        )
     return structure
 
 
-SUMMARY_CONCURRENCY = 64
-SUMMARY_RAW_TEXT_TOKENS = 200
-SUMMARY_INTRO_MAX_PAGES = 3
+SUMMARY_CONCURRENCY = 64  # simultaneous summary model calls
+SUMMARY_RAW_TEXT_TOKENS = 200  # leaves under this reuse their raw text as the summary
+SUMMARY_INTRO_MAX_PAGES = 3  # cap on leading pages fed into a parent summary
 
 
 def get_intro_text(node, pdf_pages, max_pages=SUMMARY_INTRO_MAX_PAGES):
+    """Pages of the node covered by no child: from its start to just before the
+    first child starts. Empty when the first child opens on the node's own page."""
     children = node.get("nodes") or []
     first = children[0].get("start_index") if children else None
     if not isinstance(first, int) or first <= node["start_index"]:
         return ""
     end = min(first - 1, node["start_index"] + max_pages - 1)
     return get_text_of_pdf_pages(pdf_pages, node["start_index"], end)
+
+
+def _reply_json(reply):
+    """The JSON object in a model reply, or None when none of it parses.
+
+    Not extract_json: that rewrites `None` to `null` and collapses whitespace in
+    replies that parse as written.
+    """
+    if not isinstance(reply, str) or not reply.strip():
+        return None
+    text = reply.strip()
+    if "```" in text:
+        text = re.sub(r"^.*?```(?:json)?\s*", "", text, flags=re.S).split("```")[0]
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    obj = text[start : end + 1]
+    collapsed = " ".join(obj.split())
+    # repairs, tried only once the reply fails to parse as written
+    for candidate in (obj, collapsed, collapsed.replace(",]", "]").replace(",}", "}")):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def parse_summary(reply):
+    """The `summary` field of a model reply, or the reply itself when there is no
+    such field."""
+    if not isinstance(reply, str) or not reply.strip():
+        return ""
+    parsed = _reply_json(reply)
+    if isinstance(parsed, dict) and "summary" in parsed:
+        summary = parsed["summary"]
+        if isinstance(summary, list):
+            summary = " ".join(
+                str(item).strip() for item in summary if str(item).strip()
+            )
+        return str(summary).strip() if summary else ""
+    return reply.strip()
+
+
+def parse_title(reply):
+    """The `title` field of a model reply, or "" when it is absent or unusable.
+
+    Unlike parse_summary there is no falling back to the raw reply: a title that
+    did not come back as a named field is not a title, and the caller keeps the
+    deterministic one it already has.
+    """
+    parsed = _reply_json(reply)
+    if not isinstance(parsed, dict):
+        return ""
+    title = parsed.get("title")
+    if isinstance(title, list):
+        title = " ".join(str(item).strip() for item in title if str(item).strip())
+    return " ".join(str(title).split()) if title else ""
+
+
+def strip_internal_keys(structure):
+    """Drop the bookkeeping keys the optimize/summary passes leave behind."""
+    nodes = structure if isinstance(structure, list) else [structure]
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node.pop("_same_page", None)
+        if node.get("nodes"):
+            strip_internal_keys(node["nodes"])
+    return structure
 
 
 async def summarize_tree(
@@ -713,6 +822,11 @@ async def summarize_tree(
     max_intro_pages=SUMMARY_INTRO_MAX_PAGES,
     concurrency=None,
 ):
+    """Bottom-up summaries: leaves from their own pages, parents composed from
+    child summaries plus the pages no child covers. A parent's summary describes
+    its whole subtree (end_index union semantics). Nodes that already carry a
+    summary are left untouched; leaves under `small_node_tokens` use their raw
+    text as the summary without a model call."""
     semaphore = asyncio.Semaphore(concurrency or SUMMARY_CONCURRENCY)
 
     async def ask(prompt):
@@ -724,6 +838,10 @@ async def summarize_tree(
         if count_tokens(text, model="gpt-4o") < small_node_tokens:
             return text.strip()
 
+        # A node merged from same-page siblings carries a title joined from theirs.
+        # This call already has the page text in front of it, so the better title
+        # costs no extra call; every other node keeps the heading the document
+        # printed, and its prompt stays byte-identical to the one without this.
         retitle = bool(node.get("_same_page"))
         titles = "; ".join(node.get("key_items") or [])
         ask_title = (
@@ -740,19 +858,19 @@ async def summarize_tree(
         )
 
         prompt = f"""You are given a text chunk from a document.
-Your task is to generate a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content.
-Keep the description concise and to the point, avoiding unnecessary details.{ask_title}
+    Your task is to generate a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content.
+    Keep the description concise and to the point, avoiding unnecessary details.{ask_title}
 
-Given Text: {text}
+    Given Text: {text}
 
-Reply strictly in the following JSON format:
-{{{title_field}
-    "points": <a list of points covered in the text>,
-    "summary": <a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content>
-}}
+    Reply strictly in the following JSON format:
+    {{{title_field}
+        "points": <a list of points covered in the text>,
+        "summary": <a concise description of everything that is covered in the text, summarizing all its points without omitting any type of content>
+    }}
 
-Follow strictly the above JSON return format. Do not include any other text!
-"""
+    Follow strictly the above JSON return format. Do not include any other text!
+    """
         reply = await ask(prompt)
         if retitle:
             written = parse_title(reply)
@@ -771,50 +889,75 @@ Follow strictly the above JSON return format. Do not include any other text!
             ensure_ascii=False,
         )
         prompt = f"""You are given a section of a document: the text that opens the section (possibly empty) and the titles and summaries of its subsections.
-Your task is to generate a concise description of everything that is covered in the whole section, summarizing all its points without omitting any type of content.
-Keep the description concise and to the point, avoiding unnecessary details.
+    Your task is to generate a concise description of everything that is covered in the whole section, summarizing all its points without omitting any type of content.
+    Keep the description concise and to the point, avoiding unnecessary details.
 
-Section Title: {node.get('title', '')}
+    Section Title: {node.get('title', '')}
 
-Opening Text: {intro}
+    Opening Text: {intro}
 
-Subsection Titles and Summaries: {listing}
+    Subsection Titles and Summaries: {listing}
 
-Reply strictly in the following JSON format:
-{{
-    "points": <a list of points covered in the section>,
-    "summary": <a concise description of everything that is covered in the section, summarizing all its points without omitting any type of content>
-}}
+    Reply strictly in the following JSON format:
+    {{
+        "points": <a list of points covered in the section>,
+        "summary": <a concise description of everything that is covered in the section, summarizing all its points without omitting any type of content>
+    }}
 
-Follow strictly the above JSON return format. Do not include any other text!
-"""
+    Follow strictly the above JSON return format. Do not include any other text!
+    """
         return parse_summary(await ask(prompt))
 
     async def visit(node):
         children = node.get("nodes") or []
         if children:
-            await asyncio.gather(*(visit(child) for child in children))
+            await asyncio.gather(
+                *(visit(child) for child in children), return_exceptions=True
+            )
         if node.get("summary"):
             return
-        node["summary"] = await (
-            parent_summary(node) if children else leaf_summary(node)
+        try:
+            node["summary"] = await (
+                parent_summary(node) if children else leaf_summary(node)
+            )
+        except Exception:
+            node["summary"] = ""
+
+    await asyncio.gather(*(visit(root) for root in structure), return_exceptions=True)
+
+    def _any_summary(nodes):
+        return any(
+            n.get("summary") or _any_summary(n.get("nodes") or []) for n in nodes
         )
 
-    await asyncio.gather(*(visit(root) for root in structure))
+    if not _any_summary(structure):
+        raise RuntimeError(
+            "Summary generation failed for all nodes "
+            "(check LLM credentials and model availability)"
+        )
+
     strip_internal_keys(structure)
     return structure
 
 
 def create_clean_structure_for_description(structure):
+    """
+    Create a clean structure for document description generation,
+    excluding unnecessary fields like 'text'.
+    """
     if isinstance(structure, dict):
         clean_node = {}
+        # Only include essential fields for description
         for key in ["title", "node_id", "summary", "prefix_summary"]:
             if key in structure:
                 clean_node[key] = structure[key]
+
+        # Recursively process child nodes
         if "nodes" in structure and structure["nodes"]:
             clean_node["nodes"] = create_clean_structure_for_description(
                 structure["nodes"]
             )
+
         return clean_node
     elif isinstance(structure, list):
         return [create_clean_structure_for_description(item) for item in structure]
@@ -823,14 +966,17 @@ def create_clean_structure_for_description(structure):
 
 
 def generate_doc_description(structure, model=None):
-    prompt = f"""You are an expert in generating descriptions for a document.
-You are given a structure of a document. Your task is to generate a one-sentence description for the document, which makes it easy to distinguish the document from other documents.
+    prompt = f"""Your are an expert in generating descriptions for a document.
+    You are given a structure of a document. Your task is to generate a one-sentence description for the document, which makes it easy to distinguish the document from other documents.
 
-Document Structure: {structure}
+    Document Structure: {structure}
 
-Directly return the description, do not include any other text."""
-    response = llm_completion(model, prompt)
-    return response
+    Directly return the description, do not include any other text.
+    """
+    try:
+        return llm_completion(model, prompt)
+    except RuntimeError:
+        return ""
 
 
 def reorder_dict(data, key_order):
@@ -850,6 +996,46 @@ def format_structure(structure, order=None):
         structure = reorder_dict(structure, order)
     elif isinstance(structure, list):
         structure = [format_structure(item, order) for item in structure]
+    return structure
+
+
+def page_level_thinning(
+    structure, thinning_threshold_node_num=20, min_pages_for_large_tree=3
+):
+    """Legacy; superseded by tree_optimize.merge_tree."""
+
+    def count_nodes(nodes):
+        total = 0
+        for node in nodes:
+            total += 1
+            if node.get("nodes"):
+                total += count_nodes(node["nodes"])
+        return total
+
+    def get_subtree_end(node):
+        while node.get("nodes"):
+            node = node["nodes"][-1]
+        return node.get("end_index", 0)
+
+    def thin(nodes, total_nodes):
+        for node in nodes:
+            children = node.get("nodes")
+            if not children:
+                continue
+            end_index = get_subtree_end(node)
+            page_count = end_index - node.get("start_index", 0) + 1
+            if page_count == 1 or (
+                total_nodes > thinning_threshold_node_num
+                and page_count < min_pages_for_large_tree
+            ):
+                node["end_index"] = end_index
+                node.pop("nodes", None)
+            else:
+                thin(children, total_nodes)
+
+    nodes = structure if isinstance(structure, list) else [structure]
+    total = count_nodes(nodes)
+    thin(nodes, total)
     return structure
 
 
@@ -887,33 +1073,58 @@ class ConfigLoader:
         return config(**merged)
 
 
-def create_node_mapping(tree):
+def create_node_mapping(tree, include_page_ranges=False, max_page=None):
+    """Map node_id to node; with include_page_ranges, to {"node", "start_index",
+    "end_index"} (end = next node's page_index, or max_page for the last node)."""
+
+    def get_all_nodes(tree):
+        if isinstance(tree, dict):
+            return [tree] + [
+                node for child in tree.get("nodes", []) for node in get_all_nodes(child)
+            ]
+        elif isinstance(tree, list):
+            return [node for item in tree for node in get_all_nodes(item)]
+        return []
+
+    all_nodes = get_all_nodes(tree)
+    if not include_page_ranges:
+        return {node["node_id"]: node for node in all_nodes if node.get("node_id")}
     mapping = {}
-
-    def _walk(nodes):
-        for node in nodes:
-            nid = node.get("node_id")
-            if nid is not None:
-                mapping[nid] = node
-            if node.get("nodes"):
-                _walk(node["nodes"])
-
-    _walk(tree if isinstance(tree, list) else [tree])
+    for i, node in enumerate(all_nodes):
+        if node.get("node_id"):
+            end_page = (
+                all_nodes[i + 1].get("page_index")
+                if i + 1 < len(all_nodes)
+                else max_page
+            )
+            mapping[node["node_id"]] = {
+                "node": node,
+                "start_index": node["page_index"],
+                "end_index": end_page,
+            }
     return mapping
 
 
-def print_tree(tree, indent=0):
-    for node in tree if isinstance(tree, list) else [tree]:
-        summary_preview = (node.get("summary") or "")[:60]
+def print_tree(tree, exclude_fields=None, indent=0):
+    """Outline view; passing exclude_fields gives the 0.2.8 pprint view."""
+    if exclude_fields is not None:
+        from pprint import pprint
+
+        pprint(
+            remove_fields(tree, exclude_fields, max_len=40), sort_dicts=False, width=100
+        )
+        return
+    for node in tree:
+        summary = node.get("summary") or node.get("prefix_summary", "")
+        summary_str = f"  —  {summary[:60]}..." if summary else ""
         print(
             "  " * indent
-            + f"{node.get('node_id', '?')} {node.get('title', '?')}  {summary_preview}"
+            + f"[{node.get('node_id', '?')}] {node.get('title', '')}{summary_str}"
         )
         if node.get("nodes"):
-            print_tree(node["nodes"], indent + 1)
+            print_tree(node["nodes"], indent=indent + 1)
 
 
-def print_wrapped(text, width=80):
-    import textwrap
-
-    print("\n".join(textwrap.wrap(text, width)))
+def print_wrapped(text, width=100):
+    for line in text.splitlines():
+        print(textwrap.fill(line, width=width))

@@ -101,7 +101,7 @@ async def test_assimilate_document_with_metadata(pageindex_temp_db, sample_markd
     result = await assimilate_document(
         sample_markdown,
         doc_name="test_doc",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_a",
         metadata={"topic": "finance", "year": 2024},
     )
@@ -120,7 +120,7 @@ async def test_assimilate_document_without_metadata(pageindex_temp_db, sample_ma
     result = await assimilate_document(
         sample_markdown,
         doc_name="test_doc_no_meta",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="default",
     )
     assert result.get("doc_name") == "test_doc_no_meta"
@@ -136,7 +136,7 @@ async def test_patch_document_root_doc_description(pageindex_temp_db, sample_mar
     await assimilate_document(
         sample_markdown,
         doc_name="desc_doc",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_desc",
         doc_description="initial",
     )
@@ -179,14 +179,14 @@ async def test_search_with_metadata_filter(pageindex_temp_db, sample_markdown):
     await assimilate_document(
         sample_markdown,
         doc_name="doc_finance",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_x",
         metadata={"topic": "finance"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_legal",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_x",
         metadata={"topic": "legal"},
     )
@@ -208,13 +208,13 @@ async def test_search_without_metadata_filter(pageindex_temp_db, sample_markdown
     await assimilate_document(
         sample_markdown,
         doc_name="doc_a",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_y",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_b",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_y",
     )
 
@@ -241,7 +241,7 @@ async def test_assimilate_promotes_metadata_doc_url_to_root(
         await assimilate_document(
             sample_markdown,
             doc_name="meta_url_only",
-            if_add_node_summary="no",
+            if_add_node_summary=False,
             collection_name="col_meta_url",
             metadata={"doc_url": "https://example.com/from-metadata"},
         )
@@ -296,14 +296,14 @@ async def test_list_documents_with_metadata_filter(pageindex_temp_db, sample_mar
     await assimilate_document(
         sample_markdown,
         doc_name="doc_internal",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_z",
         metadata={"access": "internal"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_z",
         metadata={"access": "public"},
     )
@@ -323,7 +323,7 @@ async def test_chunks_list_export_and_root(pageindex_temp_db, sample_markdown):
     await assimilate_document(
         sample_markdown,
         doc_name="chunky_doc",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_chunks",
     )
     docs = await list_documents(collection_name="col_chunks")
@@ -349,14 +349,14 @@ async def test_metadata_filter_multiple_keys(pageindex_temp_db, sample_markdown)
     await assimilate_document(
         sample_markdown,
         doc_name="doc_both",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_m",
         metadata={"topic": "finance", "year": 2024},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_topic_only",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_m",
         metadata={"topic": "finance"},
     )
@@ -381,7 +381,7 @@ async def test_metadata_serialization(pageindex_temp_db, sample_markdown):
     await assimilate_document(
         sample_markdown,
         doc_name="doc_serial",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_s",
         metadata=metadata,
     )
@@ -400,13 +400,13 @@ async def test_collection_isolation(pageindex_temp_db, sample_markdown):
     await assimilate_document(
         sample_markdown,
         doc_name="same_name",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_1",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="same_name",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_2",
     )
 
@@ -678,7 +678,7 @@ async def test_do_assimilate_with_if_add_node_summary(
         content,
         ".md",
         doc_name="form_test",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_form",
     )
     assert result.get("doc_name") == "form_test"
@@ -1049,7 +1049,7 @@ async def test_assimilate_markdown_chunks_have_hierarchy_and_content_type(
     await assimilate_document(
         sample_markdown,
         doc_name="md_hier_test",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_md",
     )
     out = await list_document_chunks("md_hier_test", collection_name="col_md")
@@ -1109,7 +1109,7 @@ async def test_assimilate_paged_markdown_sets_chunk_pages(pageindex_temp_db):
     await assimilate_document(
         body,
         doc_name="paged_assim",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_paged",
     )
     out = await list_document_chunks("paged_assim", collection_name="col_paged")
@@ -1132,7 +1132,7 @@ async def test_assimilate_markdown_no_atx_headings_still_indexes(pageindex_temp_
     await assimilate_document(
         body,
         doc_name="no_headers_doc",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_nh",
     )
     out = await list_document_chunks("no_headers_doc", collection_name="col_nh")
@@ -1522,7 +1522,7 @@ def test_jvforge_response_missing_roots_raises():
                     agent_id="a1",
                     doc_name="missing.pdf",
                     model=None,
-                    if_add_node_summary="no",
+                    if_add_node_summary=False,
                     collection_name="c1",
                     metadata=None,
                     doc_description=None,
@@ -2169,13 +2169,13 @@ async def test_search_access_public_visible_to_unmatched(
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_restricted",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl",
         metadata={"access": "admins"},
     )
@@ -2198,20 +2198,20 @@ async def test_search_access_member_sees_public_and_own(
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl2",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_admins",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl2",
         metadata={"access": "admins"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_guests",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl2",
         metadata={"access": "guests"},
     )
@@ -2234,20 +2234,20 @@ async def test_search_access_unmatched_public_baseline(
     await assimilate_document(
         sample_markdown,
         doc_name="doc_untagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl3",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public_tagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl3",
         metadata={"access": "public"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_private",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl3",
         metadata={"access": "private"},
     )
@@ -2273,20 +2273,20 @@ async def test_search_access_public_list_includes_public_and_untagged(
     await assimilate_document(
         sample_markdown,
         doc_name="doc_untagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl4",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public_tagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl4",
         metadata={"access": "public"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_private",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl4",
         metadata={"access": "private"},
     )
@@ -2312,20 +2312,20 @@ async def test_search_access_public_plus_private_includes_both(
     await assimilate_document(
         sample_markdown,
         doc_name="doc_untagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl5",
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_public_tagged",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl5",
         metadata={"access": "public"},
     )
     await assimilate_document(
         sample_markdown,
         doc_name="doc_private",
-        if_add_node_summary="no",
+        if_add_node_summary=False,
         collection_name="col_acl5",
         metadata={"access": "private"},
     )

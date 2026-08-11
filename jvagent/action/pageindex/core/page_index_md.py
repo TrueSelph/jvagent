@@ -5,7 +5,7 @@ import re
 
 try:
     from .utils import *
-except Exception:
+except:
     from utils import *
 
 
@@ -269,13 +269,9 @@ async def md_to_tree(
     if_add_node_text="no",
     if_add_node_id="yes",
 ):
-    try:
-        with open(md_path, "r", encoding="utf-8") as f:
-            markdown_content = f.read()
-    except UnicodeDecodeError:
-        with open(md_path, "rb") as f:
-            raw = f.read()
-        markdown_content = raw.decode("utf-8", errors="replace")
+    with open(md_path, "r", encoding="utf-8") as f:
+        markdown_content = f.read()
+    line_count = markdown_content.count("\n") + 1
 
     print(f"Extracting nodes from markdown...")
     node_list, markdown_lines = extract_nodes_from_markdown(markdown_content)
@@ -342,6 +338,7 @@ async def md_to_tree(
             return {
                 "doc_name": os.path.splitext(os.path.basename(md_path))[0],
                 "doc_description": doc_description,
+                "line_count": line_count,
                 "structure": tree_structure,
             }
     else:
@@ -374,11 +371,15 @@ async def md_to_tree(
 
     return {
         "doc_name": os.path.splitext(os.path.basename(md_path))[0],
+        "line_count": line_count,
         "structure": tree_structure,
     }
 
 
 if __name__ == "__main__":
+    import json
+    import os
+
     # MD_NAME = 'Detect-Order-Construct'
     MD_NAME = "cognitive-load"
     MD_PATH = os.path.join(

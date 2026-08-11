@@ -16,7 +16,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   document tree without any LLM calls. This is orders of magnitude faster
   than LLM-based strategies and has zero token cost, making it ideal for
   bulk ingestion or cost-sensitive pipelines. Available in jvchat's Upload
-  and Google Sync dropdowns as "Flash — LLM-free (fastest)".
+  and Google Sync dropdowns as "Flash — LLM-free (PDF only)".
 
 - **PageIndex: tree optimization pass after extraction.**
   The new `tree_optimize.py` module runs a post-extraction merge/expand pass
@@ -53,14 +53,33 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   populated by tree optimization when nodes are merged. This surfaces the
   most important phrases from each chunk for search and display.
 
+- **PageIndex core re-vendored to match upstream layout.**
+  `jvagent/action/pageindex/core/` now tracks upstream PageIndex
+  (`page_index_classic`, Flash under `core/flash`, plus SDK modules such as
+  `client`, `cloud_api`, `local_api`, and `errors`). Production RAG continues
+  to call classic/flash through JV wrappers rather than `PageIndexClient`.
+
+- **PageIndex wrappers keep JV adaptations outside vendored core.**
+  The LLM bridge and `llm_override` inject observability/cancellation, encode
+  bool flags as `"yes"`/`"no"` at the PageIndex call boundary, and patch
+  `list_to_tree` so TOC metadata (`structure`, `physical_index`, and other
+  input fields) survives tree building without forking upstream `utils.py`.
+
+- **Vendored PageIndex core excluded from lint/format tooling.**
+  flake8, pre-commit (black/isort/flake8/mypy/detect-secrets), and
+  black/isort/mypy config skip `jvagent/action/pageindex/core` so upstream
+  files stay byte-identical to PageIndex.
+
 ### Changed
 
-- **PageIndex: `generate_description` → `if_add_doc_description`.**
-  The boolean `generate_description` parameter is replaced by a string
-  `if_add_doc_description` accepting `"yes"` or `"no"`. This aligns with
-  the existing `if_add_node_summary` convention and makes the intent clearer.
-  `documents.py` and `md_tree_enriched.py` updated; jvforge API endpoints
-  accept both parameter names for backward compatibility.
+- **PageIndex: bool flags at the JV API boundary, yes/no only for upstream.**
+  Python APIs (`assimilate_document`, jvforge assimilate helpers, action
+  config) keep `if_add_node_summary` / `if_add_doc_description` as bools.
+  Wrappers convert to `"yes"`/`"no"` when calling upstream PageIndex or
+  building jvforge multipart form data. HTTP form ingest still accepts
+  true/false/yes/no/1/0 strings and coerces them via `_to_bool` /
+  `_form_yes_no_optional`. Legacy `generate_description` remains accepted
+  alongside `if_add_doc_description` where the HTTP API already did.
 
 ### Fixed
 
@@ -78,6 +97,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   incurring unexpected token costs. Both jvagent and jvforge now log a
   warning and fall back to `heading` when flash is requested on a non-PDF.
   In jvchat, the Flash dropdown option is labeled "Flash — LLM-free (PDF only)".
+
+- **jvforge assimilate callers passed yes/no strings into a bool API.**
+  `assimilate_via_jvforge_async` / `_jvforge_form_data` expect
+  `if_add_node_summary: bool` and encode yes/no only for the HTTP form.
+  Passing the string `"no"` was truthy and would incorrectly send `"yes"`.
+  Artifact handler and related callers now pass real bools.
 
 ## [0.1.7] - 2026-08-09
 

@@ -4,6 +4,7 @@ import math
 import os
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .tree_optimize import merge_tree
 from .utils import *
@@ -22,10 +23,12 @@ _INJECTION_PATTERNS = re.compile(
 
 
 def _sanitize_doc_text(text: str) -> str:
+    """Redact known prompt-injection keywords from PDF-extracted text."""
     return _INJECTION_PATTERNS.sub("[REDACTED]", text)
 
 
 def _wrap_doc_text(text: str) -> str:
+    """Wrap untrusted document text in delimiter tags so the LLM treats it as data."""
     text = re.sub(r"(?i)<(?=\s*/?\s*user_document\b)", "&lt;", text)
     return (
         "<user_document>\n"
@@ -47,6 +50,7 @@ _SYSTEM_HARDENING = (
 
 
 def _secure_doc_text(text: str) -> str:
+    """Sanitize + delimiter-frame a PDF text block before LLM injection."""
     return _wrap_doc_text(_sanitize_doc_text(text))
 
 
@@ -68,6 +72,7 @@ def _parse_physical_index(raw):
 def _validate_physical_indices(
     toc: list, total_pages: int, start_index: int = 1
 ) -> list:
+    """Nullify any physical_index the LLM produced that falls outside the real page range."""
     max_idx = start_index + total_pages - 1
     for entry in toc:
         raw = entry.get("physical_index")
@@ -122,7 +127,7 @@ async def check_title_appearance(item, page_list, start_index=1, model=None):
     else:
         answer = "no"
     return {
-        "list_index": item.get("list_index"),
+        "list_index": item["list_index"],
         "answer": answer,
         "title": title,
         "page_number": page_number,
@@ -238,6 +243,7 @@ def check_if_toc_extraction_is_complete(content, toc, model=None):
         + "\n Table of contents:\n"
         + _secure_doc_text(str(toc))
     )
+
     response = llm_completion(model=model, prompt=prompt)
     json_content = extract_json(response)
     return json_content.get("completed", "no")
@@ -271,8 +277,7 @@ def extract_toc_content(content, model=None):
     prompt = f"""
     Your job is to extract the full table of contents from the given text, replace ... with :
 
-    Given text:
-    {_secure_doc_text(content)}
+    Given text: {_secure_doc_text(content)}
 
     Directly return the full table of contents content. Do not output anything else."""
 
@@ -354,14 +359,22 @@ def _extract_chunk_marker_set(content: str) -> set:
 
 
 def _validate_chunk_physical_indices(toc: list, content: str) -> list:
+    """
+    Nullify any physical_index that is not present in the supplied chunk.
+    This prevents the model from referencing markers that exist elsewhere
+    in the document but not in the current prompt.
+    """
     valid_indices = _extract_chunk_marker_set(content)
+
     for entry in toc:
         raw = entry.get("physical_index")
         if raw is None:
             continue
+
         m = _PHYSICAL_INDEX_MARKER_RE.match(str(raw).strip())
         if not m or int(m.group(1)) not in valid_indices:
             entry["physical_index"] = None
+
     return toc
 
 
@@ -642,6 +655,7 @@ def add_page_number_to_toc(part, structure, model=None):
         + f"\n\nCurrent Partial Document:\n{_secure_doc_text(part_text)}"
         + f"\n\nGiven Structure\n{_secure_doc_text(json.dumps(structure, indent=2))}\n"
     )
+
     current_json_raw = llm_completion(model=model, prompt=prompt)
     json_result = extract_json(current_json_raw)
 
@@ -700,6 +714,7 @@ def generate_toc_continue(toc_content, part, model=None):
         + "\nPrevious tree structure\n:"
         + _secure_doc_text(json.dumps(toc_content, indent=2))
     )
+
     response, finish_reason = llm_completion(
         model=model, prompt=prompt, return_finish_reason=True
     )
@@ -1015,6 +1030,7 @@ async def single_toc_item_index_fixer(section_title, content, model=None):
         + "\nDocument pages:\n"
         + _secure_doc_text(content)
     )
+
     response = await llm_acompletion(model=model, prompt=prompt)
     json_content = extract_json(response)
     physical_index = json_content.get("physical_index")
@@ -1224,19 +1240,21 @@ async def verify_toc(page_list, list_result, start_index=1, N=None, model=None):
         check_title_appearance(item, page_list, start_index, model)
         for item in indexed_sample_list
     ]
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Process results
+    # Process results (skip exceptions from failed LLM calls)
     correct_count = 0
     incorrect_results = []
     for result in results:
+        if isinstance(result, BaseException):
+            continue
         if result["answer"] == "yes":
             correct_count += 1
         else:
             incorrect_results.append(result)
 
     # Calculate accuracy
-    checked_count = len(results)
+    checked_count = sum(1 for r in results if not isinstance(r, BaseException))
     accuracy = correct_count / checked_count if checked_count > 0 else 0
     print(f"accuracy: {accuracy*100:.2f}%")
     return accuracy, incorrect_results
@@ -1434,8 +1452,8 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
     return toc_tree
 
 
-def page_index_main(doc, opt=None):
-    logger = JsonLogger(doc)
+def page_index_main(doc, opt=None, logger=None, page_list=None):
+    logger = logger or JsonLogger(doc)
 
     is_valid_pdf = (
         isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")
@@ -1445,8 +1463,9 @@ def page_index_main(doc, opt=None):
             "Unsupported input type. Expected a PDF file path or BytesIO object."
         )
 
-    print("Parsing PDF...")
-    page_list = get_page_tokens(doc, model=opt.model)
+    if page_list is None:
+        print("Parsing PDF...")
+        page_list = get_page_tokens(doc, model=opt.model)
 
     logger.info({"total_page_number": len(page_list)})
     logger.info({"total_token": sum([page[1] for page in page_list])})
