@@ -23,9 +23,7 @@ _NEEDS_JPEG_MIMES = frozenset(
 )
 
 
-def ensure_meta_image_jpeg(
-    file_bytes: bytes, mime: str = ""
-) -> Tuple[bytes, str]:
+def ensure_meta_image_jpeg(file_bytes: bytes, mime: str = "") -> Tuple[bytes, str]:
     """Return JPEG bytes when Meta rejects the source mime; else pass through.
 
     Meta media upload accepts image/jpeg and image/png for chat images (not AVIF/WebP).
