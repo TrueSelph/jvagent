@@ -982,6 +982,9 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
         file_bytes, mime = await self._fetch_url_bytes(file_url)
         if not file_bytes:
             return {"ok": False, "error": "Failed to fetch image from URL"}
+        from ..utils.meta_image import ensure_meta_image_jpeg
+
+        file_bytes, mime = ensure_meta_image_jpeg(file_bytes, mime or "")
         media_id = await self._upload_media(
             file_bytes, mime or "image/jpeg", "image.jpg"
         )
