@@ -1,12 +1,37 @@
 # Microsoft 365 actions
 
-Microsoft 365 integrations use **Microsoft Entra ID** (OAuth 2.0) and **Microsoft Graph**. All concrete actions subclass `MicrosoftAction`, which handles authorization code flow with **PKCE**, token refresh, and `graph_request` / `graph_json` helpers against `https://graph.microsoft.com/v1.0`.
+Microsoft 365 integrations use **Microsoft Entra ID** (OAuth 2.0) and **Microsoft Graph**. Login is **MCP OAuth** (`MCPOAuthToken`) at `/api/mcp/microsoft_365/auth` — not `MicrosoftToken` / `/api/microsoft/{action_id}`. All concrete actions subclass `MicrosoftAction`, which loads that token and exposes `graph_request` / `graph_json` against `https://graph.microsoft.com/v1.0`.
 
 ## Requirements
 
 - **Entra ID app registration** (single- or multi-tenant as appropriate)
-- **Redirect URI** matching the URL the agent computes at runtime (see below)
+- **Redirect URI** `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/microsoft_365/auth/callback`
 - **Delegated API permissions** on Microsoft Graph that match the scopes each action requests (admin consent if required by your tenant)
+- Agent also has `jvagent/mcp_oauth` and `jvagent/mcp` (`microsoft_365`)
+
+## Create credentials
+
+1. Open [Entra ID → App registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade).
+2. Click **New registration**. Choose single-tenant or multi-tenant (personal Microsoft accounts) as appropriate.
+3. Under **Authentication**, add a **Web** redirect URI exactly:
+
+   `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/microsoft_365/auth/callback`
+
+   The host must match the public base URL used at runtime (for example an ngrok HTTPS origin).
+4. Open **Certificates & secrets** → **New client secret**. Copy the secret value once (required for confidential web clients).
+5. Open **API permissions** → **Microsoft Graph** → **Delegated** permissions. Add the scopes for the actions you use (see the packaged-actions table). Grant admin consent if the tenant requires it.
+6. From the app **Overview**, copy **Application (client) ID** and **Directory (tenant) ID**.
+
+## Set `.env`
+
+```bash
+JVAGENT_PUBLIC_BASE_URL=https://your-public-host.example
+MICROSOFT_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+MICROSOFT_CLIENT_SECRET=your-client-secret
+MICROSOFT_TENANT_ID=common
+```
+
+Then authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/microsoft_365/auth?service=outlook` (or `calendar` / `onedrive` / `excel`).
 
 ## Environment variables
 
@@ -15,33 +40,28 @@ Microsoft 365 integrations use **Microsoft Entra ID** (OAuth 2.0) and **Microsof
 | `MICROSOFT_CLIENT_ID` | Application (client) ID from Entra ID |
 | `MICROSOFT_CLIENT_SECRET` | Client secret for **confidential** web clients (omit for public client flows that do not use a secret) |
 | `MICROSOFT_TENANT_ID` | Tenant id, or `common` for multi-tenant / personal Microsoft accounts (default in code when unset) |
-| `JVAGENT_PUBLIC_BASE_URL` | Public HTTPS origin of the API (no trailing path). Used to build `auth_url` and `redirect_uri` |
+| `JVAGENT_PUBLIC_BASE_URL` | Public HTTPS origin of the API (no trailing path). Used to build MCP `auth_url` |
 | `ONEDRIVE_PARENT_FOLDER_ID` | Optional default for OneDrive / Excel parent folder (`root` or a drive **item** id) |
 
-On register, reload, and startup, each `MicrosoftAction` sets:
+On register, reload, and startup, each `MicrosoftAction` sets `auth_url` to `/api/mcp/microsoft_365/auth?account=integral&service=...`.
 
-- `auth_url` → `{JVAGENT_PUBLIC_BASE_URL}/api/microsoft/{action_id}`
-- `redirect_uri` → `{JVAGENT_PUBLIC_BASE_URL}/api/microsoft/callback/`
-
-Register **that** `redirect_uri` exactly in Entra ID under the app’s **Authentication** redirect URIs, and keep `JVAGENT_PUBLIC_BASE_URL` aligned with what you registered.
+Register the MCP callback redirect URI exactly in Entra ID under the app’s **Authentication** redirect URIs.
 
 ## OAuth flow
 
-1. Open **`auth_url`** (or `GET /api/microsoft/{action_id}`) in a browser. The HTML page includes **Sign in with Microsoft**, which starts the Entra authorize URL with PKCE.
-2. After consent, Entra redirects to **`/api/microsoft/callback/`** with `code` and `state`. The handler exchanges the code for tokens and stores them on a linked `MicrosoftToken` node.
-
-If configuration is wrong, the auth page surfaces an error mentioning `MICROSOFT_CLIENT_ID`, optional `MICROSOFT_CLIENT_SECRET`, redirect registration, and `JVAGENT_PUBLIC_BASE_URL`.
+1. Open the action’s **`auth_url`** (or `/api/mcp/microsoft_365/auth?service=outlook|calendar|onedrive|excel`).
+2. After consent, Entra redirects to **`/api/mcp/microsoft_365/auth/callback`**. The handler stores tokens on `MCPOAuthToken` and the next `microsoft_365` stdio spawn injects `MS365_MCP_OAUTH_TOKEN`.
 
 ## Packaged actions
 
 Each package includes its own `README.md` (endpoints, behavior, and any limits).
 
-| Package | Class | Graph scopes (delegated) |
-| ------- | ----- | ------------------------ |
-| `jvagent/microsoft_outlook_mail_action` | `MicrosoftOutlookMailAction` | `offline_access`, `User.Read`, `Mail.Read`, `Mail.Send` |
-| `jvagent/microsoft_outlook_calendar_action` | `MicrosoftOutlookCalendarAction` | `offline_access`, `User.Read`, `Calendars.ReadWrite` |
-| `jvagent/microsoft_onedrive_action` | `MicrosoftOneDriveAction` | `offline_access`, `User.Read`, `Files.ReadWrite.All` |
-| `jvagent/microsoft_excel_action` | `MicrosoftExcelAction` | `offline_access`, `User.Read`, `Files.ReadWrite.All` |
+| Package | Class | Graph scopes (delegated) | `?service=` |
+| ------- | ----- | ------------------------ | ----------- |
+| `jvagent/microsoft_outlook_mail_action` | `MicrosoftOutlookMailAction` | `offline_access`, `User.Read`, `Mail.Read`, `Mail.ReadWrite`, `Mail.Send` | `outlook` |
+| `jvagent/microsoft_outlook_calendar_action` | `MicrosoftOutlookCalendarAction` | `offline_access`, `User.Read`, `Calendars.ReadWrite` | `calendar` |
+| `jvagent/microsoft_onedrive_action` | `MicrosoftOneDriveAction` | `offline_access`, `User.Read`, `Files.ReadWrite.All` | `onedrive` |
+| `jvagent/microsoft_excel_action` | `MicrosoftExcelAction` | `offline_access`, `User.Read`, `Files.ReadWrite.All` | `excel` |
 
 ### `MicrosoftExcelAction` attributes
 
@@ -52,7 +72,7 @@ Each package includes its own `README.md` (endpoints, behavior, and any limits).
 
 ## Workspace REST API (per action)
 
-Each Microsoft package registers **`endpoints.py`** when the package is imported (same pattern as Google workspace actions). Route paths match the Google analogs under **`/actions/{action_id}/...`** so clients can reuse the same URLs for `action_id` values that point at Microsoft action instances.
+Each Microsoft package registers **`endpoints.py`** when the package is imported (same pattern as Google workspace actions). Route paths match the Google analogs under **`/actions/{action_id}/...`**.
 
 **jvspatial note:** only **one** handler is mounted per distinct `path` + HTTP method. If both a Google action package and a Microsoft action package register the same route, whichever module is imported **first** wins; the other registration is skipped. Load the providers you need and rely on consistent import order if you use both families in one process.
 
@@ -84,28 +104,43 @@ Paths below assume the default **`/api`** prefix (see OpenAPI for full schemas).
 | POST | `/api/actions/{action_id}/create` | `summary`, `start_time`, `end_time`, optional `calendar_id`, `description`, `location` |
 | DELETE | `/api/actions/{action_id}/delete` | `calendar_id`, `event_id` |
 
-**Excel** (`MicrosoftExcelAction`): workbook routes in `microsoft_excel_action/endpoints.py` cover **`delete`**, **`share`**, and **`create`** (aligned with shared workspace URLs). The action class also implements Graph workbook operations similar to Sheets (`read_spreadsheet`, `update_spreadsheet`, etc.); expose additional routes there if you need HTTP parity with `google_sheets_action/endpoints.py`.
+**Excel** (`MicrosoftExcelAction`): workbook routes in `microsoft_excel_action/endpoints.py` cover **`delete`**, **`share`**, and **`create`**. The action class also implements Graph workbook operations similar to Sheets (`read_spreadsheet`, `update_spreadsheet`, etc.).
 
 Authenticated admin routes typically require **`auth=True`** and role **`admin`**; refer to OpenAPI for full query/body schemas.
 
 ## Agent wiring (`agent.yaml`)
 
-Add the action packages your agent needs. Credentials come from environment; no client JSON is stored on the action node (unlike Google client secrets).
-
 ```yaml
+- action: jvagent/mcp_oauth
+  context:
+    enabled: true
+
+- action: jvagent/mcp
+  context:
+    enabled: true
+    servers:
+      - name: microsoft_365
+        enabled: true
+        transport: stdio
+        command: npx
+        args: ["-y", "@softeria/ms-365-mcp-server", "--org-mode"]
+        tools: "-all"
+        sandbox_mode: false
+
 - action: jvagent/microsoft_outlook_mail_action
 - action: jvagent/microsoft_outlook_calendar_action
 - action: jvagent/microsoft_onedrive_action
 - action: jvagent/microsoft_excel_action
   context:
-    spreadsheet_url: ""   # optional default workbook id/URL
+    spreadsheet_url: ""
     worksheet_title: Sheet1
 ```
 
-After deploy, complete OAuth once per action instance via each action’s **`auth_url`**.
+Set `MICROSOFT_CLIENT_ID` (and related env) in `.env`. Authorize once at **`/api/mcp/microsoft_365/auth?service=outlook`** (or the matching `?service=`).
 
 ## Implementation notes
 
-- Tokens live on **`MicrosoftToken`** nodes linked to the action; access tokens are refreshed with the stored refresh token when expired.
+- Tokens live on **`MCPOAuthToken`** (`server_name=microsoft_365`); access tokens are refreshed with Entra and saved back on that node.
 - `MicrosoftAction.graph_request` accepts relative Graph paths or full URLs.
+- `@softeria/ms-365-mcp-server` receives the current access token as `MS365_MCP_OAUTH_TOKEN` on stdio spawn (BYOT; we refresh before inject).
 - OneDrive uploads may send raw bytes to Graph with the appropriate `Content-Type`; folder creation uses a JSON body without file content.

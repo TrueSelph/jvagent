@@ -75,6 +75,58 @@ class TestMCPActionFiltering:
         assert [t.name for t in filtered] == ["read_file", "list_files"]
 
 
+class TestMCPActionShowTools:
+    @pytest.mark.asyncio
+    async def test_get_tools_skips_server_when_show_tools_false(self):
+        action = MCPAction(
+            sandbox_mode=False,
+            servers=[
+                {
+                    "name": "google_workspace",
+                    "transport": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@aaronsb/google-workspace-mcp"],
+                    "tools": ["manage_sheets"],
+                    "show_tools": False,
+                }
+            ],
+        )
+        with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+            await action._build_server_entries()
+        with patch.object(
+            MCPAction,
+            "get_tools_cached",
+            new=AsyncMock(return_value=[_tool("manage_sheets")]),
+        ) as cached:
+            tools = await action.get_tools()
+        assert tools == []
+        cached.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_tools_includes_server_when_show_tools_true(self):
+        action = MCPAction(
+            sandbox_mode=False,
+            servers=[
+                {
+                    "name": "google_workspace",
+                    "transport": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@aaronsb/google-workspace-mcp"],
+                    "show_tools": True,
+                }
+            ],
+        )
+        with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+            await action._build_server_entries()
+        with patch.object(
+            MCPAction,
+            "get_tools_cached",
+            new=AsyncMock(return_value=[_tool("manage_sheets")]),
+        ):
+            tools = await action.get_tools()
+        assert [t.name for t in tools] == ["mcp_google_workspace__manage_sheets"]
+
+
 class TestMCPActionFulfill:
     @pytest.mark.asyncio
     async def test_fulfill_selects_server_and_tool(self):

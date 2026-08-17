@@ -1,4 +1,4 @@
-"""Email action with pluggable providers (Gmail, Outlook via OAuth, SendGrid)."""
+"""Email action with pluggable providers (Gmail, Outlook via MCP OAuth, SendGrid)."""
 
 from __future__ import annotations
 
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 class EmailAction(Action):
-    """Send and receive email via Gmail, Outlook (OAuth + inbound webhook), or SendGrid.
+    """Send and receive email via Gmail, Outlook (MCP OAuth + inbound webhook), or SendGrid.
 
     ``is_configured()`` does **not** require ``JVAGENT_PUBLIC_BASE_URL`` for Gmail or Outlook
-    outbound send. Inbound webhook URL generation still needs a public base URL for
-    all providers that use the email webhook.
+    outbound send. Inbound webhook URL generation and MCP OAuth callbacks still need a
+    public base URL for all providers that use the email webhook.
     """
 
     # AUDIT-actions XC-4: inbound webhook for SendGrid / Mailgun-style
@@ -291,14 +291,16 @@ class EmailAction(Action):
                 "Receive inbound email via the email webhook (POST triggers one Gmail inbox fetch: first message "
                 "matching gmail_list_query that passes access control). email_mode new_email limits to messages "
                 "after email_inbound_since_iso (set on register); all_email has no registration-time cutoff. "
-                "Requires GoogleGmailAction on the same agent with OAuth."
+                "Requires GoogleGmailAction on the same agent with MCP OAuth "
+                "(/api/mcp/google_workspace/auth?service=gmail)."
             )
         elif prov == "outlook":
             base_caps.append(
                 "Receive inbound email via the email webhook (POST triggers one Outlook inbox fetch: first message "
                 "in Inbox matching outlook_mail_filter OData expression that passes access control). email_mode "
                 "new_email adds receivedDateTime ge email_inbound_since_iso; all_email does not. Requires "
-                "MicrosoftOutlookMailAction on the same agent with OAuth (MICROSOFT_CLIENT_ID and Graph consent)."
+                "MicrosoftOutlookMailAction on the same agent with MCP OAuth "
+                "(/api/mcp/microsoft_365/auth?service=outlook; MICROSOFT_CLIENT_ID)."
             )
         else:
             base_caps.append(
@@ -316,13 +318,15 @@ class EmailAction(Action):
             if not self._env_google_client_secrets():
                 issues.append(
                     "GOOGLE_CLIENT_SECRETS_JSON is not set in the environment "
-                    "(required for Google OAuth / Gmail)"
+                    "(required for MCP Gmail); authorize at "
+                    "/api/mcp/google_workspace/auth?service=gmail"
                 )
         elif prov == "outlook":
             if not self._env_microsoft_client_id():
                 issues.append(
                     "MICROSOFT_CLIENT_ID is not set in the environment "
-                    "(required for Microsoft OAuth / Outlook)"
+                    "(required for MCP Outlook); authorize at "
+                    "/api/mcp/microsoft_365/auth?service=outlook"
                 )
         elif prov == "sendgrid":
             if not self._env_sendgrid_key():
@@ -356,8 +360,10 @@ class EmailAction(Action):
             ga = await self.get_linked_gmail_action()
             if not ga:
                 raise ValidationError(
-                    "No GoogleGmailAction on this agent; add action jvagent/google_gmail_action "
-                    "or set gmail_action_label to an existing Gmail action label"
+                    "No GoogleGmailAction on this agent; add jvagent/mcp_oauth, "
+                    "jvagent/mcp (google_workspace), and jvagent/google_gmail_action "
+                    "(or set gmail_action_label), then authorize at "
+                    "/api/mcp/google_workspace/auth?service=gmail"
                 )
             return GmailEmailProvider(gmail_action=ga)
 
@@ -365,8 +371,10 @@ class EmailAction(Action):
             oa = await self.get_linked_outlook_mail_action()
             if not oa:
                 raise ValidationError(
-                    "No MicrosoftOutlookMailAction on this agent; add the Outlook mail action "
-                    "or set outlook_action_label to the correct action entity type"
+                    "No MicrosoftOutlookMailAction on this agent; add jvagent/mcp_oauth, "
+                    "jvagent/mcp (microsoft_365), and jvagent/microsoft_outlook_mail_action "
+                    "(or set outlook_action_label), then authorize at "
+                    "/api/mcp/microsoft_365/auth?service=outlook"
                 )
             return OutlookEmailProvider(outlook_action=oa)
 
@@ -442,7 +450,9 @@ class EmailAction(Action):
                 if not ga:
                     result["healthy"] = False
                     result["errors"] = result.get("errors", []) + [
-                        "No GoogleGmailAction on this agent"
+                        "No GoogleGmailAction on this agent; add jvagent/mcp_oauth, "
+                        "jvagent/mcp (google_workspace), and jvagent/google_gmail_action, "
+                        "then authorize at /api/mcp/google_workspace/auth?service=gmail"
                     ]
                 else:
                     await ga.get_profile()
@@ -456,7 +466,9 @@ class EmailAction(Action):
                 if not oa:
                     result["healthy"] = False
                     result["errors"] = result.get("errors", []) + [
-                        "No MicrosoftOutlookMailAction on this agent"
+                        "No MicrosoftOutlookMailAction on this agent; add jvagent/mcp_oauth, "
+                        "jvagent/mcp (microsoft_365), and jvagent/microsoft_outlook_mail_action, "
+                        "then authorize at /api/mcp/microsoft_365/auth?service=outlook"
                     ]
                 else:
                     await oa.get_profile()

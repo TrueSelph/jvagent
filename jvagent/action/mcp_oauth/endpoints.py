@@ -4,7 +4,8 @@ import html
 import json
 import logging
 import urllib.parse
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional, Set
 
 import httpx
 from fastapi.responses import HTMLResponse
@@ -14,22 +15,41 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvagent.action.oauth.state import consume_oauth_state, create_oauth_state
 from jvagent.core.public_url import get_public_base_url
 
-from .mcp_oauth_action import MCPOAuthAction
+from .mcp_oauth_action import (
+    MCPOAuthAction,
+    mcp_oauth_state_action_id,
+    parse_mcp_oauth_state_action_id,
+)
+from .microsoft_hydrate import (
+    microsoft_authorize_url,
+    microsoft_client_id,
+    microsoft_client_secret,
+    microsoft_tenant_id,
+    microsoft_token_url,
+)
+from .microsoft_scopes import (
+    MICROSOFT_365_SERVER,
+    MICROSOFT_ACTION_SERVICES,
+)
+from .microsoft_scopes import SERVICE_LABELS as MICROSOFT_SERVICE_LABELS
+from .microsoft_scopes import (
+    MicrosoftOAuthServiceNotEnabled,
+    describe_microsoft_oauth_access,
+    microsoft_365_tool_config,
+    resolve_microsoft_oauth_scopes,
+)
+from .scopes import (
+    GOOGLE_ACTION_SERVICES,
+    GOOGLE_SERVICE_LABELS,
+    GOOGLE_WORKSPACE_SERVER,
+    GoogleOAuthServiceNotEnabled,
+    describe_google_oauth_access,
+    google_workspace_tool_config,
+    granted_scopes_from_token_response,
+    resolve_google_oauth_scopes,
+)
 
 logger = logging.getLogger(__name__)
-
-# Standard google-workspace-mcp scopes
-GOOGLE_SCOPES = [
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/gmail.settings.basic",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/presentations",
-    "https://www.googleapis.com/auth/forms.body",
-    "https://www.googleapis.com/auth/forms.responses.readonly",
-]
 
 
 async def _get_mcp_oauth_action() -> Optional[MCPOAuthAction]:
@@ -45,6 +65,137 @@ async def _get_mcp_oauth_action() -> Optional[MCPOAuthAction]:
     except Exception as exc:
         logger.error("Failed to find MCPOAuthAction: %s", exc)
         return None
+
+
+async def _google_workspace_mcp_tool_config() -> tuple:
+    """``(tools_selector, denied_tools)`` from MCPAction yaml, or unrestricted."""
+    try:
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
+        from jvagent.action.mcp.mcp_action import MCPAction
+
+        manager = get_database_manager()
+        db = manager.get_database()
+        ctx = GraphContext(db)
+        nodes = await ctx.find_nodes(MCPAction, {})
+        mcp = nodes[0] if nodes else None
+        servers = getattr(mcp, "servers", None) if mcp else None
+        return google_workspace_tool_config(servers)
+    except Exception as exc:
+        logger.warning("Failed to read MCPAction Google Workspace tools: %s", exc)
+        return "-all", []
+
+
+async def _enabled_oauth_services(
+    oauth_action: Optional[MCPOAuthAction],
+    action_services: tuple,
+    *,
+    label: str,
+) -> Set[str]:
+    """Services whose sibling *Action is enabled on the same agent."""
+    enabled: Set[str] = set()
+    if oauth_action is None:
+        return enabled
+    try:
+        agent = await oauth_action.get_agent()
+        if not agent:
+            return enabled
+        for type_name, service in action_services:
+            sibling = await agent.get_action_by_type(type_name)
+            if sibling and getattr(sibling, "enabled", True):
+                enabled.add(service)
+    except Exception as exc:
+        logger.warning(
+            "Failed to list enabled %s actions for MCP OAuth: %s", label, exc
+        )
+    return enabled
+
+
+async def _enabled_google_oauth_services(
+    oauth_action: Optional[MCPOAuthAction],
+) -> Set[str]:
+    return await _enabled_oauth_services(
+        oauth_action, GOOGLE_ACTION_SERVICES, label="Google"
+    )
+
+
+async def _microsoft_365_mcp_tool_config() -> tuple:
+    """``(tools_selector, denied_tools)`` from MCPAction yaml, or none."""
+    try:
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
+        from jvagent.action.mcp.mcp_action import MCPAction
+
+        manager = get_database_manager()
+        db = manager.get_database()
+        ctx = GraphContext(db)
+        nodes = await ctx.find_nodes(MCPAction, {})
+        mcp = nodes[0] if nodes else None
+        servers = getattr(mcp, "servers", None) if mcp else None
+        return microsoft_365_tool_config(servers)
+    except Exception as exc:
+        logger.warning("Failed to read MCPAction Microsoft 365 tools: %s", exc)
+        return "-all", []
+
+
+async def _enabled_microsoft_oauth_services(
+    oauth_action: Optional[MCPOAuthAction],
+) -> Set[str]:
+    return await _enabled_oauth_services(
+        oauth_action, MICROSOFT_ACTION_SERVICES, label="Microsoft"
+    )
+
+
+def _microsoft_client() -> Dict[str, str]:
+    cid = microsoft_client_id()
+    if not cid:
+        raise ValueError("MICROSOFT_CLIENT_ID is not configured in the environment.")
+    return {
+        "client_id": cid,
+        "client_secret": microsoft_client_secret(),
+        "tenant_id": microsoft_tenant_id(),
+    }
+
+
+def _redirect_uri_for_server(action: MCPOAuthAction, server_name: str) -> Optional[str]:
+    for item in getattr(action, "oauth_setup", None) or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("server") or "") != server_name:
+            continue
+        uri = str(item.get("redirect_uri") or "").strip()
+        if uri:
+            return uri
+    raw_redirect = getattr(action, "redirect_uri", "") or ""
+    if isinstance(raw_redirect, str):
+        for line in raw_redirect.splitlines():
+            if line.strip().startswith(f"{server_name}:"):
+                return line.split(":", 1)[1].strip()
+    base_url = get_public_base_url()
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/api/mcp/{server_name}/auth/callback"
+
+
+async def _clear_mcp_session(server_name: str) -> None:
+    try:
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
+        from jvagent.action.mcp.mcp_action import MCPAction
+
+        manager = get_database_manager()
+        db = manager.get_database()
+        ctx = GraphContext(db)
+        nodes = await ctx.find_nodes(MCPAction, {})
+        mcp = nodes[0] if nodes else None
+        if mcp:
+            await mcp._clear_session(server_name)
+            logger.info("Cleared session for MCP server: %s", server_name)
+    except Exception as exc:
+        logger.warning("Failed to refresh MCP client session: %s", exc)
 
 
 def _get_secrets() -> Dict[str, Any]:
@@ -231,62 +382,101 @@ def _oauth_error_html(message: str, status_code: int = 400) -> HTMLResponse:
 
 
 @endpoint(
+    "/mcp/{server_name}/auth/status",
+    methods=["GET"],
+    auth=True,
+    tags=["MCP OAuth"],
+    summary="MCP OAuth connection status for a server",
+)
+async def get_mcp_auth_status(server_name: str) -> Dict[str, Any]:
+    """Return per-service connected emails for an MCP OAuth server."""
+    supported = server_name in (GOOGLE_WORKSPACE_SERVER, MICROSOFT_365_SERVER)
+    bindings: Dict[str, Dict[str, str]] = {}
+    if supported:
+        action = await _get_mcp_oauth_action()
+        if action:
+            bindings = await action.oauth_bindings_for_server(server_name)
+    return {
+        "oauth_supported": supported,
+        "server_name": server_name,
+        "bindings": bindings,
+    }
+
+
+@endpoint(
     "/mcp/{server_name}/auth",
     methods=["GET"],
     auth=False,
     tags=["MCP OAuth"],
-    summary="Get Google OAuth Authorization URL for MCP Server",
+    summary="Get OAuth Authorization URL for MCP Server",
 )
-async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLResponse:
-    """Generate the Google OAuth2 authorization page for a given stdio MCP server."""
+async def get_mcp_auth_url(
+    server_name: str, account: str = "integral", service: str = ""
+) -> HTMLResponse:
+    """Generate the OAuth2 authorization page for a stdio MCP server."""
     action = await _get_mcp_oauth_action()
     if not action or not action.enabled:
         raise ResourceNotFoundError(message="MCPOAuthAction not enabled or found.")
 
-    if server_name != "google_workspace":
+    if server_name not in (GOOGLE_WORKSPACE_SERVER, MICROSOFT_365_SERVER):
         return _oauth_error_html(
-            f"OAuth is not supported for server '{server_name}'. Only 'google_workspace' is supported.",
+            f"OAuth is not supported for server '{server_name}'. "
+            f"Supported: '{GOOGLE_WORKSPACE_SERVER}', '{MICROSOFT_365_SERVER}'.",
             400,
         )
 
+    redirect_uri = _redirect_uri_for_server(action, server_name)
+    if not redirect_uri:
+        return _oauth_error_html(
+            "JVAGENT_PUBLIC_BASE_URL is not set. A public base URL is required for OAuth callback.",
+            400,
+        )
+
+    if server_name == MICROSOFT_365_SERVER:
+        return await _microsoft_auth_page(
+            action, account=account, service=service, redirect_uri=redirect_uri
+        )
+    return await _google_auth_page(
+        action, account=account, service=service, redirect_uri=redirect_uri
+    )
+
+
+async def _google_auth_page(
+    action: MCPOAuthAction,
+    *,
+    account: str,
+    service: str,
+    redirect_uri: str,
+) -> HTMLResponse:
     try:
         creds = _get_secrets()
     except Exception as exc:
         logger.error("Failed to load client secrets: %s", exc)
         return _oauth_error_html(str(exc), 400)
 
-    redirect_uri = None
-    # action.redirect_uri is a newline-separated "server_name: url" list
-    raw_redirect = getattr(action, "redirect_uri", "") or ""
-    for line in raw_redirect.splitlines():
-        if line.strip().startswith(f"{server_name}:"):
-            redirect_uri = line.split(":", 1)[1].strip()
-            break
-    if not redirect_uri:
-        base_url = get_public_base_url()
-        if not base_url:
-            return _oauth_error_html(
-                "JVAGENT_PUBLIC_BASE_URL is not set. A public base URL is required for OAuth callback.",
-                400,
-            )
-        redirect_uri = f"{base_url.rstrip('/')}/api/mcp/{server_name}/auth/callback"
+    tools_selector, denied_tools = await _google_workspace_mcp_tool_config()
+    enabled_services = await _enabled_google_oauth_services(action)
+    try:
+        scopes = resolve_google_oauth_scopes(
+            tools_selector,
+            denied_tools,
+            service=service or None,
+            enabled_services=enabled_services,
+        )
+    except GoogleOAuthServiceNotEnabled as exc:
+        return _oauth_error_html(str(exc), 400)
 
-    # Create secure CSRF state token
-    # We pass the account name inside the state mechanism
-    # The state will be verified in the callback
     state_token = await create_oauth_state(
-        action_id=f"mcp_oauth:{account}",
+        action_id=mcp_oauth_state_action_id(account, service),
         provider="mcp_google",
-        code_verifier="",  # Not using PKCE verifier for basic web flow
+        code_verifier="",
         redirect_uri=redirect_uri,
     )
-
-    # Construct the Authorization URL
     params = {
         "client_id": creds["client_id"],
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": " ".join(GOOGLE_SCOPES),
+        "scope": " ".join(scopes),
         "access_type": "offline",
         "prompt": "consent",
         "state": state_token,
@@ -294,11 +484,83 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
     auth_url = (
         f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     )
+    return await _grant_html(
+        action,
+        title="Google Workspace Authorization",
+        heading="Grant Google Workspace Access",
+        access_copy=describe_google_oauth_access(scopes),
+        button_label="Authorize with Google",
+        auth_url=auth_url,
+    )
 
+
+async def _microsoft_auth_page(
+    action: MCPOAuthAction,
+    *,
+    account: str,
+    service: str,
+    redirect_uri: str,
+) -> HTMLResponse:
+    try:
+        creds = _microsoft_client()
+    except Exception as exc:
+        logger.error("Failed to load Microsoft client config: %s", exc)
+        return _oauth_error_html(str(exc), 400)
+
+    tools_selector, denied_tools = await _microsoft_365_mcp_tool_config()
+    enabled_services = await _enabled_microsoft_oauth_services(action)
+    try:
+        scopes = resolve_microsoft_oauth_scopes(
+            tools_selector,
+            denied_tools,
+            service=service or None,
+            enabled_services=enabled_services,
+        )
+    except MicrosoftOAuthServiceNotEnabled as exc:
+        return _oauth_error_html(str(exc), 400)
+
+    state_token = await create_oauth_state(
+        action_id=mcp_oauth_state_action_id(account, service),
+        provider="mcp_microsoft",
+        code_verifier="",
+        redirect_uri=redirect_uri,
+    )
+    params = {
+        "client_id": creds["client_id"],
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "response_mode": "query",
+        "scope": " ".join(scopes),
+        "prompt": "consent",
+        "state": state_token,
+    }
+    auth_url = (
+        microsoft_authorize_url(creds["tenant_id"])
+        + "?"
+        + urllib.parse.urlencode(params)
+    )
+    return await _grant_html(
+        action,
+        title="Microsoft 365 Authorization",
+        heading="Grant Microsoft 365 Access",
+        access_copy=describe_microsoft_oauth_access(scopes),
+        button_label="Authorize with Microsoft",
+        auth_url=auth_url,
+    )
+
+
+async def _grant_html(
+    action: MCPOAuthAction,
+    *,
+    title: str,
+    heading: str,
+    access_copy: str,
+    button_label: str,
+    auth_url: str,
+) -> HTMLResponse:
     agent = await action.get_agent()
     agent_name = html.escape(agent.alias or agent.name or "Agent") if agent else "Agent"
     agent_description = html.escape(agent.description or "") if agent else ""
-
     icon_svg = """
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -309,19 +571,19 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
         f'<p class="agent-desc">{agent_description}</p>' if agent_description else ""
     )
     body_inner = f"""
-        <h2>Grant Google Workspace Access</h2>
-        <p style="color: var(--text-muted)">Authorize this application to access spreadsheets, drive, calendar and Gmail.</p>
+        <h2>{html.escape(heading)}</h2>
+        <p style="color: var(--text-muted)">{html.escape(access_copy)}</p>
 
         <div class="agent-info">
             <span class="agent-name">{agent_name}</span>
             {desc_html}
         </div>
 
-        <a href="{auth_url}" class="auth-button">Authorize with Google</a>
+        <a href="{html.escape(auth_url)}" class="auth-button">{html.escape(button_label)}</a>
     """
     html_content = _oauth_page_html(
         theme="auth",
-        title="Google Workspace Authorization",
+        title=title,
         icon_svg=icon_svg,
         body_inner=body_inner,
     )
@@ -336,7 +598,7 @@ async def get_mcp_auth_url(server_name: str, account: str = "integral") -> HTMLR
     summary="Handle OAuth callback for stdio MCP server",
 )
 async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLResponse:
-    """OAuth callback endpoint where Google redirects the browser."""
+    """OAuth callback where Google or Microsoft redirects the browser."""
     if not code or not state:
         return _oauth_error_html("Missing code or state from OAuth provider.", 400)
 
@@ -344,22 +606,69 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
     if not action or not action.enabled:
         return _oauth_error_html("MCPOAuthAction not found or disabled.", 400)
 
-    # Consume the CSRF state token
-    record = await consume_oauth_state(state, provider="mcp_google")
+    if server_name == GOOGLE_WORKSPACE_SERVER:
+        provider = "mcp_google"
+    elif server_name == MICROSOFT_365_SERVER:
+        provider = "mcp_microsoft"
+    else:
+        return _oauth_error_html(
+            f"OAuth is not supported for server '{server_name}'.",
+            400,
+        )
+
+    record = await consume_oauth_state(state, provider=provider)
     if not record:
         logger.warning("MCP OAuth callback rejected: invalid or expired state")
         return _oauth_error_html("OAuth state is invalid or expired.", 400)
 
-    # Extract account name from action_id ("mcp_oauth:{account_name}")
-    action_parts = record.action_id.split(":")
-    account_name = action_parts[1] if len(action_parts) > 1 else "integral"
+    account_name, service = parse_mcp_oauth_state_action_id(record.action_id)
 
+    if server_name == MICROSOFT_365_SERVER:
+        result = await _exchange_microsoft_code(
+            action, code, record, account_name, service=service
+        )
+    else:
+        result = await _exchange_google_code(
+            action, code, record, account_name, service=service
+        )
+    if isinstance(result, HTMLResponse):
+        return result
+    store_account, connected_label = result
+
+    await _clear_mcp_session(server_name)
+
+    icon_svg = """
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
+            <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+    """
+    body_inner = f"""
+        <div class="action-badge">Connection Successful!</div>
+        <h2 style="color: var(--primary)">{html.escape(connected_label)} Connected</h2>
+        <p style="color: var(--text-muted); line-height: 1.5;">Account <strong>{html.escape(store_account)}</strong> has been successfully authorized and persisted in the agent's secure store.</p>
+        <p class="close-text" style="color: var(--text-muted)">You can close this window now.</p>
+    """
+    html_content = _oauth_page_html(
+        theme="success",
+        title="Authorization Successful",
+        icon_svg=icon_svg,
+        body_inner=body_inner,
+    )
+    return HTMLResponse(content=html_content)
+
+
+async def _exchange_google_code(
+    action: MCPOAuthAction,
+    code: str,
+    record: Any,
+    account_name: str,
+    service: str = "",
+) -> HTMLResponse | tuple[str, str]:
     try:
         creds = _get_secrets()
     except Exception as exc:
         return _oauth_error_html(str(exc), 400)
 
-    # Exchange authorization code for access and refresh tokens
     logger.info("Exchanging auth code for tokens for account: %s", account_name)
     token_url = "https://oauth2.googleapis.com/token"
     data = {
@@ -377,64 +686,165 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
             return _oauth_error_html(f"Token exchange failed: {response.text}", 400)
         tokens = response.json()
 
-    # Package token details matching what google-workspace-mcp expects in tokens/{account}.json
+    tools_selector, denied_tools = await _google_workspace_mcp_tool_config()
+    enabled_services = await _enabled_google_oauth_services(action)
+    fallback_scopes = resolve_google_oauth_scopes(
+        tools_selector,
+        denied_tools,
+        service=service or None,
+        enabled_services=enabled_services,
+    )
+    scopes = granted_scopes_from_token_response(tokens, fallback_scopes)
+
     payload = {
         "type": "authorized_user",
         "client_id": creds["client_id"],
         "client_secret": creds["client_secret"],
         "refresh_token": tokens.get("refresh_token"),
+        "token": tokens.get("access_token") or "",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": scopes,
+        "account_alias": account_name,
     }
+    if service:
+        payload["mcp_services"] = [service]
 
     if not payload["refresh_token"]:
-        # If refresh_token is missing, we can't do offline operations. Explain clearly to user.
         return _oauth_error_html(
             "Did not receive a refresh token. Please go to your Google Account settings, "
             "remove the application permission, and authenticate again to grant offline access.",
             400,
         )
 
-    # Store the credentials in the database node
-    await action.save_oauth_token(
-        server_name=server_name,
-        account_name=account_name,
-        token_data=payload,
-    )
+    access_token = tokens.get("access_token") or ""
+    email = ""
+    if access_token:
+        try:
+            async with httpx.AsyncClient() as client:
+                info_resp = await client.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=15.0,
+                )
+            if info_resp.status_code == 200:
+                email = str((info_resp.json() or {}).get("email") or "").strip()
+        except Exception as exc:
+            logger.warning("Failed to fetch Google userinfo email: %s", exc)
+    if email:
+        payload["email"] = email
+        store_account = email
+    else:
+        store_account = account_name
 
-    # Trigger reboot/reload of the MCP client if active
+    await action.save_oauth_token_for_service(
+        GOOGLE_WORKSPACE_SERVER,
+        store_account,
+        payload,
+        service=service or None,
+    )
+    label = (
+        GOOGLE_SERVICE_LABELS.get(service, "Google Workspace")
+        if service
+        else "Google Workspace"
+    )
+    return store_account, label
+
+
+async def _exchange_microsoft_code(
+    action: MCPOAuthAction,
+    code: str,
+    record: Any,
+    account_name: str,
+    service: str = "",
+) -> HTMLResponse | tuple[str, str]:
     try:
-        from jvspatial.core.context import GraphContext
-        from jvspatial.db import get_database_manager
-
-        from jvagent.action.mcp.mcp_action import MCPAction
-
-        manager = get_database_manager()
-        db = manager.get_database()
-        ctx = GraphContext(db)
-        nodes = await ctx.find_nodes(MCPAction, {})
-        mcp = nodes[0] if nodes else None
-        if mcp:
-            # Disconnect standard session so it spawns a fresh client with the new token next call
-            await mcp._clear_session(server_name)
-            logger.info("Cleared session for MCP server: %s", server_name)
+        creds = _microsoft_client()
     except Exception as exc:
-        logger.warning("Failed to refresh MCP client session: %s", exc)
+        return _oauth_error_html(str(exc), 400)
 
-    # Success Page HTML
-    icon_svg = """
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary)">
-            <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-    """
-    body_inner = f"""
-        <div class="action-badge">Connection Successful!</div>
-        <h2 style="color: var(--primary)">Google Workspace Connected</h2>
-        <p style="color: var(--text-muted); line-height: 1.5;">Account <strong>{html.escape(account_name)}</strong> has been successfully authorized and persisted in the agent's secure store.</p>
-        <p class="close-text" style="color: var(--text-muted)">You can close this window now.</p>
-    """
-    html_content = _oauth_page_html(
-        theme="success",
-        title="Authorization Successful",
-        icon_svg=icon_svg,
-        body_inner=body_inner,
+    logger.info(
+        "Exchanging Microsoft auth code for tokens for account: %s", account_name
     )
-    return HTMLResponse(content=html_content)
+    token_url = microsoft_token_url(creds["tenant_id"])
+    data = {
+        "code": code,
+        "client_id": creds["client_id"],
+        "redirect_uri": record.redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    if creds["client_secret"]:
+        data["client_secret"] = creds["client_secret"]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(token_url, data=data)
+        if response.status_code != 200:
+            logger.error("Microsoft token exchange failed: %s", response.text)
+            return _oauth_error_html(f"Token exchange failed: {response.text}", 400)
+        tokens = response.json()
+
+    tools_selector, denied_tools = await _microsoft_365_mcp_tool_config()
+    enabled_services = await _enabled_microsoft_oauth_services(action)
+    fallback_scopes = resolve_microsoft_oauth_scopes(
+        tools_selector,
+        denied_tools,
+        service=service or None,
+        enabled_services=enabled_services,
+    )
+    scopes = granted_scopes_from_token_response(tokens, fallback_scopes)
+
+    expires_in = int(tokens.get("expires_in") or 3600)
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
+    payload: Dict[str, Any] = {
+        "type": "authorized_user",
+        "client_id": creds["client_id"],
+        "refresh_token": tokens.get("refresh_token"),
+        "token": tokens.get("access_token") or "",
+        "token_uri": token_url,
+        "scopes": scopes,
+        "account_alias": account_name,
+        "expiry": expiry.isoformat(),
+    }
+    if service:
+        payload["mcp_services"] = [service]
+
+    if not payload["refresh_token"]:
+        return _oauth_error_html(
+            "Did not receive a refresh token. Ensure the Entra app requests "
+            "offline_access, then remove this app in your Microsoft account "
+            "permissions and authorize again.",
+            400,
+        )
+
+    access_token = tokens.get("access_token") or ""
+    email = ""
+    if access_token:
+        try:
+            async with httpx.AsyncClient() as client:
+                info_resp = await client.get(
+                    "https://graph.microsoft.com/v1.0/me",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=15.0,
+                )
+            if info_resp.status_code == 200:
+                me = info_resp.json() or {}
+                email = str(me.get("mail") or me.get("userPrincipalName") or "").strip()
+        except Exception as exc:
+            logger.warning("Failed to fetch Microsoft Graph /me email: %s", exc)
+    if email:
+        payload["email"] = email
+        store_account = email
+    else:
+        store_account = account_name
+
+    await action.save_oauth_token_for_service(
+        MICROSOFT_365_SERVER,
+        store_account,
+        payload,
+        service=service or None,
+    )
+    label = (
+        MICROSOFT_SERVICE_LABELS.get(service, "Microsoft 365")
+        if service
+        else "Microsoft 365"
+    )
+    return store_account, label

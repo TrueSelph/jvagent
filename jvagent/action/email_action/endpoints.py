@@ -260,9 +260,10 @@ async def email_get_webhook_url(
     summary="EmailAction health (provider API check for SendGrid)",
     description=(
         "Runs **EmailAction.healthcheck()**. For **sendgrid**, validates the API key "
-        "via **GET /user/profile**. For **gmail**, checks **GoogleGmailAction** and "
-        "**users.getProfile**. For **outlook**, checks **MicrosoftOutlookMailAction** and "
-        "**GET /me**. Admin only."
+        "via **GET /user/profile**. For **gmail**, checks **GoogleGmailAction** (MCP OAuth "
+        "at `/api/mcp/google_workspace/auth?service=gmail`) and **users.getProfile**. "
+        "For **outlook**, checks **MicrosoftOutlookMailAction** (MCP OAuth at "
+        "`/api/mcp/microsoft_365/auth?service=outlook`) and **GET /me**. Admin only."
     ),
 )
 async def email_health(action_id: str) -> Dict[str, Any]:
@@ -294,9 +295,13 @@ async def email_health(action_id: str) -> Dict[str, Any]:
         "Sends through **EmailAction**’s configured provider using one canonical JSON "
         "shape. **Admin role only** (same gate as other email admin endpoints and "
         "WhatsApp send).\n\n"
-        "**Gmail:** **GOOGLE_CLIENT_SECRETS_JSON** and **GoogleGmailAction** OAuth; "
-        "optional **EMAIL_DEFAULT_SENDER** (else mailbox profile address). **Outlook:** "
-        "**MICROSOFT_CLIENT_ID** and **MicrosoftOutlookMailAction** OAuth; optional "
+        "**Gmail:** **GOOGLE_CLIENT_SECRETS_JSON**, **jvagent/mcp_oauth**, **jvagent/mcp** "
+        "(`google_workspace`), and **GoogleGmailAction**; authorize at "
+        "`/api/mcp/google_workspace/auth?service=gmail`; optional **EMAIL_DEFAULT_SENDER** "
+        "(else mailbox profile address). **Outlook:** **MICROSOFT_CLIENT_ID**, "
+        "**jvagent/mcp_oauth**, **jvagent/mcp** (`microsoft_365`), and "
+        "**MicrosoftOutlookMailAction**; authorize at "
+        "`/api/mcp/microsoft_365/auth?service=outlook`; optional "
         "**EMAIL_DEFAULT_SENDER** (else mailbox profile). **SendGrid:** "
         "**SENDGRID_API_KEY** and **EMAIL_DEFAULT_SENDER**.\n\n"
         "**Body:** **to** (email), **subject** (optional), **html_content** / "

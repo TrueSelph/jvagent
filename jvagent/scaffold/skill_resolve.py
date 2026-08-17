@@ -501,7 +501,13 @@ def _resolve_builtin_root() -> Optional[Path]:
 
 
 def resolve_builtin_skills() -> Dict[str, Dict[str, Any]]:
-    """Resolve built-in reusable skills shipped with jvagent."""
+    """Resolve built-in reusable skills shipped with jvagent.
+
+    Immediate children of ``jvagent/skills/`` that contain ``SKILL.md`` are
+    skills. A child directory without ``SKILL.md`` is a namespace folder
+    (e.g. ``google/``); its subdirectories that contain ``SKILL.md`` are
+    also skills, keyed by frontmatter ``name``.
+    """
     root = _resolve_builtin_root()
     if root is None or not root.is_dir():
         return {}
@@ -511,10 +517,15 @@ def resolve_builtin_skills() -> Dict[str, Dict[str, Any]]:
         if not skill_dir.is_dir() or skill_dir.name.startswith("_"):
             continue
         parsed = parse_skill_bundle(skill_dir, source="builtin")
-        if not parsed:
+        if parsed:
+            discovered[parsed["name"]] = parsed
             continue
-        key = parsed["name"]
-        discovered[key] = parsed
+        for nested in sorted(skill_dir.iterdir()):
+            if not nested.is_dir() or nested.name.startswith("_"):
+                continue
+            nested_parsed = parse_skill_bundle(nested, source="builtin")
+            if nested_parsed:
+                discovered[nested_parsed["name"]] = nested_parsed
     return discovered
 
 

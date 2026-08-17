@@ -6,6 +6,7 @@ import {
   SlidersHorizontal,
   Database,
   Network,
+  Plug,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -18,6 +19,7 @@ export interface ComposerToolsMenuProps {
   onActionConfig: () => void;
   onLongMemory: () => void;
   onAppGraph: () => void;
+  onMcps: () => void;
 }
 
 function menuModifierPrefix(): string {
@@ -76,6 +78,7 @@ export function ComposerToolsMenu({
   onActionConfig,
   onLongMemory,
   onAppGraph,
+  onMcps,
 }: ComposerToolsMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -113,8 +116,8 @@ export function ComposerToolsMenu({
         aria-label="Composer tools"
         title={
           hasDocuments
-            ? `Composer tools — ${shiftModifierShortcut("d")} Documents, ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph`
-            : `Composer tools — ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph`
+            ? `Composer tools — ${shiftModifierShortcut("d")} Documents, ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph, ${shiftModifierShortcut("m")} MCPs`
+            : `Composer tools — ${shiftModifierShortcut("i")} Interaction debug, ${shiftModifierShortcut("a")} Action config, ${shiftModifierShortcut("l")} Long memory, ${shiftModifierShortcut("g")} App graph, ${shiftModifierShortcut("m")} MCPs`
         }
         onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -166,6 +169,12 @@ export function ComposerToolsMenu({
             label="App graph"
             shortcut={shiftModifierShortcut("g")}
             onClick={wrapAction(onAppGraph)}
+          />
+          <MenuButton
+            icon={Plug}
+            label="MCPs"
+            shortcut={shiftModifierShortcut("m")}
+            onClick={wrapAction(onMcps)}
           />
         </div>
       ) : null}

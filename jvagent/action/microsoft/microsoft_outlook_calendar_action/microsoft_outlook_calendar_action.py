@@ -10,13 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 class MicrosoftOutlookCalendarAction(MicrosoftAction):
-    """Outlook calendar via Microsoft Graph."""
+    """Outlook calendar via Microsoft Graph. Login is MCP OAuth (`/api/mcp/microsoft_365/auth?service=calendar`)."""
 
     SCOPES: ClassVar[List[str]] = [
         "offline_access",
         "User.Read",
         "Calendars.ReadWrite",
     ]
+    _MCP_SERVICE: ClassVar[str] = "calendar"
 
     def _calendar_path(self, calendar_id: str) -> str:
         if not calendar_id or calendar_id == "primary":

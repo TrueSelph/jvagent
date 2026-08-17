@@ -107,6 +107,7 @@ class _ServerEntry:
     base_env: Optional[Dict[str, str]] = None
     base_url: str = ""
     bootstrap: Optional[Dict[str, Any]] = None
+    show_tools: bool = True
 
 
 def _format_tools_description(tools: List[Tuple[str, Any]]) -> str:
@@ -235,6 +236,8 @@ class MCPAction(Action):
             "name, enabled, transport, command, args, env, url, "
             "mcp_connect_timeout, mcp_call_timeout, tools, denied_tools, "
             "sandbox_mode, sandbox_user_scoped, sandbox_root, "
+            "show_tools (default true; false keeps the server hosted but omits "
+            "its tools from get_tools / the orchestrator), "
             "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers)."
         ),
     )
@@ -342,6 +345,7 @@ class MCPAction(Action):
                 if isinstance(denied_tools_raw, list)
                 else []
             )
+            show_tools = bool(raw.get("show_tools", True))
 
             sroot = (raw.get("sandbox_root") or "").strip() or action_sandbox
             files_root = resolve_sandbox_root(sroot or "")
@@ -429,6 +433,7 @@ class MCPAction(Action):
                 mcp_npx_cmd=mcp_npx_cmd,
                 base_env=env_d,
                 base_url=url,
+                show_tools=show_tools,
             )
 
     async def _provision_sandboxes(self) -> None:
@@ -465,6 +470,7 @@ class MCPAction(Action):
         await super().on_register()
         await self._build_server_entries()
         await self._provision_sandboxes()
+        await self._hydrate_stdio_oauth()
         if not (getattr(self, "label", None) or "").strip():
             server_names = self.get_server_names()
             if len(server_names) == 1:
@@ -477,6 +483,7 @@ class MCPAction(Action):
         await super().on_startup()
         await self._build_server_entries()
         await self._provision_sandboxes()
+        await self._hydrate_stdio_oauth()
 
     async def on_disable(self) -> None:
         """Disconnect MCP clients when action is disabled."""
@@ -534,6 +541,32 @@ class MCPAction(Action):
             except Exception as e:
                 logger.debug("MCP disconnect during clear (%s): %s", server_name, e)
 
+    async def _hydrate_stdio_oauth(self, server_name: Optional[str] = None) -> None:
+        """Write MCP OAuth tokens onto disk / stdio env before spawn."""
+        names = [server_name] if server_name else self.get_server_names()
+        if "google_workspace" in names:
+            try:
+                from jvagent.action.mcp_oauth.hydrate import (
+                    hydrate_google_workspace_from_graph,
+                )
+
+                await hydrate_google_workspace_from_graph()
+            except Exception as exc:
+                logger.debug("MCP OAuth Google hydrate skipped: %s", exc)
+        if "microsoft_365" in names:
+            try:
+                from jvagent.action.mcp_oauth.microsoft_hydrate import (
+                    apply_microsoft_365_stdio_env,
+                )
+
+                entry = self._servers_by_name.get("microsoft_365")
+                if entry is not None and entry.client is not None:
+                    new_env = await apply_microsoft_365_stdio_env(entry.client._env)
+                    entry.client._env = new_env
+                    entry.base_env = new_env
+            except Exception as exc:
+                logger.debug("MCP OAuth Microsoft hydrate skipped: %s", exc)
+
     async def _list_tools_cached(self, server_name: str) -> List[Any]:
         entry = self._get_server_entry(server_name)
         if not entry.enabled:
@@ -546,6 +579,7 @@ class MCPAction(Action):
             if entry.tool_cache is not None:
                 return self._filter_tools(entry, entry.tool_cache)
             try:
+                await self._hydrate_stdio_oauth(server_name)
                 tools = await entry.client.list_tools()
                 entry.tool_cache = tools
                 return self._filter_tools(entry, tools)
@@ -807,6 +841,9 @@ class MCPAction(Action):
         tools: List[Tool] = []
 
         for server_name in action.get_server_names():
+            entry = action._servers_by_name.get(server_name)
+            if entry is not None and not entry.show_tools:
+                continue
             try:
                 mcp_tools = await action.get_tools_cached(server_name)
             except Exception:

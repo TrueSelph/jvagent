@@ -1,4 +1,4 @@
-"""Email action: Gmail, Outlook (OAuth + inbound webhook), or SendGrid (API key + webhook)."""
+"""Email action: Gmail, Outlook (MCP OAuth + inbound webhook), or SendGrid (API key + webhook)."""
 
 from . import endpoints  # noqa: F401
 from .email_action import EmailAction

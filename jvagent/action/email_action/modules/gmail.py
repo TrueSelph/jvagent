@@ -1,4 +1,4 @@
-"""Gmail API email provider (OAuth via GoogleGmailAction)."""
+"""Gmail API email provider (MCP OAuth via GoogleGmailAction)."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def _build_rfc822_root(msg: CanonicalSendMessage) -> Any:
 
 
 class GmailEmailProvider:
-    """Send via Gmail API using a linked ``GoogleGmailAction`` (user OAuth)."""
+    """Send via Gmail API using a linked ``GoogleGmailAction`` (MCP OAuth)."""
 
     def __init__(self, *, gmail_action: "GoogleGmailAction") -> None:
         self._gmail = gmail_action
