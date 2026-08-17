@@ -1,6 +1,6 @@
 # Google Drive Action
 
-Manage Google Drive files and folders using OAuth 2.0 authentication. Supports uploading, listing, sharing, and deleting files with recursive folder traversal.
+Manage Google Drive files and folders. **Login is MCP OAuth** (`MCPOAuthToken`), not `GoogleToken` / `/api/google/{action_id}`.
 
 ## Features
 
@@ -9,89 +9,84 @@ Manage Google Drive files and folders using OAuth 2.0 authentication. Supports u
 - **Share files** via link or direct user access
 - **Delete files** from Google Drive
 - **Compare file changes** between snapshots
-- **Automatic token refresh** with secure caching
+- **Automatic token refresh** via MCP OAuth
 
 ## Requirements
 
 - **Google Cloud project** with Drive API enabled
-- **OAuth 2.0 Client ID** configured (Web application)
-- **Client Secrets JSON** downloaded from Google Cloud Console
+- **OAuth 2.0 Client ID** (Web application) with redirect URI `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth/callback`
+- **`GOOGLE_CLIENT_SECRETS_JSON`** in `.env`
+- Agent also has `jvagent/mcp_oauth` and `jvagent/mcp` (`google_workspace`)
 
-## Configuration
+## Create credentials
 
-| Attribute             | Description                                                         | Required |
-| --------------------- | ------------------------------------------------------------------- | -------- |
-| `client_secrets_json` | OAuth2 Client Secrets JSON (string or object)                       | Yes      |
-| `redirect_uri`        | Redirect URI for OAuth2 flow (default: `urn:ietf:wg:oauth:2.0:oob`) | No       |
-| `default_parent_id`   | Default parent folder ID for uploads (default: `root`)              | No       |
+This is an **OAuth client JSON** (client id + secret). It is **not** a service-account key from [IAM & Admin → Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts).
+
+1. Open [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) (APIs & Services → Credentials). Do **not** use IAM & Admin → Service Accounts.
+2. Select or create the Google Cloud project.
+3. Enable **Google Drive API**: [APIs & Services → Library](https://console.cloud.google.com/apis/library).
+4. Configure the **OAuth consent screen** (APIs & Services → OAuth consent screen). Choose Internal or External as appropriate. If the app is in Testing, add the Google accounts that will sign in as test users.
+5. Click **Create credentials** → **OAuth client ID**.
+6. Application type: **Web application**. Name it (for example `jvagent-mcp`).
+7. Under **Authorized redirect URIs**, add exactly:
+
+   `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth/callback`
+
+   The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
+8. Click **Create**. Download the JSON (client id + secret).
+9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
+10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=drive`.
+
+## Set `.env`
+
+```bash
+JVAGENT_PUBLIC_BASE_URL=https://your-public-host.example
+# Path to the downloaded OAuth client JSON:
+GOOGLE_CLIENT_SECRETS_JSON=/absolute/path/to/client_secret.json
+# Or paste the file contents as a single-line JSON string:
+# GOOGLE_CLIENT_SECRETS_JSON={"web":{"client_id":"...","client_secret":"...","redirect_uris":["https://your-public-host.example/api/mcp/google_workspace/auth/callback"]}}
+# Optional default folder for uploads:
+# GOOGLE_DRIVE_PARENT_FOLDER_ID=root
+```
+
+`redirect_uris` in the downloaded JSON / Cloud Console must be the **MCP** callback (`/api/mcp/google_workspace/auth/callback`), not `/api/google/callback/`.
 
 ## Agent Configuration (agent.yaml)
 
 ```yaml
+- action: jvagent/mcp_oauth
+  context:
+    enabled: true
+
+- action: jvagent/mcp
+  context:
+    enabled: true
+    servers:
+      - name: google_workspace
+        enabled: true
+        transport: stdio
+        command: npx
+        args: ["-y", "@aaronsb/google-workspace-mcp"]
+        tools: ["manage_drive"]
+        show_tools: false
+        sandbox_mode: false
+
 - action: jvagent/google_drive_action
   context:
-    client_secrets_json: ${GOOGLE_CLIENT_SECRETS_JSON}
-    default_parent_id: ${GOOGLE_DRIVE_PARENT_FOLDER_ID}
+    enabled: true
 ```
 
-Set environment variables in `.env`:
+Set `GOOGLE_CLIENT_SECRETS_JSON` in `.env`. Authorize at **`/api/mcp/google_workspace/auth?service=drive`**. Optional `GOOGLE_DRIVE_PARENT_FOLDER_ID` for uploads.
 
-```env
-# Google OAuth 2.0 Client Secrets (Web application)
-GOOGLE_CLIENT_SECRETS_JSON={"web":{"client_id":"YOUR_CLIENT_ID.apps.googleusercontent.com","project_id":"YOUR_PROJECT","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"YOUR_CLIENT_SECRET","redirect_uris":["https://YOUR_DOMAIN/api/google/callback/"]}}
+## Authorization
 
-# Default parent folder ID for uploads
-GOOGLE_DRIVE_PARENT_FOLDER_ID=root
-
-# For local testing only (not recommended for production)
-OAUTHLIB_INSECURE_TRANSPORT=1
-OAUTHLIB_RELAX_TOKEN_SCOPE=1
-```
-
-## Setup Instructions
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create or select a project
-3. Enable the **Google Drive API**:
-   - Navigate to **APIs & Services > Library**
-   - Search for "Google Drive API"
-   - Click **Enable**
-4. Create OAuth 2.0 credentials:
-   - Go to **APIs & Services > Credentials**
-   - Click **Create Credentials > OAuth client ID**
-   - Choose **Web application**
-   - Add authorized redirect URIs (e.g., `https://YOUR_DOMAIN/api/google/callback/`)
-   - Click **Create**
-5. Download the JSON credentials
-6. Minify the JSON and set as `GOOGLE_CLIENT_SECRETS_JSON` in `.env`
-7. Add test user here `https://console.cloud.google.com/auth/audience?project=jvagent`
+1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=drive`.
+2. Complete Google consent. The callback stores `MCPOAuthToken`.
+3. Drive tools use that token. Re-auth if refresh fails.
 
 ## Endpoints
 
-| Method | Path                                        | Description                                |
-| ------ | ------------------------------------------- | ------------------------------------------ |
-| GET    | `/agents/{agent_id}/google_drive/auth_url`  | Get the OAuth2 authorization URL           |
-| POST   | `/agents/{agent_id}/google_drive/authorize` | Exchange authorization code for tokens     |
-| POST   | `/agents/{agent_id}/google_drive/upload`    | Upload file (from URL or base64 content)   |
-| GET    | `/agents/{agent_id}/google_drive/list`      | List files in a folder                     |
-| POST   | `/agents/{agent_id}/google_drive/share`     | Share file (get link or grant user access) |
-| DELETE | `/agents/{agent_id}/google_drive/delete`    | Delete a file                              |
-
-## Authorization Flow
-
-1. Call `GET /agents/{agent_id}/google_drive/auth_url` to receive the authorization URL
-2. Direct the user to the URL to grant permissions
-3. The user will receive an authorization code
-4. Call `POST /agents/{agent_id}/google_drive/authorize` with the code:
-
-```json
-POST /agents/{agent_id}/google_drive/authorize
-{
-  "code": "4/0A..."
-}
-```
-
-Tokens are automatically cached securely using action file storage (`token.json`). Expired tokens are refreshed automatically if a refresh token was granted.
+Admin REST handlers under `/actions/{action_id}/...` (upload, list, share, delete) authenticate with the MCP OAuth token.
 
 ## API Usage
 

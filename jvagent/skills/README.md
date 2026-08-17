@@ -23,7 +23,7 @@ manages exactly **two skill specs** — no third variation:
 | You are… | Put it here | Listed as orchestrator skill? |
 |----------|-------------|-------------------------------|
 | **Authoring a skill for an agent** (JV SOP, interview, Claude bundle) | `agents/<ns>/<agent>/skills/<name>/` | Yes |
-| **Shipping a reusable library skill in jvagent** | `jvagent/skills/<name>/` | Yes (`source: builtin`) |
+| **Shipping a reusable library skill in jvagent** | `jvagent/skills/<name>/` or a namespace folder `jvagent/skills/<group>/<name>/` (e.g. `google/google_sheets`) | Yes (`source: builtin`; keyed by frontmatter `name`) |
 | **Furnishing a base action procedure** (inherited, not activated alone) | `<action_dir>/SKILL.md` | **No** — `extends: action:…` source only |
 | **Bundling a skill with a custom/core action package** | `<action_dir>/skills/<name>/` or `agents/.../actions/<ns>/<action>/skills/<name>/` | Yes — only when the skill ships **with** that action distribution |
 

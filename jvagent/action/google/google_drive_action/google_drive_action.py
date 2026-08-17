@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleDriveAction(GoogleAction):
-    """Action for Google Drive operations using OAuth2 (user-delegated credentials)."""
+    """Drive operations. Login is MCP OAuth (`/api/mcp/google_workspace/auth?service=drive`)."""
 
     # default_parent_id: str = attribute(
     #     default="root", description="Default parent folder ID for uploads"
@@ -22,6 +22,7 @@ class GoogleDriveAction(GoogleAction):
     API_SERVICE_NAME: ClassVar[str] = "drive"
     API_VERSION: ClassVar[str] = "v3"
     SCOPES: ClassVar[List[str]] = ["https://www.googleapis.com/auth/drive"]
+    _MCP_SERVICE: ClassVar[str] = "drive"
 
     @staticmethod
     def _env_default_parent_id() -> str:

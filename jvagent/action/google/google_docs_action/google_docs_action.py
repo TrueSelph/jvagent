@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleDocsAction(GoogleAction):
-    """Action for Google Docs operations using OAuth2 (user-delegated credentials)."""
+    """Docs operations. Login is MCP OAuth (`/api/mcp/google_workspace/auth?service=docs`)."""
 
     output_format: str = attribute(
         default="google_doc",
@@ -28,6 +28,7 @@ class GoogleDocsAction(GoogleAction):
         "https://www.googleapis.com/auth/documents",
         "https://www.googleapis.com/auth/drive.file",
     ]
+    _MCP_SERVICE: ClassVar[str] = "docs"
 
     async def _get_drive_service(self):
         creds = await self._load_credentials()

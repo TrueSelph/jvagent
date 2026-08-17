@@ -20,13 +20,14 @@ def _default_parent_path() -> str:
 
 
 class MicrosoftOneDriveAction(MicrosoftAction):
-    """OneDrive / SharePoint personal drive via Microsoft Graph."""
+    """OneDrive / SharePoint personal drive via Microsoft Graph. Login is MCP OAuth (`/api/mcp/microsoft_365/auth?service=onedrive`)."""
 
     SCOPES: ClassVar[List[str]] = [
         "offline_access",
         "User.Read",
         "Files.ReadWrite.All",
     ]
+    _MCP_SERVICE: ClassVar[str] = "onedrive"
 
     def _parent_segment(self, parent_folder_id: Optional[str]) -> str:
         pid = parent_folder_id or _default_parent_path()

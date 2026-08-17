@@ -13,7 +13,7 @@ from ..google_action import GoogleAction
 
 
 class GoogleGmailAction(GoogleAction):
-    """Action for Google Gmail operations using OAuth2 (user-delegated credentials)."""
+    """Gmail operations. Login is MCP OAuth (`/api/mcp/google_workspace/auth?service=gmail`)."""
 
     API_SERVICE_NAME: ClassVar[str] = "gmail"
     API_VERSION: ClassVar[str] = "v1"
@@ -22,6 +22,7 @@ class GoogleGmailAction(GoogleAction):
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.modify",
     ]
+    _MCP_SERVICE: ClassVar[str] = "gmail"
 
     async def send_email(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Send mail using the same canonical payload as EmailAction / HTTP ``/send``.

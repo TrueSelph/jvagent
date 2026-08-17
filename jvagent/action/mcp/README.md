@@ -37,6 +37,7 @@ Per-server config (`servers[]`):
 | `mcp_call_timeout` | Tool call timeout (seconds) | `30.0` |
 | `tools` | Tool selector: `"-all"` or list of names/globs | `"-all"` |
 | `denied_tools` | Subtractive tool filter (supports globs) | `[]` |
+| `show_tools` | When `false`, the server is still hosted (stdio spawn, `fulfill`) but its tools are omitted from `get_tools()` / the orchestrator | `true` |
 | `sandbox_mode` | Confine stdio filesystem MCP to ``<files_root>/<agentId>/<userId>/`` | **`true`** (per-server can override) |
 | `sandbox_user_scoped` | Separate MCP subprocess per ``user_id`` when not the default user (see env) | **`true`** (per-server can override) |
 | `sandbox_root` | Optional override for files root (else ``JVSPATIAL_FILES_ROOT_PATH``) | unset |

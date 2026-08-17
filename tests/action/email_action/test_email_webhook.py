@@ -237,6 +237,16 @@ def test_email_action_gmail_config_issues(monkeypatch):
     a.provider = "gmail"
     issues = a._config_issues()
     assert any("GOOGLE_CLIENT_SECRETS_JSON" in i for i in issues)
+    assert any("/api/mcp/google_workspace/auth?service=gmail" in i for i in issues)
+
+
+def test_email_action_outlook_config_issues(monkeypatch):
+    monkeypatch.delenv("MICROSOFT_CLIENT_ID", raising=False)
+    a = EmailAction()
+    a.provider = "outlook"
+    issues = a._config_issues()
+    assert any("MICROSOFT_CLIENT_ID" in i for i in issues)
+    assert any("/api/mcp/microsoft_365/auth?service=outlook" in i for i in issues)
 
 
 def test_email_action_sendgrid_config_issues(monkeypatch):

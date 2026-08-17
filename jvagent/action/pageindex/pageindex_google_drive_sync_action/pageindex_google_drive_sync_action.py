@@ -421,16 +421,10 @@ async def _prune_added_queue_skip_existing(
 class PageIndexGoogleDriveSyncAction(GoogleAction):
     """Sync Google Drive folders into PageIndex using OAuth2 (inherits GoogleAction)."""
 
-    # AUDIT-actions XC-4: Google Drive push-notification webhook. Combined
-    # with GoogleAction.additional_endpoint_path_templates (the per-action
-    # auth URL) via list concatenation — both must be cleaned up on
-    # deregister.
-    additional_endpoint_path_templates: ClassVar[List[str]] = (
-        GoogleAction.additional_endpoint_path_templates
-        + [
-            "/page_index_google_drive_sync/interact/webhook/{agent_id}",
-        ]
-    )
+    # AUDIT-actions XC-4: Google Drive push-notification webhook.
+    additional_endpoint_path_templates: ClassVar[List[str]] = [
+        "/page_index_google_drive_sync/interact/webhook/{agent_id}",
+    ]
 
     google_drive_folders: List[dict] = attribute(
         default_factory=list,

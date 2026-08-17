@@ -84,7 +84,7 @@ def _parse_cc_recipients(data: Dict[str, Any]) -> List[EmailRecipient]:
 async def resolve_outbound_sender_for_standalone_mailbox(
     mailbox_action: Any,
 ) -> Tuple[str, Optional[str]]:
-    """Env default sender, else OAuth mailbox profile ``emailAddress`` (Gmail or Outlook)."""
+    """Env default sender, else MCP OAuth mailbox profile ``emailAddress`` (Gmail or Outlook)."""
     env_e = EmailAction._env_default_sender()
     name = EmailAction._env_default_sender_name() or None
     if env_e:
@@ -139,7 +139,7 @@ async def build_canonical_send_message(
     if not sender_email:
         raise ValidationError(
             message=(
-                "sender_email, EMAIL_DEFAULT_SENDER, or OAuth mailbox profile address is required "
+                "sender_email, EMAIL_DEFAULT_SENDER, or MCP OAuth mailbox profile address is required "
                 "(Gmail or Outlook)"
             ),
             details={"action_id": action_id},

@@ -35,7 +35,7 @@ def resolve_workbook_item_id(url_or_id: Optional[str]) -> str:
 
 
 class MicrosoftExcelAction(MicrosoftAction):
-    """Excel workbooks on OneDrive via Microsoft Graph workbook APIs."""
+    """Excel workbooks on OneDrive via Microsoft Graph. Login is MCP OAuth (`/api/mcp/microsoft_365/auth?service=excel`)."""
 
     worksheet_title: str = attribute(
         default="Sheet1",
@@ -51,6 +51,7 @@ class MicrosoftExcelAction(MicrosoftAction):
         "User.Read",
         "Files.ReadWrite.All",
     ]
+    _MCP_SERVICE: ClassVar[str] = "excel"
 
     def _effective_worksheet_title(self, worksheet_title: Optional[str]) -> str:
         if worksheet_title is not None and str(worksheet_title).strip():
