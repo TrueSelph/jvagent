@@ -5,7 +5,7 @@ import re
 
 try:
     from .utils import *
-except ImportError:
+except:
     from utils import *
 
 
@@ -40,6 +40,7 @@ async def generate_summaries_for_structure_md(
 
 def extract_nodes_from_markdown(markdown_content):
     header_pattern = r"^(#{1,6})\s+(.+)$"
+    bold_heading_pattern = r"^\*\*(.+?)\*\*\s*$"
     code_block_pattern = r"^```"
     node_list = []
 
@@ -63,7 +64,19 @@ def extract_nodes_from_markdown(markdown_content):
             match = re.match(header_pattern, stripped_line)
             if match:
                 title = match.group(2).strip()
-                node_list.append({"node_title": title, "line_num": line_num})
+                level = len(match.group(1))
+                node_list.append(
+                    {"node_title": title, "line_num": line_num, "level": level}
+                )
+                continue
+
+            bold_match = re.match(bold_heading_pattern, stripped_line)
+            if bold_match:
+                title = bold_match.group(1).strip()
+                if title:
+                    node_list.append(
+                        {"node_title": title, "line_num": line_num, "level": 1}
+                    )
 
     return node_list, lines
 
@@ -71,19 +84,10 @@ def extract_nodes_from_markdown(markdown_content):
 def extract_node_text_content(node_list, markdown_lines):
     all_nodes = []
     for node in node_list:
-        line_content = markdown_lines[node["line_num"] - 1]
-        header_match = re.match(r"^(#{1,6})", line_content)
-
-        if header_match is None:
-            print(
-                f"Warning: Line {node['line_num']} does not contain a valid header: '{line_content}'"
-            )
-            continue
-
         processed_node = {
             "title": node["node_title"],
             "line_num": node["line_num"],
-            "level": len(header_match.group(1)),
+            "level": node["level"],
         }
         all_nodes.append(processed_node)
 
@@ -261,17 +265,13 @@ async def md_to_tree(
     if_add_node_summary="no",
     summary_token_threshold=None,
     model=None,
-    generate_description: bool = False,
+    if_add_doc_description="no",
     if_add_node_text="no",
     if_add_node_id="yes",
 ):
-    try:
-        with open(md_path, "r", encoding="utf-8") as f:
-            markdown_content = f.read()
-    except UnicodeDecodeError:
-        with open(md_path, "rb") as f:
-            raw = f.read()
-        markdown_content = raw.decode("utf-8", errors="replace")
+    with open(md_path, "r", encoding="utf-8") as f:
+        markdown_content = f.read()
+    line_count = markdown_content.count("\n") + 1
 
     print(f"Extracting nodes from markdown...")
     node_list, markdown_lines = extract_nodes_from_markdown(markdown_content)
@@ -303,10 +303,10 @@ async def md_to_tree(
             order=[
                 "title",
                 "node_id",
+                "line_num",
                 "summary",
                 "prefix_summary",
                 "text",
-                "line_num",
                 "nodes",
             ],
         )
@@ -323,14 +323,14 @@ async def md_to_tree(
                 order=[
                     "title",
                     "node_id",
+                    "line_num",
                     "summary",
                     "prefix_summary",
-                    "line_num",
                     "nodes",
                 ],
             )
 
-        if generate_description:
+        if if_add_doc_description == "yes":
             print(f"Generating document description...")
             # Create a clean structure without unnecessary fields for description generation
             clean_structure = create_clean_structure_for_description(tree_structure)
@@ -338,6 +338,7 @@ async def md_to_tree(
             return {
                 "doc_name": os.path.splitext(os.path.basename(md_path))[0],
                 "doc_description": doc_description,
+                "line_count": line_count,
                 "structure": tree_structure,
             }
     else:
@@ -348,10 +349,10 @@ async def md_to_tree(
                 order=[
                     "title",
                     "node_id",
+                    "line_num",
                     "summary",
                     "prefix_summary",
                     "text",
-                    "line_num",
                     "nodes",
                 ],
             )
@@ -361,24 +362,28 @@ async def md_to_tree(
                 order=[
                     "title",
                     "node_id",
+                    "line_num",
                     "summary",
                     "prefix_summary",
-                    "line_num",
                     "nodes",
                 ],
             )
 
     return {
         "doc_name": os.path.splitext(os.path.basename(md_path))[0],
+        "line_count": line_count,
         "structure": tree_structure,
     }
 
 
 if __name__ == "__main__":
+    import json
+    import os
+
     # MD_NAME = 'Detect-Order-Construct'
     MD_NAME = "cognitive-load"
     MD_PATH = os.path.join(
-        os.path.dirname(__file__), "..", "tests/markdowns/", f"{MD_NAME}.md"
+        os.path.dirname(__file__), "..", "examples/documents/", f"{MD_NAME}.md"
     )
 
     MODEL = "gpt-4.1"

@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Set
 
 from googleapiclient.errors import HttpError
@@ -218,20 +219,20 @@ def _validate_doc_queues_payload(
 async def _if_add_node_summary_for_jvforge(
     agent_id: str,
     node_summary: Optional[Any],
-) -> str:
-    """Match PageIndex REST ingest: resolve yes/no for jvforge if_add_node_summary."""
+) -> bool:
+    """Match PageIndex REST ingest: resolve bool for jvforge if_add_node_summary."""
     if node_summary is None:
         await ensure_ingestion_config_for_agent(agent_id)
-        return "yes" if get_pageindex_node_summary() else "no"
+        return get_pageindex_node_summary()
+    if isinstance(node_summary, bool):
+        return node_summary
     if isinstance(node_summary, str):
         sl = node_summary.strip().lower()
-        if sl in ("yes", "no"):
-            return sl
-        if sl in ("true", "1"):
-            return "yes"
-        if sl in ("false", "0"):
-            return "no"
-    return "yes" if node_summary else "no"
+        if sl in ("yes", "true", "1"):
+            return True
+        if sl in ("no", "false", "0"):
+            return False
+    return bool(node_summary)
 
 
 @dataclass
@@ -242,7 +243,7 @@ class DriveIngestConfig:
     metadata: Dict[str, Any]
     model: Optional[str]
     model_action: Optional[Any]
-    node_summary: Optional[Any]
+    node_summary: Optional[bool]
     agent_id: str
     page_index_action: Any
     convert_to_markdown: bool = False
@@ -252,6 +253,8 @@ class DriveIngestConfig:
     skip_existing_documents: bool = True
     use_jvforge: Optional[bool] = None
     chunking_strategy: Optional[str] = None
+    doc_description: Optional[str] = None
+    add_doc_description: Optional[bool] = None
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -499,6 +502,21 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
         )
+        strategy = (cfg.chunking_strategy or "").strip().lower() or None
+        if strategy == "flash" and not effective_forge:
+            raise ValidationError(
+                "chunking_strategy=flash requires jvforge "
+                "(set use_jvforge=true and JVAGENT_JVFORGE_BASE_URL)."
+            )
+        if strategy == "flash":
+            ext = Path(doc_name).suffix.lower()
+            if ext != ".pdf":
+                logger.warning(
+                    "flash strategy requires PDF; got %s for %s — falling back to heading",
+                    ext or "(none)",
+                    doc_name,
+                )
+                strategy = "heading"
         if cfg.normalize_bold_headings and not effective_forge:
             raise ValidationError(
                 "normalize_bold_headings requires JVAGENT_JVFORGE_BASE_URL "
@@ -521,9 +539,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     doc_name=doc_name,
                     model=cfg.model,
                     if_add_node_summary=summary_for_forge,
+                    if_add_doc_description=cfg.add_doc_description,
                     collection_name=cfg.collection_name,
                     metadata=cfg.metadata or None,
-                    doc_description=None,
+                    doc_description=cfg.doc_description,
                     doc_url=doc_url or None,
                     convert_to_markdown=cfg.convert_to_markdown,
                     ocr=cfg.ocr,
@@ -534,7 +553,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     notification_url=llm_wh_url,
                     notify_delay_seconds=0,
                     emergency=False,
-                    chunking_strategy=cfg.chunking_strategy,
+                    chunking_strategy=strategy,
                 )
                 return {
                     "doc_name": doc_name,
@@ -549,16 +568,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 doc_name=doc_name,
                 model=cfg.model,
                 if_add_node_summary=summary_for_forge,
+                if_add_doc_description=cfg.add_doc_description,
                 collection_name=cfg.collection_name,
                 metadata=cfg.metadata or None,
-                doc_description=None,
+                doc_description=cfg.doc_description,
                 doc_url=doc_url or None,
                 convert_to_markdown=cfg.convert_to_markdown,
                 ocr=cfg.ocr,
                 docling_ocr_engine=cfg.docling_ocr_engine,
                 normalize_bold_headings=cfg.normalize_bold_headings,
                 llm_webhook_url=llm_wh_url,
-                chunking_strategy=cfg.chunking_strategy,
+                chunking_strategy=strategy,
             )
             return {"doc_name": doc_name}
         # assimilate_document expects threading.Event (worker-thread cancel); not asyncio.Event.
@@ -568,6 +588,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             model=cfg.model,
             model_action=cfg.model_action,
             if_add_node_summary=cfg.node_summary,
+            if_add_doc_description=cfg.add_doc_description,
             persist=True,
             collection_name=cfg.collection_name,
             doc_url=doc_url,
@@ -798,6 +819,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         skip_existing_documents: bool = True,
         use_jvforge: Optional[bool] = None,
         chunking_strategy: Optional[str] = None,
+        doc_description: Optional[str] = None,
+        add_doc_description: Optional[bool] = None,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -864,6 +887,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 skip_existing_documents=skip_existing_documents,
                 use_jvforge=use_jvforge,
                 chunking_strategy=chunking_strategy,
+                doc_description=doc_description,
+                add_doc_description=add_doc_description,
             )
 
     async def _phase_sync_google_drive_folders(
@@ -1271,6 +1296,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         skip_existing_documents: bool = True,
         use_jvforge: Optional[bool] = None,
         chunking_strategy: Optional[str] = None,
+        doc_description: Optional[str] = None,
+        add_doc_description: Optional[bool] = None,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
@@ -1317,6 +1344,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             skip_existing_documents=skip_existing_documents,
             use_jvforge=use_jvforge,
             chunking_strategy=chunking_strategy,
+            doc_description=doc_description,
+            add_doc_description=add_doc_description,
         )
 
         await self._phase_sync_google_drive_folders(

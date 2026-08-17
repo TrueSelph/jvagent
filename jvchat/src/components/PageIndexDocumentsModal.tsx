@@ -322,6 +322,7 @@ export function PageIndexDocumentsModal({
   const [docUrl, setDocUrl] = useState("");
   const [metadataJson, setMetadataJson] = useState("");
   const [addNodeSummary, setAddNodeSummary] = useState(true);
+  const [addDocDescription, setAddDocDescription] = useState(true);
   const [convertToMarkdown, setConvertToMarkdown] = useState(true);
   const [doclingOcrEngine, setDoclingOcrEngine] =
     useState<DoclingOcrEngine>("rapidocr");
@@ -799,6 +800,7 @@ export function PageIndexDocumentsModal({
         docUrl: docUrl || undefined,
         metadata: parseMetadata(),
         ifAddNodeSummary: addNodeSummary,
+        ifAddDocDescription: addDocDescription,
         convertToMarkdown,
         ocr: doclingOcrEngine !== "none",
         doclingOcrEngine,
@@ -2135,6 +2137,7 @@ export function PageIndexDocumentsModal({
                           <option value="llm_direct">
                             LLM-directed chunking
                           </option>
+                          <option value="flash">Flash — LLM-free (PDF only)</option>
                         </select>
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -3437,6 +3440,19 @@ export function PageIndexDocumentsModal({
                   Generate node summaries (recommended for tree search)
                 </span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addDocDescription}
+                  onChange={(e) => setAddDocDescription(e.target.checked)}
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                />
+                <span
+                  className={`text-sm ${dark ? "text-zinc-300" : "text-zinc-700"}`}
+                >
+                  Generate document description
+                </span>
+              </label>
               <div className="w-full">
                 <JsonCodeEditor
                   value={metadataJson}
@@ -3550,6 +3566,7 @@ export function PageIndexDocumentsModal({
                   <option value="heading">Heading-based</option>
                   <option value="llm_segment">LLM-assisted segmentation</option>
                   <option value="llm_direct">LLM-directed chunking</option>
+                  <option value="flash">Flash — LLM-free (PDF only)</option>
                 </select>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">

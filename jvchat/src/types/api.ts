@@ -36,8 +36,9 @@ export type DoclingOcrEngine = 'none' | 'rapidocr'
  * - 'heading' — heading-based (no LLM cost)
  * - 'llm_segment' — LLM-assisted segmentation (LLM finds section boundaries)
  * - 'llm_direct' — LLM-directed chunking (LLM decides entire chunk tree)
+ * - 'flash' — LLM-free PDF extraction (fastest, PDF only, heuristic-based)
  */
-export type ChunkingStrategy = 'heading' | 'llm_segment' | 'llm_direct'
+export type ChunkingStrategy = 'heading' | 'llm_segment' | 'llm_direct' | 'flash'
 
 export interface AgentsResponse {
   agents: Agent[]
@@ -242,6 +243,7 @@ export interface PageIndexChunk {
   enabled?: boolean
   content_type?: string | null
   hierarchy?: string[] | null
+  key_items?: string[] | null
 }
 
 export interface PageIndexChunksListResponse {

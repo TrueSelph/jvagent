@@ -1561,6 +1561,7 @@ class ApiClient {
       docUrl?: string
       metadata?: Record<string, unknown>
       ifAddNodeSummary?: boolean
+      ifAddDocDescription?: boolean
       convertToMarkdown?: boolean
       ocr?: boolean
       /** When set, sent as ``docling_ocr_engine``; overrides plain ``ocr`` on jvforge. */
@@ -1592,7 +1593,10 @@ class ApiClient {
     if (options?.docUrl) formData.append('doc_url', options.docUrl)
     if (options?.metadata) formData.append('metadata', JSON.stringify(options.metadata))
     if (options?.ifAddNodeSummary !== undefined) {
-      formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'yes' : 'no')
+      formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'true' : 'false')
+    }
+    if (options?.ifAddDocDescription !== undefined) {
+      formData.append('if_add_doc_description', options.ifAddDocDescription ? 'true' : 'false')
     }
     if (options?.convertToMarkdown !== undefined) {
       formData.append('convert_to_markdown', options.convertToMarkdown ? 'yes' : 'no')

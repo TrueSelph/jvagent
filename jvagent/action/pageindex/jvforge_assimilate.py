@@ -126,7 +126,8 @@ def _jvforge_form_data(
     agent_id: str,
     doc_name: str,
     model: Optional[str],
-    if_add_node_summary: str,
+    if_add_node_summary: bool,
+    if_add_doc_description: Optional[bool] = None,
     collection_name: str,
     metadata: Optional[Dict[str, Any]],
     doc_description: Optional[str],
@@ -157,7 +158,9 @@ def _jvforge_form_data(
         data["docling_ocr_engine"] = docling_ocr_engine
     if model:
         data["model"] = model
-    data["if_add_node_summary"] = if_add_node_summary
+    data["if_add_node_summary"] = "yes" if if_add_node_summary else "no"
+    if if_add_doc_description is not None:
+        data["if_add_doc_description"] = "yes" if if_add_doc_description else "no"
     if doc_description:
         data["doc_description"] = doc_description
     if generate_description is not None:
@@ -202,7 +205,8 @@ async def assimilate_via_jvforge(
     agent_id: str,
     doc_name: str,
     model: Optional[str],
-    if_add_node_summary: str,
+    if_add_node_summary: bool,
+    if_add_doc_description: Optional[bool] = None,
     collection_name: str,
     metadata: Optional[Dict[str, Any]],
     doc_description: Optional[str],
@@ -238,6 +242,7 @@ async def assimilate_via_jvforge(
         doc_name=doc_name,
         model=model,
         if_add_node_summary=if_add_node_summary,
+        if_add_doc_description=if_add_doc_description,
         collection_name=collection_name,
         metadata=metadata,
         doc_description=doc_description,
@@ -348,7 +353,8 @@ async def assimilate_via_jvforge_async(
     agent_id: str,
     doc_name: str,
     model: Optional[str],
-    if_add_node_summary: str,
+    if_add_node_summary: bool,
+    if_add_doc_description: Optional[bool] = None,
     collection_name: str,
     metadata: Optional[Dict[str, Any]],
     doc_description: Optional[str],
@@ -395,6 +401,7 @@ async def assimilate_via_jvforge_async(
         doc_name=doc_name,
         model=model,
         if_add_node_summary=if_add_node_summary,
+        if_add_doc_description=if_add_doc_description,
         collection_name=collection_name,
         metadata=metadata,
         doc_description=doc_description,

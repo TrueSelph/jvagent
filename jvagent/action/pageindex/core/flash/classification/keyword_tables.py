@@ -1,0 +1,127 @@
+"""Dictionary-backed keyword tries and shared regexes."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Optional
+
+import regex as regex_module  # Unicode \p{...} property classes
+
+from ..model import (
+    _UNICODE_WHITESPACE_CLASS,
+    Block,
+    Line,
+    _round_half_up_to_int,
+    _strip_diacritics,
+    alignment_code,
+    block_text,
+    center_aligned,
+    deaccented_text,
+    dominant_style_of,
+    first_span_of,
+    heading_score,
+    info_weight,
+    intervals_overlap,
+    is_caps_heavy,
+    is_upper_dominant,
+    is_word_category,
+    last_line_of,
+    last_span,
+    letter_count,
+    magnitude_ratio,
+    punct_count,
+    text_of_line,
+    to_number,
+    y_overlaps,
+)
+from ..tokens import (
+    COMMA_CHARS,
+    BuiltTrie,
+    LineTokenizer,
+    Token,
+    TokenView,
+    TrieConfig,
+    build_trie,
+    enumerate_tokens,
+    is_char_token,
+    is_trimmable_token,
+    is_word_token,
+    jenkins_hash,
+    set_case_fold,
+    strip_leading_if_in,
+    strip_trailing_comma,
+    strip_trie_match,
+    token_numeric_value,
+    tokenize_block,
+    trie_full_match,
+    trie_prefix_match,
+    trim_trailing_punct,
+    wrap_tokens,
+)
+
+# --------------------------------------------------------------------------- #
+# Load dictionaries (built into tries on first use) #
+# --------------------------------------------------------------------------- #
+
+
+_DICT_PATH = Path(__file__).parent.parent / "data" / "dictionaries.json"
+_DICTS = json.loads(_DICT_PATH.read_text(encoding="utf-8"))
+
+
+def _dict_trie(key: str) -> BuiltTrie:
+    """Build a case-folded trie from a dictionary entry."""
+    return build_trie(_DICTS.get(key, []), set_case_fold(TrieConfig(), True))
+
+
+COPYRIGHT_TRIE = build_trie(
+    ["Copyright", "©"], set_case_fold(TrieConfig(), True)
+)  # inline list
+VOLUME_WORDS_TRIE = _dict_trie("volume_words")
+TOC_TITLES_TRIE = _dict_trie("toc_titles")
+FIGURE_KEYWORDS_TRIE = _dict_trie("ai_section_keywords")
+_TABLE_KEYWORDS_TRIE = _dict_trie("table_keywords")
+TABLE_KEYWORDS_TRIE = _TABLE_KEYWORDS_TRIE
+
+_CHART_KEYWORDS_TRIE = _dict_trie("chart_keywords")
+CHART_KEYWORDS_TRIE = _CHART_KEYWORDS_TRIE
+APPENDIX_SECTION_TRIE = _dict_trie("appendices_dict")
+INTRODUCTION_SECTION_TRIE = _dict_trie("introduction_dict")
+BOX_KEYWORD_TRIE = build_trie(["box"], set_case_fold(TrieConfig(), True))  # inline list
+KEYWORDS_SECTION_TRIE = _dict_trie("keywords_dict")
+
+# Multilingual boilerplate phrase trie: publisher and proceeding headers plus
+# stock acknowledgement openers such as "First of all I would like to thank".
+# Used by the body-paragraph gate to reject boilerplate as non-body.
+# Phrase list stored as a data asset.
+_BOILERPLATE_PHRASES_PATH = (
+    Path(__file__).parent.parent / "data" / "boilerplate_phrases.json"
+)
+BOILERPLATE_TRIE = build_trie(
+    json.loads(_BOILERPLATE_PHRASES_PATH.read_text(encoding="utf-8")),
+    set_case_fold(TrieConfig(), True),
+)
+
+# Regular expressions for the dot-leader and page-number gates (Unicode \p{Number} -> ``regex`` module).
+# Leading class is ASCII 1-9 + fullwidth 1-9 (U+FF11-FF19); it must NOT admit
+# fullwidth zero U+FF10, so it is [1-9１-９], not [1-9０-９].
+DOT_LEADER_ROW_RE = regex_module.compile(
+    r"([.]["
+    + _UNICODE_WHITESPACE_CLASS
+    + r"]*){5,}["
+    + _UNICODE_WHITESPACE_CLASS
+    + r"]*[1-9１-９]\p{Number}*\Z"
+)
+PAGE_NUMBER_ONLY_RE = regex_module.compile(r"^[ |]*([1-9１-９]\p{Number}*)[ |]*\Z")
+
+
+def _search_trie(trie: BuiltTrie, tokens) -> Optional[TokenView]:
+    """Return the shortest earliest Aho-Corasick trie match for ``tokens``."""
+    from ..tokens import aho_corasick_tokens as _real_bh
+
+    return _real_bh(trie, tokens)
+
+
+def _normalize_text_key(text: str) -> str:
+    """Strip diacritics only; callers lowercase first when a case-folded key is needed."""
+    return _strip_diacritics(text)

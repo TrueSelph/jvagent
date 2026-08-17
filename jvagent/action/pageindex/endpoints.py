@@ -32,7 +32,11 @@ from python_multipart.multipart import FormParser, parse_options_header
 from jvagent.core.agent import Agent
 from jvagent.env import get_jvagent_jvforge_base_url
 
-from .config import get_pageindex_node_summary, initialize_pageindex_database
+from .config import (
+    get_pageindex_doc_description,
+    get_pageindex_node_summary,
+    initialize_pageindex_database,
+)
 from .documents import (
     CHUNK_LIST_MAX,
     PAGEINDEX_OFFICE_LIKE_EXTENSIONS,
@@ -667,6 +671,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
     doc_name: Optional[str] = None
     model: Optional[str] = None
     if_add_node_summary: Optional[str] = None
+    if_add_doc_description: Optional[str] = None
     collection_name: Optional[str] = None
     metadata_raw: Optional[str] = None
     doc_description: Optional[str] = None
@@ -688,7 +693,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             return b.decode("latin-1")
 
     def on_field(field) -> None:
-        nonlocal doc_name, model, if_add_node_summary, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge, notification_url, notification_secret, chunking_strategy
+        nonlocal doc_name, model, if_add_node_summary, if_add_doc_description, collection_name, metadata_raw, doc_description, doc_url, convert_to_markdown, ocr, docling_ocr_engine, normalize_bold_headings, file_url, use_jvforge, notification_url, notification_secret, chunking_strategy
         name = _safe_str(field.field_name) if field.field_name else ""
         val = field.value
         value = _safe_str(val) if val is not None else ""
@@ -698,6 +703,8 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
             model = value or None
         elif name == "if_add_node_summary":
             if_add_node_summary = value or None
+        elif name == "if_add_doc_description":
+            if_add_doc_description = value or None
         elif name == "collection_name":
             collection_name = value or None
         elif name == "metadata":
@@ -751,6 +758,7 @@ def _parse_multipart_safe(body: bytes, content_type: str) -> tuple[
         doc_name,
         model,
         if_add_node_summary,
+        if_add_doc_description,
         collection_name,
         metadata_raw,
         doc_description,
@@ -773,7 +781,8 @@ async def _do_assimilate(
     *,
     doc_name: Optional[str] = None,
     model: Optional[str] = None,
-    if_add_node_summary: Optional[str] = None,
+    if_add_node_summary: Optional[bool] = None,
+    if_add_doc_description: Optional[bool] = None,
     collection_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     doc_description: Optional[str] = None,
@@ -787,6 +796,7 @@ async def _do_assimilate(
         "doc_name": doc_name,
         "model": model,
         "if_add_node_summary": if_add_node_summary,
+        "if_add_doc_description": if_add_doc_description,
         "collection_name": collection_name,
         "metadata": metadata,
         "doc_description": doc_description,
@@ -893,7 +903,8 @@ async def ingest_document_endpoint(
     | doc_name | string | No | Document identifier (default: derived from filename). For Google Docs/Sheets/Slides ``file_url`` ingests, when set, this value is also used as the downloaded file’s base name (with the correct extension) instead of the Drive id or export filename. |
     | doc_description | string | No | Human-readable document description |
     | doc_url | string | No | Source URL for reference citations (default when using file_url: the same download URL) |
-    | if_add_node_summary | string | No | "yes" or "no" – generate LLM summaries per node (default: from agent's PageIndex config) |
+    | if_add_node_summary | string | No | true/false/yes/no/1/0 – generate LLM summaries per node (default: from agent's PageIndex config) |
+    | if_add_doc_description | string | No | true/false/yes/no/1/0 – generate LLM document description (default: true) |
     | convert_to_markdown | string | No | "yes" or "no" – use Docling to convert PDF to Markdown first (default: no) |
     | ocr | string | No | "yes" or "no" – enable OCR when using Docling on PDF (default: no). Ignored when ``docling_ocr_engine`` is set. |
     | docling_ocr_engine | string | No | ``none`` or ``rapidocr`` – RapidOCR (ONNX) on jvforge / local Docling when ``convert_to_markdown`` is on. Legacy names map to ``rapidocr``. When set, overrides ``ocr`` yes/no. |
@@ -936,6 +947,7 @@ async def ingest_document_endpoint(
         doc_name,
         model,
         if_add_node_summary,
+        if_add_doc_description,
         collection_name,
         metadata_raw,
         doc_description,
@@ -959,6 +971,15 @@ async def ingest_document_endpoint(
     if if_add_node_summary is None:
         await ensure_ingestion_config_for_agent(agent_id)
 
+    summary_bool = _form_yes_no_optional(if_add_node_summary)
+    if summary_bool is None:
+        await ensure_ingestion_config_for_agent(agent_id)
+        summary_bool = get_pageindex_node_summary()
+
+    desc_bool = _form_yes_no_optional(if_add_doc_description)
+    if desc_bool is None:
+        desc_bool = get_pageindex_doc_description()
+
     convert_opt = _form_yes_no_optional(convert_to_markdown_raw)
     convert_to_markdown = False if convert_opt is None else convert_opt
     ocr_flag, docling_ocr_engine_eff = _resolve_docling_ocr_for_ingest(
@@ -969,7 +990,7 @@ async def ingest_document_endpoint(
     normalize_bold_flag = False if bold_opt is None else bold_opt
 
     chunking_strategy_eff = (chunking_strategy_raw or "").strip().lower() or "heading"
-    if chunking_strategy_eff not in ("heading", "llm_segment", "llm_direct"):
+    if chunking_strategy_eff not in ("heading", "llm_segment", "llm_direct", "flash"):
         chunking_strategy_eff = "heading"
 
     file_url = (file_url_raw or "").strip()
@@ -1041,9 +1062,6 @@ async def ingest_document_endpoint(
             )
             try:
                 llm_wh_url = await _pageindex_llm_webhook_url_for_jvforge(agent_id)
-                summary_for_forge = if_add_node_summary
-                if summary_for_forge is None:
-                    summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
 
                 if async_mode:
                     # Import callback is separate from LLM webhook: same PageIndex
@@ -1060,7 +1078,8 @@ async def ingest_document_endpoint(
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
-                        if_add_node_summary=summary_for_forge,
+                        if_add_node_summary=summary_bool,
+                        if_add_doc_description=desc_bool,
                         collection_name=collection_name,
                         metadata=metadata,
                         doc_description=doc_description,
@@ -1094,7 +1113,8 @@ async def ingest_document_endpoint(
                     agent_id=agent_id,
                     doc_name=effective_doc_name,
                     model=model,
-                    if_add_node_summary=summary_for_forge,
+                    if_add_node_summary=summary_bool,
+                    if_add_doc_description=desc_bool,
                     collection_name=collection_name,
                     metadata=metadata,
                     doc_description=doc_description,
@@ -1169,6 +1189,13 @@ async def ingest_document_endpoint(
                 f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
             )
 
+        if chunking_strategy_eff == "flash" and ext != ".pdf":
+            logger.warning(
+                "flash strategy requires PDF; got %s — falling back to heading",
+                ext,
+            )
+            chunking_strategy_eff = "heading"
+
         if not content:
             raise ValidationError("Empty file")
 
@@ -1186,9 +1213,6 @@ async def ingest_document_endpoint(
         try:
             if effective_forge:
                 llm_wh_url = await _pageindex_llm_webhook_url_for_jvforge(agent_id)
-                summary_for_forge = if_add_node_summary
-                if summary_for_forge is None:
-                    summary_for_forge = "yes" if get_pageindex_node_summary() else "no"
 
                 if async_mode:
                     # Async mode: queue job and return immediately.
@@ -1205,7 +1229,8 @@ async def ingest_document_endpoint(
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
-                        if_add_node_summary=summary_for_forge,
+                        if_add_node_summary=summary_bool,
+                        if_add_doc_description=desc_bool,
                         collection_name=collection_name,
                         metadata=metadata,
                         doc_description=doc_description,
@@ -1243,7 +1268,8 @@ async def ingest_document_endpoint(
                         agent_id=agent_id,
                         doc_name=effective_doc_name,
                         model=model,
-                        if_add_node_summary=summary_for_forge,
+                        if_add_node_summary=summary_bool,
+                        if_add_doc_description=desc_bool,
                         collection_name=collection_name,
                         metadata=metadata,
                         doc_description=doc_description,
@@ -1264,6 +1290,7 @@ async def ingest_document_endpoint(
                     doc_name=effective_doc_name,
                     model=model,
                     if_add_node_summary=if_add_node_summary,
+                    if_add_doc_description=desc_bool,
                     collection_name=collection_name,
                     metadata=metadata,
                     doc_description=doc_description,

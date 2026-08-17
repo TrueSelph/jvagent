@@ -81,9 +81,9 @@ def set_pageindex_node_summary(value: Optional[bool]) -> None:
 
 
 def get_pageindex_node_summary() -> bool:
-    """Get node_summary config. Defaults to False when not set (off by default)."""
+    """Get node_summary config. Defaults to True when not set (on by default)."""
     v = _pageindex_node_summary.get()
-    return v if v is not None else False
+    return v if v is not None else True
 
 
 def set_pageindex_node_text(value: Optional[bool]) -> None:
@@ -103,9 +103,9 @@ def set_pageindex_doc_description(value: Optional[bool]) -> None:
 
 
 def get_pageindex_doc_description() -> bool:
-    """Get doc_description config. Defaults to False when not set."""
+    """Get doc_description config. Defaults to True when not set (on by default)."""
     v = _pageindex_doc_description.get()
-    return v if v is not None else False
+    return v if v is not None else True
 
 
 def set_pageindex_max_token_num_each_node(value: Optional[int]) -> None:

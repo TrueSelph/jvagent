@@ -49,9 +49,13 @@ google-auth-oauthlib>=1.4.0
 # From jvagent/web_search/serpapi
 google-search-results>=2.4.2
 
-# From jvagent/pageindex/pageindex_action
+# From jvagent/pageindex/pageindex_action (PageIndex 0.2.9 upstream deps)
 litellm>=1.82.0
-pypdf>=4.0.0
+openai>=1.70.0
+PyPDF2>=3.0.1
+pypdfium2>=4.30.0
+sortedcontainers>=2.4.0
+regex>=2024.0.0
 
 # From jvagent/microsoft/microsoft_excel_action
 openpyxl>=3.1.5

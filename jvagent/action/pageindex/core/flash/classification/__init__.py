@@ -1,0 +1,165 @@
+"""
+Block classification for header/footer, watermark, boilerplate, TOC-page, and
+reference-list marking. The module combines recurrence hashes, page-number
+patterns, body-paragraph gates, cross-page geometry, and numeric-column
+clustering. The dot-leader and page-number gates intentionally use Unicode
+number properties so fullwidth and non-Latin digits are handled consistently.
+"""
+
+import json
+import math
+from pathlib import Path
+from typing import Optional
+
+import regex as regex_module  # Unicode \p{...} property classes
+
+from ..model import (
+    _UNICODE_WHITESPACE_CLASS,
+    Block,
+    Line,
+    _round_half_up_to_int,
+    _strip_diacritics,
+    alignment_code,
+    block_text,
+    center_aligned,
+    deaccented_text,
+    dominant_style_of,
+    first_span_of,
+    heading_score,
+    info_weight,
+    intervals_overlap,
+    is_caps_heavy,
+    is_upper_dominant,
+    is_word_category,
+    last_line_of,
+    last_span,
+    letter_count,
+    magnitude_ratio,
+    punct_count,
+    text_of_line,
+    to_number,
+    y_overlaps,
+)
+from ..stats import (
+    DocStats,
+    char_script_bucket,
+    column_index_of,
+    style_key,
+    weighted_percentile,
+)
+from ..tokens import (
+    COMMA_CHARS,
+    BuiltTrie,
+    LineTokenizer,
+    Token,
+    TokenView,
+    TrieConfig,
+    build_trie,
+    enumerate_tokens,
+    is_char_token,
+    is_trimmable_token,
+    is_word_token,
+    jenkins_hash,
+    set_case_fold,
+    strip_leading_if_in,
+    strip_trailing_comma,
+    strip_trie_match,
+    token_numeric_value,
+    tokenize_block,
+    trie_full_match,
+    trie_prefix_match,
+    trim_trailing_punct,
+    wrap_tokens,
+)
+from .body_text import (
+    _ROMAN_NUMERALS,
+    is_body_paragraph,
+    longest_word_and_number,
+    normalized_block_text,
+    record_recurring_text,
+    span_page_number,
+    span_style_text_key,
+)
+from .header_footer import (
+    HeaderFooterContext,
+    PageMarkState,
+    bounded_edit_distance,
+    detect_header_footer,
+    find_cross_page_match,
+    has_adjacent_page_numbers,
+    is_header_positioned,
+    mark_header_footer,
+    record_marked_block,
+    walk_from_page_edge,
+)
+from .keyword_tables import (
+    _BOILERPLATE_PHRASES_PATH,
+    _CHART_KEYWORDS_TRIE,
+    _DICT_PATH,
+    _DICTS,
+    _TABLE_KEYWORDS_TRIE,
+    APPENDIX_SECTION_TRIE,
+    BOILERPLATE_TRIE,
+    BOX_KEYWORD_TRIE,
+    CHART_KEYWORDS_TRIE,
+    COPYRIGHT_TRIE,
+    DOT_LEADER_ROW_RE,
+    FIGURE_KEYWORDS_TRIE,
+    INTRODUCTION_SECTION_TRIE,
+    KEYWORDS_SECTION_TRIE,
+    PAGE_NUMBER_ONLY_RE,
+    TABLE_KEYWORDS_TRIE,
+    TOC_TITLES_TRIE,
+    VOLUME_WORDS_TRIE,
+    _dict_trie,
+    _normalize_text_key,
+    _search_trie,
+)
+from .toc_boilerplate import (
+    INSTITUTION_THESIS_TRIE,
+    PROFESSOR_TITLES_TRIE,
+    NumberColumnCluster,
+    _institution_thesis_words,
+    detect_toc_range,
+    extract_number_column,
+    is_boilerplate_block,
+    mark_toc_and_boilerplate,
+    mark_watermarks,
+    pick_nearer_cluster,
+)
+
+__all__ = [
+    "is_body_paragraph",
+    "record_recurring_text",
+    "span_style_text_key",
+    "normalized_block_text",
+    "span_page_number",
+    "longest_word_and_number",
+    "record_marked_block",
+    "PageMarkState",
+    "is_header_positioned",
+    "has_adjacent_page_numbers",
+    "mark_header_footer",
+    "walk_from_page_edge",
+    "find_cross_page_match",
+    "HeaderFooterContext",
+    "detect_header_footer",
+    "mark_watermarks",
+    "is_boilerplate_block",
+    "NumberColumnCluster",
+    "extract_number_column",
+    "pick_nearer_cluster",
+    "detect_toc_range",
+    "mark_toc_and_boilerplate",
+    "bounded_edit_distance",
+    "COPYRIGHT_TRIE",
+    "VOLUME_WORDS_TRIE",
+    "TOC_TITLES_TRIE",
+    "FIGURE_KEYWORDS_TRIE",
+    "TABLE_KEYWORDS_TRIE",
+    "CHART_KEYWORDS_TRIE",
+    "APPENDIX_SECTION_TRIE",
+    "INTRODUCTION_SECTION_TRIE",
+    "BOX_KEYWORD_TRIE",
+    "KEYWORDS_SECTION_TRIE",
+]

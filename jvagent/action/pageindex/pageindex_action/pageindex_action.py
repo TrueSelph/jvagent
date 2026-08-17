@@ -575,7 +575,7 @@ class PageIndexAction(Action):
                 doc_name=doc_name,
                 model=model or "gpt-4o-mini",
                 model_action=model_action,
-                if_add_node_summary="yes" if self.node_summary else "no",
+                if_add_node_summary=self.node_summary,
                 collection_name=collection_name or self._resolve_collection(),
                 metadata=metadata,
                 doc_description=doc_description,

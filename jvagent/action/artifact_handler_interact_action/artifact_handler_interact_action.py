@@ -1165,7 +1165,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             agent_id=agent_id,
             doc_name=doc_name,
             model=None,
-            if_add_node_summary="yes",
+            if_add_node_summary=True,
             collection_name=agent_id,
             metadata=metadata,
             doc_description=None,
@@ -1300,6 +1300,7 @@ class ArtifactHandlerInteractAction(InteractAction):
         url: Optional[str] = None,
         doc_name: Optional[str] = None,
         question: Optional[str] = None,
+        **kwargs: Any,
     ) -> str:
         """Ingest a typed URL only (not media attachments). Call
         artifact_handler__check_pending_attachments first when the user wants
@@ -1314,19 +1315,21 @@ class ArtifactHandlerInteractAction(InteractAction):
         )
 
     @tool(name="artifact_handler__list_my_documents")
-    async def _t_list_my_documents(self, visitor: Any = None) -> str:
+    async def _t_list_my_documents(self, visitor: Any = None, **kwargs: Any) -> str:
         """List the documents the user has saved, with save age and expiry."""
         return await self._dispatch_tool("list_my_documents", visitor=visitor)
 
     @tool(name="artifact_handler__delete_document")
-    async def _t_delete_document(self, doc_name: str, visitor: Any = None) -> str:
+    async def _t_delete_document(
+        self, doc_name: str, visitor: Any = None, **kwargs: Any
+    ) -> str:
         """Delete one document from the user's vault by doc_name."""
         return await self._dispatch_tool(
             "delete_document", visitor=visitor, doc_name=doc_name
         )
 
     @tool(name="artifact_handler__review_expired")
-    async def _t_review_expired(self, visitor: Any = None) -> str:
+    async def _t_review_expired(self, visitor: Any = None, **kwargs: Any) -> str:
         """Surface documents past the retention window."""
         return await self._dispatch_tool("review_expired", visitor=visitor)
 

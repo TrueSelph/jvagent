@@ -36,7 +36,8 @@ from .config import (
     resolve_pageindex_json_log_dir,
     resolve_pageindex_work_dir,
 )
-from .core import page_index
+from .core import page_index_main
+from .core.utils import ConfigLoader
 from .docling_convert import (
     convert_document_to_markdown_sync,
     wants_ooxml_pdf_for_docling_ocr,
@@ -152,12 +153,62 @@ def _scoped_pageindex_context(context: GraphContext):
     return scoped_default_context_async(context)
 
 
-def _to_yes_no(value: Any, default: bool) -> str:
-    """Normalize bool-like value to yes/no. None -> default; yes/true/1 -> yes; else no."""
+def _yes_no(value: bool) -> str:
+    """Convert bool to upstream PageIndex ConfigLoader ``yes``/``no`` strings."""
+    return "yes" if value else "no"
+
+
+class _PageIndexDirLogger:
+    """JsonLogger-compatible logger that writes under an absolute log directory.
+
+    Upstream ``JsonLogger`` always uses ``./logs``; wrappers pass this into
+    ``page_index_main(logger=...)`` so assimilate does not need to chdir.
+    """
+
+    def __init__(self, file_path: Any, log_dir: str) -> None:
+        import json
+        from datetime import datetime
+
+        from .core.utils import get_pdf_name
+
+        pdf_name = get_pdf_name(file_path)
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.filename = f"{pdf_name}_{current_time}.json"
+        self._log_dir = log_dir
+        self._json = json
+        os.makedirs(self._log_dir, exist_ok=True)
+        self.log_data: List[Any] = []
+
+    def log(self, level: str, message: Any, **kwargs: Any) -> None:
+        if isinstance(message, dict):
+            self.log_data.append(message)
+        else:
+            self.log_data.append({"message": message})
+        with open(os.path.join(self._log_dir, self.filename), "w") as f:
+            self._json.dump(self.log_data, f, indent=2)
+
+    def info(self, message: Any, **kwargs: Any) -> None:
+        self.log("INFO", message, **kwargs)
+
+    def error(self, message: Any, **kwargs: Any) -> None:
+        self.log("ERROR", message, **kwargs)
+
+    def debug(self, message: Any, **kwargs: Any) -> None:
+        self.log("DEBUG", message, **kwargs)
+
+    def exception(self, message: Any, **kwargs: Any) -> None:
+        kwargs["exception"] = True
+        self.log("ERROR", message, **kwargs)
+
+
+def _to_bool(value: Any, default: bool) -> bool:
+    """Normalize bool-like value to bool. None -> default; yes/true/1 -> True; else False."""
     if value is None:
-        return "yes" if default else "no"
+        return default
+    if isinstance(value, bool):
+        return value
     v = str(value).lower().strip()
-    return "yes" if v in ("yes", "true", "1") else "no"
+    return v in ("yes", "true", "1")
 
 
 def enrich_structure_titles(structure: Any) -> Any:
@@ -251,40 +302,39 @@ def _pdf_page_index_worker(
     toc_check_page_num: Optional[int],
     max_page_num_each_node: Optional[int],
     max_token_num_each_node: Optional[int],
-    if_add_node_id: str,
-    if_add_node_text: str,
-    if_add_node_summary: str,
-    generate_description: bool,
+    if_add_node_id: bool,
+    if_add_node_text: bool,
+    if_add_node_summary: bool,
+    if_add_doc_description: bool,
 ) -> Dict[str, Any]:
-    """Run sync page_index in a thread with optional cooperative cancel (see llm_bridge).
+    """Run sync page_index_main in a thread with optional cooperative cancel.
 
-    When ``log_base`` is set, the process cwd is temporarily changed so vendored
-    PageIndex writes trace JSON under ``{log_base}/logs/`` (upstream uses a
-    relative ``logs`` directory).
+    Bool flags are converted to upstream ``yes``/``no`` strings. When
+    ``log_base`` is set, a directory-scoped logger writes under
+    ``{log_base}/logs/`` without changing process cwd.
     """
     attach_pageindex_cancel_event(cancel_event)
-    prev_cwd = os.getcwd()
     try:
+        user_opt = {
+            "model": model,
+            "if_add_node_id": _yes_no(if_add_node_id),
+            "if_add_node_text": _yes_no(if_add_node_text),
+            "if_add_node_summary": _yes_no(if_add_node_summary),
+            "if_add_doc_description": _yes_no(if_add_doc_description),
+        }
+        if toc_check_page_num is not None:
+            user_opt["toc_check_page_num"] = toc_check_page_num
+        if max_page_num_each_node is not None:
+            user_opt["max_page_num_each_node"] = max_page_num_each_node
+        if max_token_num_each_node is not None:
+            user_opt["max_token_num_each_node"] = max_token_num_each_node
+        opt = ConfigLoader().load(user_opt)
+        logger = None
         if log_base:
-            os.makedirs(log_base, exist_ok=True)
-            os.chdir(log_base)
-        return page_index(
-            doc,
-            model=model,
-            toc_check_page_num=toc_check_page_num,
-            max_page_num_each_node=max_page_num_each_node,
-            max_token_num_each_node=max_token_num_each_node,
-            if_add_node_id=if_add_node_id,
-            if_add_node_text=if_add_node_text,
-            if_add_node_summary=if_add_node_summary,
-            generate_description=generate_description,
-        )
+            log_dir = os.path.join(log_base, "logs")
+            logger = _PageIndexDirLogger(doc, log_dir)
+        return page_index_main(doc, opt, logger=logger)
     finally:
-        try:
-            if log_base:
-                os.chdir(prev_cwd)
-        except OSError:
-            pass
         attach_pageindex_cancel_event(None)
 
 
@@ -397,9 +447,9 @@ async def assimilate_document(
     doc_name: Optional[str] = None,
     model: Optional[str] = "gpt-4o-mini",
     model_action: Optional[Any] = None,
-    if_add_node_id: str = "yes",
-    if_add_node_text: str = "yes",
-    if_add_node_summary: Optional[str] = None,
+    if_add_node_id: Optional[bool] = None,
+    if_add_node_text: Optional[bool] = None,
+    if_add_node_summary: Optional[bool] = None,
     if_add_doc_description: Optional[bool] = None,
     toc_check_page_num: Optional[int] = None,
     max_page_num_each_node: Optional[int] = None,
@@ -451,13 +501,12 @@ async def assimilate_document(
 
     model = model or "gpt-4o-mini"
 
-    # Normalize: true/yes/1 -> "yes", false/no/0 -> "no" for core; use config when None
-    if_add_node_summary = _to_yes_no(if_add_node_summary, get_pageindex_node_summary())
-    if_add_node_text = _to_yes_no(if_add_node_text, get_pageindex_node_text())
-    generate_description = (
-        if_add_doc_description
-        if if_add_doc_description is not None
-        else get_pageindex_doc_description()
+    # Normalize: true/yes/1 -> True, false/no/0 -> False; use config when None
+    if_add_node_id = _to_bool(if_add_node_id, True)
+    if_add_node_text = _to_bool(if_add_node_text, get_pageindex_node_text())
+    if_add_node_summary = _to_bool(if_add_node_summary, get_pageindex_node_summary())
+    if_add_doc_description = _to_bool(
+        if_add_doc_description, get_pageindex_doc_description()
     )
     if max_token_num_each_node is None:
         max_token_num_each_node = get_pageindex_max_token_num_each_node()
@@ -632,7 +681,7 @@ async def assimilate_document(
                     if_add_node_id=if_add_node_id,
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
-                    generate_description=generate_description,
+                    if_add_doc_description=if_add_doc_description,
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
@@ -666,7 +715,7 @@ async def assimilate_document(
                 if_add_node_id=if_add_node_id,
                 if_add_node_text=if_add_node_text,
                 if_add_node_summary=if_add_node_summary,
-                generate_description=generate_description,
+                if_add_doc_description=if_add_doc_description,
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
             )
