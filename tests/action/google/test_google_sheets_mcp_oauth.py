@@ -1,20 +1,104 @@
 """GoogleAction subclasses read MCPOAuthToken instead of GoogleToken."""
 
+from __future__ import annotations
+
+import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.google.google_calendar_action.google_calendar_action import (
+
+def _ensure_google_stubs() -> None:
+    if getattr(_ensure_google_stubs, "_done", False):
+        return
+
+    # Prefer real packages when installed so stubs do not shadow them for
+    # later test modules (e.g. pageindex Google Drive sync).
+    try:
+        import google.oauth2.credentials  # noqa: F401
+        import google_auth_oauthlib.flow  # noqa: F401
+        import googleapiclient.discovery  # noqa: F401
+        import googleapiclient.http  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        _ensure_google_stubs._done = True  # type: ignore[attr-defined]
+        return
+
+    google = ModuleType("google")
+    google.__path__ = []  # type: ignore[attr-defined]
+
+    auth = ModuleType("google.auth")
+    auth.__path__ = []  # type: ignore[attr-defined]
+    transport = ModuleType("google.auth.transport")
+    transport.__path__ = []  # type: ignore[attr-defined]
+    requests_mod = ModuleType("google.auth.transport.requests")
+    requests_mod.Request = MagicMock()
+    transport.requests = requests_mod
+    auth.transport = transport
+
+    oauth2 = ModuleType("google.oauth2")
+    oauth2.__path__ = []  # type: ignore[attr-defined]
+    credentials = ModuleType("google.oauth2.credentials")
+    credentials.Credentials = MagicMock()
+    oauth2.credentials = credentials
+
+    oauthlib = ModuleType("google_auth_oauthlib")
+    oauthlib.__path__ = []  # type: ignore[attr-defined]
+    flow_mod = ModuleType("google_auth_oauthlib.flow")
+    flow_mod.Flow = MagicMock()
+    oauthlib.flow = flow_mod
+
+    apiclient = ModuleType("googleapiclient")
+    apiclient.__path__ = []  # type: ignore[attr-defined]
+    discovery = ModuleType("googleapiclient.discovery")
+    discovery.build = MagicMock()
+    apiclient.discovery = discovery
+    errors = ModuleType("googleapiclient.errors")
+    errors.HttpError = type("HttpError", (Exception,), {})
+    apiclient.errors = errors
+    http_mod = ModuleType("googleapiclient.http")
+    http_mod.MediaIoBaseDownload = MagicMock()
+    apiclient.http = http_mod
+
+    google.auth = auth
+    google.oauth2 = oauth2
+
+    for name, mod in [
+        ("google", google),
+        ("google.auth", auth),
+        ("google.auth.transport", transport),
+        ("google.auth.transport.requests", requests_mod),
+        ("google.oauth2", oauth2),
+        ("google.oauth2.credentials", credentials),
+        ("google_auth_oauthlib", oauthlib),
+        ("google_auth_oauthlib.flow", flow_mod),
+        ("googleapiclient", apiclient),
+        ("googleapiclient.discovery", discovery),
+        ("googleapiclient.errors", errors),
+        ("googleapiclient.http", http_mod),
+    ]:
+        sys.modules.setdefault(name, mod)
+
+    _ensure_google_stubs._done = True  # type: ignore[attr-defined]
+
+
+_ensure_google_stubs()
+
+from jvagent.action.google.google_calendar_action.google_calendar_action import (  # noqa: E402
     GoogleCalendarAction,
 )
-from jvagent.action.google.google_docs_action.google_docs_action import GoogleDocsAction
-from jvagent.action.google.google_drive_action.google_drive_action import (
+from jvagent.action.google.google_docs_action.google_docs_action import (  # noqa: E402
+    GoogleDocsAction,
+)
+from jvagent.action.google.google_drive_action.google_drive_action import (  # noqa: E402
     GoogleDriveAction,
 )
-from jvagent.action.google.google_gmail_action.google_gmail_action import (
+from jvagent.action.google.google_gmail_action.google_gmail_action import (  # noqa: E402
     GoogleGmailAction,
 )
-from jvagent.action.google.google_sheets_action.google_sheets_action import (
+from jvagent.action.google.google_sheets_action.google_sheets_action import (  # noqa: E402
     GoogleSheetsAction,
 )
 

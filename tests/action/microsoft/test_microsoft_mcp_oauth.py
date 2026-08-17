@@ -1,19 +1,33 @@
 """MicrosoftAction subclasses read MCPOAuthToken instead of MicrosoftToken."""
 
+from __future__ import annotations
+
+import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jvagent.action.microsoft.microsoft_excel_action.microsoft_excel_action import (
+
+def _ensure_openpyxl_stub() -> None:
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        sys.modules.setdefault("openpyxl", ModuleType("openpyxl"))
+
+
+_ensure_openpyxl_stub()
+
+from jvagent.action.microsoft.microsoft_excel_action.microsoft_excel_action import (  # noqa: E402
     MicrosoftExcelAction,
 )
-from jvagent.action.microsoft.microsoft_onedrive_action.microsoft_onedrive_action import (
+from jvagent.action.microsoft.microsoft_onedrive_action.microsoft_onedrive_action import (  # noqa: E402
     MicrosoftOneDriveAction,
 )
-from jvagent.action.microsoft.microsoft_outlook_calendar_action.microsoft_outlook_calendar_action import (
+from jvagent.action.microsoft.microsoft_outlook_calendar_action.microsoft_outlook_calendar_action import (  # noqa: E402
     MicrosoftOutlookCalendarAction,
 )
-from jvagent.action.microsoft.microsoft_outlook_mail_action.microsoft_outlook_mail_action import (
+from jvagent.action.microsoft.microsoft_outlook_mail_action.microsoft_outlook_mail_action import (  # noqa: E402
     MicrosoftOutlookMailAction,
 )
 
