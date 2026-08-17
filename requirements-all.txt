@@ -35,15 +35,15 @@ beautifulsoup4
 markdownify
 
 # From jvagent/stt_action/deepgram and jvagent/tts_action/elevenlabs
-deepgram-sdk>=7.6.0
-elevenlabs>=2.61.0
+deepgram-sdk>=7.7.0
+elevenlabs>=2.64.0
 
 # From jvagent/whatsapp
 filetype>=1.2.0
 
 # From the jvagent/google/* actions and jvagent/pageindex_google_drive_sync_action
 google-api-python-client>=2.198.0
-google-auth-httplib2>=0.4.0
+google-auth-httplib2>=0.4.1
 google-auth-oauthlib>=1.4.0
 
 # From jvagent/web_search/serpapi
