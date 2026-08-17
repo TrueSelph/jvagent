@@ -44,6 +44,10 @@ logger = logging.getLogger(__name__)
 # Action ids that already registered a server startup hook for Meta webhook override.
 _meta_webhook_startup_hooks: set[str] = set()
 
+# Strong references to in-flight fire-and-forget register tasks (asyncio keeps
+# only weak ones). Used on long-running hosts; serverless awaits instead.
+_BACKGROUND_TASKS: set = set()
+
 
 class WhatsAppAction(Action):
     """Action for WhatsApp integration using multiple providers.
@@ -305,13 +309,13 @@ class WhatsAppAction(Action):
         except Exception:
             return False
 
-    @staticmethod
-    def _startup_meta_webhook_skip_decision() -> tuple[bool, str]:
+    def _startup_meta_webhook_skip_decision(self) -> tuple[bool, str]:
         """Whether Meta webhook register should be skipped on ``on_startup``.
 
         - ``WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true`` → always skip
-        - ``=false`` → never skip (force register even on Lambda)
-        - unset + serverless/Lambda → skip (cold-start / GB-second mitigation)
+        - ``=false`` → never skip (ops escape hatch; do not leave this on)
+        - unset + serverless + local secret present → skip (later cold starts)
+        - unset + serverless + secret missing → do not skip (first deploy)
         - else → do not skip
         """
         raw = (
@@ -324,7 +328,9 @@ class WhatsAppAction(Action):
         if raw == "false":
             return False, ""
         if WhatsAppAction._is_serverless_runtime():
-            return True, "serverless_default"
+            if self._env_jvconnect_webhook_secret():
+                return True, "serverless_default"
+            return False, ""
         return False, ""
 
     @staticmethod
@@ -580,11 +586,12 @@ class WhatsAppAction(Action):
         """Called when action is registered. Validates configuration.
 
         Meta webhook override registration is **not** done here: the HTTP
-        server is not listening yet. Registration runs once from
-        ``on_startup`` (deferred after uvicorn is up), and is skipped by
-        default on serverless cold starts. Prefer admin
-        ``POST .../meta/webhook-register`` after deploy rather than relying
-        on ``on_reload``.
+        server is not listening yet. Registration runs from ``on_startup``
+        (deferred after uvicorn is up). Serverless skips later cold starts
+        once ``jvconnect_webhook_secret`` (or ``JVCONNECT_WEBHOOK_SECRET``)
+        is on hand; the first deploy with credentials and no secret still
+        registers. Prefer admin ``POST .../meta/webhook-register`` as a
+        manual recovery path rather than ``on_reload``.
         """
         if not self.is_configured():
             logger.debug("WhatsApp action not configured")
@@ -707,9 +714,10 @@ class WhatsAppAction(Action):
     async def _run_startup_meta_webhook_register(self) -> None:
         """Health-check then optionally register Meta webhook (startup path only).
 
-        Unlike ``on_reload``, a healthy forward **without** a local secret skips
-        re-register on cold start (avoids Lambda burn / Meta #80008). Ops must
-        persist ``JVCONNECT_WEBHOOK_SECRET`` from a one-shot admin register.
+        Same skip rule as ``on_reload``: a healthy forward with a local secret
+        skips the POST (avoids Meta #80008). A healthy forward **without** a
+        local secret still registers — jvconnect GET status never returns
+        ``webhook_secret``, and inbound HMAC 500s until it is persisted.
         """
         try:
             if await self._meta_webhook_forward_is_healthy():
@@ -720,15 +728,10 @@ class WhatsAppAction(Action):
                         "skipping startup re-register (avoids Meta #80008)"
                     )
                     return
-                self._session_registered = True
-                logger.warning(
+                logger.info(
                     "WhatsApp Meta webhook forward already healthy but no "
-                    "jvconnect webhook secret on hand; skipping startup "
-                    "re-register. Set JVCONNECT_WEBHOOK_SECRET or POST "
-                    ".../meta/webhook-register — inbound HMAC will fail "
-                    "until the secret is set."
+                    "jvconnect webhook secret on hand; registering to fetch it"
                 )
-                return
         except Exception as health_err:
             logger.warning(
                 "WhatsApp meta health check before register failed: %s",
@@ -763,12 +766,64 @@ class WhatsAppAction(Action):
                 reg,
             )
 
-    def _schedule_deferred_meta_webhook_register(self) -> None:
+    async def _run_deferred_meta_webhook_register_after_startup(self) -> None:
+        """Delay then health-check/register (shared by lifecycle hook and fallback)."""
+        try:
+            delay_raw = os.environ.get("WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS", "0")
+            delay_sec = max(0.0, float(delay_raw))
+        except (ValueError, TypeError):
+            delay_sec = 0.0
+
+        if delay_sec > 0:
+            logger.info(
+                "Deferring Meta WhatsApp webhook override by %.1fs "
+                "(after Application startup complete)",
+                delay_sec,
+            )
+            await asyncio.sleep(delay_sec)
+        else:
+            # Yield once so uvicorn finishes lifespan startup first.
+            await asyncio.sleep(0)
+
+        timeout = self._startup_webhook_register_timeout_seconds()
+        try:
+            await asyncio.wait_for(
+                self._run_startup_meta_webhook_register(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "WhatsApp Meta startup webhook register timed out "
+                "after %.1fs (fail-fast). Set "
+                "WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true or "
+                "register once via POST .../meta/webhook-register.",
+                timeout,
+            )
+
+    def _fire_meta_webhook_register_task(self) -> None:
+        """Fire-and-forget register on long-running hosts (strongly referenced)."""
+        task = asyncio.create_task(
+            self._run_deferred_meta_webhook_register_after_startup(),
+            name="meta_whatsapp_webhook_register",
+        )
+        _BACKGROUND_TASKS.add(task)
+        task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    async def _launch_deferred_meta_webhook_register(self) -> None:
+        """Await register on Lambda; create_task on long-running servers."""
+        if WhatsAppAction._is_serverless_runtime():
+            await self._run_deferred_meta_webhook_register_after_startup()
+            return
+        self._fire_meta_webhook_register_task()
+
+    async def _schedule_deferred_meta_webhook_register(self) -> None:
         """Register Meta webhook override after the HTTP server is listening.
 
         ``on_startup`` runs inside ``asyncio.run(pre_startup_bootstrap)``; a bare
         ``asyncio.create_task`` there is cancelled when that loop closes. Hook
-        into the jvspatial server lifecycle instead (same pattern as startup summary).
+        into the jvspatial server lifecycle instead (same pattern as startup
+        summary). On serverless the lifecycle hook **awaits** register so
+        Lambda does not freeze before ``jvconnect_webhook_secret`` is saved.
         """
         action_id = str(getattr(self, "id", "") or "")
         if action_id and action_id in _meta_webhook_startup_hooks:
@@ -777,63 +832,32 @@ class WhatsAppAction(Action):
             from jvspatial.api.context import get_current_server
 
             server = get_current_server()
-            if not server or not hasattr(server, "lifecycle_manager"):
-                logger.warning(
-                    "WhatsApp meta: cannot schedule webhook override (server not ready)"
+            if server and hasattr(server, "lifecycle_manager"):
+
+                async def _deferred_meta_webhook_register() -> None:
+                    await self._launch_deferred_meta_webhook_register()
+
+                server.lifecycle_manager.add_startup_hook(
+                    _deferred_meta_webhook_register
                 )
+                if action_id:
+                    _meta_webhook_startup_hooks.add(action_id)
                 return
 
-            async def _deferred_meta_webhook_register() -> None:
-                """Schedule Meta webhook override after uvicorn startup (non-blocking)."""
-
-                async def _run_after_startup() -> None:
-                    try:
-                        delay_raw = os.environ.get(
-                            "WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS", "0"
-                        )
-                        delay_sec = max(0.0, float(delay_raw))
-                    except (ValueError, TypeError):
-                        delay_sec = 0.0
-
-                    if delay_sec > 0:
-                        logger.info(
-                            "Deferring Meta WhatsApp webhook override by %.1fs "
-                            "(after Application startup complete)",
-                            delay_sec,
-                        )
-                        await asyncio.sleep(delay_sec)
-                    else:
-                        # Yield once so uvicorn finishes lifespan startup first.
-                        await asyncio.sleep(0)
-
-                    timeout = self._startup_webhook_register_timeout_seconds()
-                    try:
-                        await asyncio.wait_for(
-                            self._run_startup_meta_webhook_register(),
-                            timeout=timeout,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning(
-                            "WhatsApp Meta startup webhook register timed out "
-                            "after %.1fs (fail-fast). Set "
-                            "WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true or "
-                            "register once via POST .../meta/webhook-register.",
-                            timeout,
-                        )
-
-                asyncio.create_task(
-                    _run_after_startup(),
-                    name="meta_whatsapp_webhook_register",
-                )
-
-            server.lifecycle_manager.add_startup_hook(_deferred_meta_webhook_register)
-            if action_id:
-                _meta_webhook_startup_hooks.add(action_id)
+            logger.warning(
+                "WhatsApp meta: cannot schedule webhook override "
+                "(server not ready); falling back"
+            )
         except Exception as e:
             logger.warning(
-                "WhatsApp meta: failed to schedule deferred webhook registration: %s",
+                "WhatsApp meta: failed to schedule deferred webhook "
+                "registration via lifecycle_manager; falling back: %s",
                 e,
             )
+
+        await self._launch_deferred_meta_webhook_register()
+        if action_id:
+            _meta_webhook_startup_hooks.add(action_id)
 
     async def _meta_webhook_stale_check(
         self,
@@ -1052,7 +1076,7 @@ class WhatsAppAction(Action):
                     if not self.webhook_url:
                         self.webhook_url = await self.get_webhook_url()
 
-                    self._schedule_deferred_meta_webhook_register()
+                    await self._schedule_deferred_meta_webhook_register()
                     result = {
                         "status": "pending",
                         "reason": "meta_webhook_register_scheduled",
