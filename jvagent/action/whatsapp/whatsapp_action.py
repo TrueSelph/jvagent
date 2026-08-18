@@ -1017,7 +1017,14 @@ class WhatsAppAction(Action):
 
     async def on_startup(self) -> None:
         """Initialize filter and adapter, attempt session registration with configurable timeout."""
-        if not self.is_configured() or not self.enabled:
+        if not self.enabled:
+            logger.info("WhatsApp action disabled; skipping startup")
+            return
+        if not self.is_configured():
+            logger.warning(
+                "WhatsApp action not configured; skipping startup. Issues: %s",
+                "; ".join(self._config_issues()),
+            )
             return
 
         await self._warn_lambda_local_storage()

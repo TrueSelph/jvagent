@@ -19,6 +19,14 @@ def test_resolve_builtin_skills_contains_catalog_entries() -> None:
     assert "answer" in skills
     assert "research" in skills
     assert "triage" in skills
+    assert "google_sheets" in skills
+    assert "google_gmail" in skills
+    assert "google_drive" in skills
+    assert "google_calendar" in skills
+    assert "outlook_mail" in skills
+    assert "outlook_calendar" in skills
+    assert "onedrive" in skills
+    assert "excel" in skills
 
 
 def test_resolve_agent_skills_reads_app_local_bundle(tmp_path: Path) -> None:

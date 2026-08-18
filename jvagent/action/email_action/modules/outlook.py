@@ -1,4 +1,4 @@
-"""Microsoft Graph Outlook email provider (OAuth via MicrosoftOutlookMailAction)."""
+"""Microsoft Graph Outlook email provider (MCP OAuth via MicrosoftOutlookMailAction)."""
 
 from __future__ import annotations
 

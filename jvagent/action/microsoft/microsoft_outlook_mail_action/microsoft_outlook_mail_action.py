@@ -13,7 +13,7 @@ from ..microsoft_action import MicrosoftAction
 
 
 class MicrosoftOutlookMailAction(MicrosoftAction):
-    """Send and read mail via Microsoft Graph (Outlook / Exchange Online)."""
+    """Send and read mail via Microsoft Graph. Login is MCP OAuth (`/api/mcp/microsoft_365/auth?service=outlook`)."""
 
     SCOPES: ClassVar[List[str]] = [
         "offline_access",
@@ -22,6 +22,7 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
         "Mail.ReadWrite",
         "Mail.Send",
     ]
+    _MCP_SERVICE: ClassVar[str] = "outlook"
 
     _MESSAGE_SELECT_FIELDS = (
         "subject,body,from,toRecipients,conversationId,internetMessageId,"

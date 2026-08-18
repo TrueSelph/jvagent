@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 from jvagent.action.spreadsheet.range_utils import (
     compose_a1_range,
+    resolve_sheet_title,
     resolve_spreadsheet_id,
 )
 
@@ -150,14 +151,10 @@ def split_qualified_a1(qualified: str) -> Tuple[str, str]:
 
 
 class GoogleSheetsAction(GoogleAction):
-    """Google Sheets operations with OAuth2 (user-delegated credentials).
+    """Google Sheets operations with OAuth2 via MCP OAuth (MCPOAuthToken).
 
-    Uses google-api-python-client (Sheets v4, Drive v3). Adding ``drive.file`` scope may
-    require users to re-authorize if they previously granted only spreadsheets scope.
-
-    Instance attributes :attr:`worksheet_title` and :attr:`spreadsheet_url` supply defaults
-    when methods omit ``worksheet_title`` or ``spreadsheet_url_or_id`` (same resolution idea
-    as HTTP handlers that fall back to the action configuration).
+    Uses google-api-python-client (Sheets v4, Drive v3). Login is
+    ``/api/mcp/google_workspace/auth``.
     """
 
     worksheet_title: str = attribute(
@@ -179,8 +176,12 @@ class GoogleSheetsAction(GoogleAction):
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file",
     ]
-
+    _MCP_SERVICE: ClassVar[str] = "sheets"
     _built_drive_service: Optional[Any] = None
+
+    def _clear_cached_services(self) -> None:
+        super()._clear_cached_services()
+        self._built_drive_service = None
 
     def _effective_worksheet_title(self, worksheet_title: Optional[str]) -> str:
         """Return explicit ``worksheet_title`` if set, else the action default tab name."""
@@ -259,6 +260,21 @@ class GoogleSheetsAction(GoogleAction):
                 return int(props["sheetId"])
         raise ValueError(f"No worksheet titled {title!r} in this spreadsheet")
 
+    async def _list_sheet_titles(self, spreadsheet_id: str) -> List[str]:
+        """Return tab titles from ``spreadsheets.get`` (same metadata as sheetId lookup)."""
+        service = await self.get_service()
+        meta = (
+            service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets(properties(title))")
+            .execute()
+        )
+        titles: List[str] = []
+        for sheet in meta.get("sheets", []):
+            title = (sheet.get("properties") or {}).get("title")
+            if title:
+                titles.append(str(title))
+        return titles
+
     async def read_spreadsheet(
         self,
         spreadsheet_url_or_id: Optional[str] = None,
@@ -294,7 +310,27 @@ class GoogleSheetsAction(GoogleAction):
         spreadsheet_id = resolve_spreadsheet_id(
             self._resolve_spreadsheet_url_or_id(spreadsheet_url_or_id)
         )
+        titles = await self._list_sheet_titles(spreadsheet_id)
+        if not (range_name and "!" in range_name):
+            wanted = str(worksheet_title or "").strip()
+            resolved = resolve_sheet_title(wanted, titles) if wanted else None
+            if wanted and not resolved:
+                raise ValueError(
+                    f"No worksheet titled {wanted!r} in this spreadsheet. "
+                    f"Available tabs: {titles}"
+                )
+            if resolved and resolved != wanted:
+                logger.info("Sheets resolved tab %r -> %r", wanted, resolved)
+            if resolved:
+                worksheet_title = resolved
         full_range = self._a1_range(range_name, worksheet_title)
+        logger.info(
+            "Sheets read spreadsheet_id=%s worksheet_title=%r range=%r tabs=%s",
+            spreadsheet_id,
+            worksheet_title,
+            full_range,
+            titles,
+        )
         service = await self.get_service()
         result = (
             service.spreadsheets()

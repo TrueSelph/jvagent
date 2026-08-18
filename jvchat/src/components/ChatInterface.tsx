@@ -19,6 +19,7 @@ import { ConversationList } from "./ConversationList";
 import { DebugInteractions } from "./DebugInteractions";
 import { PageIndexDocumentsModal } from "./PageIndexDocumentsModal";
 import { ActionsModal } from "./ActionsModal";
+import { McpsModal } from "./McpsModal";
 import { MemoryViewer } from "./MemoryViewer";
 import {
   getMessages,
@@ -78,6 +79,7 @@ export function ChatInterface() {
   const [isPageIndexModalOpen, setIsPageIndexModalOpen] = useState(false);
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
+  const [isMcpsModalOpen, setIsMcpsModalOpen] = useState(false);
   const [hasPageIndexAction, setHasPageIndexAction] = useState(false);
 
   const handleMobileMenuClose = useCallback(() => {
@@ -141,6 +143,14 @@ export function ChatInterface() {
     setIsMemoryModalOpen(false);
   }, []);
 
+  const handleToggleMcpsModal = useCallback(() => {
+    setIsMcpsModalOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseMcpsModal = useCallback(() => {
+    setIsMcpsModalOpen(false);
+  }, []);
+
   useEffect(() => {
     const typingTarget = (t: EventTarget | null) => {
       if (!(t instanceof HTMLElement)) return false;
@@ -182,6 +192,11 @@ export function ChatInterface() {
         openAppGraph();
         return;
       }
+      if (k === "m") {
+        e.preventDefault();
+        handleToggleMcpsModal();
+        return;
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -193,6 +208,7 @@ export function ChatInterface() {
     handleToggleDebugModal,
     handleToggleActionsModal,
     handleToggleMemoryModal,
+    handleToggleMcpsModal,
     openAppGraph,
   ]);
 
@@ -473,6 +489,7 @@ export function ChatInterface() {
       onActionConfig={handleToggleActionsModal}
       onLongMemory={handleToggleMemoryModal}
       onAppGraph={openAppGraph}
+      onMcps={handleToggleMcpsModal}
     />
   );
 
@@ -622,6 +639,14 @@ export function ChatInterface() {
           <MemoryViewer
             agentId={agentId}
             onClose={handleCloseMemoryModal}
+          />
+        )}
+
+        {isMcpsModalOpen && agentId && (
+          <McpsModal
+            agentId={agentId}
+            onClose={handleCloseMcpsModal}
+            isEmbedded={true}
           />
         )}
       </div>

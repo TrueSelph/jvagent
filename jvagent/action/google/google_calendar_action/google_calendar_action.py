@@ -10,11 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleCalendarAction(GoogleAction):
-    """Action for Google Calendar operations using OAuth2 (user-delegated credentials)."""
+    """Calendar operations. Login is MCP OAuth (`/api/mcp/google_workspace/auth?service=calendar`)."""
 
     API_SERVICE_NAME: ClassVar[str] = "calendar"
     API_VERSION: ClassVar[str] = "v3"
     SCOPES: ClassVar[List[str]] = ["https://www.googleapis.com/auth/calendar"]
+    _MCP_SERVICE: ClassVar[str] = "calendar"
 
     async def list_events(
         self,

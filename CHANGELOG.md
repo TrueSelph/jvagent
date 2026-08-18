@@ -8,21 +8,39 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.8rc1] - 2026-08-18
+
 ### Added
 
-- **PageIndex: LLM-free "Flash" extraction mode.**
+- **PageIndex: LLM-free "Flash" extraction mode (#153).**
   A new `chunking_strategy="flash"` option uses heuristic layout analysis
   (heading detection, column detection, embedded TOC/bookmarks) to build a
   document tree without any LLM calls. This is orders of magnitude faster
   than LLM-based strategies and has zero token cost, making it ideal for
   bulk ingestion or cost-sensitive pipelines. Available in jvchat's Upload
-  and Google Sync dropdowns as "Flash — LLM-free (PDF only)".
+  and Google Sync dropdowns as "Flash — LLM-free (PDF only)". Flash is
+  forwarded to jvforge assimilate; native local ingest does not run it.
 
-- **PageIndex: tree optimization pass after extraction.**
+- **PageIndex: Flash upstream dependency refresh (#153).**
+  Replaced `pypdf` with `PyPDF2>=3.0.1` and added Flash runtime deps
+  (`pypdfium2>=4.30.0`, `sortedcontainers>=2.4.0`, `regex>=2024.0.0`,
+  `openai>=1.70.0`) across `pageindex_action/info.yaml`,
+  `requirements-all.txt`, and test extras.
+
+- **PageIndex ingest: `if_add_doc_description` form field (#153).**
+  Multipart ingest and jvforge assimilate accept `if_add_doc_description`
+  (true/false/yes/no/1/0). When omitted, REST ingest defaults it **on**.
+  Google Drive sync accepts optional `doc_description` /
+  `add_doc_description`. jvchat adds a matching "Generate document
+  description" checkbox.
+
+- **PageIndex: tree optimization pass after extraction (#153).**
   The new `tree_optimize.py` module runs a post-extraction merge/expand pass
   that collapses single-child chains, merges overlapping sibling ranges, and
   optionally summarizes merged nodes. This produces cleaner, shallower trees
-  that are easier for RAG to navigate.
+  that are easier for RAG to navigate. The classic PDF pipeline auto-runs
+  the no-LLM `merge_tree()` pass after extraction; the LLM expand pass
+  remains opt-in.
 
 - **PageIndex: prompt injection hardening.**
   User-supplied document text is now sanitized before being included in LLM
@@ -70,7 +88,75 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   black/isort/mypy config skip `jvagent/action/pageindex/core` so upstream
   files stay byte-identical to PageIndex.
 
+- **Per-service MCP OAuth tokens and status (#156).**
+  `service_tokens` on `MCPOAuthToken` keeps separate refresh tokens per
+  service on the same email (Sheets login does not overwrite Gmail).
+  `GET /api/mcp/{server}/auth/status` reports connected emails per service
+  (no secrets). `oauth_setup` is rebuilt on register/reload/startup as
+  per-service `{server, service, label, redirect_uri, auth_url}`. Coverage:
+  `tests/action/mcp_oauth/`.
+
+- **Google Workspace MCP credential hydration (#156).**
+  Before stdio spawn, `hydrate_google_workspace_from_graph()` writes
+  `@aaronsb/google-workspace-mcp` XDG `accounts.json` and per-email
+  credential files from `MCPOAuthToken`, matching the MCP server's
+  `emailToSlug` layout so MCP tools and in-process Google actions share one
+  login. Coverage: `tests/action/mcp_oauth/test_hydrate.py`.
+
+- **Microsoft 365 MCP BYOT token injection (#156).**
+  `@softeria/ms-365-mcp-server` does not refresh BYOT tokens. jvagent
+  refreshes expired Graph tokens through Entra, writes them back to the
+  graph, and injects `MS365_MCP_OAUTH_TOKEN` (plus client/tenant env) into
+  the stdio subprocess. Coverage:
+  `tests/action/mcp_oauth/test_microsoft_scopes.py`,
+  `tests/action/microsoft/test_microsoft_mcp_oauth.py`.
+
+- **Scope-aware OAuth consent tied to agent configuration (#156).**
+  `scopes.py` / `microsoft_scopes.py` intersect requested OAuth scopes with
+  MCP `tools`/`denied_tools` and enabled sibling `Google*Action` /
+  `Microsoft*Action` packages so a Sheets-only agent does not ask for
+  Gmail. Microsoft consent is the four personal services (outlook,
+  calendar, onedrive, excel), optionally narrowed by `?service=`. Unknown
+  or disabled `?service=` raises `GoogleOAuthServiceNotEnabled` /
+  `MicrosoftOAuthServiceNotEnabled`.
+
+- **Builtin Google and Microsoft orchestrator skills (#156).**
+  Eight JV skills under `jvagent/skills/google/` and
+  `jvagent/skills/microsoft/` (`google_gmail`, `google_drive`,
+  `google_calendar`, `google_sheets`, `outlook_mail`, `outlook_calendar`,
+  `onedrive`, `excel`) with tool-parameter SOPs and MCP OAuth operator
+  guidance. `resolve_builtin_skills()` discovers the nested `google/` and
+  `microsoft/` folders. Google Docs remains action-only (no skill).
+  Coverage: `tests/scaffold/test_skill_resolve.py`.
+
 ### Changed
+
+- **BREAKING — Google and Microsoft login is MCP OAuth (#156).**
+  In-process Workspace/Graph actions (`GoogleAction` / `MicrosoftAction`
+  subclasses, plus `EmailAction` `gmail`/`outlook`) read **`MCPOAuthToken`**,
+  not `GoogleToken` / `MicrosoftToken`. Per-action OAuth endpoints
+  (`google/endpoints.py`, `microsoft/endpoints.py`),
+  `get_authorization_url()`, `/api/google/{action_id}`, and
+  `/api/microsoft/{action_id}` are gone. Operators authorize at
+  `/api/mcp/google_workspace/auth?service=sheets|gmail|docs|drive|calendar`
+  and `/api/mcp/microsoft_365/auth?service=outlook|calendar|onedrive|excel`.
+  Cloud Console / Entra redirect URIs must be
+  `/api/mcp/google_workspace/auth/callback` and
+  `/api/mcp/microsoft_365/auth/callback` (not `/api/google/callback/` or
+  `/api/microsoft/callback/`). The agent must enable `jvagent/mcp_oauth`
+  and `jvagent/mcp` with `google_workspace`
+  (`@aaronsb/google-workspace-mcp`) and/or `microsoft_365`
+  (`@softeria/ms-365-mcp-server`). Existing `GoogleToken` /
+  `MicrosoftToken` rows are **not** auto-migrated — re-authorize.
+  Legacy token node classes remain for DB compatibility only. Coverage:
+  `tests/action/google/test_google_sheets_mcp_oauth.py`,
+  `tests/action/microsoft/test_microsoft_mcp_oauth.py`.
+
+- **Flash chunking runs on the jvforge ingest path only (#153).**
+  `chunking_strategy=flash` is forwarded to jvforge; native
+  `_do_assimilate` ignores it. Google Drive sync raises `ValidationError`
+  when flash is requested without jvforge (`JVAGENT_JVFORGE_BASE_URL` /
+  `use_jvforge`).
 
 - **PageIndex: bool flags at the JV API boundary, yes/no only for upstream.**
   Python APIs (`assimilate_document`, jvforge assimilate helpers, action
@@ -103,6 +189,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `if_add_node_summary: bool` and encode yes/no only for the HTTP form.
   Passing the string `"no"` was truthy and would incorrectly send `"yes"`.
   Artifact handler and related callers now pass real bools.
+
+- **Google Sheets tab names with digits and `_` vs space (#156).**
+  `resolve_sheet_title()` matches case and `_` vs space (`FAB_2026` vs
+  `FAB 2026`); `qualify_sheet_title()` quotes digit-containing tabs so A1
+  does not treat them as cell refs. Coverage:
+  `tests/action/spreadsheet/test_range_utils.py`.
 
 ## [0.1.7] - 2026-08-09
 

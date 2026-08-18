@@ -156,7 +156,7 @@ class EmailAdapter(ChannelAdapter):
             if not sender_email:
                 logger.error(
                     "EmailAdapter: no sender email for %s (set EMAIL_DEFAULT_SENDER or "
-                    "complete mailbox OAuth for Gmail/Outlook)",
+                    "complete MCP OAuth via the Gmail/Outlook action auth_url)",
                     to_email,
                 )
                 return False

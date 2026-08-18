@@ -1175,6 +1175,27 @@ class ApiClient {
     return String(this.client.defaults.baseURL ?? '').replace(/\/$/, '')
   }
 
+  async getMcpAuthStatus(serverName: string): Promise<{
+    oauth_supported?: boolean
+    server_name?: string
+    bindings?: Record<string, { email?: string }>
+  }> {
+    const server = encodeURIComponent(serverName)
+    const response = await this._withFallback(async (baseURL) => {
+      try {
+        return await this.client.get(`/api/mcp/${server}/auth/status`, { baseURL })
+      } catch (err: any) {
+        if (err.response?.status === 404) {
+          return await this.client.get(`/mcp/${server}/auth/status`, { baseURL })
+        }
+        throw err
+      }
+    })
+    const data = response.data
+    if (data && data.success && data.data) return data.data
+    return data
+  }
+
   /**
    * GET /api/actions/{actionId} — full action export (includes webhook_url when present).
    * Unwraps persisted node shape `{ id, entity, context }` into a flat `{ id, entity, ...context }`

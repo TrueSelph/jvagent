@@ -6,9 +6,11 @@ package:
   meta:
     title: Email Integration
     description: >-
-      Email channel: Gmail, Outlook (OAuth + inbound webhook), or SendGrid (API key + inbound webhook).
-      Gmail: GOOGLE_CLIENT_SECRETS_JSON and GoogleGmailAction on the agent; optional EMAIL_DEFAULT_SENDER.
-      Outlook: MICROSOFT_CLIENT_ID, MicrosoftOutlookMailAction on the agent; optional EMAIL_DEFAULT_SENDER;
+      Email channel: Gmail, Outlook (MCP OAuth + inbound webhook), or SendGrid (API key + inbound webhook).
+      Gmail: GOOGLE_CLIENT_SECRETS_JSON, jvagent/mcp_oauth, jvagent/mcp (google_workspace), and
+      GoogleGmailAction; authorize at /api/mcp/google_workspace/auth?service=gmail; optional EMAIL_DEFAULT_SENDER.
+      Outlook: MICROSOFT_CLIENT_ID, jvagent/mcp_oauth, jvagent/mcp (microsoft_365), and
+      MicrosoftOutlookMailAction; authorize at /api/mcp/microsoft_365/auth?service=outlook; optional EMAIL_DEFAULT_SENDER;
       inbound uses OData outlook_mail_filter on Inbox. SendGrid: SENDGRID_API_KEY and EMAIL_DEFAULT_SENDER.
       Inbound: Gmail or Outlook inbox fetch (webhook POST) or SendGrid Inbound Parse POST to the email webhook URL.
     group: jvagent
