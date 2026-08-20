@@ -1266,16 +1266,32 @@ class OrchestratorLoopMixin:
                     if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
                         substantive_tool_calls += 1
                     # End the turn once the user has been addressed: a persona
-                    # reply (by name) or a terminal IA-tool that owns its own
-                    # output. This also stops a model that keeps choosing the
-                    # same tool from looping until the budget is exhausted.
-                    if tool_name in ("reply", "respond") or (
-                        tool is not None and tool.terminal
+                    # reply (by name), a terminal tool that owns its own output,
+                    # or any tool that already delivered a user-facing message
+                    # this turn (interaction.emitted). This also stops a model
+                    # that keeps choosing the same tool from looping until the
+                    # budget is exhausted.
+                    already_emitted = False
+                    if interaction is not None:
+                        has_emitted = getattr(interaction, "has_emitted", None)
+                        if callable(has_emitted):
+                            try:
+                                already_emitted = bool(has_emitted())
+                            except Exception:
+                                already_emitted = False
+                    if (
+                        tool_name in ("reply", "respond")
+                        or (tool is not None and tool.terminal)
+                        or already_emitted
                     ):
                         ended_via = (
                             tool_name
                             if tool_name in ("reply", "respond")
-                            else "ia_tool"
+                            else (
+                                "ia_tool"
+                                if (tool is not None and tool.terminal)
+                                else "emitted"
+                            )
                         )
                         return
                     continue
