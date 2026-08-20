@@ -41,8 +41,8 @@ import type {
   GraphExpandResponse,
   GraphSubgraphResponse,
   GoogleDriveListResponse,
-  DoclingOcrEngine,
   ChunkingStrategy,
+  DoclingOcrEngine,
 } from '../types/api'
 import * as graphService from './api/graph'
 
@@ -333,6 +333,14 @@ class ApiClient {
    * This is called when the user changes the server URL in the login form.
    */
   updateBaseUrl(url: string): void {
+    if (import.meta.env.DEV) {
+      const last = url.length > 0 ? url.charCodeAt(url.length - 1) : -1
+      console.log('[jvchat] updateBaseUrl input:', {
+        url,
+        json: JSON.stringify(url),
+        lastCharCode: last,
+      })
+    }
     this.baseUrls = this._buildBaseUrls(url)
     console.log('Updating API client baseURLs to:', this.baseUrls)
     this.client.defaults.baseURL = this.baseUrls[0]
@@ -350,6 +358,11 @@ class ApiClient {
       urls.push(swapped)
     }
     return urls
+  }
+
+  /** Strip trailing slashes so `${base}/api/...` never becomes `//api`. */
+  private _joinBase(base: string, path: string): string {
+    return `${String(base).replace(/\/+$/, '')}${path}`
   }
 
   private _swapHost(url: string): string | null {
@@ -729,7 +742,10 @@ class ApiClient {
 
     for (const base of this.baseUrls) {
       for (const prefix of ['/api', '']) {
-        const url = `${base}${prefix}/agents/${agentId}/interact/session/refresh`
+        const url = this._joinBase(base, `${prefix}/agents/${agentId}/interact/session/refresh`)
+        if (import.meta.env.DEV) {
+          console.log('[jvchat] refreshInteractSession URL:', url)
+        }
         try {
           const response = await fetch(url, {
             method: 'POST',
@@ -798,7 +814,10 @@ class ApiClient {
     await this._ensureFreshInteractSession(agentId, request.session_id)
     const response = await this._withFallback(async (baseURL) => {
         // Use fetch directly to avoid axios interceptor adding auth headers
-        const url = `${baseURL}/api/agents/${agentId}/interact`
+        const url = this._joinBase(baseURL, `/api/agents/${agentId}/interact`)
+        if (import.meta.env.DEV) {
+          console.log('[jvchat] interact URL:', url)
+        }
         const fetchResponse = await fetch(url, {
           method: 'POST',
           headers: {
@@ -815,7 +834,10 @@ class ApiClient {
           }
           if (fetchResponse.status === 404) {
             // Try without /api prefix
-            const fallbackUrl = `${baseURL}/agents/${agentId}/interact`
+            const fallbackUrl = this._joinBase(baseURL, `/agents/${agentId}/interact`)
+            if (import.meta.env.DEV) {
+              console.log('[jvchat] interact fallback URL:', fallbackUrl)
+            }
             const fallbackResponse = await fetch(fallbackUrl, {
               method: 'POST',
               headers: {
@@ -901,7 +923,14 @@ class ApiClient {
         if (signal?.aborted) {
           throw new DOMException('Aborted', 'AbortError')
         }
-        const url = `${base}${prefix}/agents/${agentId}/interact`
+        const url = this._joinBase(base, `${prefix}/agents/${agentId}/interact`)
+        if (import.meta.env.DEV) {
+          console.log('[jvchat] streamInteract URL:', {
+            rawBase: base,
+            prefix,
+            url,
+          })
+        }
         try {
           const response = await fetch(url, {
             method: 'POST',
@@ -1175,10 +1204,27 @@ class ApiClient {
     return String(this.client.defaults.baseURL ?? '').replace(/\/$/, '')
   }
 
+  /** Browser OAuth start URL for an MCP server (opens in a new tab). */
+  getMcpAuthUrl(serverName: string, service?: string): string {
+    const base = this.getJvagentBaseUrl()
+    const server = encodeURIComponent(serverName)
+    const qs = service ? `?service=${encodeURIComponent(service)}` : ''
+    return `${base}/api/mcp/${server}/auth${qs}`
+  }
+
   async getMcpAuthStatus(serverName: string): Promise<{
     oauth_supported?: boolean
     server_name?: string
-    bindings?: Record<string, { email?: string }>
+    redirect_uri?: string | null
+    auth_url?: string | null
+    bindings?: Record<string, { email?: string; access?: string }>
+    catalog?: Array<{
+      id: string
+      label: string
+      access_choices?: Array<{ id: string; label: string }>
+    }>
+    emails?: string[]
+    setup_error?: string | null
   }> {
     const server = encodeURIComponent(serverName)
     const response = await this._withFallback(async (baseURL) => {
@@ -1416,8 +1462,10 @@ class ApiClient {
       skip_existing_documents?: boolean
       /** When true, require jvforge. When false, native ingest even if jvforge URL is set. */
       use_jvforge?: boolean
-      /** Chunking strategy: 'heading' (default), 'llm_segment', or 'llm_direct'. */
+      /** Chunking strategy: 'heading' (default), 'llm_segment', 'llm_direct', or 'flash'. */
       chunking_strategy?: ChunkingStrategy
+      /** When true, keep heading-like stubs and structural nodes as separate enabled chunks. */
+      enable_all_chunks?: boolean
     }
   ): Promise<{ message?: string; result?: unknown }> {
     const response = await this._withFallback(async (baseURL) => {
@@ -1582,7 +1630,6 @@ class ApiClient {
       docUrl?: string
       metadata?: Record<string, unknown>
       ifAddNodeSummary?: boolean
-      ifAddDocDescription?: boolean
       convertToMarkdown?: boolean
       ocr?: boolean
       /** When set, sent as ``docling_ocr_engine``; overrides plain ``ocr`` on jvforge. */
@@ -1591,8 +1638,10 @@ class ApiClient {
       /** When set, sent as multipart ``use_jvforge`` (yes/no). False = always native on jvagent. */
       useJvforge?: boolean
       emergency?: boolean  // NEW: Mark as emergency priority
-      /** Chunking strategy: 'heading' (default, no LLM), 'llm_segment' (LLM finds boundaries), 'llm_direct' (LLM decides full tree). */
+      /** Chunking strategy: 'heading' (default), 'llm_segment', 'llm_direct', or 'flash'. */
       chunkingStrategy?: ChunkingStrategy
+      /** When true, keep heading-like stubs and structural nodes as separate enabled chunks. */
+      enableAllChunks?: boolean
     }
   ): Promise<PageIndexUploadResponse & {
     status?: 'queued' | 'already_queued'
@@ -1614,10 +1663,7 @@ class ApiClient {
     if (options?.docUrl) formData.append('doc_url', options.docUrl)
     if (options?.metadata) formData.append('metadata', JSON.stringify(options.metadata))
     if (options?.ifAddNodeSummary !== undefined) {
-      formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'true' : 'false')
-    }
-    if (options?.ifAddDocDescription !== undefined) {
-      formData.append('if_add_doc_description', options.ifAddDocDescription ? 'true' : 'false')
+      formData.append('if_add_node_summary', options.ifAddNodeSummary ? 'yes' : 'no')
     }
     if (options?.convertToMarkdown !== undefined) {
       formData.append('convert_to_markdown', options.convertToMarkdown ? 'yes' : 'no')
@@ -1639,6 +1685,9 @@ class ApiClient {
     }
     if (options?.chunkingStrategy && options.chunkingStrategy !== 'heading') {
       formData.append('chunking_strategy', options.chunkingStrategy)
+    }
+    if (options?.enableAllChunks !== undefined) {
+      formData.append('enable_all_chunks', options.enableAllChunks ? 'yes' : 'no')
     }
 
     const path = `/api/agents/${encodeURIComponent(agentId)}/pageindex/documents`

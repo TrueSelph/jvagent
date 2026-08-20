@@ -629,6 +629,9 @@ async def pageindex_google_drive_sync_action_interact(
             request_data, "skip_existing_documents", default=True
         )
         use_jvforge_opt = _payload_optional_bool(request_data, "use_jvforge")
+        enable_all_chunks_flag = _payload_bool(
+            request_data, "enable_all_chunks", default=False
+        )
 
         chunking_strategy_raw = request_data.get("chunking_strategy")
         chunking_strategy_val = (
@@ -656,6 +659,8 @@ async def pageindex_google_drive_sync_action_interact(
             "flash",
         ):
             ingest_kw["chunking_strategy"] = chunking_strategy_val
+        if enable_all_chunks_flag:
+            ingest_kw["enable_all_chunks"] = True
 
         doc_description_raw = request_data.get("doc_description")
         if doc_description_raw and isinstance(doc_description_raw, str):

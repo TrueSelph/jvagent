@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiClient } from "../config/api";
 import type {
+  ChunkingStrategy,
   GoogleDriveFileEntry,
   GoogleDriveFolderState,
   PageIndexChunk,
@@ -9,7 +10,6 @@ import type {
   PageIndexDocument,
   PageIndexDocumentPatchUpdates,
   DoclingOcrEngine,
-  ChunkingStrategy,
 } from "../types/api";
 import { useTheme } from "../context/ThemeContext";
 import { JsonCodeEditor } from "./JsonCodeEditor";
@@ -94,6 +94,8 @@ function buildGoogleDriveSyncDefaultBody(
     docling_ocr_engine: "rapidocr",
     google_drive_folders: folders,
     use_jvforge: true,
+    chunking_strategy: "flash",
+    enable_all_chunks: false,
   };
 }
 
@@ -322,13 +324,13 @@ export function PageIndexDocumentsModal({
   const [docUrl, setDocUrl] = useState("");
   const [metadataJson, setMetadataJson] = useState("");
   const [addNodeSummary, setAddNodeSummary] = useState(true);
-  const [addDocDescription, setAddDocDescription] = useState(true);
   const [convertToMarkdown, setConvertToMarkdown] = useState(true);
   const [doclingOcrEngine, setDoclingOcrEngine] =
     useState<DoclingOcrEngine>("rapidocr");
   const [normalizeBoldHeadings, setNormalizeBoldHeadings] = useState(false);
   const [chunkingStrategy, setChunkingStrategy] =
     useState<ChunkingStrategy>("heading");
+  const [enableAllChunks, setEnableAllChunks] = useState(false);
   const [useJvforge, setUseJvforge] = useState(true);
   const [purgeOnImport, setPurgeOnImport] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -367,6 +369,8 @@ export function PageIndexDocumentsModal({
     useState(false);
   const [driveIngestChunkingStrategy, setDriveIngestChunkingStrategy] =
     useState<ChunkingStrategy>("heading");
+  const [driveIngestEnableAllChunks, setDriveIngestEnableAllChunks] =
+    useState(false);
   const [driveIngestUseJvforge, setDriveIngestUseJvforge] = useState(true);
   const [driveRemoveDeleted, setDriveRemoveDeleted] = useState(false);
   const [driveSkipExistingDocuments, setDriveSkipExistingDocuments] =
@@ -408,15 +412,12 @@ export function PageIndexDocumentsModal({
   const [deletingChunkId, setDeletingChunkId] = useState<string | null>(null);
   const [editEnabled, setEditEnabled] = useState(true);
   const [editContentType, setEditContentType] = useState("");
-  const [editingDocument, setEditingDocument] =
-    useState<PageIndexDocument | null>(null);
+  const [editingDocument, setEditingDocument] = useState<PageIndexDocument | null>(null);
   const [editDocDescription, setEditDocDescription] = useState("");
   const [editDocSourceUrl, setEditDocSourceUrl] = useState("");
   const [editDocMetadataJson, setEditDocMetadataJson] = useState("");
   const [savingDocument, setSavingDocument] = useState(false);
-  const [saveDocumentError, setSaveDocumentError] = useState<string | null>(
-    null,
-  );
+  const [saveDocumentError, setSaveDocumentError] = useState<string | null>(null);
   const [chunkSort, setChunkSort] = useState<{
     key: ChunkSortKey;
     dir: "asc" | "desc";
@@ -800,7 +801,6 @@ export function PageIndexDocumentsModal({
         docUrl: docUrl || undefined,
         metadata: parseMetadata(),
         ifAddNodeSummary: addNodeSummary,
-        ifAddDocDescription: addDocDescription,
         convertToMarkdown,
         ocr: doclingOcrEngine !== "none",
         doclingOcrEngine,
@@ -808,6 +808,7 @@ export function PageIndexDocumentsModal({
         useJvforge,
         emergency: emergencyMode,
         chunkingStrategy,
+        enableAllChunks,
       };
       if (remoteUrl) {
         const result = await apiClient.uploadPageIndexDocument(agentId, null, {
@@ -878,9 +879,7 @@ export function PageIndexDocumentsModal({
     setEditingDocument(doc);
     setEditDocDescription(doc.doc_description || "");
     setEditDocSourceUrl(doc.doc_url || "");
-    setEditDocMetadataJson(
-      doc.metadata ? JSON.stringify(doc.metadata, null, 2) : "{}",
-    );
+    setEditDocMetadataJson(doc.metadata ? JSON.stringify(doc.metadata, null, 2) : "{}");
     setSaveDocumentError(null);
   };
 
@@ -916,9 +915,10 @@ export function PageIndexDocumentsModal({
       const newDescTrimmed = editDocDescription.trim();
       const newUrlTrimmed = editDocSourceUrl.trim();
       const newMetaNormalized = JSON.stringify(parsedMeta || {});
-      const origMetaNormalized = JSON.stringify(editingDocument.metadata ?? {});
-      if (newDescTrimmed !== origDescription)
-        patch.doc_description = newDescTrimmed || null;
+      const origMetaNormalized = JSON.stringify(
+        editingDocument.metadata ?? {},
+      );
+      if (newDescTrimmed !== origDescription) patch.doc_description = newDescTrimmed || null;
       if (newUrlTrimmed !== origUrl) patch.doc_url = newUrlTrimmed || null;
       if (newMetaNormalized !== origMetaNormalized) patch.metadata = parsedMeta;
       if (Object.keys(patch).length > 0) {
@@ -1372,6 +1372,7 @@ export function PageIndexDocumentsModal({
       ...(driveIngestChunkingStrategy !== "heading"
         ? { chunking_strategy: driveIngestChunkingStrategy }
         : {}),
+      enable_all_chunks: driveIngestEnableAllChunks,
     };
   };
 
@@ -2137,9 +2138,29 @@ export function PageIndexDocumentsModal({
                           <option value="llm_direct">
                             LLM-directed chunking
                           </option>
-                          <option value="flash">Flash — LLM-free (PDF only)</option>
+                          <option value="flash">
+                            Flash — LLM-free (PDF only)
+                          </option>
                         </select>
                       </div>
+                      <label
+                        className={`flex items-center gap-2 cursor-pointer ${!driveIngestUseJvforge ? "opacity-40" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={driveIngestEnableAllChunks}
+                          onChange={(e) =>
+                            setDriveIngestEnableAllChunks(e.target.checked)
+                          }
+                          disabled={!driveIngestUseJvforge}
+                          className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                        />
+                        <span
+                          className={`text-sm ${dark ? "text-zinc-300" : "text-zinc-700"}`}
+                        >
+                          Enable all chunks (keep heading-like stubs)
+                        </span>
+                      </label>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -2193,7 +2214,9 @@ export function PageIndexDocumentsModal({
                     >
                       Processor:{" "}
                       <span className="font-medium">
-                        {driveIngestUseJvforge ? "jvforge" : "native (system)"}
+                        {driveIngestUseJvforge
+                          ? "jvforge"
+                          : "native (system)"}
                       </span>
                       . These options apply to both{" "}
                       <span className="font-medium">Run ingest</span> and{" "}
@@ -3440,19 +3463,6 @@ export function PageIndexDocumentsModal({
                   Generate node summaries (recommended for tree search)
                 </span>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={addDocDescription}
-                  onChange={(e) => setAddDocDescription(e.target.checked)}
-                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
-                />
-                <span
-                  className={`text-sm ${dark ? "text-zinc-300" : "text-zinc-700"}`}
-                >
-                  Generate document description
-                </span>
-              </label>
               <div className="w-full">
                 <JsonCodeEditor
                   value={metadataJson}
@@ -3569,6 +3579,19 @@ export function PageIndexDocumentsModal({
                   <option value="flash">Flash — LLM-free (PDF only)</option>
                 </select>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableAllChunks}
+                  onChange={(e) => setEnableAllChunks(e.target.checked)}
+                  className="rounded border-zinc-300 dark:border-zinc-600 text-zinc-600 focus:ring-zinc-500"
+                />
+                <span
+                  className={`text-sm ${dark ? "text-zinc-300" : "text-zinc-700"}`}
+                >
+                  Enable all chunks (keep heading-like stubs)
+                </span>
+              </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -3958,7 +3981,9 @@ export function PageIndexDocumentsModal({
                 />
               </div>
               <div>
-                <label className={`block ${labelClass} mb-1`}>Source URL</label>
+                <label className={`block ${labelClass} mb-1`}>
+                  Source URL
+                </label>
                 <input
                   type="url"
                   placeholder="https://…"
@@ -3968,7 +3993,9 @@ export function PageIndexDocumentsModal({
                 />
               </div>
               <div>
-                <label className={`block ${labelClass} mb-1`}>Metadata</label>
+                <label className={`block ${labelClass} mb-1`}>
+                  Metadata
+                </label>
                 <JsonCodeEditor
                   value={editDocMetadataJson}
                   onChange={setEditDocMetadataJson}

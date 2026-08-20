@@ -144,6 +144,7 @@ def _jvforge_form_data(
     image_model: Optional[str] = None,
     notify_delay_seconds: Optional[float] = None,
     chunking_strategy: Optional[str] = None,
+    enable_all_chunks: bool = False,
 ) -> Dict[str, str]:
     data: Dict[str, str] = {
         "agent_id": agent_id,
@@ -181,6 +182,8 @@ def _jvforge_form_data(
         data["notify_delay_seconds"] = str(notify_delay_seconds)
     if chunking_strategy and chunking_strategy != "heading":
         data["chunking_strategy"] = chunking_strategy
+    if enable_all_chunks:
+        data["enable_all_chunks"] = "yes"
     return data
 
 
@@ -220,6 +223,7 @@ async def assimilate_via_jvforge(
     content: Optional[bytes] = None,
     file_url: Optional[str] = None,
     chunking_strategy: Optional[str] = None,
+    enable_all_chunks: bool = False,
 ) -> Dict[str, Any]:
     """POST document bytes or ``file_url`` to jvforge /v1/process, then persist the pageindex_graph locally.
 
@@ -254,6 +258,7 @@ async def assimilate_via_jvforge(
         llm_webhook_url=llm_webhook_url,
         file_url=fu or None,
         chunking_strategy=chunking_strategy,
+        enable_all_chunks=enable_all_chunks,
     )
 
     headers: Dict[str, str] = {}
@@ -374,6 +379,7 @@ async def assimilate_via_jvforge_async(
     image_model: Optional[str] = None,
     notify_delay_seconds: Optional[float] = None,
     chunking_strategy: Optional[str] = None,
+    enable_all_chunks: bool = False,
 ) -> Dict[str, Any]:
     """
     POST document to jvforge /v1/jobs (async), return immediately with job info.
@@ -418,6 +424,7 @@ async def assimilate_via_jvforge_async(
         image_model=image_model,
         notify_delay_seconds=notify_delay_seconds,
         chunking_strategy=chunking_strategy,
+        enable_all_chunks=enable_all_chunks,
     )
 
     headers: Dict[str, str] = {}

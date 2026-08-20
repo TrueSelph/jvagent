@@ -255,6 +255,7 @@ class DriveIngestConfig:
     chunking_strategy: Optional[str] = None
     doc_description: Optional[str] = None
     add_doc_description: Optional[bool] = None
+    enable_all_chunks: bool = False
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -486,6 +487,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         doc_url: str,
         cfg: DriveIngestConfig,
         cancel_event: threading.Event,
+        mime_type: str = "",
     ) -> Dict[str, Any]:
         try:
             file_bytes = await google_drive_action.get_media(file_id=file_id)
@@ -496,6 +498,14 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
         )
+        # Google Workspace native docs (Docs/Sheets/Slides/Drawings) are exported
+        # as PDF bytes by get_media but retain their extensionless Drive name
+        # (e.g. "Instructions to Zara"). jvforge validates the upload filename
+        # extension, so append ".pdf" for these so the bytes are accepted.
+        is_google_apps = (mime_type or "").startswith("application/vnd.google-apps.")
+        forge_filename = doc_name
+        if is_google_apps and not Path(doc_name).suffix.lower():
+            forge_filename = f"{doc_name}.pdf"
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
         if strategy == "flash" and not effective_forge:
             raise ValidationError(
@@ -503,7 +513,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 "(set use_jvforge=true and JVAGENT_JVFORGE_BASE_URL)."
             )
         if strategy == "flash":
-            ext = Path(doc_name).suffix.lower()
+            ext = Path(forge_filename).suffix.lower()
             if ext != ".pdf":
                 logger.warning(
                     "flash strategy requires PDF; got %s for %s — falling back to heading",
@@ -528,7 +538,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 q = await assimilate_via_jvforge_async(
                     base_url=effective_forge,
                     agent_id=cfg.agent_id,
-                    filename=doc_name,
+                    filename=forge_filename,
                     content=file_bytes,
                     doc_name=doc_name,
                     model=cfg.model,
@@ -548,6 +558,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     notify_delay_seconds=0,
                     emergency=False,
                     chunking_strategy=strategy,
+                    enable_all_chunks=cfg.enable_all_chunks,
                 )
                 return {
                     "doc_name": doc_name,
@@ -557,7 +568,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             await assimilate_via_jvforge(
                 base_url=effective_forge,
                 agent_id=cfg.agent_id,
-                filename=doc_name,
+                filename=forge_filename,
                 content=file_bytes,
                 doc_name=doc_name,
                 model=cfg.model,
@@ -573,6 +584,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 normalize_bold_headings=cfg.normalize_bold_headings,
                 llm_webhook_url=llm_wh_url,
                 chunking_strategy=strategy,
+                enable_all_chunks=cfg.enable_all_chunks,
             )
             return {"doc_name": doc_name}
         # assimilate_document expects threading.Event (worker-thread cancel); not asyncio.Event.
@@ -613,6 +625,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         doc_name = file_info.get("name", "")
         file_id = file_info.get("id", "")
         doc_url = file_info.get("url", "")
+        mime_type = str(file_info.get("mimeType") or "")
 
         google_drive_documents_node.active_document = doc_name
         google_drive_documents_node.status = "processing"
@@ -661,6 +674,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         doc_name=doc_name,
                         file_id=file_id,
                         doc_url=doc_url,
+                        mime_type=mime_type,
                         cfg=cfg,
                         cancel_event=cancel_event,
                     ),
@@ -815,6 +829,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         chunking_strategy: Optional[str] = None,
         doc_description: Optional[str] = None,
         add_doc_description: Optional[bool] = None,
+        enable_all_chunks: bool = False,
     ) -> dict:
         """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -883,6 +898,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 chunking_strategy=chunking_strategy,
                 doc_description=doc_description,
                 add_doc_description=add_doc_description,
+                enable_all_chunks=enable_all_chunks,
             )
 
     async def _phase_sync_google_drive_folders(
@@ -1292,6 +1308,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         chunking_strategy: Optional[str] = None,
         doc_description: Optional[str] = None,
         add_doc_description: Optional[bool] = None,
+        enable_all_chunks: bool = False,
     ) -> dict:
         """Inner ingestion logic (called with ingestion lock held)."""
         ocr_eff, docling_eff = _drive_resolve_docling_ocr(docling_ocr_engine, ocr)
@@ -1340,6 +1357,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             chunking_strategy=chunking_strategy,
             doc_description=doc_description,
             add_doc_description=add_doc_description,
+            enable_all_chunks=enable_all_chunks,
         )
 
         await self._phase_sync_google_drive_folders(
