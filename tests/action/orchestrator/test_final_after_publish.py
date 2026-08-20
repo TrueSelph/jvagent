@@ -1,13 +1,9 @@
-"""Regression: a distinct ``final`` answer must survive a mid-turn publish.
+"""Regression: an already-delivered answer must not be re-emitted.
 
-Non-terminal publishing tools (e.g. a catalog ``emit_catalog_message``) append
-their content to ``interaction.response`` while the loop is still running. When
-the loop then ends with a ``final`` action carrying a *different* string — a
-product skill's closing line — that closer must still be emitted. The earlier
-``_maybe_emit_final`` guard treated any non-empty ``interaction.response`` as
-"already emitted" and silently dropped the closer (observed live: catalog cards
-emitted, closer generated as ``{"action":"final","answer":"Would you like…"}``,
-never delivered).
+When ``interaction.response`` already holds the turn's user-facing text, a
+``final`` that echoes it must not voice again. A mid-turn publishing tool that
+latches ``has_emitted()`` ends the loop (see
+``test_emitted_suppresses_followup.py``) so the orchestrator cannot follow up.
 """
 
 from __future__ import annotations
@@ -41,21 +37,18 @@ def action():
 
 
 @pytest.mark.asyncio
-async def test_final_closer_emitted_after_publishing_tool(
+async def test_publishing_tool_ends_turn_before_final_closer(
     action, make_visitor, monkeypatch
 ):
-    """Card emit populates response mid-turn; the distinct closer still voices."""
+    """A non-terminal tool that already delivered user-facing content ends the
+    turn; a later ``final`` closer is not invoked."""
     emitted: List[str] = []
     visitor = make_visitor(utterance="any pressure washers?")
 
     async def _fake_emit_reply(_visitor: Any, text: str) -> None:
         emitted.append(text)
-        # mirror real _emit_reply → _pipe_response: persists to interaction.response
-        cur = visitor.interaction.response or ""
-        visitor.interaction.response = f"{cur}\n\n{text}" if cur else text
 
     async def _emit(args: Dict[str, Any]) -> str:
-        # mirror emit_catalog_message → response_bus → append-to-response
         cur = visitor.interaction.response or ""
         card = f"**{args.get('title', 'item')}** — GYD 1,000\n[View Details](http://x)"
         visitor.interaction.response = f"{cur}\n\n{card}" if cur else card
@@ -63,9 +56,8 @@ async def test_final_closer_emitted_after_publishing_tool(
 
     emit = SkillTool(name="emit_catalog_message", description="emit", run=_emit)
 
-    # Two card emits (non-terminal), then a final closer distinct from the cards.
     closer = "Would you like to see more options or compare these models?"
-    fake_model, _ = _decisions(
+    fake_model, calls = _decisions(
         {"action": "tool", "tool": "emit_catalog_message", "args": {"title": "VEVOR"}},
         {"action": "tool", "tool": "emit_catalog_message", "args": {"title": "HONDA"}},
         {"action": "final", "answer": closer},
@@ -83,11 +75,10 @@ async def test_final_closer_emitted_after_publishing_tool(
 
     await action._run_loop(visitor)
 
-    assert closer in emitted, (
-        "the closing line returned via action=final was dropped because the "
-        "catalog emits had populated interaction.response"
-    )
-    assert closer in (visitor.interaction.response or "")
+    assert calls["n"] == 1
+    assert closer not in emitted
+    assert closer not in (visitor.interaction.response or "")
+    assert "VEVOR" in (visitor.interaction.response or "")
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,8 @@ from jvagent.action.orchestrator.tools import (
     render_tools_section,
     wrap_action_tool,
 )
+from jvagent.tooling.tool import Tool
+from jvagent.tooling.tool_result import ToolResult
 
 
 async def test_parse_json_object_strict():
@@ -108,6 +110,31 @@ async def test_wrap_action_tool_surfaces_content():
     st = wrap_action_tool(_Tool())
     assert st.name == "echo" and st.description == "echoes"
     assert await st.run({}) == "hello"
+    assert st.terminal is False
+
+
+async def test_wrap_action_tool_inherits_terminal_from_tool():
+    async def _exec(**kwargs):
+        return ToolResult(content="sent")
+
+    tool = Tool(
+        name="qr_code__send",
+        description="send qr",
+        execute=_exec,
+        terminal=True,
+    )
+    st = wrap_action_tool(tool)
+    assert st.terminal is True
+    assert await st.run({}) == "sent"
+
+
+async def test_wrap_action_tool_explicit_terminal_kwarg_still_wins():
+    async def _exec(**kwargs):
+        return ToolResult(content="ok")
+
+    tool = Tool(name="SignupIA", description="ia", execute=_exec)
+    st = wrap_action_tool(tool, terminal=True)
+    assert st.terminal is True
 
 
 async def test_core_datetime_tool_runs():

@@ -1090,6 +1090,19 @@ class OrchestratorInteractAction(
                         if isinstance(v, str) and v.strip():
                             txt = v
                             break
+                interaction = (
+                    getattr(visitor, "interaction", None)
+                    if visitor is not None
+                    else None
+                )
+                if interaction is not None:
+                    has_emitted = getattr(interaction, "has_emitted", None)
+                    if callable(has_emitted):
+                        try:
+                            if has_emitted():
+                                return ToolResult(content="(already replied to user)")
+                        except Exception:
+                            pass
                 await self._send_reply(visitor, txt)
                 return ToolResult(content="(replied to user)")
 

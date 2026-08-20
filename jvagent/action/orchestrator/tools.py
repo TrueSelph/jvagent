@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 class SkillTool:
     """A tool the Orchestrator loop can call: name, description, async runner.
 
-    ``terminal`` marks IA-as-tools that own the turn's user-facing output; the
+    ``terminal`` marks tools that own the turn's user-facing output; the
     loop ends after a terminal tool runs so the orchestrator won't double-reply.
-    Plain tools leave it ``False``.
+    IA-as-tools and ``@tool(terminal=True)`` capability tools set this;
+    plain tools leave it ``False``.
     """
 
     name: str
@@ -60,7 +61,9 @@ def wrap_action_tool(
       tool never runs. IA-as-tools pass ``tool:delegate:{name}``; this is the
       hook for per-user gating of any tool call.
     - ``terminal`` — marks tools that own the turn's user-facing output
-      (IA-as-tools), so the loop ends after they run.
+      (IA-as-tools), so the loop ends after they run. Also inherited from
+      ``tool.terminal`` when the wrapped Tool was decorated
+      ``@tool(terminal=True)``.
 
     ``agent`` / ``user_id`` / ``channel`` supply the AC context and are consulted
     only when ``access_label`` is set.
@@ -86,7 +89,7 @@ def wrap_action_tool(
         name=name,
         description=getattr(tool, "description", "") or "",
         run=_run,
-        terminal=terminal,
+        terminal=terminal or bool(getattr(tool, "terminal", False)),
     )
 
 
