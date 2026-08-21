@@ -336,22 +336,20 @@ Bridge providers (`wwebjs`, `wppconnect`, `ultramsg`) are unchanged and do not u
 
 **Verify token:** Meta verifies against jvconnect (`FB_VERIFY_TOKEN`). The agent webhook is signed with the jvconnect-issued `JVCONNECT_WEBHOOK_SECRET`. The agent’s own GET hub.challenge endpoint is vestigial for `provider=meta` (Meta never challenges the agent URL).
 
-**Meta webhook callback** (automatic override on startup):
+**Meta webhook callback** (always register on startup and reload):
 
-On startup (meta provider), jvagent checks jvconnect register status first. If
-`webhook_forwards` already points at this agent **and** the HMAC secret is
-already on the action (or `JVCONNECT_WEBHOOK_SECRET`), it **skips** re-register
-(avoids burning Meta WABA `subscribed_apps` quota / `#80008` on every Lambda
-cold start). If the forward is healthy but the local secret is missing, it
-still POSTs register so jvconnect can return the existing `webhook_secret`
-(GET status never includes it). Otherwise it registers via jvconnect
-(`POST /api/v1/meta/whatsapp/webhook/register`) after uvicorn reports
+On startup and `on_reload` (meta provider), jvagent always POSTs jvconnect
+`POST /api/v1/meta/whatsapp/webhook/register` after uvicorn reports
 `Application startup complete` (optional `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS`,
 default **0**). On Lambda that call is **awaited** in the lifespan hook so the
-secret is saved before the isolate can freeze; long-running servers keep a
-background `create_task`. Meta points at jvconnect; jvconnect forwards to this
-agent. jvconnect also skips Meta Graph POSTs when the WABA/phone override
-already matches its `/api/webhooks` URL.
+HMAC secret is saved before the isolate can freeze; long-running servers keep a
+background `create_task`. When the agent `callback_url` is unchanged, jvconnect
+returns the existing `webhook_secret` with **no Meta Graph calls**. When the URL
+is new/changed, Meta points at jvconnect and jvconnect skips Graph POSTs when the
+WABA/phone override already matches its `/api/webhooks` URL. Meta `#80008` /
+jvconnect `429` is non-fatal (no retry loop). Fail-fast timeout:
+`WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS` (default **15s** on serverless,
+**60s** otherwise).
 
 **The Meta App Dashboard callback URL will not change automatically.** Dashboard shows the app default (`application` layer). Verify with `GET /api/actions/{action_id}/meta/webhook-status`.
 
@@ -410,12 +408,14 @@ Env tuning (optional):
 - `WHATSAPP_META_WAMID_DEDUP_MAX` — max in-process cache entries (default **10000**; Redis uses TTL only).
 
 For multi-worker / multi-replica deployments, set `JVSPATIAL_REDIS_URL` (or `REDIS_URL`) so wamid dedup is shared across processes.
-Env toggles:
 
-- `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true` — skip override on startup; call `POST /api/actions/{action_id}/meta/webhook-register` when ready. Leave **unset** in production.
-- **Lambda / frequent recycle mitigation:** Leave `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` and `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE` **unset**. On serverless (`AWS_LAMBDA_FUNCTION_NAME` / `is_serverless_mode`), startup Meta webhook registration is skipped when the HMAC secret is already on the action or in `JVCONNECT_WEBHOOK_SECRET` (later cold starts / merge redeploys). The **first** cold start with `JVCONNECT_URL` + `JVCONNECT_API_KEY` and no secret still registers once and persists `jvconnect_webhook_secret`. Do **not** set `=false` (that re-enters the register path on every cold start) and do **not** set a dummy `JVCONNECT_WEBHOOK_SECRET`. `POST .../meta/webhook-register` remains the manual recovery path. A healthy forward without a local secret still POSTs register to fetch the secret; Meta `#80008` / jvconnect `429` is non-fatal (no retry loop). Startup health/register is fail-fast (`WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS`, default **5s** on serverless).
+Env tuning (meta webhook register):
+
+- Always register on startup and reload — no skip toggles. jvconnect short-circuits same `callback_url` (no Meta Graph).
 - `WHATSAPP_WEBHOOK_REGISTER_DELAY_SECONDS` — optional delay before override (default **0**).
-- `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE=false` — skip override on action reload (default). Set `true` only to force re-register after a callback-URL change, not for routine redeploys.
+- `WHATSAPP_STARTUP_WEBHOOK_REGISTER_TIMEOUT_SECONDS` — fail-fast bound (default **15s** serverless, **60s** otherwise).
+- Do **not** set a dummy `JVCONNECT_WEBHOOK_SECRET`; leave unset and let register persist it, or copy the `jvs_...` value from register.
+- `POST /api/actions/{action_id}/meta/webhook-register` remains the manual recovery path.
 
 Admin helpers:
 

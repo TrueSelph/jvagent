@@ -309,30 +309,6 @@ class WhatsAppAction(Action):
         except Exception:
             return False
 
-    def _startup_meta_webhook_skip_decision(self) -> tuple[bool, str]:
-        """Whether Meta webhook register should be skipped on ``on_startup``.
-
-        - ``WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true`` → always skip
-        - ``=false`` → never skip (ops escape hatch; do not leave this on)
-        - unset + serverless + local secret present → skip (later cold starts)
-        - unset + serverless + secret missing → do not skip (first deploy)
-        - else → do not skip
-        """
-        raw = (
-            os.environ.get("WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION", "")
-            .strip()
-            .lower()
-        )
-        if raw == "true":
-            return True, "WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true"
-        if raw == "false":
-            return False, ""
-        if WhatsAppAction._is_serverless_runtime():
-            if self._env_jvconnect_webhook_secret():
-                return True, "serverless_default"
-            return False, ""
-        return False, ""
-
     @staticmethod
     def _startup_webhook_register_timeout_seconds() -> float:
         """Fail-fast bound for startup Meta health check + register (seconds)."""
@@ -345,7 +321,7 @@ class WhatsAppAction(Action):
         except (ValueError, TypeError):
             pass
         if WhatsAppAction._is_serverless_runtime():
-            return 5.0
+            return 15.0
         return 60.0
 
     def _env_app_secret(self) -> str:
@@ -586,12 +562,10 @@ class WhatsAppAction(Action):
         """Called when action is registered. Validates configuration.
 
         Meta webhook override registration is **not** done here: the HTTP
-        server is not listening yet. Registration runs from ``on_startup``
-        (deferred after uvicorn is up). Serverless skips later cold starts
-        once ``jvconnect_webhook_secret`` (or ``JVCONNECT_WEBHOOK_SECRET``)
-        is on hand; the first deploy with credentials and no secret still
-        registers. Prefer admin ``POST .../meta/webhook-register`` as a
-        manual recovery path rather than ``on_reload``.
+        server is not listening yet. Registration always runs from
+        ``on_startup`` (deferred after uvicorn is up) and from ``on_reload``.
+        jvconnect short-circuits same ``callback_url`` re-POSTs (no Meta Graph).
+        Admin ``POST .../meta/webhook-register`` remains a manual recovery path.
         """
         if not self.is_configured():
             logger.debug("WhatsApp action not configured")
@@ -601,12 +575,10 @@ class WhatsAppAction(Action):
     async def on_reload(self) -> None:
         """Called when action is reloaded.
 
-        Meta provider: does **not** re-register the jvconnect/Meta webhook by
-        default (``WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`` defaults to ``false``).
-        Action-cache rebuilds and Lambda warm paths must not burn Meta Graph
-        quota. Set the env to ``true`` only when intentionally refreshing
-        the forward after a callback URL change. Bridge providers still
-        re-register their session unless skipped.
+        Meta provider: always re-POSTs jvconnect ``webhook/register``. Same
+        agent callback URL is a no-op on Meta (jvconnect returns the existing
+        secret with zero Graph calls). Bridge providers still re-register
+        their session unless skipped.
         """
         if not self.is_configured():
             logger.debug("WhatsApp action not configured, skipping reload")
@@ -615,52 +587,14 @@ class WhatsAppAction(Action):
         if self.is_meta_provider():
             if not self.webhook_url:
                 await self.get_webhook_url(regenerate=False)
-            # Default false: on_reload must not re-POST webhook/register.
-            skip_subscribe = (
-                os.environ.get("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", "false").lower()
-                != "true"
-            )
-            if skip_subscribe:
-                logger.info(
-                    "WhatsApp meta on_reload: Graph webhook subscribe skipped "
-                    "(WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE!=true). "
-                    "Use POST .../meta/webhook-register after deploy."
+            reg = await self.register_meta_webhook_subscription()
+            if reg.get("status") not in ("ok", "skipped"):
+                logger.warning(
+                    "WhatsApp meta on_reload: register_meta_webhook_subscription: %s",
+                    reg,
                 )
-            else:
-                try:
-                    # A healthy forward alone is NOT sufficient to skip:
-                    # register_meta_webhook_subscription is also the only code
-                    # that fetches and persists jvconnect_webhook_secret, which
-                    # every inbound webhook needs to verify signatures. On a
-                    # fresh DB against an already-registered forward, skipping
-                    # here would leave the secret absent forever and 500 every
-                    # inbound message — with nothing ever re-registering.
-                    if await self._meta_webhook_forward_is_healthy():
-                        if self._env_jvconnect_webhook_secret():
-                            self._session_registered = True
-                            logger.info(
-                                "WhatsApp meta on_reload: forward already healthy; "
-                                "skipping re-register (avoids Meta #80008)"
-                            )
-                            return
-                        logger.info(
-                            "WhatsApp meta on_reload: forward healthy but no "
-                            "jvconnect webhook secret on hand; registering to "
-                            "fetch it"
-                        )
-                except Exception as health_err:
-                    logger.warning(
-                        "WhatsApp meta on_reload health check failed: %s",
-                        health_err,
-                    )
-                reg = await self.register_meta_webhook_subscription()
-                if reg.get("status") not in ("ok", "skipped"):
-                    logger.warning(
-                        "WhatsApp meta on_reload: register_meta_webhook_subscription: %s",
-                        reg,
-                    )
-                elif reg.get("status") == "ok":
-                    self._session_registered = True
+            elif reg.get("status") == "ok":
+                self._session_registered = True
             return
 
         if not self.webhook_url:
@@ -712,32 +646,12 @@ class WhatsAppAction(Action):
             pass
 
     async def _run_startup_meta_webhook_register(self) -> None:
-        """Health-check then optionally register Meta webhook (startup path only).
+        """Register Meta webhook via jvconnect (startup path).
 
-        Same skip rule as ``on_reload``: a healthy forward with a local secret
-        skips the POST (avoids Meta #80008). A healthy forward **without** a
-        local secret still registers — jvconnect GET status never returns
-        ``webhook_secret``, and inbound HMAC 500s until it is persisted.
+        Always POSTs ``webhook/register``. jvconnect short-circuits when the
+        agent ``callback_url`` is unchanged (returns existing secret, no Meta
+        Graph). Rate-limited (#80008) responses are logged and not retried.
         """
-        try:
-            if await self._meta_webhook_forward_is_healthy():
-                if self._env_jvconnect_webhook_secret():
-                    self._session_registered = True
-                    logger.info(
-                        "WhatsApp Meta webhook forward already healthy; "
-                        "skipping startup re-register (avoids Meta #80008)"
-                    )
-                    return
-                logger.info(
-                    "WhatsApp Meta webhook forward already healthy but no "
-                    "jvconnect webhook secret on hand; registering to fetch it"
-                )
-        except Exception as health_err:
-            logger.warning(
-                "WhatsApp meta health check before register failed: %s",
-                health_err,
-            )
-
         logger.info("Registering Meta WhatsApp webhook override on startup")
         reg = await self.register_meta_webhook_subscription()
         if reg.get("status") == "ok":
@@ -794,9 +708,8 @@ class WhatsAppAction(Action):
         except asyncio.TimeoutError:
             logger.warning(
                 "WhatsApp Meta startup webhook register timed out "
-                "after %.1fs (fail-fast). Set "
-                "WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION=true or "
-                "register once via POST .../meta/webhook-register.",
+                "after %.1fs (fail-fast). Retry on next cold start or "
+                "POST .../meta/webhook-register.",
                 timeout,
             )
 
@@ -1064,31 +977,15 @@ class WhatsAppAction(Action):
                 self.request_timeout = desired_timeout
 
             if self.is_meta_provider():
-                skip_meta_webhook, skip_reason = (
-                    self._startup_meta_webhook_skip_decision()
-                )
-                if skip_meta_webhook:
-                    logger.info(
-                        "WhatsApp meta Graph webhook registration skipped "
-                        "(%s). Use POST /api/actions/{action_id}/session/register "
-                        "or POST .../meta/webhook-register.",
-                        skip_reason,
-                    )
-                    result = {
-                        "status": "skipped",
-                        "reason": skip_reason,
-                        "ok": True,
-                    }
-                else:
-                    if not self.webhook_url:
-                        self.webhook_url = await self.get_webhook_url()
+                if not self.webhook_url:
+                    self.webhook_url = await self.get_webhook_url()
 
-                    await self._schedule_deferred_meta_webhook_register()
-                    result = {
-                        "status": "pending",
-                        "reason": "meta_webhook_register_scheduled",
-                        "ok": True,
-                    }
+                await self._schedule_deferred_meta_webhook_register()
+                result = {
+                    "status": "pending",
+                    "reason": "meta_webhook_register_scheduled",
+                    "ok": True,
+                }
             elif skip_registration:
                 logger.info(
                     "WhatsApp startup registration skipped (WHATSAPP_SKIP_STARTUP_REGISTRATION=true). "

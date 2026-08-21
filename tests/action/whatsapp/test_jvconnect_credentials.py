@@ -290,8 +290,8 @@ async def test_meta_webhook_forward_unhealthy_when_persisted_url_stale(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_meta_on_reload_skips_register_by_default(monkeypatch):
-    """Default: on_reload does not re-POST Meta webhook (no subscribe opt-in)."""
+async def test_meta_on_reload_always_registers(monkeypatch):
+    """on_reload always POSTs jvconnect register (same URL is Meta no-op there)."""
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
     object.__setattr__(action, "enabled", True)
@@ -307,27 +307,19 @@ async def test_meta_on_reload_skips_register_by_default(monkeypatch):
         register_calls.append(1)
         return {"status": "ok"}
 
-    async def fake_healthy(self):
-        return True
-
     monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
-    monkeypatch.setattr(
-        WhatsAppAction, "_meta_webhook_forward_is_healthy", fake_healthy
-    )
     monkeypatch.setattr(
         WhatsAppAction, "register_meta_webhook_subscription", fake_register
     )
-    monkeypatch.delenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", raising=False)
 
     await action.on_reload()
-    assert register_calls == []
-    # Default skip exits before the healthy-forward path marks session registered.
-    assert action._session_registered is False
+    assert register_calls == [1]
+    assert action._session_registered is True
 
 
 @pytest.mark.asyncio
-async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
-    """With subscribe opted in, healthy forward + secret still skips re-register."""
+async def test_meta_on_reload_registers_without_local_secret(monkeypatch):
+    """Reload with empty secret still registers so jvconnect can return it."""
     action = WhatsAppAction()
     object.__setattr__(action, "provider", "meta")
     object.__setattr__(action, "enabled", True)
@@ -336,33 +328,20 @@ async def test_meta_on_reload_skips_register_when_healthy(monkeypatch):
         "webhook_url",
         "https://agent.example.com/api/whatsapp/interact/webhook/n.Agent.1",
     )
-    # Skipping is only legitimate when the jvconnect webhook secret is already
-    # on hand — registration is the sole code path that fetches it, and inbound
-    # signature verification 500s without it. This test originally omitted the
-    # secret and asserted the skip anyway, which pinned the fresh-deploy outage
-    # as correct behaviour. See test_meta_register_skip_guard.py for the
-    # no-secret direction.
-    object.__setattr__(action, "jvconnect_webhook_secret", "s3cret")
+    object.__setattr__(action, "jvconnect_webhook_secret", "")
     register_calls = []
 
     async def fake_register(self):
         register_calls.append(1)
         return {"status": "ok"}
 
-    async def fake_healthy(self):
-        return True
-
     monkeypatch.setattr(WhatsAppAction, "is_configured", lambda self: True)
-    monkeypatch.setattr(
-        WhatsAppAction, "_meta_webhook_forward_is_healthy", fake_healthy
-    )
     monkeypatch.setattr(
         WhatsAppAction, "register_meta_webhook_subscription", fake_register
     )
-    monkeypatch.setenv("WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE", "true")
 
     await action.on_reload()
-    assert register_calls == []
+    assert register_calls == [1]
     assert action._session_registered is True
 
 
