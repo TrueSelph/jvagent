@@ -8,6 +8,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
+  Removed `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` and
+  `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`. Lambda cold starts and merge redeploys
+  always POST jvconnect `webhook/register`; same agent `callback_url` is a
+  Meta no-op on jvconnect (returns existing secret). Serverless register
+  timeout default raised from 5s to 15s; register is still awaited in the
+  uvicorn lifespan hook on Lambda.
+
 ## [0.1.8rc1] - 2026-08-18
 
 ### Added
