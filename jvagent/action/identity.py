@@ -1,8 +1,8 @@
 """Action identity helpers using raw DB records (ADR-0033).
 
 ``Action.find_one`` filters by imported subclasses, so existence checks can miss
-persisted rows during bootstrap races. These helpers query raw node documents by
-``context.*`` identity fields instead.
+persisted rows during bootstrap races. Prefer :mod:`jvagent.core.upsert` and
+:mod:`jvagent.action.registration` for registration paths.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvagent.action.base import Action
+from jvagent.core.upsert import find_action_context_records
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
@@ -18,48 +19,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def record_identity(record: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    ctx = record.get("context") or {}
-    return ctx.get("namespace"), ctx.get("label")
-
-
-def record_archetype(record: Dict[str, Any]) -> str:
-    ctx = record.get("context") or {}
-    meta = ctx.get("metadata") or {}
-    return str(meta.get("class") or record.get("entity") or "")
-
-
-def record_is_singleton(record: Dict[str, Any]) -> bool:
-    ctx = record.get("context") or {}
-    meta = ctx.get("metadata") or {}
-    base_config = meta.get("config") or {}
-    overrides = meta.get("config_overrides") or {}
-    merged = {**base_config, **overrides}
-    return merged.get("singleton", True) is not False
-
-
 async def get_raw_action_records_for_agent(agent_id: str) -> List[Dict[str, Any]]:
-    from jvagent.core.jvspatial_compat import find_raw_node_records
-
-    raw = await find_raw_node_records("agent_id", agent_id)
-    return [r for r in raw if record_identity(r)[0] and record_identity(r)[1]]
+    return await find_action_context_records(agent_id)
 
 
 async def find_records_by_identity(
     agent_id: str, namespace: str, label: str
 ) -> List[Dict[str, Any]]:
-    target = (namespace, label)
-    records = await get_raw_action_records_for_agent(agent_id)
-    return [r for r in records if record_identity(r) == target]
+    return await find_action_context_records(agent_id, namespace=namespace, label=label)
 
 
 async def find_records_by_archetype(
     agent_id: str, archetype: str
 ) -> List[Dict[str, Any]]:
-    if not archetype:
-        return []
-    records = await get_raw_action_records_for_agent(agent_id)
-    return [r for r in records if record_archetype(r) == archetype]
+    return await find_action_context_records(agent_id, archetype=archetype)
 
 
 async def choose_action_keeper_id(

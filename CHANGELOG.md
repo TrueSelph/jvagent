@@ -8,6 +8,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Runbook: multi-container bootstrap** — ``.planning/runbooks/multi-container-bootstrap.md`` (Lambda/replica Redis lease, heal steps, checklist).
+- **`jvagent/core/upsert.py`** — ADR-0033 raw-record identity lookups for actions.
+- **`jvagent/action/registration.py`** — ``resolve_action_for_registration`` used by ``register_action``.
+
 ### Changed
 
 - **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
@@ -180,12 +186,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 ### Fixed
 
 - **Duplicate singleton action nodes under concurrent Lambda bootstrap.**
-  ``register_action`` now resolves existing rows via raw DB records (not
-  ``Action.find_one``, which misses unimported subclasses), collapses
-  duplicate singletons by archetype before create, rejects a second label for
-  the same singleton type, and drops a loser node after save when a cross-worker
-  race still slips through. Boot also runs
-  ``_dedupe_singleton_actions_by_archetype`` alongside identity dedupe.
+  ADR-0033 ``upsert_by_identity``: ``jvagent/core/upsert.py`` and
+  ``jvagent/action/registration.py`` drive ``register_action`` (raw-record
+  lookup, singleton collapse, post-save race guard). Boot runs
+  ``_dedupe_singleton_actions_by_archetype``. Ops: configure
+  ``JVAGENT_CONVERSATION_LOCK_REDIS_URL`` — see
+  ``.planning/runbooks/multi-container-bootstrap.md``.
 
 - **`chunking_strategy="flash"` was silently rejected by validation gates.**
   The Upload endpoint (`endpoints.py`), Google Drive sync endpoint, and

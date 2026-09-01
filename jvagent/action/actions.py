@@ -73,62 +73,17 @@ class Actions(Node):
         """
         async with self._lock:
             try:
-                from jvagent.action.identity import (
-                    collapse_duplicate_records,
-                    find_records_by_archetype,
-                    find_records_by_identity,
-                    load_action_from_record,
+                from jvagent.action.registration import (
+                    reconcile_singleton_after_create,
+                    resolve_action_for_registration,
                 )
 
-                archetype = action.metadata.get("class", action.get_class_name())
-                existing_action: Optional[Action] = None
+                resolution = await resolve_action_for_registration(action, self)
+                if resolution.rejected_singleton:
+                    return False
 
-                # Singleton: at most one node per (agent_id, archetype). Raw-record
-                # lookups bypass Action.find_one's imported-subclass filter (ADR-0033).
-                if action.is_singleton:
-                    singleton_records = await find_records_by_archetype(
-                        action.agent_id, archetype
-                    )
-                    if len(singleton_records) > 1:
-                        await collapse_duplicate_records(self, singleton_records)
-                        singleton_records = await find_records_by_archetype(
-                            action.agent_id, archetype
-                        )
-                    if singleton_records:
-                        keeper = singleton_records[0]
-                        kns, klbl = (
-                            (keeper.get("context") or {}).get("namespace"),
-                            (keeper.get("context") or {}).get("label"),
-                        )
-                        if (kns, klbl) != (action.namespace, action.label):
-                            logger.warning(
-                                "Rejected duplicate singleton action: %s (archetype=%s) "
-                                "already registered for agent %s as %s/%s. "
-                                "Only one instance per agent allowed.",
-                                action.label,
-                                archetype,
-                                action.agent_id,
-                                kns,
-                                klbl,
-                            )
-                            return False
-                        existing_action = await load_action_from_record(keeper)
-
-                # Identity: (agent_id, namespace, label) — also via raw records.
-                if existing_action is None:
-                    identity_records = await find_records_by_identity(
-                        action.agent_id, action.namespace, action.label
-                    )
-                    if len(identity_records) > 1:
-                        await collapse_duplicate_records(self, identity_records)
-                        identity_records = await find_records_by_identity(
-                            action.agent_id, action.namespace, action.label
-                        )
-                    if identity_records:
-                        existing_action = await load_action_from_record(
-                            identity_records[0]
-                        )
-
+                existing_action = resolution.existing
+                archetype = resolution.archetype
                 action_existed_before = existing_action is not None
 
                 if existing_action:
@@ -150,12 +105,11 @@ class Actions(Node):
                         )
 
                     # source mode: delete existing, create fresh
-                    if action.is_singleton:
-                        stale_records = await find_records_by_archetype(
-                            action.agent_id, archetype
-                        )
-                    else:
-                        stale_records = [{"id": existing_action.id}]
+                    stale_records = (
+                        resolution.stale_records_for_source
+                        if action.is_singleton
+                        else [{"id": existing_action.id}]
+                    ) or []
 
                     from jvspatial.core.entities.node import Node
 
@@ -223,31 +177,12 @@ class Actions(Node):
                     action.agent_id, action.get_class_name(), action.id
                 )
 
-                # Cross-worker race guard: if another container created the same
-                # singleton while we were saving, drop our node and keep the survivor.
-                if action.is_singleton and not action_existed_before:
-                    post_save = await find_records_by_archetype(
-                        action.agent_id, archetype
-                    )
-                    if len(post_save) > 1:
-                        keeper_id = await collapse_duplicate_records(self, post_save)
-                        if keeper_id and action.id != keeper_id:
-                            if await self.is_connected_to(action):
-                                await self.disconnect(action)
-                            self.registered_count = max(0, self.registered_count - 1)
-                            if action.enabled:
-                                self.enabled_count = max(0, self.enabled_count - 1)
-                            await action.delete(cascade=True)
-                            await self.save()
-                            logger.debug(
-                                "Singleton %s/%s lost create race for agent %s; "
-                                "kept existing node %s",
-                                action.namespace,
-                                action.label,
-                                action.agent_id,
-                                keeper_id,
-                            )
-                            return True
+                await reconcile_singleton_after_create(
+                    action,
+                    self,
+                    archetype=archetype,
+                    action_existed_before=action_existed_before,
+                )
 
                 return True
 

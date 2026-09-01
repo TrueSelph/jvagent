@@ -58,6 +58,7 @@ by slug (e.g. `specs/<date>-foo-design.md` ↔ `plans/<date>-foo.md`).
 |---|---|
 | Run jvagent locally | [`runbooks/local-dev.md`](runbooks/local-dev.md) |
 | Add a new action end-to-end | [`runbooks/add-action.md`](runbooks/add-action.md) |
+| Lambda / multi-replica bootstrap (duplicate action prevention) | [`runbooks/multi-container-bootstrap.md`](runbooks/multi-container-bootstrap.md) |
 
 ## adr/ — decision records
 
