@@ -150,3 +150,105 @@ async def test_non_singleton_allows_multiple_same_archetype_label(test_db):
     labels = {(a.namespace, a.label) for a in found}
     assert ("a", "custom") in labels
     assert ("b", "custom") in labels
+
+
+async def test_reconcile_race_loser_removes_duplicate(test_db):
+    from jvagent.action.registration import reconcile_singleton_after_create
+
+    agent, manager = await _setup()
+    first = await _persist_action(agent.id, manager, connect=True)
+    second = await _persist_action(agent.id, manager, connect=True)
+    loser, keeper = (first, second) if first.id > second.id else (second, first)
+    assert await _count_archetype(agent.id) == 2
+
+    survived = await reconcile_singleton_after_create(
+        loser,
+        manager,
+        archetype=ARCHETYPE,
+        action_existed_before=False,
+    )
+
+    assert survived is False
+    assert await Action.get(loser.id) is None
+    assert await Action.get(keeper.id) is not None
+    assert await _count_archetype(agent.id) == 1
+
+
+async def test_register_actions_skips_post_register_for_race_loser(
+    test_db, monkeypatch
+):
+    calls: list[str] = []
+    original_post_register = Action.post_register
+
+    async def track_post_register(self) -> None:
+        calls.append(self.id)
+        await original_post_register(self)
+
+    monkeypatch.setattr(Action, "post_register", track_post_register)
+
+    async def fake_reconcile(action, actions_manager, **kwargs):
+        if await actions_manager.is_connected_to(action):
+            await actions_manager.disconnect(action)
+        await action.delete(cascade=True)
+        return False
+
+    monkeypatch.setattr(
+        "jvagent.action.registration.reconcile_singleton_after_create",
+        fake_reconcile,
+    )
+
+    agent, manager = await _setup()
+    action = await _fresh_register_instance(agent.id)
+
+    await manager.register_actions([action])
+
+    assert await Action.get(action.id) is None
+    assert action.id not in calls
+
+
+async def test_get_access_control_action_heals_duplicates(test_db):
+    agent, manager = await _setup()
+    await _persist_action(agent.id, manager)
+    await _persist_action(agent.id, manager, connect=False)
+    assert await _count_archetype(agent.id) == 2
+
+    action = await agent.get_access_control_action()
+
+    assert action is not None
+    assert await _count_archetype(agent.id) == 1
+
+
+async def test_dedupe_singleton_actions_by_archetype(test_db):
+    from jvagent.core.agent_loader import AgentLoader
+
+    agent, manager = await _setup()
+    await _persist_action(agent.id, manager)
+    await _persist_action(agent.id, manager, connect=False)
+    assert await _count_archetype(agent.id) == 2
+
+    loader = AgentLoader()
+    removed = await loader._dedupe_singleton_actions_by_archetype(agent, manager)
+
+    assert removed >= 1
+    assert await _count_archetype(agent.id) == 1
+
+
+async def test_delete_action_routes_through_deregister(test_db, monkeypatch):
+    from jvagent.action.endpoints import delete_action
+
+    agent, manager = await _setup()
+    action = await _persist_action(agent.id, manager)
+    called: list[str] = []
+    original = Actions.deregister_action
+
+    async def spy_deregister(self, action_id: str) -> bool:
+        called.append(action_id)
+        return await original(self, action_id)
+
+    monkeypatch.setattr(Actions, "deregister_action", spy_deregister)
+
+    result = await delete_action(action.id)
+
+    assert result == {"message": "Action deleted successfully"}
+    assert called == [action.id]
+    assert await Action.get(action.id) is None

@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from jvagent.action.base import Action
-from jvagent.core.upsert import find_action_context_records
+from jvagent.core.upsert import action_record_archetype, find_action_context_records
 
 if TYPE_CHECKING:
     from jvagent.action.actions import Actions
@@ -108,7 +108,44 @@ async def collapse_duplicate_records(
             exc,
         )
 
+    agent_ids: set[str] = set()
+    archetype_by_agent: Dict[str, str] = {}
+    for record in records:
+        ctx = record.get("context") or {}
+        agent_id = ctx.get("agent_id")
+        if not agent_id:
+            continue
+        agent_ids.add(agent_id)
+        if agent_id not in archetype_by_agent:
+            archetype_by_agent[agent_id] = action_record_archetype(record)
+
+    if agent_ids:
+        from jvagent.core.cache import (
+            cache_action_type_index,
+            invalidate_action_cache,
+            invalidate_action_type_index,
+        )
+
+        for agent_id in agent_ids:
+            await invalidate_action_cache(agent_id)
+            await invalidate_action_type_index(agent_id)
+            archetype = archetype_by_agent.get(agent_id)
+            if archetype and keeper_id:
+                await cache_action_type_index(agent_id, archetype, keeper_id)
+
     return keeper_id
+
+
+async def heal_duplicate_actions_for_archetype(
+    agent_id: str,
+    actions_manager: Actions,
+    archetype: str,
+) -> Optional[str]:
+    """Collapse duplicate action rows for *archetype*; return surviving id."""
+    records = await find_records_by_archetype(agent_id, archetype)
+    if len(records) <= 1:
+        return records[0].get("id") if records else None
+    return await collapse_duplicate_records(actions_manager, records)
 
 
 async def load_action_from_record(record: Dict[str, Any]) -> Optional[Action]:

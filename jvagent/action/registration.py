@@ -115,7 +115,11 @@ async def reconcile_singleton_after_create(
     archetype: str,
     action_existed_before: bool,
 ) -> bool:
-    """Post-save race guard for singleton actions. Returns True if registration OK."""
+    """Post-save race guard for singleton actions.
+
+    Returns True when *action* still exists and ``post_register`` may run.
+    Returns False when this node lost a concurrent create race and was removed.
+    """
     if not action.is_singleton or action_existed_before:
         return True
 
@@ -143,4 +147,4 @@ async def reconcile_singleton_after_create(
         action.agent_id,
         keeper_id,
     )
-    return True
+    return False

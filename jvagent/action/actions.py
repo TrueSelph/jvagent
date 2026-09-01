@@ -77,6 +77,7 @@ class Actions(Node):
                     reconcile_singleton_after_create,
                     resolve_action_for_registration,
                 )
+                from jvagent.core.upsert import upsert_lookup_by_singleton_archetype
 
                 resolution = await resolve_action_for_registration(action, self)
                 if resolution.rejected_singleton:
@@ -167,22 +168,37 @@ class Actions(Node):
 
                 await self.save()
 
-                from jvagent.core.cache import (
-                    cache_action_type_index,
-                    invalidate_action_cache,
-                )
-
-                await invalidate_action_cache(action.agent_id)
-                await cache_action_type_index(
-                    action.agent_id, action.get_class_name(), action.id
-                )
-
-                await reconcile_singleton_after_create(
+                survived = await reconcile_singleton_after_create(
                     action,
                     self,
                     archetype=archetype,
                     action_existed_before=action_existed_before,
                 )
+
+                from jvagent.core.cache import (
+                    cache_action_type_index,
+                    invalidate_action_cache,
+                    invalidate_action_type_index,
+                )
+
+                await invalidate_action_cache(action.agent_id)
+                await invalidate_action_type_index(action.agent_id)
+                if survived:
+                    await cache_action_type_index(
+                        action.agent_id, action.get_class_name(), action.id
+                    )
+                elif archetype:
+                    lookup = await upsert_lookup_by_singleton_archetype(
+                        action.agent_id, archetype
+                    )
+                    keeper_id = lookup.keeper_id
+                    if keeper_id:
+                        await cache_action_type_index(
+                            action.agent_id, archetype, keeper_id
+                        )
+
+                if not survived:
+                    object.__setattr__(action, "_skip_post_register", True)
 
                 return True
 
@@ -285,8 +301,11 @@ class Actions(Node):
                 property_overrides=overrides,
             )
             results[action.label] = success
-            if success:
-                registered_actions.append(action)
+            if success and not getattr(action, "_skip_post_register", False):
+                persisted = await Action.get(action.id)
+                registered_actions.append(
+                    persisted if persisted is not None else action
+                )
 
         # Validate dependency graph before calling post_register
         if registered_actions:

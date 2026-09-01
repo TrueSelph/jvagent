@@ -494,8 +494,9 @@ async def _tick_schema_singleton_actions(
 
     from jvspatial.core.entities.node import Node
 
-    from jvagent.action.base import Action
+    from jvagent.action.identity import collapse_duplicate_records
     from jvagent.core.agent import Agent
+    from jvagent.core.upsert import action_record_archetype, action_record_is_singleton
 
     cur = state["cursor"]
     if cur.get("agent_ids") is None:
@@ -524,40 +525,33 @@ async def _tick_schema_singleton_actions(
             if r.get("context", {}).get("namespace")
             and r.get("context", {}).get("label")
         ]
-        singleton_by_archetype: Dict[str, List[str]] = defaultdict(list)
+        singleton_by_archetype: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for record in records:
-            record_ctx = record.get("context", {})
-            metadata = record_ctx.get("metadata", {}) or {}
-            base_config = metadata.get("config", {}) or {}
-            config_overrides = metadata.get("config_overrides", {}) or {}
-            merged_config = {**base_config, **config_overrides}
-            if merged_config.get("singleton", True) is not True:
+            if not action_record_is_singleton(record):
                 continue
-            archetype = metadata.get("class") or record.get("entity", "")
-            if not archetype:
-                continue
-            record_id = record.get("id")
-            if record_id:
-                singleton_by_archetype[archetype].append(record_id)
+            archetype = action_record_archetype(record)
+            if archetype:
+                singleton_by_archetype[archetype].append(record)
 
-        for archetype_ids in singleton_by_archetype.values():
-            ordered_ids = sorted(set(archetype_ids))
-            for dup_id in ordered_ids[1:]:
-                if dry:
-                    removed += 1
+        agent = await Agent.get(agent_id)
+        managers = await agent.nodes(node="Actions") if agent else []
+        manager = sorted(managers, key=lambda m: m.id)[0] if managers else None
+
+        for archetype_records in singleton_by_archetype.values():
+            if len(archetype_records) < 2:
+                continue
+            if dry:
+                removed += len(archetype_records) - 1
+                continue
+            if manager is not None:
+                before = len(archetype_records)
+                await collapse_duplicate_records(manager, archetype_records)
+                removed += before - 1
+                continue
+            for record in archetype_records[1:]:
+                dup_id = record.get("id")
+                if not dup_id:
                     continue
-                action = await Action.get(dup_id)
-                if action:
-                    agent = await Agent.get(agent_id)
-                    managers = await agent.nodes(node="Actions") if agent else []
-                    action_removed = False
-                    for manager in sorted(managers, key=lambda m: m.id):
-                        if await manager.deregister_action(dup_id):
-                            action_removed = True
-                            break
-                    if action_removed:
-                        removed += 1
-                        continue
                 ghost_node = await Node.get(dup_id)
                 if ghost_node:
                     await ghost_node.delete(cascade=True)

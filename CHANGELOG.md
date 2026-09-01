@@ -24,6 +24,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   timeout default raised from 5s to 15s; register is still awaited in the
   uvicorn lifespan hook on Lambda.
 
+### Fixed
+
+- **Singleton action correctness (Phase 1)** — ``reconcile_singleton_after_create``
+  returns false for create-race losers so ``register_actions`` skips
+  ``post_register`` on deleted nodes; type-index cache reconciled after
+  collapse; ``DELETE /actions/{id}`` routes through ``deregister_action``;
+  ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
+  read; graph repair uses the same keeper heuristic as bootstrap dedupe.
+
 ## [0.1.8rc1] - 2026-08-18
 
 ### Added
