@@ -1,7 +1,7 @@
 # jvagent Full Code Review — 2026-09-01
 
-**Scope:** Entire `jvagent/` tree (~525 Python files, ~139k LOC)  
-**Method:** Eight parallel subsystem reviewers + independent spot-verification of top CRITICAL claims + static gates  
+**Scope:** Entire `jvagent/` tree (~525 Python files, ~139k LOC)
+**Method:** Eight parallel subsystem reviewers + independent spot-verification of top CRITICAL claims + static gates
 **Branch:** `main` (clean working tree at review time)
 
 ---
@@ -288,36 +288,36 @@ Pre-commit passes; dev venv reports 270 errors. Hook lacks jvspatial/pydantic/ht
 
 ### Phase 1 — Actively wrong in production (same day)
 
-1. **C1** Streaming chunking corruption  
-2. **C2** Action cache key collision  
-3. **C5** Cross-turn prompt cache on shared Action instance  
-4. **C6** `_normalize` type coercion  
+1. **C1** Streaming chunking corruption
+2. **C2** Action cache key collision
+3. **C5** Cross-turn prompt cache on shared Action instance
+4. **C6** `_normalize` type coercion
 
 ### Phase 2 — Security batch (one shared helper commit)
 
-5. **C7–C9** Facebook attachment token, page-id check, empty verify token  
-6. **C10** Artifact doc_name namespacing  
-7. **C11–C13** CLI/scaffold path validation (`path_safe` helper)  
+5. **C7–C9** Facebook attachment token, page-id check, empty verify token
+6. **C10** Artifact doc_name namespacing
+7. **C11–C13** CLI/scaffold path validation (`path_safe` helper)
 8. WhatsApp hardcoded verify token (HIGH, channels)
 
 ### Phase 3 — Walker / turn semantics
 
-9. **C2 follow-up:** Walker finalize timing + turn lock scope (`interact_walker.py:521–534`)  
+9. **C2 follow-up:** Walker finalize timing + turn lock scope (`interact_walker.py:521–534`)
 10. MCP client tuple + ClientSession context (HIGH, dead transport today)
 
 ### Phase 4 — Persistence / repair
 
-11. **C3–C4** Graph repair reattach serialization + edge-sync window  
-12. Memory deferred-save flush audit (TaskStore, prune, counter repair)  
+11. **C3–C4** Graph repair reattach serialization + edge-sync window
+12. Memory deferred-save flush audit (TaskStore, prune, counter repair)
 13. HIGH memory races (re-read under lock, prune under lock)
 
 ### Phase 5 — Hardening sweeps
 
-14. Import-time lock sweep (pattern 1)  
-15. Parameters ambient bypass + floors (HIGH, action framework)  
-16. Orchestrator continuation persistence bugs  
-17. Log retention without TaskMonitor  
-18. Mypy hook dependency alignment  
+14. Import-time lock sweep (pattern 1)
+15. Parameters ambient bypass + floors (HIGH, action framework)
+16. Orchestrator continuation persistence bugs
+17. Log retention without TaskMonitor
+18. Mypy hook dependency alignment
 
 ---
 
@@ -385,10 +385,10 @@ Most HIGH and MEDIUM items from the 2026-09-01 review are now addressed. Remaini
 
 ## References
 
-- Prior core review: [2026-07-16-core-review.md](2026-07-16-core-review.md) (H19 = C3)  
-- Prior once-over: [2026-07-17-once-over.md](2026-07-17-once-over.md)  
-- Agent guide: [CLAUDE.md](../../CLAUDE.md)  
-- Orchestrator design: [docs/ORCHESTRATOR.md](../../docs/ORCHESTRATOR.md)  
+- Prior core review: [2026-07-16-core-review.md](2026-07-16-core-review.md) (H19 = C3)
+- Prior once-over: [2026-07-17-once-over.md](2026-07-17-once-over.md)
+- Agent guide: [CLAUDE.md](../../CLAUDE.md)
+- Orchestrator design: [docs/ORCHESTRATOR.md](../../docs/ORCHESTRATOR.md)
 - Thin harness: [docs/thin-harness.md](../../docs/thin-harness.md)
 
 ---

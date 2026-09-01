@@ -19,13 +19,16 @@ async def test_get_or_create_acquires_per_agent_lock():
     lock_mgr.acquire = AsyncMock(return_value=lock)
 
     existing = ConversationHealthState(agent_id="agent-1")
-    with patch(
-        "jvagent.memory.lock_manager.get_user_lock_manager",
-        return_value=lock_mgr,
-    ), patch.object(
-        ConversationHealthState,
-        "find_one",
-        AsyncMock(return_value=existing),
+    with (
+        patch(
+            "jvagent.memory.lock_manager.get_user_lock_manager",
+            return_value=lock_mgr,
+        ),
+        patch.object(
+            ConversationHealthState,
+            "find_one",
+            AsyncMock(return_value=existing),
+        ),
     ):
         result = await ConversationHealthState.get_or_create_for_agent("agent-1")
 

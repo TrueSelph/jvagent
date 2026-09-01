@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from jvagent.core import graph_repair_job
-from jvagent.core.repair_phases.types import PH_ORPHANS_REATTACH, PH_SYNC_APPLY, RepairLimits
+from jvagent.core.repair_phases.types import (
+    PH_ORPHANS_REATTACH,
+    PH_SYNC_APPLY,
+    RepairLimits,
+)
 
 
 @pytest.mark.asyncio
@@ -95,14 +99,18 @@ async def test_sync_apply_queries_expected_edges_per_node():
     }
     limits = RepairLimits(batch_size=10, max_seconds=5)
 
-    with patch.object(
-        graph_repair_job, "_find_nodes_page", new=AsyncMock(return_value=page_nodes)
-    ), patch(
-        "jvagent.core.repair_scratch.scratch_page",
-        new=AsyncMock(side_effect=_scratch_page),
-    ), patch(
-        "jvagent.core.repair_scratch.scratch_page_key_prefix",
-        new=AsyncMock(side_effect=_scratch_page_key_prefix),
+    with (
+        patch.object(
+            graph_repair_job, "_find_nodes_page", new=AsyncMock(return_value=page_nodes)
+        ),
+        patch(
+            "jvagent.core.repair_scratch.scratch_page",
+            new=AsyncMock(side_effect=_scratch_page),
+        ),
+        patch(
+            "jvagent.core.repair_scratch.scratch_page_key_prefix",
+            new=AsyncMock(side_effect=_scratch_page_key_prefix),
+        ),
     ):
         await graph_repair_job._tick_sync_apply(context, state, limits)
 
