@@ -87,11 +87,7 @@ def _first_app_root_path(
     n = len(args_in)
     while i < n:
         arg = args_in[i]
-        if arg in subcommands:
-            out.append(arg)
-            i += 1
-            break
-        if arg in static_flags:
+        if arg in subcommands or arg in static_flags:
             out.append(arg)
             i += 1
             if arg in value_flags and i < n and not args_in[i].startswith("-"):
