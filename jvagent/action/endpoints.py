@@ -256,6 +256,55 @@ async def update_action(
 
 
 @endpoint(
+    "/actions/{action_id}",
+    methods=["DELETE"],
+    auth=True,
+    roles=["admin"],
+    tags=["Action"],
+    response=success_response(
+        data={
+            "message": ResponseField(
+                field_type=str,
+                description="Success message",
+                example="Action deleted successfully",
+            ),
+        }
+    ),
+)
+async def delete_action(action_id: str) -> Dict[str, Any]:
+    """Delete an action and cascade to its child nodes.
+
+    Uses `Action.delete()` with cascade, which deletes all outgoing child nodes
+    before deleting the action itself.
+
+
+    **Args:**
+
+    - action_id: ID of the action to delete
+
+
+    **Returns:**
+
+    Dictionary with success message
+
+
+    **Raises:**
+
+    - ResourceNotFoundError: If action not found
+    """
+    action = await Action.get(action_id)
+    if not action:
+        raise ResourceNotFoundError(
+            message=f"Action with ID '{action_id}' not found",
+            details={"action_id": action_id},
+        )
+
+    await action.delete(cascade=True)
+
+    return {"message": "Action deleted successfully"}
+
+
+@endpoint(
     "/agents/{agent_id}/actions/by-entity/{entity}",
     methods=["GET"],
     auth=True,
