@@ -179,6 +179,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Duplicate singleton action nodes under concurrent Lambda bootstrap.**
+  ``register_action`` now resolves existing rows via raw DB records (not
+  ``Action.find_one``, which misses unimported subclasses), collapses
+  duplicate singletons by archetype before create, rejects a second label for
+  the same singleton type, and drops a loser node after save when a cross-worker
+  race still slips through. Boot also runs
+  ``_dedupe_singleton_actions_by_archetype`` alongside identity dedupe.
+
 - **`chunking_strategy="flash"` was silently rejected by validation gates.**
   The Upload endpoint (`endpoints.py`), Google Drive sync endpoint, and
   jvforge `/v1/process` route all validated `chunking_strategy` against a

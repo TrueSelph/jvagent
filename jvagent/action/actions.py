@@ -49,16 +49,19 @@ class Actions(Node):
         Actions are uniquely identified by (agent_id, namespace, label).
 
         This method:
-        1. Enforces singleton constraint for singleton action types
-        2. Checks if action already exists (by agent_id, namespace, label)
+        1. Enforces singleton constraint for singleton action types (raw-record
+           lookup by archetype; collapses duplicates; rejects a second label)
+        2. Checks if action already exists (by agent_id, namespace, label) via
+           raw records, not ``Action.find_one`` (unimported-subclass blind spot)
         3. If exists and update_mode=None: reuses existing node (no-op)
         4. If exists and update_mode="merge": updates metadata in place, calls on_reload()
         5. If exists and update_mode="source": deletes existing and creates fresh
         6. If not exists: saves and connects the action, calls on_register()
+        7. Post-save singleton race guard drops a loser node if a peer won concurrently
 
-        Prior to calling this method during bootstrap, _reconcile_actions() guarantees
-        a clean slate — stale and duplicate nodes have already been removed — so no
-        defensive duplicate-detection is performed here.
+        Boot-time ``_dedupe_actions_by_identity`` and
+        ``_dedupe_singleton_actions_by_archetype`` also run before registration;
+        this method closes the window during registration itself.
 
         Args:
             action: Action instance to register (fresh from source)
@@ -70,37 +73,61 @@ class Actions(Node):
         """
         async with self._lock:
             try:
-                # Singleton enforcement: reject duplicate registration of singleton action types
+                from jvagent.action.identity import (
+                    collapse_duplicate_records,
+                    find_records_by_archetype,
+                    find_records_by_identity,
+                    load_action_from_record,
+                )
+
+                archetype = action.metadata.get("class", action.get_class_name())
+                existing_action: Optional[Action] = None
+
+                # Singleton: at most one node per (agent_id, archetype). Raw-record
+                # lookups bypass Action.find_one's imported-subclass filter (ADR-0033).
                 if action.is_singleton:
-                    archetype = action.metadata.get("class", action.get_class_name())
-                    existing_singleton = await Action.find_one(
-                        {
-                            "context.agent_id": action.agent_id,
-                            "context.metadata.class": archetype,
-                        }
+                    singleton_records = await find_records_by_archetype(
+                        action.agent_id, archetype
                     )
-                    if existing_singleton:
-                        if (
-                            existing_singleton.namespace != action.namespace
-                            or existing_singleton.label != action.label
-                        ):
+                    if len(singleton_records) > 1:
+                        await collapse_duplicate_records(self, singleton_records)
+                        singleton_records = await find_records_by_archetype(
+                            action.agent_id, archetype
+                        )
+                    if singleton_records:
+                        keeper = singleton_records[0]
+                        kns, klbl = (
+                            (keeper.get("context") or {}).get("namespace"),
+                            (keeper.get("context") or {}).get("label"),
+                        )
+                        if (kns, klbl) != (action.namespace, action.label):
                             logger.warning(
-                                "Rejected duplicate singleton action: %s (archetype=%s) already "
-                                "registered for agent %s. Only one instance per agent allowed.",
+                                "Rejected duplicate singleton action: %s (archetype=%s) "
+                                "already registered for agent %s as %s/%s. "
+                                "Only one instance per agent allowed.",
                                 action.label,
                                 archetype,
                                 action.agent_id,
+                                kns,
+                                klbl,
                             )
                             return False
+                        existing_action = await load_action_from_record(keeper)
 
-                # Check if action already exists
-                existing_action = await Action.find_one(
-                    {
-                        "context.agent_id": action.agent_id,
-                        "context.namespace": action.namespace,
-                        "context.label": action.label,
-                    }
-                )
+                # Identity: (agent_id, namespace, label) — also via raw records.
+                if existing_action is None:
+                    identity_records = await find_records_by_identity(
+                        action.agent_id, action.namespace, action.label
+                    )
+                    if len(identity_records) > 1:
+                        await collapse_duplicate_records(self, identity_records)
+                        identity_records = await find_records_by_identity(
+                            action.agent_id, action.namespace, action.label
+                        )
+                    if identity_records:
+                        existing_action = await load_action_from_record(
+                            identity_records[0]
+                        )
 
                 action_existed_before = existing_action is not None
 
@@ -123,9 +150,27 @@ class Actions(Node):
                         )
 
                     # source mode: delete existing, create fresh
-                    if await self.is_connected_to(existing_action):
-                        await self.disconnect(existing_action)
-                    await existing_action.delete(cascade=True)
+                    if action.is_singleton:
+                        stale_records = await find_records_by_archetype(
+                            action.agent_id, archetype
+                        )
+                    else:
+                        stale_records = [{"id": existing_action.id}]
+
+                    from jvspatial.core.entities.node import Node
+
+                    for record in stale_records:
+                        rid = record.get("id")
+                        if not rid:
+                            continue
+                        node = await Action.get(rid)
+                        if node is None:
+                            node = await Node.get(rid)
+                        if node is None:
+                            continue
+                        if await self.is_connected_to(node):
+                            await self.disconnect(node)
+                        await node.delete(cascade=True)
 
                 self.registered_count += 1
                 if action.enabled:
@@ -177,6 +222,32 @@ class Actions(Node):
                 await cache_action_type_index(
                     action.agent_id, action.get_class_name(), action.id
                 )
+
+                # Cross-worker race guard: if another container created the same
+                # singleton while we were saving, drop our node and keep the survivor.
+                if action.is_singleton and not action_existed_before:
+                    post_save = await find_records_by_archetype(
+                        action.agent_id, archetype
+                    )
+                    if len(post_save) > 1:
+                        keeper_id = await collapse_duplicate_records(self, post_save)
+                        if keeper_id and action.id != keeper_id:
+                            if await self.is_connected_to(action):
+                                await self.disconnect(action)
+                            self.registered_count = max(0, self.registered_count - 1)
+                            if action.enabled:
+                                self.enabled_count = max(0, self.enabled_count - 1)
+                            await action.delete(cascade=True)
+                            await self.save()
+                            logger.debug(
+                                "Singleton %s/%s lost create race for agent %s; "
+                                "kept existing node %s",
+                                action.namespace,
+                                action.label,
+                                action.agent_id,
+                                keeper_id,
+                            )
+                            return True
 
                 return True
 
