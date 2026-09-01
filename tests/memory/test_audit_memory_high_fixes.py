@@ -76,8 +76,9 @@ async def test_prune_connects_new_head_before_disconnect(test_db):
 
         conv.interaction_limit = 1
         conv.interaction_count = 2
-        with patch.object(Conversation, "connect", connect_wrapper), patch.object(
-            Conversation, "disconnect", disconnect_wrapper
+        with (
+            patch.object(Conversation, "connect", connect_wrapper),
+            patch.object(Conversation, "disconnect", disconnect_wrapper),
         ):
             await conv._prune_old_interactions()
 

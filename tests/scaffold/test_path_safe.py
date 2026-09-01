@@ -1,7 +1,8 @@
 """Tests for scaffold path segment validation."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from jvagent.scaffold.path_safe import resolve_under, validate_safe_segment
 
