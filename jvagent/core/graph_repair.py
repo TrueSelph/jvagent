@@ -470,15 +470,23 @@ async def _reattach_orphans_chunk(
 
 
 async def _reattach_interaction_orphans(
-    context: Any, orphan_ids: Set[str], dry_run: bool
+    context: Any,
+    orphan_ids: Set[str],
+    dry_run: bool,
+    *,
+    deadline: Optional[float] = None,
 ) -> int:
     """Reattach orphan Interaction nodes in started_at order per conversation."""
+    import time
+
     from jvagent.memory.conversation import Conversation
 
     reattached = 0
     by_conv: Dict[str, list] = defaultdict(list)
 
     for node_id in list(orphan_ids):
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         node = await context.get(Node, node_id)
         if not node or node.__class__.__name__ != "Interaction":
             continue
@@ -490,21 +498,36 @@ async def _reattach_interaction_orphans(
     from jvagent.memory.interaction import interaction_sort_key
 
     for conv_id, interactions in by_conv.items():
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         interactions.sort(key=interaction_sort_key)
         conversation = await Conversation.get(conv_id)
         if not conversation:
             continue
         first_existing = await conversation.get_first_interaction()
         prev = None
+        visited: Set[str] = set()
         if first_existing:
             current = first_existing
             while True:
+                if current.id in visited:
+                    logger.warning(
+                        "Interaction chain cycle detected for conversation %s at %s",
+                        conv_id,
+                        current.id,
+                    )
+                    break
+                visited.add(current.id)
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
                 next_int = await current.get_next_interaction()
                 if not next_int:
                     break
                 current = next_int
             prev = current
         for node in interactions:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             if node.id not in orphan_ids:
                 continue
             if prev is None:

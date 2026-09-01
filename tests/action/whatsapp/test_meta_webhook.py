@@ -98,13 +98,16 @@ class TestWhatsAppActionMetaConfig:
         action = _meta_action(phone_number_id="", access_token="")
         assert action.is_configured() is True
 
-    def test_parse_webhook_verify_success_jvconnect_token(self, monkeypatch):
-        # Meta verifies against jvconnect; agent hub.verify_token is a fixed placeholder
+    def test_parse_webhook_verify_success_derived_token(self, monkeypatch):
+        secret = "test-webhook-secret"
+        monkeypatch.setenv("JVCONNECT_WEBHOOK_SECRET", secret)
         action = _meta_action()
+        token = action.effective_verify_token(AGENT_ID)
+        assert token
         result = action.parse_webhook_verify(
             {
                 "hub.mode": "subscribe",
-                "hub.verify_token": "jvconnect",
+                "hub.verify_token": token,
                 "hub.challenge": "1234567890",
             },
             agent_id=AGENT_ID,

@@ -123,7 +123,7 @@ async def test_set_fields_multi_field_hooks_use_single_compact_directive(signup_
 
 
 @pytest.mark.asyncio
-async def test_set_fields_rejects_under_extracted_compound_payload(signup_action):
+async def test_set_fields_under_extracted_stores_and_nudges(signup_action):
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -142,11 +142,9 @@ async def test_set_fields_rejects_under_extracted_compound_payload(signup_action
         )
     )
 
-    assert result["ok"] is False
-    assert result["error_code"] == "UNDER_EXTRACTED"
-    assert "suggested_additional_keys" in result
-    assert "user_email" in result["suggested_additional_keys"]
-    assert "available_times" in result["suggested_additional_keys"]
+    assert result["ok"] is True
+    assert session.get_value("user_name") == "Jane Doe"
+    assert "user_email" in str(result.get("system_message", ""))
 
 
 @pytest.mark.asyncio

@@ -45,4 +45,38 @@ def get_turn_cache() -> Optional[Dict[str, Any]]:
     return _turn_cache.get()
 
 
-__all__ = ["bind_turn_cache", "get_turn_cache"]
+_PROMPT_SECTIONS_KEY = "prompt_sections"
+
+
+def get_prompt_cache() -> Dict[str, Any]:
+    """Per-turn orchestrator prompt sections (ContextVar-scoped via turn cache)."""
+    turn = get_turn_cache()
+    if turn is None:
+        return {}
+    sections = turn.get(_PROMPT_SECTIONS_KEY)
+    return dict(sections) if isinstance(sections, dict) else {}
+
+
+def set_prompt_cache(sections: Dict[str, Any]) -> None:
+    """Store orchestrator prompt sections for the active turn."""
+    turn = get_turn_cache()
+    if turn is not None:
+        turn[_PROMPT_SECTIONS_KEY] = dict(sections)
+
+
+def update_prompt_cache(key: str, value: Any) -> None:
+    """Update one prompt section in the active turn cache."""
+    turn = get_turn_cache()
+    if turn is not None:
+        sections = turn.setdefault(_PROMPT_SECTIONS_KEY, {})
+        if isinstance(sections, dict):
+            sections[key] = value
+
+
+__all__ = [
+    "bind_turn_cache",
+    "get_prompt_cache",
+    "get_turn_cache",
+    "set_prompt_cache",
+    "update_prompt_cache",
+]

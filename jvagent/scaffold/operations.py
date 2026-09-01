@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from jvagent import __version__ as jvagent_package_version
+from jvagent.scaffold.path_safe import resolve_under, validate_safe_segment
 from jvagent.scaffold.profile_resolve import (
     parse_agent_spec,
     parse_extra_action_flags,
@@ -23,6 +24,15 @@ from jvagent.scaffold.yaml_io import (
     apply_agent_placeholders,
     write_agent_yaml,
 )
+
+
+def _agent_dir_under(app_root: Path, agent_ref: str) -> Path:
+    """Resolve ``namespace/id`` under ``app_root/agents`` with containment checks."""
+    ns, aid = agent_ref.split("/", 1)
+    validate_safe_segment(ns, label="namespace")
+    validate_safe_segment(aid, label="agent_id")
+    return resolve_under(app_root.resolve() / "agents", ns, aid)
+
 
 logger = logging.getLogger(__name__)
 
@@ -455,7 +465,6 @@ def create_app(ctx: CreateAppContext) -> None:
     for spec in ctx.agent_specs:
         agent_ref, prof = parse_agent_spec(spec)
         profile_key = prof or ctx.default_profile
-        ns, aid = agent_ref.split("/", 1)
         actions = resolve_profile_actions(str(root), profile_key, extras)
         actions = apply_agent_placeholders(
             actions,
@@ -463,7 +472,7 @@ def create_app(ctx: CreateAppContext) -> None:
             f"{ctx.title} — {_default_agent_alias(agent_ref)}",
         )
         actions = _inject_skill_defaults(actions)
-        agent_dir = agents_root / ns / aid
+        agent_dir = _agent_dir_under(root, agent_ref)
         agent_dir.mkdir(parents=True, exist_ok=True)
         write_agent_yaml(
             agent_dir / "agent.yaml",
@@ -533,13 +542,12 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
 
     agent_ref, prof = parse_agent_spec(ctx.agent_spec)
     profile_key = prof or ctx.default_profile
-    ns, aid = agent_ref.split("/", 1)
 
     agents_list = app_data.get("agents") if isinstance(app_data, dict) else None
     if not isinstance(agents_list, list):
         agents_list = []
 
-    agent_dir = app_root / "agents" / ns / aid
+    agent_dir = _agent_dir_under(app_root, agent_ref)
     agent_yaml_path = agent_dir / "agent.yaml"
     if agent_ref in agents_list and agent_yaml_path.is_file() and not ctx.force:
         raise ValueError(

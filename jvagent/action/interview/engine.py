@@ -636,25 +636,6 @@ async def handle_set_fields(
         )
 
     under_extracted_keys = _under_extracted_candidate_keys(spec, field_map, visitor)
-    if under_extracted_keys:
-        return interview_tool_response(
-            ok=False,
-            status="error",
-            error_code="UNDER_EXTRACTED",
-            error=(
-                "Likely compound utterance detected, but set_fields payload contains "
-                "only one key."
-            ),
-            submitted_fields=sorted(field_map.keys()),
-            suggested_additional_keys=under_extracted_keys,
-            # Model-facing self-correction — re-extract and retry. NOT a user
-            # reply: travels in system_message so it can never be relayed.
-            system_message=(
-                "Extract all confident values from the latest user utterance and "
-                "retry interview__set_fields with one complete fields map using "
-                "known keys from field_keys/guidance_page/awaiting_fields."
-            ),
-        )
 
     load_fn = action._load_fn(spec)
     ordered = sorted(
@@ -1032,6 +1013,20 @@ async def handle_set_fields(
 
     if stored_any:
         await action._save_session(session, visitor)
+
+    if under_extracted_keys and not failures:
+        append_system_event(
+            system_queue,
+            field=sorted(field_map.keys())[0] if field_map else "",
+            stage="set",
+            source="under_extract_heuristic",
+            system_message=(
+                "Likely compound utterance with only one submitted field. "
+                f"Review the latest user message for additional values "
+                f"({', '.join(under_extracted_keys)}) and call interview__set_fields "
+                "again when confident."
+            ),
+        )
 
     complete_check = completion_candidates[-1] if completion_candidates else None
     if complete_check is not None and not failures:
@@ -1782,8 +1777,13 @@ async def handle_field_unavailable(
     if not snapshot:
         snapshot = session.to_dict()
     if visitor:
-        await tasks.park_task(visitor, spec.name, snapshot=snapshot, reason=field)
-    await action._clear_interview_session(visitor)
+        parked = await tasks.park_task(
+            visitor, spec.name, snapshot=snapshot, reason=field
+        )
+    else:
+        parked = False
+    if parked:
+        await action._clear_interview_session(visitor)
     return interview_tool_response(
         ok=True,
         status="parked",

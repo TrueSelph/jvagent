@@ -11,6 +11,7 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
 from jvagent.action.orchestrator.session_context import render_session_context
+from jvagent.action.orchestrator.turn_cache import bind_turn_cache, get_prompt_cache
 
 
 class _FakeApp:
@@ -78,7 +79,7 @@ async def test_prepare_turn_caches_session_context_not_on_skills(
     captured = {}
 
     async def _rm(self, *a, **k):
-        cache = getattr(self, "_turn_prompt_cache", {}) or {}
+        cache = get_prompt_cache()
         captured["session"] = cache.get("session_context", "")
         captured["skills"] = cache.get("skills_section", "")
         return {"action": "final", "answer": "hi"}

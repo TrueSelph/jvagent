@@ -191,8 +191,18 @@ async def score_interaction(
     )
 
     if prev_contribution:
-        apply_contribution(day_buckets, prev_contribution, sign=-1)
-    apply_contribution(day_buckets, contribution, sign=+1)
+        from jvagent.core.async_locks import get_loop_lock
+
+        async with get_loop_lock(f"conv_health:{agent_id}"):
+            apply_contribution(day_buckets, prev_contribution, sign=-1)
+            apply_contribution(day_buckets, contribution, sign=+1)
+            state.day_buckets = day_buckets
+    else:
+        from jvagent.core.async_locks import get_loop_lock
+
+        async with get_loop_lock(f"conv_health:{agent_id}"):
+            apply_contribution(day_buckets, contribution, sign=+1)
+            state.day_buckets = day_buckets
 
     ai_status = "none"
     ai_select_reason: Optional[str] = None

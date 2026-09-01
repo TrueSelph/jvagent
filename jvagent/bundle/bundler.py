@@ -5,11 +5,27 @@ by extending a base template and including pip dependencies from action info.yam
 """
 
 import logging
+import shutil
 from pathlib import Path
 
 from jvagent.bundle.dockerfile_generator import generate_dockerfile
 
 logger = logging.getLogger(__name__)
+
+_DOCKERIGNORE_LINES = (
+    ".env",
+    ".env.*",
+    "*.db",
+    "*.sqlite",
+    "*.sqlite3",
+    "jvdb/",
+    ".git/",
+    "__pycache__/",
+    "*.pyc",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    "node_modules/",
+)
 
 
 class Bundler:
@@ -23,8 +39,11 @@ class Bundler:
         """
         self.app_root = Path(app_root).resolve()
 
-    def generate_dockerfile(self) -> bool:
+    def generate_dockerfile(self, *, force: bool = False) -> bool:
         """Generate Dockerfile in the app directory.
+
+        Args:
+            force: When True, overwrite an existing Dockerfile (backup to .bak).
 
         Returns:
             True if generation succeeded, False otherwise
@@ -32,11 +51,17 @@ class Bundler:
         try:
             logger.info(f"Generating Dockerfile for app: {self.app_root}")
 
-            # Validate app.yaml exists
             if not self._validate_app():
                 return False
 
-            # Get path to base Dockerfile template
+            dockerfile_path = self.app_root / "Dockerfile"
+            if dockerfile_path.exists() and not force:
+                logger.error(
+                    "Dockerfile already exists at %s; pass force=True to overwrite",
+                    dockerfile_path,
+                )
+                return False
+
             bundle_dir = Path(__file__).parent
             base_template_path = bundle_dir / "Dockerfile.base"
 
@@ -46,12 +71,15 @@ class Bundler:
                 )
                 return False
 
-            # Generate Dockerfile
             dockerfile_content = generate_dockerfile(self.app_root, base_template_path)
 
-            # Write Dockerfile to app directory
-            dockerfile_path = self.app_root / "Dockerfile"
+            if dockerfile_path.exists() and force:
+                backup = self.app_root / "Dockerfile.bak"
+                shutil.copy2(dockerfile_path, backup)
+                logger.info("Backed up existing Dockerfile to %s", backup)
+
             dockerfile_path.write_text(dockerfile_content)
+            self._write_dockerignore()
 
             logger.info(f"Dockerfile generated successfully: {dockerfile_path}")
             return True
@@ -60,12 +88,16 @@ class Bundler:
             logger.error(f"Dockerfile generation failed: {e}", exc_info=True)
             return False
 
-    def _validate_app(self) -> bool:
-        """Validate that app.yaml exists in app root.
+    def _write_dockerignore(self) -> None:
+        path = self.app_root / ".dockerignore"
+        existing = (
+            path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        )
+        merged = list(dict.fromkeys([*existing, *_DOCKERIGNORE_LINES]))
+        path.write_text("\n".join(merged) + "\n", encoding="utf-8")
 
-        Returns:
-            True if valid, False otherwise
-        """
+    def _validate_app(self) -> bool:
+        """Validate that app.yaml exists in app root."""
         app_yaml = self.app_root / "app.yaml"
         if not app_yaml.exists():
             logger.error(f"app.yaml not found in {self.app_root}")

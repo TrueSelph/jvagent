@@ -17,12 +17,16 @@ class ConversationLockManager:
     def __init__(self) -> None:
         self._locks: Dict[str, asyncio.Lock] = {}
         self._lock_timestamps: Dict[str, float] = {}
-        self._global_lock = asyncio.Lock()
         self._last_cleanup = time.time()
+
+    def _global_lock(self) -> asyncio.Lock:
+        from jvagent.core.async_locks import get_loop_lock
+
+        return get_loop_lock("conversation_lock_manager")
 
     async def acquire_lock(self, user_id: str) -> asyncio.Lock:
         """Get or create a lock for a specific user (thread-safe)."""
-        async with self._global_lock:
+        async with self._global_lock():
             if user_id not in self._locks:
                 self._locks[user_id] = asyncio.Lock()
             self._lock_timestamps[user_id] = time.time()

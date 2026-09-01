@@ -31,8 +31,10 @@ class Actions(Node):
     )
     enabled_count: int = attribute(default=0, description="Number of enabled actions")
 
-    # Internal lock for thread-safe operations
-    _lock: asyncio.Lock = attribute(private=True, default_factory=asyncio.Lock)
+    def _registration_lock(self) -> asyncio.Lock:
+        from jvagent.core.async_locks import get_loop_lock
+
+        return get_loop_lock(f"actions:{self.id}")
 
     # ============================================================================
     # Action Registration
@@ -68,7 +70,7 @@ class Actions(Node):
         Returns:
             True if successful, False otherwise
         """
-        async with self._lock:
+        async with self._registration_lock():
             try:
                 # Singleton enforcement: reject duplicate registration of singleton action types
                 if action.is_singleton:
@@ -328,7 +330,7 @@ class Actions(Node):
         Returns:
             True if successful, False otherwise
         """
-        async with self._lock:
+        async with self._registration_lock():
             try:
                 action = await Action.get(action_id)
                 if not action:

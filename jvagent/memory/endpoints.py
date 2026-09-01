@@ -21,7 +21,7 @@ def _user_memory_payload(user: User) -> Dict[str, Any]:
     payload: Dict[str, Any] = dict(user.memory or {})
     tags = user.memory_tags
     if tags:
-        payload["_memory_tags"] = list(tags)
+        payload["_memory_tags"] = dict(tags)
     return payload
 
 
@@ -177,11 +177,8 @@ async def get_users(
         for user in page_users:
             exported = await user.export()
             users_data.append(exported)
-    except Exception as e:
-        logger.warning("Failed to list users: %s", e)
-        users_data = []
-        total = 0
-        total_pages = 0
+    except Exception:
+        raise
 
     return {
         "users": users_data,

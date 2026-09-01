@@ -10,6 +10,17 @@ from fastapi.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 
+def _sse_dedup_key(message: Any) -> tuple:
+    """Dedup key for SSE replay overlap — (id, message_type, sequence)."""
+    mid = getattr(message, "id", None) or getattr(message, "message_id", None) or ""
+    mtype = getattr(message, "message_type", "") or ""
+    meta = getattr(message, "metadata", None) or {}
+    seq = meta.get("sequence") if isinstance(meta, dict) else None
+    if seq is None:
+        seq = getattr(message, "content", "") or ""
+    return (mid, mtype, seq)
+
+
 def format_sse_chunk(data: Dict[str, Any]) -> str:
     """Format data as SSE chunk.
 
@@ -84,9 +95,7 @@ async def stream_messages(
         for message in existing_messages:
             if interaction_id and message.interaction_id != interaction_id:
                 continue
-            mid = getattr(message, "id", None) or getattr(message, "message_id", None)
-            if mid:
-                replayed_ids.add(mid)
+            replayed_ids.add(_sse_dedup_key(message))
             yield format_sse_chunk(message.to_dict())
 
         # Stream new messages as they arrive using queue-based waiting
@@ -96,12 +105,10 @@ async def stream_messages(
                 message = await asyncio.wait_for(
                     message_queue.get(), timeout=poll_timeout
                 )
-                mid = getattr(message, "id", None) or getattr(
-                    message, "message_id", None
-                )
-                if mid and mid in replayed_ids:
+                dedup_key = _sse_dedup_key(message)
+                if dedup_key in replayed_ids:
                     # Already delivered from the backlog replay — drop the dup.
-                    replayed_ids.discard(mid)
+                    replayed_ids.discard(dedup_key)
                     continue
                 yield format_sse_chunk(message.to_dict())
             except asyncio.TimeoutError:
