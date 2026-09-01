@@ -933,22 +933,15 @@ def restrict_tools_to_task_lock_skill(
         companion_skills or [], companion_tool_globs or [], tools
     )
     allowed_names.update(companion_allowed)
-    keep = set(allowed_names)
-    for key in list(tools.keys()):
-        if key not in keep:
-            del tools[key]
-    for key in list(visible):
-        if key not in keep:
-            visible.discard(key)
-    for key in keep:
-        if key in tools:
-            visible.add(key)
+    restricted_tools = {k: v for k, v in tools.items() if k in allowed_names}
+    restricted_visible = {k for k in visible if k in allowed_names}
+    restricted_visible.update(k for k in allowed_names if k in restricted_tools)
     skills_section = task_lock_section_text(
         skill_doc,
         pending_directive=pending_directive,
         companion_names=tuple(dict.fromkeys(companion_display)),
     )
-    return tools, visible, skills_section
+    return restricted_tools, restricted_visible, skills_section
 
 
 def _reply_only_surface(
@@ -959,18 +952,14 @@ def _reply_only_surface(
     pending_directive: str,
 ) -> Tuple[Dict[str, Any], Set[str], str]:
     allowed_names = {"reply", "respond"}
-    for key in list(tools.keys()):
-        if key not in allowed_names:
-            del tools[key]
-    for key in list(visible):
-        if key not in allowed_names:
-            visible.discard(key)
+    restricted_tools = {k: v for k, v in tools.items() if k in allowed_names}
+    restricted_visible = {k for k in visible if k in allowed_names}
     skills_section = (
         f"ACTIVE SKILL IN PROGRESS: {skill_doc.name}\n"
         f"{pending_directive}\n"
         f"PROCEDURE:\n{skill_doc.body}"
     )
-    return tools, visible, skills_section
+    return restricted_tools, restricted_visible, skills_section
 
 
 def _append_session_note(observations: List[Dict[str, Any]], note: str) -> None:

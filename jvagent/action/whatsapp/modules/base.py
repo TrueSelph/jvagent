@@ -6,7 +6,6 @@ import json
 import logging
 import mimetypes
 import os
-import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -57,8 +56,7 @@ class ConnectionPoolManager:
     """
 
     _instance: ClassVar[Optional["ConnectionPoolManager"]] = None
-    _locks: ClassVar[Dict[int, asyncio.Lock]] = {}
-    _locks_guard: ClassVar[threading.Lock] = threading.Lock()
+    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(self):
         # Keyed by (api_url, timeout) for isolation between different API endpoints
@@ -66,29 +64,10 @@ class ConnectionPoolManager:
         self._session_lock = asyncio.Lock()
 
     @classmethod
-    def _get_class_lock(cls) -> asyncio.Lock:
-        loop = asyncio.get_running_loop()
-        key = id(loop)
-        with cls._locks_guard:
-            lock = cls._locks.get(key)
-            if lock is None:
-                lock = asyncio.Lock()
-                cls._locks[key] = lock
-            for stale_key in [
-                k
-                for k, candidate in cls._locks.items()
-                if k != key
-                and getattr(candidate, "_loop", None) is not None
-                and candidate._loop.is_closed()  # type: ignore[attr-defined]
-            ]:
-                cls._locks.pop(stale_key, None)
-        return lock
-
-    @classmethod
     async def get_instance(cls) -> "ConnectionPoolManager":
         """Get the singleton instance (thread-safe)."""
         if cls._instance is None:
-            async with cls._get_class_lock():
+            async with cls._lock:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
@@ -364,11 +343,8 @@ class BaseWhatsAppAPI(ABC):
                     "_exception_type": exc_type,
                 }
 
-        # Retry only idempotent methods — POST retries can duplicate outbound messages.
-        method_upper = (method or "GET").upper()
-        max_attempts = 2 if method_upper in ("GET", "HEAD") else 1
-
-        for attempt in range(max_attempts):
+        # Try with pooled session first, then retry with fresh session on failure
+        for attempt in range(2):
             session = None
             fresh_session = False
             try:
@@ -406,7 +382,7 @@ class BaseWhatsAppAPI(ABC):
                         f"Connection issue for {method} {url}, attempt {attempt + 1}"
                     )
                     continue
-                elif attempt == 0 and max_attempts > 1:
+                elif attempt == 0:
                     # Invalidate pool on "Event loop is closed" so future calls get fresh session
                     if "Event loop is closed" in error or "event loop" in error.lower():
                         try:

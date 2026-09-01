@@ -69,15 +69,10 @@ def wrap_action_tool(
     only when ``access_label`` is set.
     """
     name = getattr(tool, "name", "tool")
-    effective_access_label = (
-        access_label
-        if access_label is not None
-        else getattr(tool, "access_label", None)
-    )
 
     async def _run(args: Dict[str, Any], _tool: Any = tool) -> str:
-        if effective_access_label is not None and not await is_tool_allowed(
-            agent, label=effective_access_label, user_id=user_id, channel=channel
+        if access_label is not None and not await is_tool_allowed(
+            agent, label=access_label, user_id=user_id, channel=channel
         ):
             return "(access denied)"
         call_kwargs = dict(args or {})

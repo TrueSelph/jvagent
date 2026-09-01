@@ -10,26 +10,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 _SKILL_DISCOVERY_CACHE: Dict[tuple, List["SkillDoc"]] = {}
-
-
-def _skills_tree_mtime(app_root: str, namespace: str, agent_name: str) -> int:
-    """Latest mtime under the agent's skills tree (cache invalidation)."""
-    latest = 0
-    skills_root = Path(app_root) / "agents" / namespace / agent_name / "skills"
-    if not skills_root.is_dir():
-        return 0
-    for path in skills_root.rglob("SKILL.md"):
-        try:
-            latest = max(latest, int(path.stat().st_mtime))
-        except OSError:
-            continue
-    return latest
 
 
 def clear_skill_discovery_cache() -> None:
@@ -140,7 +125,6 @@ def discover_skill_docs(
         (skills_source or "both").strip().lower(),
         repr(selector or "-all"),
         tuple(denied or ()),
-        _skills_tree_mtime(str(app_root), str(namespace), str(name)),
     )
     cached_docs = _SKILL_DISCOVERY_CACHE.get(cache_key)
     if cached_docs is not None:

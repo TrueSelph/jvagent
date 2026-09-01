@@ -311,30 +311,13 @@ class Conversation(DeferredSaveMixin, Node):
     ) -> "Interaction":
         from jvagent.memory.interaction import Interaction
 
-        fresh = await Conversation.get(self.id)
-        if fresh is not None:
-            self.interaction_count = fresh.interaction_count
-            self.last_interaction_id = fresh.last_interaction_id
-            self.last_interaction_at = fresh.last_interaction_at
-            self.interaction_limit = fresh.interaction_limit
-
         if interaction is None and utterance is None:
             raise ValueError("Must provide either interaction or utterance")
-
-        if self.id:
-            fresh = await Conversation.get(self.id)
-            if fresh is not None:
-                self.interaction_count = fresh.interaction_count
-                self.last_interaction_id = fresh.last_interaction_id
-                self.interaction_limit = fresh.interaction_limit
-                self.last_interaction_at = fresh.last_interaction_at
 
         from jvagent.core.app import App
 
         app = await App.get()
         now = await app.now() if app else datetime.now(timezone.utc)
-
-        last_interaction = await self.get_last_interaction()
 
         if interaction is None:
             interaction = await Interaction.create(
@@ -345,6 +328,8 @@ class Conversation(DeferredSaveMixin, Node):
                 session_id=session_id,
                 started_at=now,
             )
+
+        last_interaction = await self.get_last_interaction()
 
         if last_interaction:
             await last_interaction.connect(interaction, direction="both")
@@ -387,17 +372,13 @@ class Conversation(DeferredSaveMixin, Node):
     async def _get_or_create_artifacts(self) -> Any:
         """The conversation's single ``Artifacts`` registry node (lazy)."""
         from jvagent.memory.artifact import Artifacts
-        from jvagent.memory.distributed_conversation_lock import (
-            conversation_mutation_lock,
-        )
 
-        async with conversation_mutation_lock(self.id):
-            existing = await self.nodes(node=Artifacts, direction="out")
-            if existing:
-                return existing[0]
-            branch = await Artifacts.create()
-            await self.connect(branch, direction="out")
-            return branch
+        existing = await self.nodes(node=Artifacts, direction="out")
+        if existing:
+            return existing[0]
+        branch = await Artifacts.create()
+        await self.connect(branch, direction="out")
+        return branch
 
     async def add_artifact(
         self,
@@ -500,18 +481,13 @@ class Conversation(DeferredSaveMixin, Node):
             if remaining or getattr(artifact, "pinned", False):
                 continue
             try:
-                await self._delete_artifact_file(artifact)
-                await artifact.delete()
                 if branch is not None:
                     await branch.disconnect(artifact)
+                await self._delete_artifact_file(artifact)
+                await artifact.delete()
                 reaped += 1
             except Exception:
-                if branch is not None:
-                    try:
-                        if not await branch.is_connected_to(artifact):
-                            await branch.connect(artifact, direction="out")
-                    except Exception:
-                        pass
+                pass
         return reaped
 
     async def _delete_artifact_file(self, artifact: Any) -> None:
@@ -589,10 +565,10 @@ class Conversation(DeferredSaveMixin, Node):
             if not next_interaction:
                 break
 
-            await self.connect(next_interaction, direction="out")
-
             if await self.is_connected_to(current):
                 await self.disconnect(current)
+            await self.connect(next_interaction, direction="out")
+
             if await current.is_connected_to(next_interaction):
                 await current.disconnect(next_interaction)
 
@@ -626,7 +602,6 @@ class Conversation(DeferredSaveMixin, Node):
                     self.last_interaction_id = None
 
         await self.save()
-        await self.flush()
         return removed
 
     async def create_interaction(

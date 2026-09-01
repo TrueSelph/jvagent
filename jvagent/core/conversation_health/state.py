@@ -40,41 +40,35 @@ class ConversationHealthState(Node):
         """Load or create the state node for *agent_id*."""
         if not agent_id:
             raise ValueError("agent_id is required")
+        existing = await cls.find_one(
+            {
+                "entity": "ConversationHealthState",
+                "context.agent_id": agent_id,
+            }
+        )
+        if existing:
+            return existing  # type: ignore[return-value]
 
-        from jvagent.memory.lock_manager import get_user_lock_manager
+        state = cls(agent_id=agent_id, day_buckets={})
+        await state.save()
+        # Best-effort edge to Agent for graph navigation
+        try:
+            from jvagent.core.agent import Agent
 
-        lock_key = f"conversation-health-state:{agent_id}"
-        lock = await get_user_lock_manager().acquire(lock_key)
-        async with lock:
-            existing = await cls.find_one(
-                {
-                    "entity": "ConversationHealthState",
-                    "context.agent_id": agent_id,
-                }
+            agent = await Agent.get(agent_id)
+            if agent is not None:
+                try:
+                    if not await agent.is_connected_to(state):
+                        await agent.connect(state)
+                except Exception:
+                    logger.debug(
+                        "Could not connect ConversationHealthState to agent %s",
+                        agent_id,
+                        exc_info=True,
+                    )
+        except Exception:
+            logger.debug(
+                "Agent lookup failed when creating ConversationHealthState",
+                exc_info=True,
             )
-            if existing:
-                return existing  # type: ignore[return-value]
-
-            state = cls(agent_id=agent_id, day_buckets={})
-            await state.save()
-            # Best-effort edge to Agent for graph navigation
-            try:
-                from jvagent.core.agent import Agent
-
-                agent = await Agent.get(agent_id)
-                if agent is not None:
-                    try:
-                        if not await agent.is_connected_to(state):
-                            await agent.connect(state)
-                    except Exception:
-                        logger.debug(
-                            "Could not connect ConversationHealthState to agent %s",
-                            agent_id,
-                            exc_info=True,
-                        )
-            except Exception:
-                logger.debug(
-                    "Agent lookup failed when creating ConversationHealthState",
-                    exc_info=True,
-                )
-            return state
+        return state

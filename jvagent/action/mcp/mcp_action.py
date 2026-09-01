@@ -34,31 +34,6 @@ from jvagent.core.sandbox import (
 
 logger = logging.getLogger(__name__)
 
-_MCP_TOOL_NAME_MAX = 128
-_MCP_TOOL_DESC_MAX = 512
-_MCP_RESULT_MAX_CHARS = 8000
-_UNTRUSTED_MCP_DELIMITER = "--- untrusted-mcp-data ---"
-
-
-def _sanitize_mcp_surface_text(value: str, *, limit: int) -> str:
-    cleaned = "".join(
-        ch if ch.isprintable() and ch not in "\x00\r\n" else " " for ch in (value or "")
-    )
-    cleaned = " ".join(cleaned.split())
-    return cleaned[:limit]
-
-
-def _truncate_mcp_result_text(text: str) -> str:
-    body = (text or "").strip()
-    if len(body) <= _MCP_RESULT_MAX_CHARS:
-        return body
-    return (
-        f"{_UNTRUSTED_MCP_DELIMITER}\n"
-        f"{body[:_MCP_RESULT_MAX_CHARS]}\n"
-        f"{_UNTRUSTED_MCP_DELIMITER}\n"
-        f"[truncated to {_MCP_RESULT_MAX_CHARS} chars]"
-    )
-
 
 def _format_mcp_exception(e: BaseException) -> str:
     """Stringify *e* and unwrap ExceptionGroup / TaskGroup so logs show the root cause.
@@ -230,9 +205,7 @@ def normalize_call_result(result: Any, tool_name: str) -> MCPFulfillResult:
         elif isinstance(item, dict):
             if item.get("type") == "text":
                 text_parts.append(item.get("text", ""))
-    text = _truncate_mcp_result_text(
-        "\n".join(text_parts).strip() or ("Tool error" if is_error else "")
-    )
+    text = "\n".join(text_parts).strip() or ("Tool error" if is_error else "")
     structured = _coerce_result_field(
         result, "structuredContent", "structured_content", None
     )
@@ -877,12 +850,8 @@ class MCPAction(Action):
                 continue
 
             for mt in mcp_tools:
-                name = _sanitize_mcp_surface_text(
-                    getattr(mt, "name", "") or "", limit=_MCP_TOOL_NAME_MAX
-                )
-                desc = _sanitize_mcp_surface_text(
-                    getattr(mt, "description", "") or "", limit=_MCP_TOOL_DESC_MAX
-                )
+                name = getattr(mt, "name", "") or ""
+                desc = getattr(mt, "description", "") or ""
                 schema = (
                     getattr(mt, "input_schema", None)
                     or getattr(mt, "inputSchema", None)
@@ -920,7 +889,14 @@ class MCPAction(Action):
                         try:
                             client = await action.get_client_for_user(sn, uid)
                         except Exception as e:
-                            return f"Error: per-user sandbox unavailable: {e}"
+                            logger.warning(
+                                "MCP get_client_for_user failed (server=%s, "
+                                "user=%s); falling back to default client: %s",
+                                sn,
+                                uid,
+                                e,
+                            )
+                            client = action.get_client(sn)
                     else:
                         client = action.get_client(sn)
 

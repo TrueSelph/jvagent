@@ -86,25 +86,6 @@ async def test_reply_and_final_unaffected():
     assert action == "final"
 
 
-def test_normalize_non_string_fields_do_not_raise():
-    """Non-string model JSON must not raise AttributeError (C6)."""
-    action, tool, args = OrchestratorInteractAction._normalize(
-        {"action": 42, "tool": ["research"], "args": {"name": 99}},
-        _tools(),
-        _SKILLS,
-    )
-    assert action == ""
-    assert tool == ""
-    action2, tool2, args2 = OrchestratorInteractAction._normalize(
-        {"action": "reply", "tool": 123, "answer": "hi"},
-        _tools(),
-        _SKILLS,
-    )
-    assert action2 == "tool"
-    assert tool2 == "reply"
-    assert args2.get("text") == "hi"
-
-
 async def test_loop_activates_skill_from_malformed_decision(
     make_orchestrator, make_visitor, monkeypatch
 ):

@@ -353,17 +353,11 @@ class Memory(Node):
             Total number of interactions removed across all conversations.
         """
         from jvagent.memory.conversation import Conversation
-        from jvagent.memory.distributed_conversation_lock import (
-            conversation_mutation_lock,
-        )
 
         total = 0
         for user in await self.users_scoped_to_this_memory():
             for conv in await user.nodes(node=Conversation):
-                async with conversation_mutation_lock(conv.id):
-                    fresh = await Conversation.get(conv.id)
-                    target = fresh if fresh is not None else conv
-                    total += await self._ensure_conversation_interaction_limit(target)
+                total += await self._ensure_conversation_interaction_limit(conv)
         return total
 
     async def get_user_by_session(self, session_id: str) -> Optional["User"]:
@@ -1064,7 +1058,6 @@ class Memory(Node):
                 else:
                     conv.last_interaction_id = None
                 await conv.save()
-                await conv.flush()
                 fixed += 1
 
         return fixed

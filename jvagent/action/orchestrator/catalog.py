@@ -47,12 +47,6 @@ _TOOL_SURFACE_CACHE: Dict[str, _ToolSurfaceCacheEntry] = {}
 
 def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -> str:
     """Stable hash of orchestrator surfacing config + enabled action set."""
-    mcp_cfg = getattr(orch, "tool_servers", None) or getattr(orch, "mcp_servers", None)
-    skills_cfg = (
-        getattr(orch, "skills_source", None),
-        getattr(orch, "skills_selector", None),
-        getattr(orch, "denied_skills", None),
-    )
     parts = [
         str(getattr(orch, "tool_tier", "")),
         str(getattr(orch, "lean_tool_threshold", "")),
@@ -62,8 +56,6 @@ def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -
         str(getattr(orch, "pinned_tools", "") or ""),
         str(getattr(orch, "denied_tools", "") or ""),
         str(getattr(orch, "skill_only_tools", "") or ""),
-        str(mcp_cfg or ""),
-        str(skills_cfg),
         ",".join(sorted(enabled_action_ids)),
     ]
     digest = hashlib.sha256("|".join(parts).encode()).hexdigest()

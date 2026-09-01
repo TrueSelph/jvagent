@@ -8,10 +8,6 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
-### Fixed
-
-- **2026-09-01 code review (HIGH/MEDIUM):** Orchestrator continuation lock+persist, tool `access_label` inheritance, catalog hash includes MCP/skills config, skill discovery mtime cache invalidation, in-place task-lock tool restriction; core conversation-health config from app root with memoization, per-agent bucket lock, graph repair interaction chain visited/deadline guards; graph repair job reattach context serialization, dup_prepare pair-key normalization, deadline-safe cursor advance; CLI `--update --source` confirmation, global `--yes` before subcommands, `_first_app_root_path` flag-value handling, bundler `--force` + `.dockerignore`, Dockerfile PEP 508 pip validation, startup log retention purge, logging `page_size` cap, stress-seed integer parse errors, agent uninstall `global_assume_yes`; memory deferred-save flush paths, skill-only parameter sanitize, TaskStore missing-task append; action loader fail-fast pip + opt-in `discover_filesystem_actions`; per-loop asyncio locks (`response_bus`, embed interact, rate limiter, conversation lock manager, profiling, Actions registry).
-
 ### Changed
 
 - **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
