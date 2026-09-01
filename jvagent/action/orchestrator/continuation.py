@@ -218,19 +218,13 @@ async def note_locked_flow_error(
     streak = int(streaks.get(flow_owner, 0) or 0) + 1
     streaks[flow_owner] = streak
     ctx[_ERROR_STREAK_KEY] = streaks
-    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
-
-    conv_id = getattr(conversation, "id", None)
     if streak < limit:
         try:
-            if conv_id:
-                async with conversation_mutation_lock(conv_id):
-                    await conversation.save()
-            else:
-                await conversation.save()
+            await conversation.save()
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("continuation: streak persist failed: %s", exc)
         return False
+    streaks.pop(flow_owner, None)
     store = _store(conversation)
     cancelled = False
     if store is not None:
@@ -250,14 +244,9 @@ async def note_locked_flow_error(
                 flow_owner,
                 exc,
             )
-    if cancelled:
-        streaks.pop(flow_owner, None)
+    if not cancelled:
         try:
-            if conv_id:
-                async with conversation_mutation_lock(conv_id):
-                    await conversation.save()
-            else:
-                await conversation.save()
+            await conversation.save()
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("continuation: streak persist failed: %s", exc)
     return cancelled
@@ -274,17 +263,8 @@ async def clear_locked_flow_error(visitor: Any, flow_owner: str) -> None:
     streaks = ctx.get(_ERROR_STREAK_KEY)
     if isinstance(streaks, dict) and flow_owner in streaks:
         streaks.pop(flow_owner, None)
-        from jvagent.memory.distributed_conversation_lock import (
-            conversation_mutation_lock,
-        )
-
-        conv_id = getattr(conversation, "id", None)
         try:
-            if conv_id:
-                async with conversation_mutation_lock(conv_id):
-                    await conversation.save()
-            else:
-                await conversation.save()
+            await conversation.save()
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("continuation: streak reset persist failed: %s", exc)
 
@@ -343,21 +323,14 @@ async def note_soft_abandon_strike(
         streak = 1
     streaks[locked_skill] = {"streak": streak, "collected": count}
     ctx[_ABANDON_STREAK_KEY] = streaks
-    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
-
-    conv_id = getattr(conversation, "id", None)
     try:
-        if conv_id:
-            async with conversation_mutation_lock(conv_id):
-                await conversation.save()
-        else:
-            await conversation.save()
+        await conversation.save()
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("continuation: abandon streak persist failed: %s", exc)
     return streak
 
 
-async def clear_soft_abandon_strike(conversation: Any, locked_skill: str) -> None:
+def clear_soft_abandon_strike(conversation: Any, locked_skill: str) -> None:
     """Drop the soft-abandon streak for ``locked_skill`` (after apply/route)."""
     ctx = getattr(conversation, "context", None)
     if not isinstance(ctx, dict) or not locked_skill:
@@ -365,19 +338,6 @@ async def clear_soft_abandon_strike(conversation: Any, locked_skill: str) -> Non
     streaks = ctx.get(_ABANDON_STREAK_KEY)
     if isinstance(streaks, dict) and locked_skill in streaks:
         streaks.pop(locked_skill, None)
-        from jvagent.memory.distributed_conversation_lock import (
-            conversation_mutation_lock,
-        )
-
-        conv_id = getattr(conversation, "id", None)
-        try:
-            if conv_id:
-                async with conversation_mutation_lock(conv_id):
-                    await conversation.save()
-            else:
-                await conversation.save()
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("continuation: abandon streak clear persist failed: %s", exc)
 
 
 async def resolve_interview_spec(agent: Any, skill_name: str) -> Any:
@@ -444,7 +404,7 @@ async def apply_soft_abandon(visitor: Any, agent: Any, locked_skill: str) -> boo
     except Exception as exc:
         logger.warning("continuation: apply_soft_abandon failed: %s", exc)
         return False
-    await clear_soft_abandon_strike(conversation, locked_skill)
+    clear_soft_abandon_strike(conversation, locked_skill)
     return True
 
 

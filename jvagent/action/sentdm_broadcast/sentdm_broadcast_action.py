@@ -35,13 +35,6 @@ from .webhook_auth import get_or_create_system_user
 logger = logging.getLogger(__name__)
 
 
-def _redact_webhook_url_for_log(url: str) -> str:
-    """Log webhook URLs without embedded credentials in query strings."""
-    s = (url or "").strip()
-    q = s.find("?")
-    return s[:q] if q >= 0 else s
-
-
 def _sentdm_webhook_endpoint_url(ep: Mapping[str, Any]) -> str:
     for key in (
         "endpoint_url",
@@ -1534,7 +1527,7 @@ class SentDMBroadcastAction(Action):
                     reason,
                     result.get("created"),
                     result.get("deleted_webhook_ids"),
-                    _redact_webhook_url_for_log(str(result.get("desired_url") or "")),
+                    result.get("desired_url"),
                 )
             elif isinstance(result, dict) and result.get("status") == "skipped":
                 logger.info(

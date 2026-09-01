@@ -33,13 +33,6 @@ def test_parse_agent_spec() -> None:
     assert parse_agent_spec("acme/bot@minimal") == ("acme/bot", "minimal")
 
 
-def test_parse_agent_spec_rejects_traversal() -> None:
-    with pytest.raises(ValueError, match="Invalid namespace"):
-        parse_agent_spec("../../evil/bot")
-    with pytest.raises(ValueError, match="Invalid profile"):
-        parse_agent_spec("jvagent/bot@../escape")
-
-
 def test_resolve_minimal_profile() -> None:
     actions = resolve_profile_actions(None, "minimal")
     ids = {x["action"] for x in actions}

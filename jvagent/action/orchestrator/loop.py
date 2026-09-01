@@ -22,11 +22,6 @@ from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
 )
-from jvagent.action.orchestrator.turn_cache import (
-    get_prompt_cache,
-    set_prompt_cache,
-    update_prompt_cache,
-)
 from jvagent.action.orchestrator.turn_state import TurnState
 from jvagent.action.parameters import (
     accumulate_skill_parameters,
@@ -160,9 +155,9 @@ class OrchestratorLoopMixin:
         section = render_parameters(
             orchestration_parameters(pool) + reply_core_parameters()
         )
-        cache = get_prompt_cache()
-        if cache:
-            update_prompt_cache("parameters", section)
+        cache = getattr(self, "_turn_prompt_cache", None)
+        if isinstance(cache, dict):
+            cache["parameters"] = section
         return section
 
     async def _prepare_turn(self, visitor: "InteractWalker") -> Optional[TurnState]:
@@ -229,15 +224,13 @@ class OrchestratorLoopMixin:
         parameters_section = render_parameters(
             orchestration_parameters(_pool) + reply_core_parameters()
         )
-        set_prompt_cache(
-            {
-                "identity": await self._render_identity(),
-                "session_context": session_context_section,
-                "capabilities": capabilities_section,
-                "parameters": parameters_section,
-                "skills_section": skills_section,
-            }
-        )
+        self._turn_prompt_cache = {
+            "identity": await self._render_identity(),
+            "session_context": session_context_section,
+            "capabilities": capabilities_section,
+            "parameters": parameters_section,
+            "skills_section": skills_section,
+        }
 
         # Hard turn-lock (lock_active_flow): when a control-task points to an IA
         # that furnished a tool, restrict the callable surface to that one tool

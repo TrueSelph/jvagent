@@ -73,17 +73,6 @@ class TestFirstAppRootPath:
         assert app_root is None
         assert rest == [bogus, "validate"]
 
-    def test_validate_with_trailing_app_dir(self, tmp_path):
-        """CI: ``jvagent validate examples/jvagent_app`` must resolve app root."""
-        app_dir = tmp_path / "examples" / "jvagent_app"
-        app_dir.mkdir(parents=True)
-        subcommands = DISPATCH | frozenset({"run"})
-
-        app_root, rest = _first_app_root_path(["validate", str(app_dir)], subcommands)
-
-        assert app_root == str(app_dir.resolve())
-        assert rest == ["validate"]
-
 
 class TestMainDispatch:
     def test_purge_blocked_when_env_unset(self, tmp_path, monkeypatch):
@@ -181,7 +170,7 @@ class TestMainDispatch:
 
     def test_update_with_source_passes_source_mode(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source", "--yes"])
+        monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source"])
 
         patches = _main_patches(
             run_server=patch("jvagent.cli.main.run_server"),

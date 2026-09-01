@@ -26,9 +26,7 @@ _REDIS_KEY_PREFIX = "jvagent:meta_wamid:"
 _seen_wamids: OrderedDict[str, float] = OrderedDict()
 _lock = Lock()
 _redis_client: Any = None
-_async_redis_client: Any = None
 _redis_init_attempted = False
-_async_redis_init_attempted = False
 
 logger = logging.getLogger(__name__)
 
@@ -138,61 +136,6 @@ def _remember_redis(client: Any, wamid: str) -> bool:
     return bool(created)
 
 
-def _get_async_redis() -> Optional[Any]:
-    """Lazy async Redis client; returns None if unavailable."""
-    global _async_redis_client, _async_redis_init_attempted
-    if not _use_redis():
-        return None
-    if _async_redis_client is not None:
-        return _async_redis_client
-    if _async_redis_init_attempted and _async_redis_client is None:
-        return None
-    _async_redis_init_attempted = True
-    url = _redis_url()
-    if not url:
-        return None
-    try:
-        from redis import asyncio as redis_async  # type: ignore[import-untyped]
-
-        _async_redis_client = redis_async.from_url(url, decode_responses=True)
-        logger.info("Meta wamid dedup using async Redis backend")
-        return _async_redis_client
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Async Redis wamid dedup unavailable (%s); falling back to in-process dedup",
-            exc,
-        )
-        _async_redis_client = None
-        return None
-
-
-async def _remember_redis_async(client: Any, wamid: str) -> bool:
-    key = f"{_REDIS_KEY_PREFIX}{wamid}"
-    ttl = int(_ttl_seconds())
-    created = await client.set(key, "1", nx=True, ex=ttl)
-    return bool(created)
-
-
-async def remember_meta_wamid_async(wamid: str) -> bool:
-    """Async entry for webhook handlers — uses non-blocking Redis when configured."""
-    key = (wamid or "").strip()
-    if not key:
-        return True
-
-    client = _get_async_redis()
-    if client is not None:
-        try:
-            return await _remember_redis_async(client, key)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Async Redis wamid dedup failed (%s); falling back to in-process for this call",
-                exc,
-            )
-            return _remember_memory(key)
-
-    return _remember_memory(key)
-
-
 def remember_meta_wamid(wamid: str) -> bool:
     """Return True if ``wamid`` is new (and remember it), False if duplicate."""
     key = (wamid or "").strip()
@@ -237,10 +180,8 @@ def forget_meta_wamid(wamid: str) -> None:
 
 def clear_meta_wamid_cache() -> None:
     """Clear in-process dedup cache (for tests). Does not flush Redis."""
-    global _redis_client, _redis_init_attempted, _async_redis_client, _async_redis_init_attempted
+    global _redis_client, _redis_init_attempted
     with _lock:
         _seen_wamids.clear()
     _redis_client = None
     _redis_init_attempted = False
-    _async_redis_client = None
-    _async_redis_init_attempted = False

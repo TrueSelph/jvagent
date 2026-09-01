@@ -664,38 +664,6 @@ class ReplyAction(Action):
                 )
         except Exception as exc:
             logger.warning("ReplyAction.respond: generate failed: %s", exc)
-            if streaming and interaction is not None:
-                partial_sent = bool(getattr(interaction, "emitted", False))
-                if not partial_sent and response_bus is not None:
-                    acc = getattr(response_bus, "_adhoc_accumulation", {}).get(
-                        interaction.id
-                    )
-                    partial_sent = bool(acc and getattr(acc, "chunks", None))
-                if partial_sent:
-                    logger.warning(
-                        "ReplyAction.respond: closing stream after partial delivery"
-                    )
-                    if (
-                        response_bus
-                        and visitor
-                        and getattr(visitor, "session_id", None)
-                    ):
-                        try:
-                            await response_bus.publish(
-                                "",
-                                session_id=visitor.session_id,
-                                user_id=getattr(visitor, "user_id", None),
-                                interaction=interaction,
-                                stream=True,
-                                streaming_complete=True,
-                                transient=transient,
-                            )
-                        except Exception:
-                            logger.debug(
-                                "reply: failed to close stream after generate error",
-                                exc_info=True,
-                            )
-                    return ""
             # Slim fallback: the identity-shaped compose failed, but the user
             # still needs a reply — deliver the best plain text we have rather
             # than going silent. Prefer the original message (now framed as a

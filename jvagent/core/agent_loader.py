@@ -78,11 +78,6 @@ class AgentDescriptor:
             if k not in ["alias", "enabled", "description"]
         }
 
-        self.discover_filesystem_actions = bool(
-            data.get("discover_filesystem_actions")
-            or context.get("discover_filesystem_actions")
-        )
-
         # Actions list
         self.actions = data.get("actions", [])
 
@@ -740,13 +735,7 @@ class AgentLoader:
 
         # Load actions from filesystem and register / update
         actions = self.action_loader.load_actions_for_agent(
-            descriptor.namespace,
-            descriptor.name,
-            agent.id,
-            descriptor.actions,
-            discover_filesystem_actions=getattr(
-                descriptor, "discover_filesystem_actions", False
-            ),
+            descriptor.namespace, descriptor.name, agent.id, descriptor.actions
         )
 
         if not actions:

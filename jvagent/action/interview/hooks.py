@@ -23,7 +23,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 from jvagent.action.reply.reply_action import DIRECTIVE_GUIDANCE_MARKER
@@ -540,39 +539,11 @@ async def _build_say_directive(ctx: HookExecutionContext) -> str:
     return directive
 
 
-def _custom_tools_trusted(spec: InterviewSpec) -> bool:
-    """Only trusted or bundled interview skills may exec ``custom_tools.py``."""
-    tier = (getattr(spec, "trust_tier", "") or "").strip().lower()
-    if tier == "trusted":
-        return True
-    skill_file = os.path.join(spec.source_dir, "SKILL.md")
-    if os.path.isfile(skill_file):
-        try:
-            from jvagent.scaffold.skill_resolve import _parse_frontmatter
-
-            raw = Path(skill_file).read_text(encoding="utf-8")
-            frontmatter, _content = _parse_frontmatter(raw, Path(skill_file))
-            if str(frontmatter.get("trust_tier") or "").strip().lower() == "trusted":
-                return True
-        except Exception:
-            pass
-    norm = os.path.normpath(spec.source_dir or "").replace("\\", "/")
-    trusted_markers = (
-        "/jvagent/action/interview/",
-        "/examples/jvagent_app/",
-        "/tests/action/interview/fixtures/skills/",
-    )
-    return any(marker in norm for marker in trusted_markers)
-
-
 def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Callable]:
     """Load a hook from custom_tools.py or built-in registry."""
     builtin = BUILTIN_HOOKS.get(function_name)
     if builtin is not None:
         return builtin
-
-    if not _custom_tools_trusted(spec):
-        return None
 
     key = f"{spec.name}:{spec.source_dir}"
     module = _module_cache.get(key)

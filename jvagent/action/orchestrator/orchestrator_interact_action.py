@@ -98,11 +98,7 @@ from jvagent.action.orchestrator.tools import (
     render_tools_section,
     wrap_action_tool,
 )
-from jvagent.action.orchestrator.turn_cache import (
-    bind_turn_cache,
-    get_prompt_cache,
-    get_turn_cache,
-)
+from jvagent.action.orchestrator.turn_cache import bind_turn_cache, get_turn_cache
 from jvagent.action.parameters import (
     accumulate_action_parameters,
     orchestrator_core_parameters,
@@ -2507,17 +2503,9 @@ class OrchestratorInteractAction(
         ``use_skill(name=<skill>)`` so a named skill actually activates instead
         of dispatching a non-existent tool.
         """
-        raw_action = (
-            decision.get("action").strip()
-            if isinstance(decision.get("action"), str)
-            else ""
-        )
+        raw_action = (decision.get("action") or "").strip()
         action = raw_action.lower()
-        tool_field = (
-            decision.get("tool").strip()
-            if isinstance(decision.get("tool"), str)
-            else ""
-        )
+        tool_field = (decision.get("tool") or "").strip()
         args = decision.get("args") if isinstance(decision.get("args"), dict) else {}
         # Tolerate a FLATTENED call: some models put the tool's arguments at the
         # decision top level instead of nesting them under "args" — e.g.
@@ -2543,8 +2531,7 @@ class OrchestratorInteractAction(
 
         if names and "use_skill" in tools:
             if action == "use_skill" or tool_field == "use_skill":
-                skill_raw = args.get("name") or args.get("skill") or ""
-                skill = skill_raw.strip() if isinstance(skill_raw, str) else ""
+                skill = (args.get("name") or args.get("skill") or "").strip()
                 if not skill:
                     skill = _named_skill(
                         tool_field if tool_field != "use_skill" else "",
@@ -3370,7 +3357,7 @@ class OrchestratorInteractAction(
             loop_extra.append(memory_rule)
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
-        prompt_cache = get_prompt_cache()
+        prompt_cache = getattr(self, "_turn_prompt_cache", None) or {}
         # Channel-scoped extra instructions are invariant for the whole turn, so
         # they compose into the prompt's stable region rather than trailing after
         # the per-tick tool listing.

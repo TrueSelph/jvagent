@@ -5,18 +5,8 @@ import logging
 import mimetypes
 import traceback
 from typing import Any, Dict, List, Optional, Tuple, Union
-from urllib.parse import urlparse
 
 import requests
-
-# Meta CDN / attachment hosts only — webhook payload URLs must not drive SSRF or
-# token exfiltration to arbitrary third-party origins (C7).
-_MESSENGER_ATTACHMENT_HOST_SUFFIXES = (
-    ".fbcdn.net",
-    ".facebook.com",
-    ".fbsbx.com",
-    ".fbcdn.com",
-)
 
 
 class FacebookAPI:
@@ -130,12 +120,9 @@ class FacebookAPI:
             hub_verify_token = request.get("hub.verify_token")
             hub_challenge = request.get("hub.challenge")
 
-            expected = str(self.verify_token or "").strip()
-            if not expected:
-                return {"message": "Verify token not configured", "code": 403}
             token_ok = hmac.compare_digest(
                 str(hub_verify_token or "").encode("utf-8"),
-                expected.encode("utf-8"),
+                str(self.verify_token or "").encode("utf-8"),
             )
             if token_ok and hub_mode == "subscribe":
                 return hub_challenge if hub_challenge is not None else ""
@@ -274,24 +261,6 @@ class FacebookAPI:
         return False
 
     @staticmethod
-    def _messenger_attachment_host_allowed(url: str) -> bool:
-        """True when *url* points at a known Meta CDN / Graph attachment host."""
-        try:
-            parsed = urlparse((url or "").strip())
-        except Exception:
-            return False
-        if parsed.scheme not in ("https", "http"):
-            return False
-        host = (parsed.hostname or "").lower()
-        if not host:
-            return False
-        for suffix in _MESSENGER_ATTACHMENT_HOST_SUFFIXES:
-            bare = suffix.lstrip(".")
-            if host == bare or host.endswith(suffix):
-                return True
-        return False
-
-    @staticmethod
     def download_messenger_attachment(
         url: str,
         page_access_token: str,
@@ -302,16 +271,10 @@ class FacebookAPI:
         tok = (page_access_token or "").strip()
         if not u or not tok:
             return None, None
-        if not FacebookAPI._messenger_attachment_host_allowed(u):
-            FacebookAPI.logger.warning(
-                "Messenger attachment download blocked (host not allowlisted): %s",
-                u[:500],
-            )
-            return None, None
         try:
             r = requests.get(
                 u,
-                headers={"Authorization": f"Bearer {tok}"},
+                params={"access_token": tok},
                 timeout=timeout,
             )
             r.raise_for_status()

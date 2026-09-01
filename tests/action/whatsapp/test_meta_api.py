@@ -1,6 +1,5 @@
 """Tests for Meta WhatsApp Cloud API provider."""
 
-import copy
 from typing import Optional
 
 import pytest
@@ -193,13 +192,9 @@ class TestMetaWhatsAppParseInbound:
 
     @pytest.mark.asyncio
     async def test_ignores_wrong_phone_number_id(self, meta_api):
-        payload = await meta_api.parse_inbound_message(
-            copy.deepcopy(SAMPLE_TEXT_WEBHOOK)
-        )
+        payload = await meta_api.parse_inbound_message(SAMPLE_TEXT_WEBHOOK)
         meta_api.phone_number_id = "999999999"
-        payload2 = await meta_api.parse_inbound_message(
-            copy.deepcopy(SAMPLE_TEXT_WEBHOOK)
-        )
+        payload2 = await meta_api.parse_inbound_message(SAMPLE_TEXT_WEBHOOK)
         assert payload2 is not None
         assert payload2.message_type == "ignored"
         assert payload.message_type == "chat"

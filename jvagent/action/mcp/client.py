@@ -152,14 +152,10 @@ class MCPClientWrapper:
         stack = AsyncExitStack()
         try:
             transport_ctx = streamable_http_client(self._url)
-            read_stream, write_stream, _session_id = await stack.enter_async_context(
-                transport_ctx
-            )
+            read_stream, write_stream = await stack.enter_async_context(transport_ctx)
             self._read_stream = read_stream
             self._write_stream = write_stream
-            session = await stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
+            session = ClientSession(read_stream, write_stream)
             await asyncio.wait_for(session.initialize(), timeout=self._connect_timeout)
             self._session = session
             self._stack = stack
