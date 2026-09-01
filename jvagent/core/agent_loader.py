@@ -420,15 +420,17 @@ class AgentLoader:
 
         from jvspatial.core.entities.node import Node
 
-        from jvagent.action.identity import (
-            choose_action_keeper_id,
-            get_raw_action_records_for_agent,
-            record_archetype,
-            record_is_singleton,
+        from jvagent.action.identity import choose_action_keeper_id
+        from jvagent.core.upsert import action_record_archetype as record_archetype
+        from jvagent.core.upsert import (
+            action_record_is_singleton as record_is_singleton,
+        )
+        from jvagent.core.upsert import (
+            find_action_context_records,
         )
 
         try:
-            all_records = await get_raw_action_records_for_agent(agent.id)
+            all_records = await find_action_context_records(agent.id)
         except Exception as e:
             logger.warning(
                 "dedupe singleton: could not read action records for %s: %s",
