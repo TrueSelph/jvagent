@@ -165,40 +165,66 @@ class Agent(Node):
             Action instance if found, None otherwise
         """
         from jvagent.action.base import Action
-
-        # Use entity-centric find_one with explicit entity filter
-        # This queries for the specific entity type belonging to this agent
-        return await Action.find_one(
-            {
-                "entity": entity_type,
-                "context.agent_id": self.id,
-            }
+        from jvagent.action.identity import (
+            find_records_by_archetype,
+            heal_duplicate_actions_for_archetype,
+            load_action_from_record,
         )
+
+        records = await find_records_by_archetype(self.id, entity_type)
+        if not records:
+            return None
+        if len(records) > 1:
+            logger.error(
+                "Multiple %s nodes for agent %s (count=%s ids=%s); collapsing duplicates",
+                entity_type,
+                self.id,
+                len(records),
+                [record.get("id") for record in records],
+            )
+            actions_manager = await self.get_actions_manager()
+            if actions_manager:
+                keeper_id = await heal_duplicate_actions_for_archetype(
+                    self.id, actions_manager, entity_type
+                )
+                if keeper_id:
+                    return await Action.get(keeper_id)
+            return await load_action_from_record(records[0])
+        return await load_action_from_record(records[0])
 
     async def get_access_control_action(self) -> Optional[Any]:
         """Return the agent's AccessControlAction, if any.
 
-        Logs an error when more than one is present (undefined); the first match is returned.
+        Heals duplicate rows when more than one is present.
         """
         from jvagent.action.base import Action
-
-        found = await Action.find(
-            {
-                "entity": "AccessControlAction",
-                "context.agent_id": self.id,
-            }
+        from jvagent.action.identity import (
+            find_records_by_archetype,
+            heal_duplicate_actions_for_archetype,
+            load_action_from_record,
         )
-        if not found:
+
+        archetype = "AccessControlAction"
+        records = await find_records_by_archetype(self.id, archetype)
+        if not records:
             return None
-        if len(found) > 1:
+        if len(records) > 1:
             logger.error(
                 "Multiple AccessControlAction nodes for agent %s (count=%s ids=%s); "
-                "using the first instance",
+                "collapsing duplicates",
                 self.id,
-                len(found),
-                [getattr(a, "id", None) for a in found],
+                len(records),
+                [record.get("id") for record in records],
             )
-        return found[0]
+            actions_manager = await self.get_actions_manager()
+            if actions_manager:
+                keeper_id = await heal_duplicate_actions_for_archetype(
+                    self.id, actions_manager, archetype
+                )
+                if keeper_id:
+                    return await Action.get(keeper_id)
+            return await load_action_from_record(records[0])
+        return await load_action_from_record(records[0])
 
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.

@@ -299,6 +299,14 @@ async def delete_action(action_id: str) -> Dict[str, Any]:
             details={"action_id": action_id},
         )
 
+    from jvagent.core.agent import Agent
+
+    agent = await Agent.get(action.agent_id)
+    if agent:
+        actions_manager = await agent.get_actions_manager()
+        if actions_manager and await actions_manager.deregister_action(action_id):
+            return {"message": "Action deleted successfully"}
+
     await action.delete(cascade=True)
 
     return {"message": "Action deleted successfully"}

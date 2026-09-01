@@ -607,9 +607,8 @@ agents: []
                 )
             )
         )
-        manager = SimpleNamespace(
-            deregister_action=AsyncMock(return_value=True), id="n.Actions.1"
-        )
+        manager = SimpleNamespace(id="n.Actions.1")
+        collapse = AsyncMock(return_value="n.Action.001")
 
         class FakeAgent:
             id = "n.Agent.001"
@@ -620,7 +619,6 @@ agents: []
                 return []
 
         agent = FakeAgent()
-        action = SimpleNamespace(id="n.Action.002")
 
         live_state = {
             "phase": graph_repair_job.PH_SCHEMA_SINGLETON_ACTIONS,
@@ -632,10 +630,9 @@ agents: []
         with (
             patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
             patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
-            patch("jvagent.action.base.Action.get", new=AsyncMock(return_value=action)),
             patch(
-                "jvspatial.core.entities.node.Node.get",
-                new=AsyncMock(return_value=None),
+                "jvagent.action.identity.collapse_duplicate_records",
+                new=collapse,
             ),
         ):
             out_live = await graph_repair_job._tick_schema_singleton_actions(
@@ -643,7 +640,9 @@ agents: []
             )
 
         assert out_live is True
-        manager.deregister_action.assert_awaited_once_with("n.Action.002")
+        collapse.assert_awaited_once()
+        assert collapse.await_args.args[0] is manager
+        assert len(collapse.await_args.args[1]) == 2
         assert live_state["result"]["duplicate_singleton_actions_removed"] == 1
         assert live_state["phase"] == graph_repair_job.PH_DEAD_EDGES
 
@@ -653,14 +652,13 @@ agents: []
             "result": graph_repair_job._new_result_counters(),
             "dry_run": True,
         }
-        manager.deregister_action.reset_mock()
+        collapse.reset_mock()
         with (
             patch("jvagent.core.agent.Agent.find", new=AsyncMock(return_value=[agent])),
             patch("jvagent.core.agent.Agent.get", new=AsyncMock(return_value=agent)),
-            patch("jvagent.action.base.Action.get", new=AsyncMock(return_value=action)),
             patch(
-                "jvspatial.core.entities.node.Node.get",
-                new=AsyncMock(return_value=None),
+                "jvagent.action.identity.collapse_duplicate_records",
+                new=collapse,
             ),
         ):
             out_dry = await graph_repair_job._tick_schema_singleton_actions(
@@ -668,7 +666,7 @@ agents: []
             )
 
         assert out_dry is True
-        manager.deregister_action.assert_not_called()
+        collapse.assert_not_called()
         assert dry_state["result"]["duplicate_singleton_actions_removed"] == 1
 
     @pytest.mark.asyncio
