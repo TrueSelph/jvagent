@@ -78,7 +78,12 @@ def _governed(category: str, transient: bool) -> bool:
 
 # Process-level bus registry — survives Agent cache rematerialize (TTL churn).
 _agent_bus_registry: Dict[str, "ResponseBus"] = {}
-_agent_bus_lock = asyncio.Lock()
+
+
+def _agent_bus_lock() -> asyncio.Lock:
+    from jvagent.core.async_locks import get_loop_lock
+
+    return get_loop_lock("response_bus")
 
 
 async def get_agent_response_bus(agent_id: str) -> "ResponseBus":
@@ -86,7 +91,7 @@ async def get_agent_response_bus(agent_id: str) -> "ResponseBus":
     key = str(agent_id or "").strip()
     if not key:
         return ResponseBus()
-    async with _agent_bus_lock:
+    async with _agent_bus_lock():
         bus = _agent_bus_registry.get(key)
         if bus is None:
             bus = ResponseBus()
@@ -595,6 +600,9 @@ class ResponseBus:
             acc.chunks.append(content)
             acc.last_activity = time.time()
 
+            chunk_meta = dict(metadata or {})
+            chunk_meta["sequence"] = len(acc.chunks) - 1
+
             now = await self._get_now()
             if not streaming_complete:
                 if not content:
@@ -607,7 +615,7 @@ class ResponseBus:
                         content="",
                         channel=channel,
                         message_type="stream_chunk",
-                        metadata=metadata or {},
+                        metadata=chunk_meta,
                         timestamp=now,
                         category=message_category,
                         thought_type=thought_type,
@@ -622,7 +630,7 @@ class ResponseBus:
                     content=content,
                     channel=channel,
                     message_type="stream_chunk",
-                    metadata=metadata or {},
+                    metadata=chunk_meta,
                     timestamp=now,
                     category=message_category,
                     thought_type=thought_type,
@@ -638,6 +646,8 @@ class ResponseBus:
             # a real chunk — a client that renders progressively from chunks
             # would otherwise never show the last sentence.
             if governed and content:
+                tail_meta = dict(metadata or {})
+                tail_meta["sequence"] = len(acc.chunks)
                 tail_message = ResponseMessage(
                     id=acc.message_id,
                     session_id=session_id,
@@ -646,7 +656,7 @@ class ResponseBus:
                     content=content,
                     channel=channel,
                     message_type="stream_chunk",
-                    metadata=metadata or {},
+                    metadata=tail_meta,
                     timestamp=now,
                     category=message_category,
                     thought_type=thought_type,
@@ -958,12 +968,20 @@ class ResponseBus:
         Returns:
             True if sent successfully, False on permanent failure or exhausted retries.
         """
+        delivered_before = bool(getattr(message, "delivered", False))
         for attempt in range(2):
             try:
                 if await adapter.send(message):
                     return True
+                if delivered_before or bool(getattr(message, "delivered", False)):
+                    return False
                 return False  # Permanent failure (e.g., invalid recipient)
             except Exception as e:
+                if delivered_before or bool(getattr(message, "delivered", False)):
+                    logger.warning(
+                        f"Adapter partial delivery for {adapter.channel}; skip retry: {e}"
+                    )
+                    return False
                 if attempt == 0:
                     await asyncio.sleep(0.5)
                     logger.warning(f"Adapter retry for {adapter.channel}: {e}")

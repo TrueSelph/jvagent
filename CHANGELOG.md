@@ -26,6 +26,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **2026-09-01 code review (CRITICAL/HIGH/MEDIUM):** Streaming UTF-8 incremental decode; separate interact action cache key; walker spawn finalize; orchestrator `ContextVar` prompt cache and type-safe `_normalize`; Facebook verify token, page-id filter, attachment CDN allowlist; path-safe scaffold/CLI; graph repair reattach serialization and edge-sync paging; MCP streamable-HTTP client; interview vault namespacing and selective context clear; plus orchestrator continuation, memory deferred-save flush, per-loop locks, SSE dedup, WhatsApp dedup, and related HIGH/MEDIUM items from `.planning/reviews/2026-09-01-full-code-review.md`.
 - **Singleton action correctness (Phase 1)** — ``reconcile_singleton_after_create``
   returns false for create-race losers so ``register_actions`` skips
   ``post_register`` on deleted nodes; type-index cache reconciled after

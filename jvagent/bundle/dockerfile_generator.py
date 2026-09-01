@@ -5,12 +5,28 @@ pip dependencies discovered from action info.yaml files.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+_PEP508_NAME = re.compile(
+    r"^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])"
+    r"(\[[^\]]+\])?"
+    r"(\s*(==|>=|<=|!=|~=|>|<)\s*[^\s;]+|\s*@.+)?$"
+)
+
+
+def _validate_pep508_requirement(dep: str) -> bool:
+    dep = (dep or "").strip()
+    if not dep or ";" in dep:
+        return False
+    if any(ch in dep for ch in ("$", "`", "|", "&", ";", "\n", "\r")):
+        return False
+    return bool(_PEP508_NAME.match(dep.split()[0] if " " in dep else dep))
 
 
 def discover_action_dependencies(app_root: Path) -> Dict[str, List[str]]:
@@ -137,8 +153,14 @@ def generate_dockerfile_run_commands(dependencies: Dict[str, List[str]]) -> str:
                 consolidated.append(dep)
 
     if consolidated:
+        safe = [d for d in consolidated if _validate_pep508_requirement(d)]
+        rejected = [d for d in consolidated if d not in safe]
+        for dep in rejected:
+            logger.error("Rejecting unsafe pip requirement for Dockerfile: %r", dep)
+        if not safe:
+            return "\n".join(commands)
         commands.append(
-            f'RUN /opt/venv/bin/pip install --no-cache-dir {" ".join(consolidated)}'
+            f'RUN /opt/venv/bin/pip install --no-cache-dir {" ".join(safe)}'
         )
 
     return "\n".join(commands)

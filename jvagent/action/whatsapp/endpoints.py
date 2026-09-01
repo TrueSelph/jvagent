@@ -25,7 +25,7 @@ from jvagent.action.utils.meta_calls_webhook import is_calls_webhook
 from jvagent.action.utils.meta_webhook import verify_meta_webhook_signature
 from jvagent.action.utils.meta_webhook_dedup import (
     forget_meta_wamid,
-    remember_meta_wamid,
+    remember_meta_wamid_async,
 )
 from jvagent.core.agent import Agent
 from jvagent.core.errors import log_classified_exception
@@ -625,7 +625,7 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
             return {"status": "ignored", "response": "Ignore message"}
 
         if whatsapp_action.is_meta_provider() and data.message_id:
-            if not remember_meta_wamid(data.message_id):
+            if not await remember_meta_wamid_async(data.message_id):
                 logger.debug(
                     "Meta duplicate webhook wamid=%s; ignoring",
                     data.message_id,

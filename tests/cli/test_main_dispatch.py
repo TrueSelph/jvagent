@@ -170,7 +170,7 @@ class TestMainDispatch:
 
     def test_update_with_source_passes_source_mode(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source"])
+        monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source", "--yes"])
 
         patches = _main_patches(
             run_server=patch("jvagent.cli.main.run_server"),

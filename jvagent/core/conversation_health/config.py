@@ -66,15 +66,28 @@ class ConversationHealthConfig:
     history_limit: int = 6
 
 
+_cached_health_config: Optional[ConversationHealthConfig] = None
+_cached_health_app_root: Optional[str] = None
+
+
 def load_conversation_health_config(
     app_config: Optional[Dict[str, Any]] = None,
 ) -> ConversationHealthConfig:
     """Load config from app.yaml config.conversation_health and env overrides."""
+    global _cached_health_config, _cached_health_app_root
+
+    from jvagent.core.app_context import get_app_root
+
+    app_root = get_app_root()
+    if app_config is None and _cached_health_config is not None:
+        if _cached_health_app_root == app_root:
+            return _cached_health_config
+
     if app_config is None:
         try:
             from jvagent.core.config import load_app_config
 
-            app_config = load_app_config()
+            app_config = load_app_config(app_root)
         except Exception:
             app_config = {}
 
@@ -91,7 +104,7 @@ def load_conversation_health_config(
         else _as_bool(section.get("enabled"), True)
     )
 
-    return ConversationHealthConfig(
+    cfg = ConversationHealthConfig(
         enabled=enabled,
         flag_threshold=_as_float(section.get("flag_threshold"), 70.0),
         optimization_ceiling=_as_float(section.get("optimization_ceiling"), 90.0),
@@ -119,6 +132,10 @@ def load_conversation_health_config(
         enable_ai=_as_bool(section.get("enable_ai"), True),
         history_limit=_as_int(section.get("history_limit"), 6),
     )
+    if app_config is not None or app_root:
+        _cached_health_config = cfg
+        _cached_health_app_root = app_root
+    return cfg
 
 
 def is_enabled_for_agent(

@@ -19,6 +19,10 @@ from jvagent.action.interview.spec import parse_interview_spec
 async def test_handle_complete_defers_on_extraction_pending(tmp_path: Path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
+    (tmp_path / "SKILL.md").write_text(
+        "---\ntrust_tier: trusted\n---\n",
+        encoding="utf-8",
+    )
     (scripts / "custom_tools.py").write_text(
         "async def complete_pending(ctx):\n"
         "    return ctx.tool_response(\n"
@@ -76,6 +80,10 @@ async def test_handle_complete_defers_on_extraction_pending(tmp_path: Path):
 async def test_set_fields_skips_review_chain_on_extraction_pending(tmp_path: Path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
+    (tmp_path / "SKILL.md").write_text(
+        "---\ntrust_tier: trusted\n---\n",
+        encoding="utf-8",
+    )
     (scripts / "custom_tools.py").write_text(
         "async def process_urls(ctx):\n"
         "    ctx.say('Still checking your first link — I will update you shortly.')\n"

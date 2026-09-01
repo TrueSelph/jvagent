@@ -672,6 +672,16 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
     feed_comment_events = FacebookAPI.iter_feed_comment_events(payload)
     feed_reaction_events = FacebookAPI.iter_feed_reaction_events(payload)
 
+    configured_page_id = str(fb_action.page_id or "").strip()
+    if configured_page_id:
+
+        def _matches_page(event: Dict[str, Any]) -> bool:
+            return str(event.get("page_id") or "").strip() == configured_page_id
+
+        events = [e for e in events if _matches_page(e)]
+        feed_comment_events = [e for e in feed_comment_events if _matches_page(e)]
+        feed_reaction_events = [e for e in feed_reaction_events if _matches_page(e)]
+
     if not events and not feed_comment_events and not feed_reaction_events:
         return {"status": "ignored", "response": None}
 
@@ -736,14 +746,14 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
                 sender_name=merged_event.get("sender_name") or None,
             )
 
-    from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid
+    from jvagent.action.utils.meta_webhook_dedup import remember_meta_wamid_async
 
     for event in events:
         sender = event.get("sender_id", "")
         if not sender:
             continue
         mid = (event.get("mid") or "").strip()
-        if mid and not remember_meta_wamid(mid):
+        if mid and not await remember_meta_wamid_async(mid):
             logger.debug("Messenger duplicate mid ignored: %s", mid)
             continue
         if window <= 0:
@@ -794,7 +804,9 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
         # the Messenger path applies to `mid` above. comment_id is stable per
         # comment, and only verb == "add" reaches here, so an edit cannot
         # masquerade as a new comment.
-        if comment_id and not remember_meta_wamid(f"fbcomment:{comment_id}"):
+        if comment_id and not await remember_meta_wamid_async(
+            f"fbcomment:{comment_id}"
+        ):
             logger.debug("Facebook duplicate comment ignored: %s", comment_id)
             continue
 
@@ -890,7 +902,7 @@ async def messenger_interact_webhook_events(request: Request, agent_id: str) -> 
                 str(reaction_event.get("timestamp") or ""),
             )
         )
-        if not remember_meta_wamid(reaction_key):
+        if not await remember_meta_wamid_async(reaction_key):
             logger.debug("Facebook duplicate reaction ignored: %s", reaction_key)
             continue
 

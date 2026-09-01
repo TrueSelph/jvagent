@@ -114,8 +114,8 @@ def handle_bundle_command(args: List[str], app_root: str = None) -> None:
 
     bundler = Bundler(app_root=app_root)
 
-    # Generate Dockerfile
-    success = bundler.generate_dockerfile()
+    force = "--force" in args
+    success = bundler.generate_dockerfile(force=force)
 
     if not success:
         logger.error("Dockerfile generation failed")
@@ -124,7 +124,9 @@ def handle_bundle_command(args: List[str], app_root: str = None) -> None:
     print(f"\n✓ Dockerfile generated successfully in {app_root}")
 
 
-def handle_agent_command(args: List[str], app_root: str = None) -> None:
+def handle_agent_command(
+    args: List[str], app_root: str = None, *, global_assume_yes: bool = False
+) -> None:
     """Handle agent management commands (create, list, uninstall).
 
     Agents are loaded from ``app.yaml`` on bootstrap/run. Use ``agent create`` to scaffold
@@ -161,7 +163,7 @@ def handle_agent_command(args: List[str], app_root: str = None) -> None:
             print("Usage: jvagent agent uninstall <namespace/agent_name> [--yes]")
             return
         agent_ref = args[1]
-        assume_yes = "--yes" in args[2:] or "-y" in args[2:]
+        assume_yes = global_assume_yes or "--yes" in args[2:] or "-y" in args[2:]
 
         # Parse namespace/agent_name format
         if "/" not in agent_ref:
