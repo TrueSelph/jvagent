@@ -475,6 +475,8 @@ async def accumulate_skill_parameters(interaction: Any, docs: List[Any]) -> bool
             if not isinstance(p, dict):
                 continue
             entry = dict(p)
+            for reserved in ("ambient", "inviolable", "source", "tier"):
+                entry.pop(reserved, None)
             entry["scope"] = _scope_of(p)
             entry.setdefault("source", SOURCE_SKILL)
             scoped.append(entry)

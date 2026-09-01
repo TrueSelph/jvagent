@@ -67,6 +67,14 @@ async def ensure_active_task(
     visitor: Any, spec: InterviewSpec, default_description: str = ""
 ) -> None:
     """Create or tag the active SKILL task for this interview spec."""
+    store = getattr(visitor, "tasks", None)
+    create = getattr(store, "create", None) if store is not None else None
+    if not callable(create):
+        logger.warning(
+            "ensure_active_task: visitor.tasks.create unavailable for %s; skipping",
+            spec.name,
+        )
+        return
     try:
         existing = _find_existing_active_task(visitor, spec.name)
         if existing is not None:
@@ -75,7 +83,7 @@ async def ensure_active_task(
         await close_task(visitor, status="cancelled", exclude_spec_name=spec.name)
         title = spec.title or spec.name.replace("_", " ").title()
         description = spec.summary or default_description or title
-        handle = await visitor.tasks.create(
+        handle = await create(
             title=title,
             description=description,
             owner_action=spec.name,
@@ -88,7 +96,10 @@ async def ensure_active_task(
         )
         await handle.start()
     except Exception as exc:
-        logger.debug("ensure_active_task: %s", exc)
+        logger.error(
+            "ensure_active_task failed for %s: %s", spec.name, exc, exc_info=True
+        )
+        raise
 
 
 async def park_task(

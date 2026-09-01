@@ -22,6 +22,18 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
+_PIP_INSTALL_TIMEOUT_SEC = 120
+
+
+def _is_allowed_pip_spec(dep: str) -> bool:
+    """Reject VCS/URL specs — runtime install is PyPI-only."""
+    lowered = dep.strip().lower()
+    if lowered.startswith(("git+", "http://", "https://", "file:", "ssh://")):
+        return False
+    if "@" in dep and "://" in dep.split("@", 1)[-1]:
+        return False
+    return True
+
 
 def install_pip_dependencies(
     dependencies: List[str],
@@ -65,8 +77,15 @@ def install_pip_dependencies(
 
             dependencies.append(str(Requirement(dep)))
         except Exception:
-            # Allow simple names / VCS URLs that Requirement rejects, but never options.
-            if any(c.isspace() for c in dep) and not dep.startswith(("git+", "http")):
+            # Allow simple PyPI names only — reject VCS/URL specs.
+            if not _is_allowed_pip_spec(dep):
+                logger.error(
+                    "Action %s: rejecting non-PyPI pip dependency: %r",
+                    action_name,
+                    dep,
+                )
+                return False
+            if any(c.isspace() for c in dep):
                 logger.error(
                     "Action %s: rejecting invalid pip dependency: %r",
                     action_name,
@@ -117,6 +136,7 @@ def install_pip_dependencies(
             capture_output=True,
             text=True,
             check=False,  # Don't raise exception, handle manually
+            timeout=_PIP_INSTALL_TIMEOUT_SEC,
         )
 
         if result.returncode == 0:
@@ -131,6 +151,13 @@ def install_pip_dependencies(
             )
             return False
 
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "Timed out installing dependencies for action %s after %ss",
+            action_name,
+            _PIP_INSTALL_TIMEOUT_SEC,
+        )
+        return False
     except Exception as e:
         logger.error(
             f"Error installing dependencies for action {action_name}: {e}",

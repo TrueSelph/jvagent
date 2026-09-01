@@ -131,6 +131,39 @@ async def scratch_contains(db: Any, run_id: str, kind: str, key: str) -> bool:
         return False
 
 
+async def scratch_page_key_prefix(
+    db: Any,
+    run_id: str,
+    kind: str,
+    key_prefix: str,
+    after_key: Optional[str],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    """Return scratch rows for (run_id, kind) whose ``key`` starts with *key_prefix*."""
+    prefix_start = f"{run_id}:{kind}:{key_prefix}"
+    prefix_end = f"{run_id}:{kind}:{key_prefix}\xff"
+    try:
+        if after_key:
+            doc_id_after = _doc_id(run_id, kind, after_key)
+            rows = await db.find(
+                SCRATCH_COLLECTION,
+                {"id": {"$gt": doc_id_after, "$lt": prefix_end}},
+                limit=limit,
+                sort=[("id", 1)],
+            )
+        else:
+            rows = await db.find(
+                SCRATCH_COLLECTION,
+                {"id": {"$gte": prefix_start, "$lt": prefix_end}},
+                limit=limit,
+                sort=[("id", 1)],
+            )
+        return rows or []
+    except Exception:
+        logger.debug("scratch_page_key_prefix: query failed", exc_info=True)
+        return []
+
+
 async def scratch_page(
     db: Any,
     run_id: str,

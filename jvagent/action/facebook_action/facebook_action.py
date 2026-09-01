@@ -353,12 +353,14 @@ class FacebookAction(Action):
         """Meta GET webhook verification (hub.* query params). No Graph token required."""
         self._apply_env_defaults()
         expected = self._verify_token()
+        if not expected:
+            return {"message": "Verify token not configured", "code": 403}
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
         challenge = query.get("hub.challenge")
         token_ok = hmac.compare_digest(
             str(hub_verify or "").encode("utf-8"),
-            str(expected or "").encode("utf-8"),
+            expected.encode("utf-8"),
         )
         if token_ok and mode == "subscribe":
             return str(challenge) if challenge is not None else ""

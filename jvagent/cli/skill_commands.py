@@ -7,7 +7,14 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from jvagent.scaffold.path_safe import resolve_under, validate_safe_segment
+
 logger = logging.getLogger(__name__)
+
+
+def _skill_dir_for_agent(agent_dir: Path, skill_name: str) -> Path:
+    safe_name = validate_safe_segment(skill_name, label="skill_name")
+    return resolve_under(agent_dir.resolve() / "skills", safe_name)
 
 
 def _build_skill_stub(skill_name: str, description: str) -> str:
@@ -49,8 +56,10 @@ def _handle_skill_add_command(args: List[str], app_root: str = None) -> None:
     if not agent_dir.is_dir():
         parser.error(f"agent directory not found: {agent_dir}")
 
-    skills_dir = agent_dir / "skills"
-    skill_dir = skills_dir / ns.skill_name
+    try:
+        skill_dir = _skill_dir_for_agent(agent_dir, ns.skill_name)
+    except ValueError as exc:
+        parser.error(str(exc))
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_path = skill_dir / "SKILL.md"
 
@@ -97,7 +106,10 @@ def _handle_skill_create_leadgen_command(args: List[str], app_root: str = None) 
     if not template_dir.is_dir():
         parser.error(f"example_leadgen template not found: {template_dir}")
 
-    dest = agent_dir / "skills" / ns.skill_name
+    try:
+        dest = _skill_dir_for_agent(agent_dir, ns.skill_name)
+    except ValueError as exc:
+        parser.error(str(exc))
     if dest.exists() and not ns.force:
         parser.error(f"{dest} already exists (use --force to overwrite)")
 
@@ -171,7 +183,10 @@ def _handle_skill_create_interview_command(
     if not template_dir.is_dir():
         parser.error(f"example_interview template not found: {template_dir}")
 
-    dest = agent_dir / "skills" / ns.skill_name
+    try:
+        dest = _skill_dir_for_agent(agent_dir, ns.skill_name)
+    except ValueError as exc:
+        parser.error(str(exc))
     if dest.exists() and not ns.force:
         parser.error(f"{dest} already exists (use --force to overwrite)")
 
