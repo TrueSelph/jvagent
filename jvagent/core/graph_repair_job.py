@@ -1134,8 +1134,6 @@ async def _tick_dup_prepare(
 
     if last_processed is not None:
         cur["last_edge_id"] = last_processed
-    elif page:
-        cur["last_edge_id"] = page[-1].get("id", "")
     cur["run_id"] = run_id
     if len(page) < batch:
         from jvagent.core.repair_scratch import scratch_page

@@ -17,6 +17,10 @@ _MESSENGER_ATTACHMENT_HOST_SUFFIXES = (
     ".fbsbx.com",
     ".fbcdn.com",
 )
+# Cap attachment downloads — webhook payloads must not drive unbounded memory use.
+_MESSENGER_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
+_MESSENGER_HEAD_MAX_REDIRECTS = 5
+_MESSENGER_HEAD_TIMEOUT_SEC = 10
 
 
 class FacebookAPI:
@@ -313,13 +317,38 @@ class FacebookAPI:
                 u,
                 headers={"Authorization": f"Bearer {tok}"},
                 timeout=timeout,
+                stream=True,
             )
             r.raise_for_status()
+            content_length = r.headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > _MESSENGER_ATTACHMENT_MAX_BYTES:
+                        FacebookAPI.logger.warning(
+                            "Messenger attachment too large (Content-Length=%s)",
+                            content_length,
+                        )
+                        return None, None
+                except ValueError:
+                    pass
+            chunks: List[bytes] = []
+            total = 0
+            for chunk in r.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > _MESSENGER_ATTACHMENT_MAX_BYTES:
+                    FacebookAPI.logger.warning(
+                        "Messenger attachment exceeded %s bytes while streaming",
+                        _MESSENGER_ATTACHMENT_MAX_BYTES,
+                    )
+                    return None, None
+                chunks.append(chunk)
             ct = r.headers.get("Content-Type")
             mime: Optional[str] = None
             if ct:
                 mime = ct.split(";", 1)[0].strip() or None
-            return r.content, mime
+            return b"".join(chunks), mime
         except requests.RequestException as e:
             FacebookAPI.logger.warning(
                 "Messenger attachment download failed: %s", str(e)[:500]
@@ -945,7 +974,13 @@ class FacebookAPI:
             detected_mime_type, _ = mimetypes.guess_type(file_path)
         elif url:
             try:
-                response = requests.head(url, allow_redirects=True)
+                response = requests.head(
+                    url,
+                    allow_redirects=True,
+                    timeout=_MESSENGER_HEAD_TIMEOUT_SEC,
+                )
+                if len(response.history) > _MESSENGER_HEAD_MAX_REDIRECTS:
+                    return None
                 detected_mime_type = response.headers.get("Content-Type")
 
                 # Fallback if server lies or sends generic type

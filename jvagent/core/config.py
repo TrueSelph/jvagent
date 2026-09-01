@@ -280,16 +280,25 @@ def get_config_value(
                     try:
                         return int(s)
                     except ValueError:
-                        return default
-                if isinstance(default, float):
+                        logger.warning(
+                            "Invalid integer for env var %s=%r; falling through to config",
+                            env_var,
+                            s,
+                        )
+                elif isinstance(default, float):
                     try:
                         return float(s)
                     except ValueError:
-                        return default
-                pb = parse_env_bool(s)
-                if pb is not None:
-                    return pb
-                return s
+                        logger.warning(
+                            "Invalid float for env var %s=%r; falling through to config",
+                            env_var,
+                            s,
+                        )
+                else:
+                    pb = parse_env_bool(s)
+                    if pb is not None:
+                        return pb
+                    return s
 
     if config:
         keys = path.split(".")

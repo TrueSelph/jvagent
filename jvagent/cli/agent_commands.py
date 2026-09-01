@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from jvagent.cli.server_config import _set_db_env_from_config
 
@@ -93,28 +93,37 @@ def handle_bundle_command(args: List[str], app_root: str = None) -> None:
         args: Command arguments (may contain app root path)
         app_root: Path to the app root directory. If None, checks args or uses current working directory.
     """
-    # If app_root not provided, check if first arg is a path
-    if app_root is None:
-        if args and args[0]:
-            potential_path = Path(args[0]).expanduser().resolve()
-            if potential_path.exists() and potential_path.is_dir():
-                app_root = str(potential_path)
-                logger.debug(f"Using app root from command argument: {app_root}")
-            else:
-                app_root = os.getcwd()
-                logger.debug(
-                    f"Argument '{args[0]}' is not a valid path, using current working directory"
-                )
+    positional: Optional[str] = None
+    bundle_args: List[str] = []
+    for arg in args:
+        if arg.startswith("-"):
+            bundle_args.append(arg)
+        elif positional is None:
+            positional = arg
         else:
-            app_root = os.getcwd()
-            logger.debug(f"Using current working directory as app root: {app_root}")
+            bundle_args.append(arg)
+
+    if positional:
+        potential_path = Path(positional).expanduser().resolve()
+        if potential_path.exists() and potential_path.is_dir():
+            app_root = str(potential_path)
+            logger.debug("Using app root from bundle argument: %s", app_root)
+        else:
+            logger.error(
+                "App root path does not exist or is not a directory: %s",
+                positional,
+            )
+            sys.exit(1)
+    elif app_root is None:
+        app_root = os.getcwd()
+        logger.debug("Using current working directory as app root: %s", app_root)
 
     # Create bundler
     from jvagent.bundle import Bundler
 
     bundler = Bundler(app_root=app_root)
 
-    force = "--force" in args
+    force = "--force" in bundle_args
     success = bundler.generate_dockerfile(force=force)
 
     if not success:
