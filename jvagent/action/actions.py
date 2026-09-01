@@ -197,6 +197,9 @@ class Actions(Node):
                             action.agent_id, archetype, keeper_id
                         )
 
+                if not survived:
+                    object.__setattr__(action, "_skip_post_register", True)
+
                 return True
 
             except Exception as e:
@@ -298,10 +301,11 @@ class Actions(Node):
                 property_overrides=overrides,
             )
             results[action.label] = success
-            if success:
+            if success and not getattr(action, "_skip_post_register", False):
                 persisted = await Action.get(action.id)
-                if persisted is not None:
-                    registered_actions.append(persisted)
+                registered_actions.append(
+                    persisted if persisted is not None else action
+                )
 
         # Validate dependency graph before calling post_register
         if registered_actions:
