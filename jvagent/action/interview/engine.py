@@ -1979,11 +1979,15 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
             phase=REVIEW_PHASE,
         )
     except Exception as e:
+        logger.warning("Custom review function failed: %s", e, exc_info=True)
         return interview_tool_response(
             ok=False,
             status="error",
-            error=f"Custom review function failed: {e}",
-            response_directive=f"Custom review function failed: {e}",
+            error="Custom review function failed.",
+            response_directive=(
+                "The review step could not be completed. "
+                "Apologize briefly and ask the user to try again."
+            ),
         )
 
     omit_fields: set = set()

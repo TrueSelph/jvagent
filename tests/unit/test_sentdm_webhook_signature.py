@@ -9,6 +9,7 @@ import time
 from jvagent.action.sentdm_broadcast.endpoints import (
     _normalize_sentdm_webhook_envelope,
     _resolve_sentdm_webhook_message_id,
+    _sentdm_timestamp_acceptable,
     _verify_sentdm_signature,
 )
 from jvagent.action.sentdm_broadcast.sentdm_broadcast_action import (
@@ -231,3 +232,13 @@ def test_extract_message_descriptors_message_id_uuid_only_deep() -> None:
     rows = SentDMBroadcastAction._extract_sent_message_descriptors(envelope)
     assert len(rows) == 1
     assert rows[0]["message_id"] == mid
+
+
+def test_sentdm_timestamp_missing_rejected() -> None:
+    assert _sentdm_timestamp_acceptable("") is False
+    assert _sentdm_timestamp_acceptable("   ") is False
+
+
+def test_sentdm_timestamp_within_skew_accepted() -> None:
+    ts = str(int(time.time()))
+    assert _sentdm_timestamp_acceptable(ts) is True

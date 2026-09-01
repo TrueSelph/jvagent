@@ -46,6 +46,16 @@ def test_get_config_value_bool_default_int_coercion(monkeypatch):
     assert get_config_value({}, "server.port", "JVAGENT_PORT", 8000) == 9000
 
 
+def test_get_config_value_invalid_int_env_falls_through_to_config(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PORT", "not-a-number")
+    assert (
+        get_config_value(
+            {"server": {"port": 4000}}, "server.port", "JVAGENT_PORT", 8000
+        )
+        == 4000
+    )
+
+
 def test_get_performance_config_value_bool_invalid_returns_default(monkeypatch):
     monkeypatch.setenv("JVAGENT_ENABLE_PROFILING", "maybe")
     v = get_performance_config_value(

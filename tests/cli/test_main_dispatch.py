@@ -194,3 +194,19 @@ class TestMainDispatch:
 
             mocks["run_server"].assert_called_once()
             assert mocks["run_server"].call_args.kwargs["update_mode"] == "source"
+
+    def test_bundle_invalid_app_root_exits(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        bogus = str(tmp_path / "missing_app")
+        monkeypatch.setattr(sys, "argv", ["jvagent", "bundle", bogus])
+
+        patches = _main_patches()
+        with ExitStack() as stack:
+            for v in patches.values():
+                stack.enter_context(v)
+            from jvagent.cli.main import main
+
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+            assert exc.value.code == 1

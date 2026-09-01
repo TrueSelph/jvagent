@@ -442,14 +442,18 @@ class TestDownloadMessengerAttachment:
             content = b"abc"
             headers = {"Content-Type": "image/jpeg"}
 
+            def iter_content(self, chunk_size=65536):
+                yield self.content
+
             @staticmethod
             def raise_for_status():
                 return None
 
-        def _fake_get(url, headers=None, timeout=60):
+        def _fake_get(url, headers=None, timeout=60, stream=False):
             seen["url"] = url
             seen["headers"] = headers
             seen["timeout"] = timeout
+            seen["stream"] = stream
             return _Resp()
 
         monkeypatch.setattr(
@@ -461,6 +465,27 @@ class TestDownloadMessengerAttachment:
         assert out[0] == b"abc"
         assert seen["headers"] == {"Authorization": "Bearer page_token"}
         assert "access_token" not in seen["url"]
+        assert seen["stream"] is True
+
+    def test_rejects_oversized_content_length(self, monkeypatch):
+        class _Resp:
+            headers = {"Content-Type": "image/jpeg", "Content-Length": "99999999"}
+
+            def iter_content(self, chunk_size=65536):
+                yield b"should-not-read"
+
+            @staticmethod
+            def raise_for_status():
+                return None
+
+        monkeypatch.setattr(
+            "jvagent.action.facebook_action.facebook_api.requests.get",
+            lambda *a, **k: _Resp(),
+        )
+        out = FacebookAPI.download_messenger_attachment(
+            "https://lookaside.fbsbx.com/ig/media.jpg", "page_token"
+        )
+        assert out == (None, None)
 
 
 class TestMetaCallbackUrlForSubscription:
