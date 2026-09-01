@@ -735,6 +735,13 @@ async def pre_startup_bootstrap(
 
         await reset_app_update_mode_after_successful_bootstrap()
 
+        try:
+            from jvagent.logging.retention import purge_logs_past_retention
+
+            await purge_logs_past_retention()
+        except Exception as exc:
+            logger.warning("Log retention purge during startup failed: %s", exc)
+
         return admin_exists
     except Exception as e:
         logger.error(f"❌ Bootstrap failed: {e}", exc_info=True)

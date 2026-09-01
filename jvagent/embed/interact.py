@@ -15,14 +15,19 @@ logger = logging.getLogger(__name__)
 
 # In-flight embed interact walker tasks keyed by host thread_id and/or
 # jvagent session_id — enables explicit cancel from the host API.
-_interact_task_lock = asyncio.Lock()
 _interact_tasks: Dict[str, asyncio.Task[Any]] = {}
+
+
+def _interact_task_lock() -> asyncio.Lock:
+    from jvagent.core.async_locks import get_loop_lock
+
+    return get_loop_lock("embed_interact_tasks")
 
 
 async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
     if not key:
         return
-    async with _interact_task_lock:
+    async with _interact_task_lock():
         existing = _interact_tasks.get(key)
         if existing is not None and not existing.done() and existing is not task:
             existing.cancel()
@@ -32,7 +37,7 @@ async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
 async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
     if not key:
         return
-    async with _interact_task_lock:
+    async with _interact_task_lock():
         if _interact_tasks.get(key) is task:
             del _interact_tasks[key]
 

@@ -47,6 +47,7 @@ def _visitor():
     conv.context = {}
     conv.tasks = []
     conv.save = AsyncMock()
+    conv.flush = AsyncMock()
     visitor = SimpleNamespace(conversation=conv, tasks=TaskStore(conv))
     return visitor, conv
 

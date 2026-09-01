@@ -72,10 +72,14 @@ def _first_app_root_path(
             "--source",
             "--merge",
             "--serverless",
+            "--yes",
+            "-y",
+            "--dir",
             "-h",
             "--help",
         ]
     )
+    value_flags = frozenset(["--dir"])
     static_flags = static_flags | frozenset(STRESS_FLAG_NAMES)
     app: Optional[str] = None
     out: list[str] = []
@@ -83,9 +87,16 @@ def _first_app_root_path(
     n = len(args_in)
     while i < n:
         arg = args_in[i]
-        if arg in subcommands or arg in static_flags:
+        if arg in subcommands:
             out.append(arg)
             i += 1
+            break
+        if arg in static_flags:
+            out.append(arg)
+            i += 1
+            if arg in value_flags and i < n and not args_in[i].startswith("-"):
+                out.append(args_in[i])
+                i += 1
             continue
         if arg.startswith("-"):
             out.append(arg)
@@ -179,9 +190,22 @@ def main() -> None:
 
     args = [arg for arg in args if arg not in ["--update", "--source", "--merge"]]
 
-    assume_yes = "--yes" in args
+    global_assume_yes = "--yes" in raw or "-y" in raw
+    assume_yes = global_assume_yes
     if assume_yes:
-        args = [arg for arg in args if arg != "--yes"]
+        args = [arg for arg in args if arg not in ("--yes", "-y")]
+
+    if update_mode == "source" and not assume_yes:
+        try:
+            answer = input(
+                "--update --source will destructively replace graph state from YAML. "
+                "Continue? [y/N]: "
+            ).strip()
+        except EOFError:
+            answer = ""
+        if answer.lower() not in ("y", "yes"):
+            logger.error("Aborted destructive --update --source.")
+            sys.exit(1)
 
     purge_flag = "--purge" in args
     if purge_flag:
@@ -221,7 +245,9 @@ def main() -> None:
         elif args[0] == "app":
             app_commands.handle_app_command(args[1:], default_cwd=app_root)
         elif args[0] == "agent":
-            handle_agent_command(args[1:], app_root=app_root)
+            handle_agent_command(
+                args[1:], app_root=app_root, global_assume_yes=global_assume_yes
+            )
         elif args[0] == "action":
             handle_action_command(args[1:], app_root=app_root)
         elif args[0] == "skill":

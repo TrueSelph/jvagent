@@ -123,6 +123,9 @@ class ActionLoader:
                 "Error installing dependencies for %s",
                 action_name,
             )
+            raise RuntimeError(
+                f"Failed to install dependencies for action {action_name}"
+            ) from e
 
     def _load_action_module(
         self,
@@ -1176,6 +1179,8 @@ class ActionLoader:
         agent_name: str,
         agent_id: str,
         action_configs: Optional[List[Dict[str, Any]]] = None,
+        *,
+        discover_filesystem_actions: bool = False,
     ) -> List[Action]:
         """Load all actions for an agent.
 
@@ -1240,12 +1245,16 @@ class ActionLoader:
                             f"Action {key} not found locally or in core library. Skipping."
                         )
 
+        discover_filesystem_actions = bool(discover_filesystem_actions)
+
         # Load and instantiate actions
         actions = []
         seen_singleton_types: Set[str] = set()
         for metadata in discovered:
             # Find config using namespace/action_name format
             full_key = f"{metadata.namespace}/{metadata.name}"
+            if full_key not in config_lookup and not discover_filesystem_actions:
+                continue
             action_cfg = config_lookup.get(full_key, {})
 
             # Extract property overrides from 'context' field
