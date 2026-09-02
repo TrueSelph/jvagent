@@ -10,6 +10,7 @@ import pytest
 
 from jvagent.core import graph_repair_job
 from jvagent.core.repair_phases.types import (
+    PH_ORPHANS_INTERACTION,
     PH_ORPHANS_REATTACH,
     PH_SYNC_APPLY,
     RepairLimits,
@@ -46,6 +47,53 @@ async def test_orphans_reattach_cursor_is_json_serializable():
     json.dumps(state["cursor"], sort_keys=True)
     assert "reattach_ctx" not in state["cursor"]
     graph_repair_job._reattach_ctx_by_run.pop(run_id, None)
+
+
+@pytest.mark.asyncio
+async def test_reattach_ctx_released_on_force_advance_after_stall():
+    run_id = "run-stall-release"
+    graph_repair_job._reattach_ctx_by_run[run_id] = {"memories": []}
+
+    state = {
+        "dry_run": True,
+        "phase": graph_repair_job.PH_ORPHANS_REATTACH,
+        "cursor": {"orphan_ids": ["n.Node.x"], "orphan_index": 0, "run_id": run_id},
+        "result": graph_repair_job._new_result_counters(),
+        "stall_count": 1,
+        "run_id": run_id,
+    }
+    limits = RepairLimits(batch_size=1, max_seconds=0)
+
+    with (
+        patch.object(
+            graph_repair_job,
+            "_tick_orphans_reattach",
+            new=AsyncMock(return_value=True),
+        ),
+        patch.object(graph_repair_job, "_repair_checkpoint", new=AsyncMock()),
+    ):
+        await graph_repair_job.run_repair_session(state, limits)
+
+    assert run_id not in graph_repair_job._reattach_ctx_by_run
+    assert state["phase"] == PH_ORPHANS_INTERACTION
+
+
+@pytest.mark.asyncio
+async def test_reattach_ctx_released_when_repair_state_restarts():
+    run_id = "run-restart-release"
+    graph_repair_job._reattach_ctx_by_run[run_id] = {"memories": []}
+
+    payload = {
+        "v": 999,
+        "phase": PH_ORPHANS_REATTACH,
+        "cursor": {"run_id": run_id},
+        "result": graph_repair_job._new_result_counters(),
+        "dry_run": True,
+        "run_id": run_id,
+    }
+    graph_repair_job.state_from_dict(payload, dry_run=True, recent_minutes=None)
+
+    assert run_id not in graph_repair_job._reattach_ctx_by_run
 
 
 @pytest.mark.asyncio

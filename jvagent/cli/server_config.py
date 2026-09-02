@@ -659,11 +659,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             warn_interact_auth_configuration,
         )
         from jvagent.memory.distributed_conversation_lock import (
-            warn_missing_distributed_conversation_lock,
+            enforce_distributed_conversation_lock_if_required,
         )
 
         warn_interact_auth_configuration()
-        warn_missing_distributed_conversation_lock()
+        enforce_distributed_conversation_lock_if_required()
 
     # Import core endpoint modules so @endpoint decorators run and register.
     # jvspatial auto-registers: decorators register immediately when server exists;

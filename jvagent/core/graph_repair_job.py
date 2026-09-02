@@ -55,6 +55,18 @@ logger = logging.getLogger(__name__)
 
 # Non-serializable reattach lookup maps keyed by repair run_id (never stored in cursor).
 _reattach_ctx_by_run: Dict[str, Any] = {}
+_REATTACH_CTX_MAX_RUNS = 16
+
+
+def _release_reattach_ctx(run_id: Optional[str]) -> None:
+    if run_id:
+        _reattach_ctx_by_run.pop(run_id, None)
+
+
+def _trim_reattach_ctx_cache() -> None:
+    while len(_reattach_ctx_by_run) > _REATTACH_CTX_MAX_RUNS:
+        _reattach_ctx_by_run.pop(next(iter(_reattach_ctx_by_run)))
+
 
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
 
@@ -169,12 +181,19 @@ def state_from_dict(
     """Restore session state from persisted dict or start fresh."""
     if not payload:
         return _initial_session_state(dry_run, recent_minutes)
+
+    def _restart_fresh() -> Dict[str, Any]:
+        old_run = payload.get("run_id") or (payload.get("cursor") or {}).get("run_id")
+        if old_run:
+            _release_reattach_ctx(str(old_run))
+        return _initial_session_state(dry_run, recent_minutes)
+
     if payload.get("v") != STATE_VERSION:
         logger.warning("Unknown repair state version, restarting repair")
-        return _initial_session_state(dry_run, recent_minutes)
+        return _restart_fresh()
     if bool(payload.get("dry_run")) != dry_run:
         logger.warning("Repair state dry_run mismatch, restarting repair")
-        return _initial_session_state(dry_run, recent_minutes)
+        return _restart_fresh()
     cursor_in = payload.get("cursor")
     if cursor_in is None:
         cur: Dict[str, Any] = {}
@@ -972,6 +991,7 @@ async def _tick_orphans_reattach(
 
     run_id = cur.get("run_id") or state.get("run_id") or ""
     if run_id not in _reattach_ctx_by_run:
+        _trim_reattach_ctx_cache()
         _reattach_ctx_by_run[run_id] = await _build_reattach_context()
     reattach_ctx = _reattach_ctx_by_run[run_id]
 
@@ -988,8 +1008,7 @@ async def _tick_orphans_reattach(
     cur["orphan_index"] = idx
     state["result"]["orphaned_nodes_reattached"] += reattached
     if idx >= len(oids):
-        if run_id:
-            _reattach_ctx_by_run.pop(run_id, None)
+        _release_reattach_ctx(run_id)
         state["phase"] = PH_ORPHANS_INTERACTION
         state["cursor"] = {"orphan_ids": oids, "run_id": cur.get("run_id", "")}
     return True
@@ -1261,6 +1280,7 @@ async def _tick_prune_agents(state: Dict[str, Any], limits: RepairLimits) -> boo
     if idx >= len(ids):
         # Drop scratch data for this run now that we're done.
         if run_id:
+            _release_reattach_ctx(run_id)
             try:
                 from jvspatial.core import get_default_context
 
@@ -1388,6 +1408,7 @@ async def run_repair_session(
     _apply_deferred_phase_skip(state)
     phase = state.get("phase", PH_DONE)
     if phase == PH_DONE:
+        _release_reattach_ctx(state.get("run_id"))
         state["stall_count"] = stall_count
         return state
 
@@ -1477,6 +1498,8 @@ async def run_repair_session(
                     next_ph,
                     stall_count,
                 )
+                if phase == PH_ORPHANS_REATTACH:
+                    _release_reattach_ctx(state.get("run_id"))
                 state["phase"] = next_ph
                 state["cursor"] = {}
             stall_count = 0

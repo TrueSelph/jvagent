@@ -962,7 +962,18 @@ class FacebookAPI:
             return {"ok": False, "error": str(e)}
 
     @staticmethod
+    def _outbound_head_url_allowed(url: str) -> bool:
+        """Reject private/loopback targets before issuing an outbound HEAD request."""
+        try:
+            from jvagent.core.callback import _validate_webhook_url
+
+            _validate_webhook_url(url)
+            return True
+        except ValueError:
+            return False
+
     def get_mime_type(
+        self,
         file_path: Optional[str] = None,
         url: Optional[str] = None,
         mime_type: Optional[str] = None,
@@ -973,6 +984,12 @@ class FacebookAPI:
         if file_path:
             detected_mime_type, _ = mimetypes.guess_type(file_path)
         elif url:
+            if not FacebookAPI._outbound_head_url_allowed(url):
+                FacebookAPI.logger.warning(
+                    "Outbound HEAD blocked (unsafe URL target): %s",
+                    (url or "")[:500],
+                )
+                return None
             try:
                 response = requests.head(
                     url,

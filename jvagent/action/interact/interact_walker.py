@@ -469,6 +469,30 @@ class InteractWalker(Walker):
             )
             return "init_error"
 
+    @staticmethod
+    def _looks_like_agent(node: Any) -> bool:
+        entity_name = getattr(type(node), "__entity_name__", None)
+        if entity_name is None:
+            entity_name = type(node).__name__
+        return entity_name == "Agent"
+
+    async def _ensure_interaction_bootstrapped(self, agent: "Agent") -> bool:
+        """Resolve session + create Interaction before the turn lock (HTTP spawn path)."""
+        if self.interaction:
+            return True
+        self._agent = agent
+        if not self.conversation and not self.interaction:
+            pre = await self._bootstrap_interaction(agent, through="session")
+            if pre != "ready":
+                self._bootstrap_error = pre
+                return False
+        if not self.interaction:
+            code = await self._bootstrap_interaction(agent, through="create")
+            if not self.interaction:
+                self._bootstrap_error = code
+                return False
+        return True
+
     async def spawn(self, start_node: Optional[Any] = None) -> "InteractWalker":
         """Traverse under the conversation lock; finalize after the queue drains."""
         from jvspatial.core.events import event_bus
@@ -476,6 +500,9 @@ class InteractWalker(Walker):
         from jvagent.memory.distributed_conversation_lock import (
             conversation_mutation_lock,
         )
+
+        if start_node is not None and self._looks_like_agent(start_node):
+            await self._ensure_interaction_bootstrapped(start_node)
 
         conv_id = getattr(self.conversation, "id", None) if self.conversation else None
 
@@ -529,19 +556,8 @@ class InteractWalker(Walker):
         Args:
             here: The Agent node being visited
         """
-        self._agent = here
-
-        if not self.conversation and not self.interaction:
-            pre = await self._bootstrap_interaction(here, through="session")
-            if pre != "ready":
-                self._bootstrap_error = pre
-                return
-
-        if not self.interaction:
-            code = await self._bootstrap_interaction(here, through="create")
-            if not self.interaction:
-                self._bootstrap_error = code
-                return
+        if not await self._ensure_interaction_bootstrapped(here):
+            return
 
         await self._visit_agent_actions(here)
 
