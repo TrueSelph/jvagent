@@ -78,6 +78,11 @@ class AgentDescriptor:
             if k not in ["alias", "enabled", "description"]
         }
 
+        self.discover_filesystem_actions = bool(
+            data.get("discover_filesystem_actions")
+            or context.get("discover_filesystem_actions")
+        )
+
         # Actions list
         self.actions = data.get("actions", [])
 
@@ -261,6 +266,7 @@ class AgentLoader:
             # heals accumulated duplicates instead of carrying them forward.
             # AUDIT-core C1 / ADR-0033.
             await self._dedupe_actions_by_identity(agent, actions_manager)
+            await self._dedupe_singleton_actions_by_archetype(agent, actions_manager)
 
             # Run _install_actions when: (a) agent has actions to install, or
             # (b) update_mode is set (to sync: remove actions no longer in descriptor)
@@ -406,40 +412,107 @@ class AgentLoader:
 
         return removed
 
+    async def _dedupe_singleton_actions_by_archetype(
+        self, agent: Agent, actions_manager: Actions
+    ) -> int:
+        """Collapse duplicate singleton action nodes sharing the same archetype.
+
+        Identity dedupe handles ``(namespace, label)`` collisions; this pass
+        catches any remaining same-archetype duplicates (including cross-label
+        misconfigurations) before registration runs.
+        """
+        from collections import defaultdict
+
+        from jvspatial.core.entities.node import Node
+
+        from jvagent.action.identity import choose_action_keeper_id
+        from jvagent.core.upsert import action_record_archetype as record_archetype
+        from jvagent.core.upsert import (
+            action_record_is_singleton as record_is_singleton,
+        )
+        from jvagent.core.upsert import (
+            find_action_context_records,
+        )
+
+        try:
+            all_records = await find_action_context_records(agent.id)
+        except Exception as e:
+            logger.warning(
+                "dedupe singleton: could not read action records for %s: %s",
+                agent.name,
+                e,
+            )
+            return 0
+
+        by_archetype: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for record in all_records:
+            if not record_is_singleton(record):
+                continue
+            archetype = record_archetype(record)
+            if archetype:
+                by_archetype[archetype].append(record)
+
+        removed = 0
+        for archetype, records in by_archetype.items():
+            if len(records) < 2:
+                continue
+            keeper_id = await choose_action_keeper_id(actions_manager, records)
+            for record in records:
+                rid = record.get("id")
+                if not rid or rid == keeper_id:
+                    continue
+                try:
+                    node = await Node.get(rid)
+                    if node is None:
+                        continue
+                    if await actions_manager.is_connected_to(node):
+                        await actions_manager.disconnect(node)
+                    await node.delete(cascade=True)
+                    removed += 1
+                except Exception as e:
+                    logger.warning(
+                        "dedupe singleton: failed to remove %s (%s): %s",
+                        archetype,
+                        rid,
+                        e,
+                    )
+            if keeper_id:
+                try:
+                    keeper = await Node.get(keeper_id)
+                    if (
+                        keeper is not None
+                        and not await actions_manager.is_connected_to(keeper)
+                    ):
+                        await actions_manager.connect(keeper, direction="both")
+                except Exception as e:
+                    logger.warning(
+                        "dedupe singleton: failed to reconnect %s: %s",
+                        archetype,
+                        e,
+                    )
+
+        if removed:
+            logger.warning(
+                "Removed %d duplicate singleton action node(s) for %s",
+                removed,
+                agent.name,
+            )
+            try:
+                await actions_manager.update_statistics()
+            except Exception as e:
+                logger.warning(
+                    "dedupe singleton: recount failed for %s: %s", agent.name, e
+                )
+
+        return removed
+
     async def _choose_keeper_id(
         self, actions_manager: Actions, records: List[Dict[str, Any]]
     ) -> Optional[str]:
-        """Pick which duplicate to keep: connected first, then enabled, then id.
+        """Pick which duplicate to keep: connected first, then enabled, then id."""
+        from jvagent.action.identity import choose_action_keeper_id
 
-        Prefers a node still connected to the Actions manager (the walker sees
-        those), then an enabled node, with a deterministic lexicographic id
-        tie-break so concurrent processes converge on the same survivor.
-        """
-        from jvspatial.core.entities.node import Node
-
-        scored: List[Tuple[int, int, str]] = []
-        for record in records:
-            rid = record.get("id")
-            if not rid:
-                continue
-            connected = 0
-            enabled = 0
-            try:
-                node = await Node.get(rid)
-                if node is not None:
-                    if await actions_manager.is_connected_to(node):
-                        connected = 1
-                    enabled = 1 if getattr(node, "enabled", False) else 0
-            except Exception:
-                pass
-            # Lower sort tuple wins: prefer connected, then enabled, then
-            # smallest id. Negate the "good" flags so they sort first.
-            scored.append((-connected, -enabled, rid))
-
-        if not scored:
-            return None
-        scored.sort()
-        return scored[0][2]
+        return await choose_action_keeper_id(actions_manager, records)
 
     # ============================================================================
     # Action installation
@@ -735,7 +808,13 @@ class AgentLoader:
 
         # Load actions from filesystem and register / update
         actions = self.action_loader.load_actions_for_agent(
-            descriptor.namespace, descriptor.name, agent.id, descriptor.actions
+            descriptor.namespace,
+            descriptor.name,
+            agent.id,
+            descriptor.actions,
+            discover_filesystem_actions=getattr(
+                descriptor, "discover_filesystem_actions", False
+            ),
         )
 
         if not actions:

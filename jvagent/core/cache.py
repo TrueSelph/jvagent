@@ -197,6 +197,10 @@ class CacheManager:
     def _action_key(self, agent_id: str, enabled_only: bool) -> str:
         return f"{agent_id}:{'enabled' if enabled_only else 'all'}"
 
+    def _interact_action_key(self, agent_id: str, enabled_only: bool) -> str:
+        suffix = "enabled" if enabled_only else "all"
+        return f"{agent_id}:interact:{suffix}"
+
     async def get_actions(
         self, agent_id: str, enabled_only: bool = True
     ) -> Optional[List[Any]]:
@@ -219,6 +223,31 @@ class CacheManager:
         if not self.action_cache_enabled:
             return
         key = self._action_key(agent_id, enabled_only)
+        async with self._action_lock:
+            self._action_cache[key] = (actions, await _get_now())
+
+    async def get_interact_actions(
+        self, agent_id: str, enabled_only: bool = True
+    ) -> Optional[List[Any]]:
+        if not self.action_cache_enabled:
+            return None
+        key = self._interact_action_key(agent_id, enabled_only)
+        async with self._action_lock:
+            entry = self._action_cache.get(key)
+            if entry:
+                actions, cached_at = entry
+                now = await _get_now()
+                if (now - cached_at).total_seconds() < self.action_cache_ttl:
+                    return actions
+                del self._action_cache[key]
+        return None
+
+    async def set_interact_actions(
+        self, agent_id: str, actions: List[Any], enabled_only: bool = True
+    ) -> None:
+        if not self.action_cache_enabled:
+            return
+        key = self._interact_action_key(agent_id, enabled_only)
         async with self._action_lock:
             self._action_cache[key] = (actions, await _get_now())
 
@@ -366,6 +395,18 @@ async def cache_actions(
     agent_id: str, actions: List[Any], enabled_only: bool = True
 ) -> None:
     await cache_manager.set_actions(agent_id, actions, enabled_only)
+
+
+async def get_cached_interact_actions(
+    agent_id: str, enabled_only: bool = True
+) -> Optional[List[Any]]:
+    return await cache_manager.get_interact_actions(agent_id, enabled_only)
+
+
+async def cache_interact_actions(
+    agent_id: str, actions: List[Any], enabled_only: bool = True
+) -> None:
+    await cache_manager.set_interact_actions(agent_id, actions, enabled_only)
 
 
 async def invalidate_action_cache(agent_id: Optional[str] = None) -> None:

@@ -394,6 +394,20 @@ def _vault_doc_ids(user_id: str, filename: Optional[str]) -> Tuple[str, str]:
     return doc_name, display
 
 
+def _doc_name_owned_by_user(user_id: str, doc_name: str) -> bool:
+    """True when *doc_name* carries this user's vault namespace prefix."""
+    uid = (
+        "".join(
+            c if c.isalnum() or c in ("-", "_") else "_"
+            for c in (user_id or "").strip()
+        )[:64]
+        or "unknown"
+    )
+    prefix = f"{uid}_"
+    name = (doc_name or "").strip()
+    return bool(name) and name.startswith(prefix)
+
+
 def _safe_doc_name(user_id: str, idx: int, filename: Optional[str]) -> str:
     """Build a unique doc_name for PageIndex (``{user_id}_{filename}``)."""
     doc_name, _ = _vault_doc_ids(user_id, filename)
@@ -932,13 +946,10 @@ async def ingest_document(ctx) -> Dict[str, Any]:
     now = _now_ts()
     expires_at = now + _DEFAULT_RETENTION_SECONDS
 
-    # Single URL candidate.
+    # Single URL candidate — always namespace doc_name under the user's vault prefix.
     filename = _filename_from_url(url_arg)
-    if doc_name_arg:
-        doc_name = doc_name_arg
-        display_filename = _safe_filename_segment(filename)
-    else:
-        doc_name, display_filename = _vault_doc_ids(user_id or session_id, filename)
+    name_hint = doc_name_arg or filename
+    doc_name, display_filename = _vault_doc_ids(user_id or session_id, name_hint)
 
     pending_q = question
     ingested: List[str] = []
@@ -1254,6 +1265,14 @@ async def delete_document(ctx) -> Dict[str, Any]:
             target = e
             break
     if target is None:
+        ctx.say(
+            "Tell the user you don't see a file by that name in their vault — "
+            "it may already have been removed. Do not delete anything else. "
+            "Offer list_my_documents if helpful."
+        )
+        return ctx.tool_response(ok=False, status="not_found")
+
+    if not _doc_name_owned_by_user(user_id or session_id, doc_name):
         ctx.say(
             "Tell the user you don't see a file by that name in their vault — "
             "it may already have been removed. Do not delete anything else. "

@@ -24,6 +24,7 @@ Typical usage inside an action::
 
 from __future__ import annotations
 
+import inspect
 import logging
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -762,15 +763,27 @@ class TaskStore:
     # --- Internal persistence ---
 
     async def _persist(self) -> None:
-        await self._conversation.save()
+        flush = getattr(self._conversation, "flush", None)
+        if inspect.iscoroutinefunction(flush):
+            await flush()
+            return
+        save = getattr(self._conversation, "save", None)
+        if inspect.iscoroutinefunction(save):
+            await save()
 
     async def _persist_task(self, task: Task) -> None:
         """Persist a mutated task back into conversation.tasks by ID."""
         idx = self._find_task_index(task.id)
+        raw = list(getattr(self._conversation, "tasks", []) or [])
         if idx is not None:
-            raw = list(getattr(self._conversation, "tasks", []) or [])
             raw[idx] = task.to_dict()
-            self._conversation.tasks = raw
+        else:
+            logger.warning(
+                "task_store: task %s missing from conversation.tasks; appending",
+                task.id,
+            )
+            raw.append(task.to_dict())
+        self._conversation.tasks = raw
         await self._persist()
 
     async def _persist_step(self, step: Step, task_id: str) -> None:

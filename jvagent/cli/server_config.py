@@ -659,11 +659,11 @@ def create_server_from_config(debug: bool = False, app_root: str = None) -> Serv
             warn_interact_auth_configuration,
         )
         from jvagent.memory.distributed_conversation_lock import (
-            warn_missing_distributed_conversation_lock,
+            enforce_distributed_conversation_lock_if_required,
         )
 
         warn_interact_auth_configuration()
-        warn_missing_distributed_conversation_lock()
+        enforce_distributed_conversation_lock_if_required()
 
     # Import core endpoint modules so @endpoint decorators run and register.
     # jvspatial auto-registers: decorators register immediately when server exists;
@@ -734,6 +734,13 @@ async def pre_startup_bootstrap(
         admin_exists = await ensure_admin_user()
 
         await reset_app_update_mode_after_successful_bootstrap()
+
+        try:
+            from jvagent.logging.retention import purge_logs_past_retention
+
+            await purge_logs_past_retention()
+        except Exception as exc:
+            logger.warning("Log retention purge during startup failed: %s", exc)
 
         return admin_exists
     except Exception as e:

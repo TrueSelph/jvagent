@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 import yaml
 
+from jvagent.scaffold.path_safe import resolve_under, validate_safe_segment
 from jvagent.scaffold.resource_io import read_package_text
 
 MAX_EXTEND_DEPTH = 12
@@ -50,17 +51,38 @@ def _read_builtin_yaml(name: str) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _safe_profile_ref(ref: str) -> str:
+    """Validate a profile reference before joining under ``profiles/``."""
+    value = (ref or "").strip()
+    if not value:
+        raise ValueError("Invalid profile ref: empty")
+    parts = value.replace("\\", "/").split("/")
+    safe_parts = [
+        validate_safe_segment(part, label="profile") for part in parts if part
+    ]
+    if not safe_parts:
+        raise ValueError(f"Invalid profile ref: {ref!r}")
+    return "/".join(safe_parts)
+
+
 def _resolve_profile_path(app_root: Optional[str], ref: str) -> Optional[Path]:
     """Resolve ``ref`` to an existing YAML file under app ``profiles/``."""
     if app_root is None:
         return None
     root = Path(app_root).resolve()
-    candidates = [
-        root / "profiles" / ref,
-        root / "profiles" / f"{ref}.yaml",
-        root / "profiles" / "builtin" / ref,
-        root / "profiles" / "builtin" / f"{ref}.yaml",
-    ]
+    safe_ref = _safe_profile_ref(ref)
+    ref_parts = safe_ref.split("/")
+    leaf = ref_parts[-1]
+    parent_parts = ref_parts[:-1]
+    yaml_name = f"{leaf}.yaml"
+    candidates: List[Path] = []
+    for base in (root / "profiles", root / "profiles" / "builtin"):
+        if parent_parts:
+            candidates.append(resolve_under(base, *parent_parts, leaf))
+            candidates.append(resolve_under(base, *parent_parts, yaml_name))
+        else:
+            candidates.append(resolve_under(base, leaf))
+            candidates.append(resolve_under(base, yaml_name))
     for p in candidates:
         if p.is_file():
             return p
@@ -172,7 +194,13 @@ def parse_agent_spec(spec: str) -> tuple[str, Optional[str]]:
         profile = None
     if "/" not in agent_part:
         raise ValueError("Agent spec must include namespace/agent_id")
-    return agent_part, profile
+    ns, aid = agent_part.split("/", 1)
+    validate_safe_segment(ns, label="namespace")
+    validate_safe_segment(aid, label="agent_id")
+    agent_ref = f"{ns}/{aid}"
+    if profile is not None:
+        profile = _safe_profile_ref(profile)
+    return agent_ref, profile
 
 
 def parse_extra_action_flags(action_strings: List[str]) -> List[Dict[str, Any]]:

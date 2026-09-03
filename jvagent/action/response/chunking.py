@@ -6,6 +6,7 @@ match real token streaming; strings with no spaces are split into subword tokens
 chunk_text_by_words() and chunk_text_by_chars() remain for other use cases.
 """
 
+import codecs
 import logging
 import re
 from typing import Generator
@@ -56,10 +57,15 @@ def chunk_text_by_lm_tokens(text: str) -> Generator[str, None, None]:
     if encoding is not None:
         try:
             token_ids = encoding.encode(text)
+            decoder = codecs.getincrementaldecoder("utf-8")()
             for tid in token_ids:
-                chunk = encoding.decode([tid])
+                piece = encoding.decode_single_token_bytes(tid)
+                chunk = decoder.decode(piece)
                 if chunk:
                     yield chunk
+            tail = decoder.decode(b"", final=True)
+            if tail:
+                yield tail
             return
         except Exception as e:
             logger.debug("tiktoken encode/decode failed, using fallback: %s", e)

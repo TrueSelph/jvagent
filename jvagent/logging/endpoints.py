@@ -44,24 +44,23 @@ async def get_logs_by_agent(
     page: int = 1,
     page_size: int = 50,
 ) -> Dict[str, Any]:
-    """Get logs for an agent filtered by time frame and optional MongoDB-style filter.
+    """Get logs for an agent filtered by time frame and optional MongoDB-style filter."""
+    if page_size < 1:
+        raise ValidationError(
+            message="page_size must be at least 1",
+            details={"page_size": page_size},
+        )
+    if page_size > 100:
+        raise ValidationError(
+            message="page_size must not exceed 100",
+            details={"page_size": page_size},
+        )
+    if page < 1:
+        raise ValidationError(
+            message="page must be at least 1",
+            details={"page": page},
+        )
 
-    Retrieves error logs for a specific agent, filtered by time range and optional filter.
-    Logs are returned in reverse chronological order (most recent first).
-
-    Args:
-        agent_id: Agent node ID (required)
-        start_time: Optional start time filter (ISO datetime string, e.g., "2025-01-01T00:00:00Z")
-        end_time: Optional end time filter (ISO datetime string, e.g., "2025-01-31T23:59:59Z")
-        filter: Optional MongoDB-style filter JSON (e.g. {"context.log_data.user_id":"123"})
-        page: Page number (default: 1)
-        page_size: Items per page (default: 50, max recommended: 100)
-
-    Returns:
-        Dictionary containing:
-        - logs: List of log entries
-        - pagination: Pagination metadata (page, page_size, total, total_pages)
-    """
     # Parse and validate filter if provided
     filter_query: Optional[Dict[str, Any]] = None
     if filter:

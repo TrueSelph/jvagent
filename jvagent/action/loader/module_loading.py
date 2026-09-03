@@ -99,6 +99,7 @@ def load_action_module(
                 try:
                     spec.loader.exec_module(package)
                 except (ImportError, NameError, ModuleNotFoundError) as e:
+                    sys.modules.pop(spec.name, None)
                     logger.warning(
                         "Error importing action package %s: %s. "
                         "This may be due to missing dependencies or import errors.",
@@ -130,6 +131,7 @@ def load_action_module(
                             return None
                         return action_class
         except Exception as e:
+            sys.modules.pop(module_name, None)
             logger.warning("Error loading package from %s: %s", init_file, e)
 
     if not module_file.exists():
@@ -161,6 +163,7 @@ def load_action_module(
         return action_class
 
     except Exception as e:
+        sys.modules.pop(spec.name, None)
         logger.error(
             "Error loading action class from %s: %s", module_file, e, exc_info=True
         )

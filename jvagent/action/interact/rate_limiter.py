@@ -66,7 +66,11 @@ class InteractRateLimiter:
         self.max_upload_item_bytes = max_upload_item_bytes
         self.max_media_json_bytes = max_media_json_bytes
         self._request_timestamps: dict[str, list[float]] = defaultdict(list)
-        self._lock = self._new_lock()
+
+    def _rate_lock(self) -> asyncio.Lock:
+        from jvagent.core.async_locks import get_loop_lock
+
+        return get_loop_lock("interact_rate_limiter")
 
     @staticmethod
     def _new_lock() -> asyncio.Lock:
@@ -90,7 +94,7 @@ class InteractRateLimiter:
         now = time.time()
         window_start = now - 60.0
 
-        async with self._lock:
+        async with self._rate_lock():
             if key in self._request_timestamps:
                 self._request_timestamps[key] = [
                     ts for ts in self._request_timestamps[key] if ts > window_start
@@ -118,7 +122,7 @@ class InteractRateLimiter:
         key = f"{ip}:{agent_id}"
         now = time.time()
 
-        async with self._lock:
+        async with self._rate_lock():
             self._request_timestamps[key].append(now)
 
             if len(self._request_timestamps) > 1000:

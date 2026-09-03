@@ -477,7 +477,10 @@ def prune_unreachable_fields(
     if pruned and isinstance(session.context, dict):
         audit = session.context.setdefault("pruned_fields", [])
         if isinstance(audit, list):
+            _PRUNED_FIELDS_AUDIT_MAX = 200
             audit.extend(pruned)
+            if len(audit) > _PRUNED_FIELDS_AUDIT_MAX:
+                del audit[: len(audit) - _PRUNED_FIELDS_AUDIT_MAX]
     return pruned
 
 

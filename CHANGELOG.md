@@ -8,6 +8,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Runbook: multi-container bootstrap** — ``.planning/runbooks/multi-container-bootstrap.md`` (Lambda/replica Redis lease, heal steps, checklist).
+- **`jvagent/core/upsert.py`** — ADR-0033 raw-record identity lookups for actions.
+- **`jvagent/action/registration.py`** — ``resolve_action_for_registration`` used by ``register_action``.
+
 ### Changed
 
 - **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
@@ -17,6 +23,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   Meta no-op on jvconnect (returns existing secret). Serverless register
   timeout default raised from 5s to 15s; register is still awaited in the
   uvicorn lifespan hook on Lambda.
+
+### Fixed
+
+- **2026-09-01 stability pass:** HTTP `/interact` acquires conversation turn lock after bootstrap; graph repair releases in-memory reattach context on stall/restart/completion; Facebook `get_mime_type` blocks SSRF targets before outbound HEAD; optional `JVAGENT_REQUIRE_DISTRIBUTED_CONVERSATION_LOCK` fails fast in serverless without Redis/DynamoDB.
+- **2026-09-01 code review (CRITICAL/HIGH/MEDIUM):** Streaming UTF-8 incremental decode; separate interact action cache key; walker spawn finalize; orchestrator `ContextVar` prompt cache and type-safe `_normalize`; Facebook verify token, page-id filter, attachment CDN allowlist; path-safe scaffold/CLI; graph repair reattach serialization and edge-sync paging; MCP streamable-HTTP client; interview vault namespacing and selective context clear; plus orchestrator continuation, memory deferred-save flush, per-loop locks, SSE dedup, WhatsApp dedup, and related HIGH/MEDIUM items from `.planning/reviews/2026-09-01-full-code-review.md`.
+- **Singleton action correctness (Phase 1)** — ``reconcile_singleton_after_create``
+  returns false for create-race losers so ``register_actions`` skips
+  ``post_register`` on deleted nodes; type-index cache reconciled after
+  collapse; ``DELETE /actions/{id}`` routes through ``deregister_action``;
+  ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
+  read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
 ## [0.1.8rc1] - 2026-08-18
 
@@ -178,6 +195,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   alongside `if_add_doc_description` where the HTTP API already did.
 
 ### Fixed
+
+- **Duplicate singleton action nodes under concurrent Lambda bootstrap.**
+  ADR-0033 ``upsert_by_identity``: ``jvagent/core/upsert.py`` and
+  ``jvagent/action/registration.py`` drive ``register_action`` (raw-record
+  lookup, singleton collapse, post-save race guard). Boot runs
+  ``_dedupe_singleton_actions_by_archetype``. Ops: configure
+  ``JVAGENT_CONVERSATION_LOCK_REDIS_URL`` — see
+  ``.planning/runbooks/multi-container-bootstrap.md``.
 
 - **`chunking_strategy="flash"` was silently rejected by validation gates.**
   The Upload endpoint (`endpoints.py`), Google Drive sync endpoint, and

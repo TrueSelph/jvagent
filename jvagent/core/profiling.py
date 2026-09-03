@@ -182,7 +182,12 @@ class RequestProfile:
 
 # Thread-local storage for request profiles (using asyncio context)
 _profile_context: Dict[str, RequestProfile] = {}
-_profile_lock = asyncio.Lock()
+
+
+def _profile_lock() -> asyncio.Lock:
+    from jvagent.core.async_locks import get_loop_lock
+
+    return get_loop_lock("profiling")
 
 
 async def get_or_create_profile(request_id: Optional[str] = None) -> RequestProfile:
@@ -199,7 +204,7 @@ async def get_or_create_profile(request_id: Optional[str] = None) -> RequestProf
         return RequestProfile()
 
     rid = request_id or str(uuid.uuid4())
-    async with _profile_lock:
+    async with _profile_lock():
         if rid not in _profile_context:
             # Enforce max profiles limit before adding new one
             if len(_profile_context) >= MAX_PROFILES:
@@ -232,7 +237,7 @@ async def finalize_profile(
     if not ENABLE_PROFILING:
         return None
 
-    async with _profile_lock:
+    async with _profile_lock():
         profile = _profile_context.pop(request_id, None)
 
     if profile:
@@ -294,7 +299,7 @@ async def cleanup_stale_profiles() -> int:
     now = time.time()
     removed = 0
 
-    async with _profile_lock:
+    async with _profile_lock():
         stale_ids = [
             rid
             for rid, profile in _profile_context.items()
@@ -320,7 +325,7 @@ async def get_profile_stats() -> Dict[str, Any]:
     """
     now = time.time()
 
-    async with _profile_lock:
+    async with _profile_lock():
         size = len(_profile_context)
         stale_count = sum(
             1

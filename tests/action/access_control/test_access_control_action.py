@@ -335,15 +335,25 @@ async def test_import_config_merge_dedupes_exceptions(mock_save):
 
 
 @pytest.mark.asyncio
-@patch("jvagent.action.base.Action.find", new_callable=AsyncMock)
-async def test_agent_get_access_control_action_uses_first_when_multiple(mock_find):
-    """Multiple AccessControlAction nodes: first returned, error logged."""
+@patch("jvagent.action.base.Action.get", new_callable=AsyncMock)
+@patch(
+    "jvagent.action.identity.heal_duplicate_actions_for_archetype",
+    new_callable=AsyncMock,
+)
+@patch("jvagent.action.identity.find_records_by_archetype", new_callable=AsyncMock)
+@patch("jvagent.core.agent.Agent.get_actions_manager", new_callable=AsyncMock)
+async def test_agent_get_access_control_action_heals_when_multiple(
+    mock_get_manager, mock_find_records, mock_heal, mock_get
+):
+    """Multiple AccessControlAction nodes: collapse duplicates and return keeper."""
     from jvagent.core.agent import Agent
 
-    a1, a2 = MagicMock(), MagicMock()
+    a1 = MagicMock()
     a1.id = "ac1"
-    a2.id = "ac2"
-    mock_find.return_value = [a1, a2]
+    mock_find_records.return_value = [{"id": "ac1"}, {"id": "ac2"}]
+    mock_heal.return_value = "ac1"
+    mock_get.return_value = a1
+    mock_get_manager.return_value = MagicMock()
     agent = Agent(
         namespace="jvagent",
         name="t",
@@ -351,6 +361,10 @@ async def test_agent_get_access_control_action_uses_first_when_multiple(mock_fin
         alias="",
         description="",
     )
+
     got = await agent.get_access_control_action()
+
     assert got is a1
-    mock_find.assert_awaited_once()
+    mock_find_records.assert_awaited_once_with("agent1", "AccessControlAction")
+    mock_heal.assert_awaited_once()
+    mock_get.assert_awaited_once_with("ac1")

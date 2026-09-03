@@ -15,6 +15,16 @@ def test_rejects_option_like_dependency():
         run.assert_not_called()
 
 
+def test_rejects_git_url_dependency():
+    with patch("jvagent.core.dependency_installer.subprocess.run") as run:
+        ok = install_pip_dependencies(
+            ["git+https://github.com/evil/pkg.git"],
+            action_name="EvilAction",
+        )
+        assert ok is False
+        run.assert_not_called()
+
+
 def test_accepts_normal_requirement():
     with (
         patch("jvagent.core.dependency_installer.subprocess.run") as run,
