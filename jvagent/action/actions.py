@@ -31,8 +31,10 @@ class Actions(Node):
     )
     enabled_count: int = attribute(default=0, description="Number of enabled actions")
 
-    # Internal lock for thread-safe operations
-    _lock: asyncio.Lock = attribute(private=True, default_factory=asyncio.Lock)
+    def _registration_lock(self) -> asyncio.Lock:
+        from jvagent.core.async_locks import get_loop_lock
+
+        return get_loop_lock(f"actions:{self.id}")
 
     # ============================================================================
     # Action Registration
@@ -49,16 +51,19 @@ class Actions(Node):
         Actions are uniquely identified by (agent_id, namespace, label).
 
         This method:
-        1. Enforces singleton constraint for singleton action types
-        2. Checks if action already exists (by agent_id, namespace, label)
+        1. Enforces singleton constraint for singleton action types (raw-record
+           lookup by archetype; collapses duplicates; rejects a second label)
+        2. Checks if action already exists (by agent_id, namespace, label) via
+           raw records, not ``Action.find_one`` (unimported-subclass blind spot)
         3. If exists and update_mode=None: reuses existing node (no-op)
         4. If exists and update_mode="merge": updates metadata in place, calls on_reload()
         5. If exists and update_mode="source": deletes existing and creates fresh
         6. If not exists: saves and connects the action, calls on_register()
+        7. Post-save singleton race guard drops a loser node if a peer won concurrently
 
-        Prior to calling this method during bootstrap, _reconcile_actions() guarantees
-        a clean slate — stale and duplicate nodes have already been removed — so no
-        defensive duplicate-detection is performed here.
+        Boot-time ``_dedupe_actions_by_identity`` and
+        ``_dedupe_singleton_actions_by_archetype`` also run before registration;
+        this method closes the window during registration itself.
 
         Args:
             action: Action instance to register (fresh from source)
@@ -68,40 +73,20 @@ class Actions(Node):
         Returns:
             True if successful, False otherwise
         """
-        async with self._lock:
+        async with self._registration_lock():
             try:
-                # Singleton enforcement: reject duplicate registration of singleton action types
-                if action.is_singleton:
-                    archetype = action.metadata.get("class", action.get_class_name())
-                    existing_singleton = await Action.find_one(
-                        {
-                            "context.agent_id": action.agent_id,
-                            "context.metadata.class": archetype,
-                        }
-                    )
-                    if existing_singleton:
-                        if (
-                            existing_singleton.namespace != action.namespace
-                            or existing_singleton.label != action.label
-                        ):
-                            logger.warning(
-                                "Rejected duplicate singleton action: %s (archetype=%s) already "
-                                "registered for agent %s. Only one instance per agent allowed.",
-                                action.label,
-                                archetype,
-                                action.agent_id,
-                            )
-                            return False
-
-                # Check if action already exists
-                existing_action = await Action.find_one(
-                    {
-                        "context.agent_id": action.agent_id,
-                        "context.namespace": action.namespace,
-                        "context.label": action.label,
-                    }
+                from jvagent.action.registration import (
+                    reconcile_singleton_after_create,
+                    resolve_action_for_registration,
                 )
+                from jvagent.core.upsert import upsert_lookup_by_singleton_archetype
 
+                resolution = await resolve_action_for_registration(action, self)
+                if resolution.rejected_singleton:
+                    return False
+
+                existing_action = resolution.existing
+                archetype = resolution.archetype
                 action_existed_before = existing_action is not None
 
                 if existing_action:
@@ -123,9 +108,26 @@ class Actions(Node):
                         )
 
                     # source mode: delete existing, create fresh
-                    if await self.is_connected_to(existing_action):
-                        await self.disconnect(existing_action)
-                    await existing_action.delete(cascade=True)
+                    stale_records = (
+                        resolution.stale_records_for_source
+                        if action.is_singleton
+                        else [{"id": existing_action.id}]
+                    ) or []
+
+                    from jvspatial.core.entities.node import Node
+
+                    for record in stale_records:
+                        rid = record.get("id")
+                        if not rid:
+                            continue
+                        node = await Action.get(rid)
+                        if node is None:
+                            node = await Node.get(rid)
+                        if node is None:
+                            continue
+                        if await self.is_connected_to(node):
+                            await self.disconnect(node)
+                        await node.delete(cascade=True)
 
                 self.registered_count += 1
                 if action.enabled:
@@ -168,15 +170,37 @@ class Actions(Node):
 
                 await self.save()
 
+                survived = await reconcile_singleton_after_create(
+                    action,
+                    self,
+                    archetype=archetype,
+                    action_existed_before=action_existed_before,
+                )
+
                 from jvagent.core.cache import (
                     cache_action_type_index,
                     invalidate_action_cache,
+                    invalidate_action_type_index,
                 )
 
                 await invalidate_action_cache(action.agent_id)
-                await cache_action_type_index(
-                    action.agent_id, action.get_class_name(), action.id
-                )
+                await invalidate_action_type_index(action.agent_id)
+                if survived:
+                    await cache_action_type_index(
+                        action.agent_id, action.get_class_name(), action.id
+                    )
+                elif archetype:
+                    lookup = await upsert_lookup_by_singleton_archetype(
+                        action.agent_id, archetype
+                    )
+                    keeper_id = lookup.keeper_id
+                    if keeper_id:
+                        await cache_action_type_index(
+                            action.agent_id, archetype, keeper_id
+                        )
+
+                if not survived:
+                    object.__setattr__(action, "_skip_post_register", True)
 
                 return True
 
@@ -279,8 +303,11 @@ class Actions(Node):
                 property_overrides=overrides,
             )
             results[action.label] = success
-            if success:
-                registered_actions.append(action)
+            if success and not getattr(action, "_skip_post_register", False):
+                persisted = await Action.get(action.id)
+                registered_actions.append(
+                    persisted if persisted is not None else action
+                )
 
         # Validate dependency graph before calling post_register
         if registered_actions:
@@ -328,7 +355,7 @@ class Actions(Node):
         Returns:
             True if successful, False otherwise
         """
-        async with self._lock:
+        async with self._registration_lock():
             try:
                 action = await Action.get(action_id)
                 if not action:

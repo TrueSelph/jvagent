@@ -53,6 +53,21 @@ from jvagent.core.repair_phases.types import (
 
 logger = logging.getLogger(__name__)
 
+# Non-serializable reattach lookup maps keyed by repair run_id (never stored in cursor).
+_reattach_ctx_by_run: Dict[str, Any] = {}
+_REATTACH_CTX_MAX_RUNS = 16
+
+
+def _release_reattach_ctx(run_id: Optional[str]) -> None:
+    if run_id:
+        _reattach_ctx_by_run.pop(run_id, None)
+
+
+def _trim_reattach_ctx_cache() -> None:
+    while len(_reattach_ctx_by_run) > _REATTACH_CTX_MAX_RUNS:
+        _reattach_ctx_by_run.pop(next(iter(_reattach_ctx_by_run)))
+
+
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
 
 # Full-graph orphan/dup/prune phases run after edge sync (post-listen). When
@@ -166,12 +181,19 @@ def state_from_dict(
     """Restore session state from persisted dict or start fresh."""
     if not payload:
         return _initial_session_state(dry_run, recent_minutes)
+
+    def _restart_fresh() -> Dict[str, Any]:
+        old_run = payload.get("run_id") or (payload.get("cursor") or {}).get("run_id")
+        if old_run:
+            _release_reattach_ctx(str(old_run))
+        return _initial_session_state(dry_run, recent_minutes)
+
     if payload.get("v") != STATE_VERSION:
         logger.warning("Unknown repair state version, restarting repair")
-        return _initial_session_state(dry_run, recent_minutes)
+        return _restart_fresh()
     if bool(payload.get("dry_run")) != dry_run:
         logger.warning("Repair state dry_run mismatch, restarting repair")
-        return _initial_session_state(dry_run, recent_minutes)
+        return _restart_fresh()
     cursor_in = payload.get("cursor")
     if cursor_in is None:
         cur: Dict[str, Any] = {}
@@ -494,8 +516,9 @@ async def _tick_schema_singleton_actions(
 
     from jvspatial.core.entities.node import Node
 
-    from jvagent.action.base import Action
+    from jvagent.action.identity import collapse_duplicate_records
     from jvagent.core.agent import Agent
+    from jvagent.core.upsert import action_record_archetype, action_record_is_singleton
 
     cur = state["cursor"]
     if cur.get("agent_ids") is None:
@@ -524,40 +547,33 @@ async def _tick_schema_singleton_actions(
             if r.get("context", {}).get("namespace")
             and r.get("context", {}).get("label")
         ]
-        singleton_by_archetype: Dict[str, List[str]] = defaultdict(list)
+        singleton_by_archetype: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for record in records:
-            record_ctx = record.get("context", {})
-            metadata = record_ctx.get("metadata", {}) or {}
-            base_config = metadata.get("config", {}) or {}
-            config_overrides = metadata.get("config_overrides", {}) or {}
-            merged_config = {**base_config, **config_overrides}
-            if merged_config.get("singleton", True) is not True:
+            if not action_record_is_singleton(record):
                 continue
-            archetype = metadata.get("class") or record.get("entity", "")
-            if not archetype:
-                continue
-            record_id = record.get("id")
-            if record_id:
-                singleton_by_archetype[archetype].append(record_id)
+            archetype = action_record_archetype(record)
+            if archetype:
+                singleton_by_archetype[archetype].append(record)
 
-        for archetype_ids in singleton_by_archetype.values():
-            ordered_ids = sorted(set(archetype_ids))
-            for dup_id in ordered_ids[1:]:
-                if dry:
-                    removed += 1
+        agent = await Agent.get(agent_id)
+        managers = await agent.nodes(node="Actions") if agent else []
+        manager = sorted(managers, key=lambda m: m.id)[0] if managers else None
+
+        for archetype_records in singleton_by_archetype.values():
+            if len(archetype_records) < 2:
+                continue
+            if dry:
+                removed += len(archetype_records) - 1
+                continue
+            if manager is not None:
+                before = len(archetype_records)
+                await collapse_duplicate_records(manager, archetype_records)
+                removed += before - 1
+                continue
+            for record in archetype_records[1:]:
+                dup_id = record.get("id")
+                if not dup_id:
                     continue
-                action = await Action.get(dup_id)
-                if action:
-                    agent = await Agent.get(agent_id)
-                    managers = await agent.nodes(node="Actions") if agent else []
-                    action_removed = False
-                    for manager in sorted(managers, key=lambda m: m.id):
-                        if await manager.deregister_action(dup_id):
-                            action_removed = True
-                            break
-                    if action_removed:
-                        removed += 1
-                        continue
                 ghost_node = await Node.get(dup_id)
                 if ghost_node:
                     await ghost_node.delete(cascade=True)
@@ -724,7 +740,7 @@ async def _tick_sync_apply(
     """Sync node edge_ids reading valid/expected sets from the scratch collection."""
     from jvspatial.core import Node
 
-    from jvagent.core.repair_scratch import scratch_page
+    from jvagent.core.repair_scratch import scratch_page, scratch_page_key_prefix
 
     cur = state["cursor"]
     run_id: str = cur.get("run_id") or state.get("run_id") or ""
@@ -739,9 +755,17 @@ async def _tick_sync_apply(
         state["cursor"] = {"last_node_id": "", "run_id": run_id}
         return True
 
-    # Build valid_edge set from scratch (page-sized window to keep memory bounded)
-    valid_rows = await scratch_page(db, run_id, "valid_edge", None, 50000)
-    valid_ids: Set[str] = {r["key"] for r in valid_rows}
+    # Page through all valid_edge rows (no fixed cap).
+    valid_ids: Set[str] = set()
+    valid_after: Optional[str] = None
+    while True:
+        valid_rows = await scratch_page(db, run_id, "valid_edge", valid_after, batch)
+        if not valid_rows:
+            break
+        valid_ids.update(r["key"] for r in valid_rows if r.get("key"))
+        if len(valid_rows) < batch:
+            break
+        valid_after = valid_rows[-1].get("key")
 
     dry = state["dry_run"]
     for data in page:
@@ -750,14 +774,23 @@ async def _tick_sync_apply(
             continue
         current_edge_ids = set(data.get("edges", []))
 
-        # Look up expected edges for this node from scratch
-        node_edge_rows = await scratch_page(db, run_id, "node_edge", None, batch)
+        # Expected edges for this node only (key prefix "<node_id>|").
         expected: Set[str] = set()
-        for r in node_edge_rows:
-            # key format: "<node_id>|<edge_id>"
-            k = r.get("key", "")
-            if k.startswith(f"{node_id}|"):
-                expected.add(k.split("|", 1)[1])
+        edge_prefix = f"{node_id}|"
+        edge_after: Optional[str] = None
+        while True:
+            node_edge_rows = await scratch_page_key_prefix(
+                db, run_id, "node_edge", edge_prefix, edge_after, batch
+            )
+            if not node_edge_rows:
+                break
+            for r in node_edge_rows:
+                k = r.get("key", "")
+                if k.startswith(edge_prefix):
+                    expected.add(k.split("|", 1)[1])
+            if len(node_edge_rows) < batch:
+                break
+            edge_after = node_edge_rows[-1].get("key")
 
         valid_current = current_edge_ids & valid_ids
         new_edge_ids = valid_current | expected
@@ -956,11 +989,11 @@ async def _tick_orphans_reattach(
     orphan_set = set(oids)
     reattached = 0
 
-    # Build lookup maps once at the start of this phase (not per-orphan).
-    if cur.get("reattach_ctx") is None:
-        cur["reattach_ctx"] = await _build_reattach_context()
-
-    reattach_ctx = cur["reattach_ctx"]
+    run_id = cur.get("run_id") or state.get("run_id") or ""
+    if run_id not in _reattach_ctx_by_run:
+        _trim_reattach_ctx_cache()
+        _reattach_ctx_by_run[run_id] = await _build_reattach_context()
+    reattach_ctx = _reattach_ctx_by_run[run_id]
 
     while idx < len(oids):
         if limits.max_seconds and time.monotonic() >= deadline:
@@ -975,6 +1008,7 @@ async def _tick_orphans_reattach(
     cur["orphan_index"] = idx
     state["result"]["orphaned_nodes_reattached"] += reattached
     if idx >= len(oids):
+        _release_reattach_ctx(run_id)
         state["phase"] = PH_ORPHANS_INTERACTION
         state["cursor"] = {"orphan_ids": oids, "run_id": cur.get("run_id", "")}
     return True
@@ -987,7 +1021,8 @@ async def _tick_orphans_interaction(
 
     oids = set(state["cursor"].get("orphan_ids", []))
     dry = state["dry_run"]
-    n = await _reattach_interaction_orphans(context, oids, dry)
+    deadline = time.monotonic() + (limits.max_seconds or 1e9)
+    n = await _reattach_interaction_orphans(context, oids, dry, deadline=deadline)
     state["result"]["orphaned_nodes_reattached"] += n
     state["phase"] = PH_ORPHANS_DELETE
     state["cursor"] = {"orphan_ids": sorted(oids)}
@@ -1086,7 +1121,7 @@ async def _tick_dup_prepare(
                 break
             for r in rows:
                 # key = "<source>\n<target>", value = edge_id
-                pair_key = r["key"]
+                pair_key = r["key"].rsplit("|", 1)[0]
                 seen_keys[pair_key] = seen_keys.get(pair_key, 0) + 1
             after_key = rows[-1]["key"]
             if len(rows) < 1000:
@@ -1101,6 +1136,7 @@ async def _tick_dup_prepare(
         return True
 
     items: List[Tuple[str, str]] = []
+    last_processed: Optional[str] = None
     for data in page:
         if limits.max_seconds and time.monotonic() >= deadline:
             break
@@ -1110,11 +1146,13 @@ async def _tick_dup_prepare(
         if source and target and eid:
             pair_key = f"{source}\n{target}"
             items.append((f"{pair_key}|{eid}", eid))
+            last_processed = eid
 
     if items:
         await scratch_upsert_bulk(db, run_id, "edge_pair", items)
 
-    cur["last_edge_id"] = page[-1].get("id", "")
+    if last_processed is not None:
+        cur["last_edge_id"] = last_processed
     cur["run_id"] = run_id
     if len(page) < batch:
         from jvagent.core.repair_scratch import scratch_page
@@ -1242,6 +1280,7 @@ async def _tick_prune_agents(state: Dict[str, Any], limits: RepairLimits) -> boo
     if idx >= len(ids):
         # Drop scratch data for this run now that we're done.
         if run_id:
+            _release_reattach_ctx(run_id)
             try:
                 from jvspatial.core import get_default_context
 
@@ -1369,6 +1408,7 @@ async def run_repair_session(
     _apply_deferred_phase_skip(state)
     phase = state.get("phase", PH_DONE)
     if phase == PH_DONE:
+        _release_reattach_ctx(state.get("run_id"))
         state["stall_count"] = stall_count
         return state
 
@@ -1458,6 +1498,8 @@ async def run_repair_session(
                     next_ph,
                     stall_count,
                 )
+                if phase == PH_ORPHANS_REATTACH:
+                    _release_reattach_ctx(state.get("run_id"))
                 state["phase"] = next_ph
                 state["cursor"] = {}
             stall_count = 0

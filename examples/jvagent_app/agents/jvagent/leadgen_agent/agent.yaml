@@ -29,6 +29,7 @@ actions:
         - product_inquiry_leads   # always-active leadgen capture (LeadGenAction)
         - product_faq             # answer common product questions (StorefrontAction)
         - product_search          # find / compare catalog products (StorefrontAction)
+        - example_leadgen
       lock_active_flow: false
       # ui__render is long-tail, so lean surfacing (ADR-0018) hides it and the
       # model can only reach it via find_tool. Pin it so components are callable

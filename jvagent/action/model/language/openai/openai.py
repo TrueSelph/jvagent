@@ -351,8 +351,17 @@ class OpenAILanguageModelAction(LanguageModelAction):
                 raise
             data = response.json()
 
+            if isinstance(data.get("error"), dict):
+                err = data["error"]
+                msg = err.get("message") or err.get("code") or "unknown error"
+                raise RuntimeError(f"OpenAI API error: {msg}")
+
+            choices = data.get("choices") or []
+            if not choices:
+                raise RuntimeError("OpenAI API returned no choices")
+
             # Extract response
-            choice = data["choices"][0]
+            choice = choices[0]
             message = choice["message"]
             content = message.get("content", "")
             finish_reason = choice.get("finish_reason")

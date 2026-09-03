@@ -82,7 +82,7 @@ def _sentdm_timestamp_acceptable(timestamp_header: str, *, max_skew: int = 600) 
     """Reject wildly stale ``x-webhook-timestamp`` values (replay mitigation)."""
     raw = (timestamp_header or "").strip()
     if not raw:
-        return True
+        return False
     try:
         ts = int(raw, 10)
     except ValueError:

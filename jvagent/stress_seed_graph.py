@@ -265,10 +265,21 @@ def parse_stress_seed_for_run(
             has_seed = True
             i += 1
         elif a == "--user-memory-nodes" and i + 1 < len(args):
-            n = int(args[i + 1])
+            try:
+                n = int(args[i + 1])
+            except ValueError:
+                sys.exit(
+                    f"Invalid --user-memory-nodes value {args[i + 1]!r}; expected a positive integer."
+                )
             i += 2
         elif a == "--interactions-per-user-memory-node" and i + 1 < len(args):
-            m = int(args[i + 1])
+            try:
+                m = int(args[i + 1])
+            except ValueError:
+                sys.exit(
+                    "Invalid --interactions-per-user-memory-node value "
+                    f"{args[i + 1]!r}; expected a positive integer."
+                )
             i += 2
         elif a == "--agent" and i + 1 < len(args):
             agent = args[i + 1]

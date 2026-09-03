@@ -18,7 +18,10 @@ from jvagent.action.access_control.access_control_action import (
     log_access_denied,
 )
 from jvagent.action.interact.base import InteractAction
-from jvagent.core.cache import cache_actions, get_cached_actions
+from jvagent.core.cache import (
+    cache_interact_actions,
+    get_cached_interact_actions,
+)
 from jvagent.memory.interaction import Interaction
 
 if TYPE_CHECKING:
@@ -466,6 +469,64 @@ class InteractWalker(Walker):
             )
             return "init_error"
 
+    @staticmethod
+    def _looks_like_agent(node: Any) -> bool:
+        entity_name = getattr(type(node), "__entity_name__", None)
+        if entity_name is None:
+            entity_name = type(node).__name__
+        return entity_name == "Agent"
+
+    async def _ensure_interaction_bootstrapped(self, agent: "Agent") -> bool:
+        """Resolve session + create Interaction before the turn lock (HTTP spawn path)."""
+        if self.interaction:
+            return True
+        self._agent = agent
+        if not self.conversation and not self.interaction:
+            pre = await self._bootstrap_interaction(agent, through="session")
+            if pre != "ready":
+                self._bootstrap_error = pre
+                return False
+        if not self.interaction:
+            code = await self._bootstrap_interaction(agent, through="create")
+            if not self.interaction:
+                self._bootstrap_error = code
+                return False
+        return True
+
+    async def spawn(self, start_node: Optional[Any] = None) -> "InteractWalker":
+        """Traverse under the conversation lock; finalize after the queue drains."""
+        from jvspatial.core.events import event_bus
+
+        from jvagent.memory.distributed_conversation_lock import (
+            conversation_mutation_lock,
+        )
+
+        if start_node is not None and self._looks_like_agent(start_node):
+            await self._ensure_interaction_bootstrapped(start_node)
+
+        conv_id = getattr(self.conversation, "id", None) if self.conversation else None
+
+        async def _run() -> "InteractWalker":
+            await event_bus.register_entity(self)
+
+            node = start_node
+            if node is None:
+                from jvspatial.core.entities.root import Root
+
+                node = await Root.get(None)
+
+            if node not in self.queue._backing:
+                await self.queue.append([node])
+            await self.run()
+            await self._execute_exit_hooks()
+            await self._finalize()
+            return self
+
+        if conv_id:
+            async with conversation_mutation_lock(conv_id):
+                return await _run()
+        return await _run()
+
     async def initialize_interaction(self, agent: "Agent") -> InteractionInitResult:
         """Deterministic phase 1: memory, session, access, create Interaction (no Actions traversal).
 
@@ -495,33 +556,10 @@ class InteractWalker(Walker):
         Args:
             here: The Agent node being visited
         """
-        self._agent = here
+        if not await self._ensure_interaction_bootstrapped(here):
+            return
 
-        if not self.conversation and not self.interaction:
-            pre = await self._bootstrap_interaction(here, through="session")
-            if pre != "ready":
-                self._bootstrap_error = pre
-                return
-
-        conv_id = getattr(self.conversation, "id", None) if self.conversation else None
-
-        async def _execute_turn() -> None:
-            if not self.interaction:
-                code = await self._bootstrap_interaction(here, through="create")
-                if not self.interaction:
-                    self._bootstrap_error = code
-                    return
-            await self._visit_agent_actions(here)
-
-        if conv_id:
-            from jvagent.memory.distributed_conversation_lock import (
-                conversation_mutation_lock,
-            )
-
-            async with conversation_mutation_lock(conv_id):
-                await _execute_turn()
-        else:
-            await _execute_turn()
+        await self._visit_agent_actions(here)
 
     async def _visit_agent_actions(self, here: "Agent") -> None:
         """Traverse Actions → InteractActions under the conversation turn lock."""
@@ -531,13 +569,12 @@ class InteractWalker(Walker):
             return
 
         await self.visit(actions_node)
-        await self._finalize()
 
     async def _finalize(self) -> None:
         """Finalize the current interaction (attach observability, emit signal, clean buffers).
 
-        Called at end of on_agent() so finalization happens whether the walker is
-        used from an HTTP endpoint or programmatically.
+        Called after the walker queue drains (end of :meth:`spawn`) so finalization
+        happens whether the walker is used from an HTTP endpoint or programmatically.
         """
         if not self.response_bus or not self.interaction:
             return
@@ -586,13 +623,16 @@ class InteractWalker(Walker):
         )
 
         # Try to get enabled InteractActions from cache first
-        cached_actions = await get_cached_actions(self.agent_id, enabled_only=True)
+        cached_actions = await get_cached_interact_actions(
+            self.agent_id, enabled_only=True
+        )
 
         if cached_actions is not None:
-            # Cache hit - use cached actions
-            enabled_actions: List[InteractAction] = cached_actions
+            enabled_actions = [
+                a for a in cached_actions if isinstance(a, InteractAction)
+            ]
             logger.debug(
-                f"InteractWalker: Using {len(enabled_actions)} cached actions for agent {self.agent_id}"
+                f"InteractWalker: Using {len(enabled_actions)} cached interact actions for agent {self.agent_id}"
             )
         else:
             # Cache miss - query database
@@ -601,7 +641,9 @@ class InteractWalker(Walker):
             # Filter by enabled=True directly in the query using kwargs
             enabled_actions = await here.nodes(node=InteractAction, enabled=True)
             # Cache the result for future requests
-            await cache_actions(self.agent_id, enabled_actions, enabled_only=True)
+            await cache_interact_actions(
+                self.agent_id, enabled_actions, enabled_only=True
+            )
 
         if not enabled_actions:
             # Debug: Check if there are any InteractActions at all (even disabled)

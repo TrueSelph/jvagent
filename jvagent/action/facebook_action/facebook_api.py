@@ -5,8 +5,22 @@ import logging
 import mimetypes
 import traceback
 from typing import Any, Dict, List, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 import requests
+
+# Meta CDN / attachment hosts only — webhook payload URLs must not drive SSRF or
+# token exfiltration to arbitrary third-party origins (C7).
+_MESSENGER_ATTACHMENT_HOST_SUFFIXES = (
+    ".fbcdn.net",
+    ".facebook.com",
+    ".fbsbx.com",
+    ".fbcdn.com",
+)
+# Cap attachment downloads — webhook payloads must not drive unbounded memory use.
+_MESSENGER_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
+_MESSENGER_HEAD_MAX_REDIRECTS = 5
+_MESSENGER_HEAD_TIMEOUT_SEC = 10
 
 
 class FacebookAPI:
@@ -120,9 +134,12 @@ class FacebookAPI:
             hub_verify_token = request.get("hub.verify_token")
             hub_challenge = request.get("hub.challenge")
 
+            expected = str(self.verify_token or "").strip()
+            if not expected:
+                return {"message": "Verify token not configured", "code": 403}
             token_ok = hmac.compare_digest(
                 str(hub_verify_token or "").encode("utf-8"),
-                str(self.verify_token or "").encode("utf-8"),
+                expected.encode("utf-8"),
             )
             if token_ok and hub_mode == "subscribe":
                 return hub_challenge if hub_challenge is not None else ""
@@ -261,6 +278,24 @@ class FacebookAPI:
         return False
 
     @staticmethod
+    def _messenger_attachment_host_allowed(url: str) -> bool:
+        """True when *url* points at a known Meta CDN / Graph attachment host."""
+        try:
+            parsed = urlparse((url or "").strip())
+        except Exception:
+            return False
+        if parsed.scheme not in ("https", "http"):
+            return False
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return False
+        for suffix in _MESSENGER_ATTACHMENT_HOST_SUFFIXES:
+            bare = suffix.lstrip(".")
+            if host == bare or host.endswith(suffix):
+                return True
+        return False
+
+    @staticmethod
     def download_messenger_attachment(
         url: str,
         page_access_token: str,
@@ -271,18 +306,49 @@ class FacebookAPI:
         tok = (page_access_token or "").strip()
         if not u or not tok:
             return None, None
+        if not FacebookAPI._messenger_attachment_host_allowed(u):
+            FacebookAPI.logger.warning(
+                "Messenger attachment download blocked (host not allowlisted): %s",
+                u[:500],
+            )
+            return None, None
         try:
             r = requests.get(
                 u,
-                params={"access_token": tok},
+                headers={"Authorization": f"Bearer {tok}"},
                 timeout=timeout,
+                stream=True,
             )
             r.raise_for_status()
+            content_length = r.headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > _MESSENGER_ATTACHMENT_MAX_BYTES:
+                        FacebookAPI.logger.warning(
+                            "Messenger attachment too large (Content-Length=%s)",
+                            content_length,
+                        )
+                        return None, None
+                except ValueError:
+                    pass
+            chunks: List[bytes] = []
+            total = 0
+            for chunk in r.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > _MESSENGER_ATTACHMENT_MAX_BYTES:
+                    FacebookAPI.logger.warning(
+                        "Messenger attachment exceeded %s bytes while streaming",
+                        _MESSENGER_ATTACHMENT_MAX_BYTES,
+                    )
+                    return None, None
+                chunks.append(chunk)
             ct = r.headers.get("Content-Type")
             mime: Optional[str] = None
             if ct:
                 mime = ct.split(";", 1)[0].strip() or None
-            return r.content, mime
+            return b"".join(chunks), mime
         except requests.RequestException as e:
             FacebookAPI.logger.warning(
                 "Messenger attachment download failed: %s", str(e)[:500]
@@ -896,7 +962,18 @@ class FacebookAPI:
             return {"ok": False, "error": str(e)}
 
     @staticmethod
+    def _outbound_head_url_allowed(url: str) -> bool:
+        """Reject private/loopback targets before issuing an outbound HEAD request."""
+        try:
+            from jvagent.core.callback import _validate_webhook_url
+
+            _validate_webhook_url(url)
+            return True
+        except ValueError:
+            return False
+
     def get_mime_type(
+        self,
         file_path: Optional[str] = None,
         url: Optional[str] = None,
         mime_type: Optional[str] = None,
@@ -907,8 +984,20 @@ class FacebookAPI:
         if file_path:
             detected_mime_type, _ = mimetypes.guess_type(file_path)
         elif url:
+            if not FacebookAPI._outbound_head_url_allowed(url):
+                FacebookAPI.logger.warning(
+                    "Outbound HEAD blocked (unsafe URL target): %s",
+                    (url or "")[:500],
+                )
+                return None
             try:
-                response = requests.head(url, allow_redirects=True)
+                response = requests.head(
+                    url,
+                    allow_redirects=True,
+                    timeout=_MESSENGER_HEAD_TIMEOUT_SEC,
+                )
+                if len(response.history) > _MESSENGER_HEAD_MAX_REDIRECTS:
+                    return None
                 detected_mime_type = response.headers.get("Content-Type")
 
                 # Fallback if server lies or sends generic type

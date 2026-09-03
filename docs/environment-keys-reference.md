@@ -81,6 +81,17 @@ See [Integration environment variables](integrations-environment.md#jvforge-page
 - `JVAGENT_ENABLE_DSPY_CACHE` - Enables DSPy cache.
 - `JVAGENT_CACHE_CLEANUP_PROBABILITY` - Cache cleanup probability.
 
+### Distributed locking (bootstrap + conversation turn-lock)
+
+Used by [`jvagent/memory/distributed_conversation_lock.py`](../jvagent/memory/distributed_conversation_lock.py) and [`jvagent/core/distributed_lease.py`](../jvagent/core/distributed_lease.py) (graph bootstrap lease, ADR-0033). **Required for multi-container Lambda / multi-replica deployments** to prevent duplicate graph nodes during concurrent cold starts. See [`.planning/runbooks/multi-container-bootstrap.md`](../.planning/runbooks/multi-container-bootstrap.md).
+
+- `JVAGENT_CONVERSATION_LOCK_REDIS_URL` - Redis URL for cluster-wide leases (recommended). Shared by conversation mutation lock and bootstrap lock (`jvagent:lease:bootstrap:{app_id}`).
+- `JVAGENT_CONVERSATION_LOCK_TTL_SECONDS` - Lease TTL in seconds (default `45`). Renewed by heartbeat while held; increase for slow bootstrap on large apps.
+- `JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE` - DynamoDB table name (partition key `lock_key`) when Redis is unavailable.
+- `JVAGENT_CONVERSATION_LOCK_DYNAMODB_TTL_SECONDS` - DynamoDB lease TTL (default `45`).
+
+Without Redis or DynamoDB, locks fall back to **in-process only** — safe for single-worker dev, **not** for parallel Lambda containers.
+
 ## 2) Relevant jvspatial Keys Used by jvagent (`JVSPATIAL_*`)
 
 These are commonly used by `jvagent` and should be configured in `jvagent` deployments.

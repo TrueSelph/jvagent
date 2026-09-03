@@ -123,6 +123,9 @@ async def _run_lease_heartbeat(renew, interval: float, conversation_id: str) -> 
             )
 
 
+_REQUIRE_DISTRIBUTED_LOCK_ENV = "JVAGENT_REQUIRE_DISTRIBUTED_CONVERSATION_LOCK"
+
+
 def warn_missing_distributed_conversation_lock() -> None:
     """Warn when serverless mode runs without a cross-process conversation lock."""
     try:
@@ -136,9 +139,33 @@ def warn_missing_distributed_conversation_lock() -> None:
     logger.warning(
         "PRODUCTION SAFETY: serverless mode without %s or %s — concurrent "
         "invocations do not share conversation locks and may fork interaction "
-        "chains. Configure Redis or DynamoDB for multi-worker deployments.",
+        "chains. Configure Redis or DynamoDB for multi-worker deployments, or "
+        "set %s=true to fail fast at startup.",
         _REDIS_URL_ENV,
         _DYNAMO_TABLE_ENV,
+        _REQUIRE_DISTRIBUTED_LOCK_ENV,
+    )
+
+
+def enforce_distributed_conversation_lock_if_required() -> None:
+    """Fail startup when serverless requires a cross-process conversation lock."""
+    require = os.environ.get(_REQUIRE_DISTRIBUTED_LOCK_ENV, "").strip().lower()
+    if require not in ("1", "true", "yes", "on"):
+        warn_missing_distributed_conversation_lock()
+        return
+    try:
+        from jvspatial import is_serverless_mode
+    except ImportError:
+        return
+    if not is_serverless_mode():
+        return
+    if _redis_url() or _dynamo_table():
+        return
+    raise RuntimeError(
+        f"{_REQUIRE_DISTRIBUTED_LOCK_ENV} is set but neither "
+        f"{_REDIS_URL_ENV} nor {_DYNAMO_TABLE_ENV} is configured — "
+        "multi-worker serverless deployments must use Redis or DynamoDB "
+        "conversation locks."
     )
 
 

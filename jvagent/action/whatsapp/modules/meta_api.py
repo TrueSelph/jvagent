@@ -317,17 +317,14 @@ class MetaWhatsAppAPI(BaseWhatsAppAPI):
                     continue
                 metadata = value.get("metadata") or {}
                 phone_id = str(metadata.get("phone_number_id") or "").strip()
-                if (
-                    expected_phone_number_id
-                    and phone_id
-                    and phone_id != expected_phone_number_id
-                ):
-                    logger.debug(
-                        "Ignoring webhook for phone_number_id %s (expected %s)",
-                        phone_id,
-                        expected_phone_number_id,
-                    )
-                    continue
+                if expected_phone_number_id:
+                    if not phone_id or phone_id != expected_phone_number_id:
+                        logger.debug(
+                            "Ignoring webhook for phone_number_id %s (expected %s)",
+                            phone_id or "<missing>",
+                            expected_phone_number_id,
+                        )
+                        continue
                 messages = value.get("messages") or []
                 if not messages:
                     statuses = value.get("statuses") or []

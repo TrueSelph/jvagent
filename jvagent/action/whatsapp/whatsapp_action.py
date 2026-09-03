@@ -338,11 +338,12 @@ class WhatsAppAction(Action):
         configured = self.verify_token
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
-        if self.is_meta_provider():
-            # Meta verifies against jvconnect (FB_VERIFY_TOKEN), not this agent.
-            # Agent GET hub.challenge is unused for provider=meta+jvconnect.
-            return "jvconnect"
-        return derive_meta_verify_token(agent_id, self._env_app_secret())
+        secret = (
+            self._env_jvconnect_webhook_secret()
+            if self.is_meta_provider()
+            else self._env_app_secret()
+        )
+        return derive_meta_verify_token(agent_id, secret)
 
     async def _flow_exchange_sibling(self, agent: Any = None) -> Any:
         """Resolve optional ``flow_data_exchange_action`` sibling, if configured."""
@@ -547,6 +548,8 @@ class WhatsAppAction(Action):
                 "code": 403,
             }
         expected = self.effective_verify_token(agent_id)
+        if not expected:
+            return {"message": "Verify token not configured", "code": 403}
         mode = query.get("hub.mode")
         hub_verify = query.get("hub.verify_token")
         challenge = query.get("hub.challenge")
