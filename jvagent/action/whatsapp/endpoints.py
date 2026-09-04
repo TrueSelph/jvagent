@@ -641,8 +641,9 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
 
         # Endpoint-powered Flows may already have finished work on data exchange;
         # sibling can opt to ignore the follow-up nfm_reply chat utterance.
+        # Pass sender so apps can submit/confirm without Interact (incident Flow).
         if utterance and await whatsapp_action.should_ignore_flow_nfm_reply(
-            utterance, agent=agent
+            utterance, agent=agent, sender=getattr(data, "sender", "") or ""
         ):
             logger.info(
                 "WhatsApp webhook: ignoring Flow nfm_reply (handled by exchange action)"

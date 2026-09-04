@@ -394,13 +394,18 @@ class WhatsAppAction(Action):
                     return result
         return build_flow_data_exchange_response(body)
 
-    async def should_ignore_flow_nfm_reply(self, body: str, agent: Any = None) -> bool:
+    async def should_ignore_flow_nfm_reply(
+        self, body: str, agent: Any = None, sender: str = ""
+    ) -> bool:
         """Ask the Flow exchange sibling whether an ``nfm_reply`` should skip Interact.
 
         Endpoint-powered Flows often finish create work during data exchange; the
         subsequent Meta ``nfm_reply`` (SUCCESS params as chat text) would only
         race a duplicate LLM reply. Apps opt in via
         ``should_ignore_flow_nfm_reply`` on ``flow_data_exchange_action``.
+
+        ``sender`` is the WhatsApp user id (phone) from the webhook so siblings
+        can submit / confirm without waiting for Interact.
         """
         sibling = await self._flow_exchange_sibling(agent)
         if sibling is None:
@@ -409,7 +414,11 @@ class WhatsAppAction(Action):
         if not callable(handler):
             return False
         try:
-            result = handler(body)
+            try:
+                result = handler(body, sender=sender or "")
+            except TypeError:
+                # Sibling handlers that only accept ``body`` (e.g. zoon).
+                result = handler(body)
             if asyncio.iscoroutine(result):
                 result = await result
             return bool(result)
