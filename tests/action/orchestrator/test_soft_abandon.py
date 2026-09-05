@@ -102,60 +102,58 @@ async def test_note_soft_abandon_strike_resets_when_interview_engaged():
 
 
 # --------------------------------------------------------------------------- #
-# 3. apply_soft_abandon — park + cancel shapes (real reaper reuse)
+# 3. apply_soft_abandon — delegates to the bound action's hook
 # --------------------------------------------------------------------------- #
+#
+# The park/cancel shapes themselves are the interview's (its ``on_abandon``
+# policy) and are covered in tests/action/interview/test_task_lock_hooks.py;
+# here the orchestrator only has to call the hook and clear the streak.
+
+
+class _Bound:
+    def __init__(self, result: bool):
+        self.result = result
+        self.calls: list = []
+
+    async def task_lock_abandon(self, skill_name, visitor=None):
+        self.calls.append(skill_name)
+        return self.result
+
+    async def task_lock_progress_count(self, skill_name, visitor=None):
+        return 3
+
+    def task_lock_title(self, skill_name):
+        return "Signup"
 
 
 @pytest.mark.asyncio
-async def test_apply_soft_abandon_parks_and_snapshots():
-    handle = _FakeHandle()
-    spec = InterviewSpec(name="signup", title="Signup", on_abandon="park")
-    v = _visitor_with_context(
-        {
-            "interview": {
-                "interview_type": "signup",
-                "status": "active",
-                "fields": {"user_name": "Eldon"},
-            }
-        }
-    )
-    v.tasks = _FakeTaskStore(handle)
+async def test_apply_soft_abandon_calls_hook_and_clears_streak():
+    v = _visitor_with_context({"_soft_abandon_strikes": {"signup": {"streak": 3}}})
+    bound = _Bound(True)
 
-    applied = await continuation.apply_soft_abandon(v, _agent_with_spec(spec), "signup")
+    applied = await continuation.apply_soft_abandon(v, bound, "signup")
 
     assert applied is True
-    assert handle.parked is not None
-    assert handle.parked["snapshot"]["fields"] == {"user_name": "Eldon"}
-    # live interview scratch cleared
-    assert "interview" not in v.conversation.context
+    assert bound.calls == ["signup"]
+    assert "signup" not in v.conversation.context.get("_soft_abandon_strikes", {})
 
 
 @pytest.mark.asyncio
-async def test_apply_soft_abandon_cancels():
-    handle = _FakeHandle()
-    spec = InterviewSpec(name="otp", title="Verify", on_abandon="cancel")
-    v = _visitor_with_context(
-        {"interview": {"interview_type": "otp", "status": "active", "fields": {}}}
-    )
-    v.tasks = _FakeTaskStore(handle)
-
-    applied = await continuation.apply_soft_abandon(v, _agent_with_spec(spec), "otp")
-
-    assert applied is True
-    assert handle.cancelled is not None
-    assert handle.parked is None
-    assert "interview" not in v.conversation.context
-
-
-@pytest.mark.asyncio
-async def test_apply_soft_abandon_returns_false_without_task():
-    spec = InterviewSpec(name="signup", title="Signup", on_abandon="park")
+async def test_apply_soft_abandon_returns_false_without_hook_or_task():
     v = _visitor_with_context()
-    v.tasks = _FakeTaskStore(None)
+    assert await continuation.apply_soft_abandon(v, None, "signup") is False
+    assert await continuation.apply_soft_abandon(v, object(), "signup") is False
+    assert await continuation.apply_soft_abandon(v, _Bound(False), "signup") is False
 
-    applied = await continuation.apply_soft_abandon(v, _agent_with_spec(spec), "signup")
 
-    assert applied is False
+@pytest.mark.asyncio
+async def test_progress_and_title_hooks_with_fallbacks():
+    v = _visitor_with_context()
+    doc = SkillDoc(name="signup_interview", description="", body="")
+    assert await continuation.task_lock_progress_count(_Bound(True), "signup", v) == 3
+    assert await continuation.task_lock_progress_count(None, "signup", v) == 0
+    assert await continuation.task_lock_title(_Bound(True), doc) == "Signup"
+    assert await continuation.task_lock_title(None, doc) == "signup interview"
 
 
 # --------------------------------------------------------------------------- #

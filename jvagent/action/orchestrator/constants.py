@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 # Keys the model commonly uses to carry user-facing text, in priority order.
 TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
@@ -31,8 +32,34 @@ DECISION_RESERVED_KEYS = frozenset(
         "name",
         "skill",
         "topic",
+        # Native-protocol bookkeeping the loop strips before normalising
+        # (see DECISION_META_KEYS) — reserved so a stray copy is never folded
+        # into tool arguments.
+        "_call_id",
+        "_group_id",
+        "_assistant_text",
     }
 )
+
+# Metadata ``_run_model`` attaches to a decision under the native protocol and
+# the loop pops before ``_normalize``. ``_call_id`` / ``_group_id`` tie the
+# resulting observation back to the provider's tool-call id (so the transcript
+# replays as assistant ``tool_calls`` + ``tool`` results); ``_assistant_text``
+# carries any prose the model emitted alongside (or instead of) a tool call.
+DECISION_META_KEYS = frozenset({"_call_id", "_group_id", "_assistant_text"})
+
+# Decision "actions" the loop treats as model-side faults rather than model
+# choices. ``_run_model`` returns them instead of ``None`` so the loop can tell
+# "the provider failed" (retry once, then end the turn with
+# ``model_unavailable_text``) from "the model produced nothing usable" (nudge).
+MODEL_ERROR_ACTION = "model_error"
+MODEL_TRUNCATED_ACTION = "model_truncated"
+MODEL_FAULT_ACTIONS = frozenset({MODEL_ERROR_ACTION, MODEL_TRUNCATED_ACTION})
+
+# Tool-protocol names (``OrchestratorInteractAction.tool_protocol``).
+TOOL_PROTOCOL_NATIVE = "native"
+TOOL_PROTOCOL_JSON = "json"
+TOOL_PROTOCOLS = frozenset({TOOL_PROTOCOL_NATIVE, TOOL_PROTOCOL_JSON})
 
 # Directive-contract trust boundary (AUDIT-orchestrator HIGH).
 # The next_tool / response_directive contract is a private control channel:
@@ -104,6 +131,52 @@ def is_untrusted_directive_source(tool_name: str) -> bool:
     if "__" in name:
         return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# Task-lock result vocabulary (dependency inversion)
+# --------------------------------------------------------------------------- #
+#
+# The loop detects two things in a task-lock skill's tool results without
+# knowing which plugin produced them: that the task COMPLETED (so a blocked
+# parent can resume in the same turn — ADR-0026 drain) and that an observation
+# is the skill's ACTIVATION ENVELOPE (so prep re-grounding is not duplicated).
+# The generic keys below are read always; a task-lock plugin whose envelope uses
+# its own field names registers them at load time — the orchestrator carries no
+# plugin literals (thin-harness invariants 6 and 8).
+TASK_COMPLETION_FLAG = "task_complete"
+TASK_LOCK_SKILL_KEY = "task_lock_skill"
+_TASK_COMPLETION_FLAGS: set = {TASK_COMPLETION_FLAG}
+_TASK_LOCK_SKILL_KEYS: set = {TASK_LOCK_SKILL_KEY}
+
+
+def register_task_completion_flag(key: str) -> None:
+    """Declare a result-envelope key whose truthy value marks task completion."""
+    if key and str(key).strip():
+        _TASK_COMPLETION_FLAGS.add(str(key).strip())
+
+
+def register_task_lock_skill_key(key: str) -> None:
+    """Declare a result-envelope key that names the owning task-lock skill."""
+    if key and str(key).strip():
+        _TASK_LOCK_SKILL_KEYS.add(str(key).strip())
+
+
+def task_completion_flags() -> frozenset:
+    return frozenset(_TASK_COMPLETION_FLAGS)
+
+
+def task_lock_skill_keys() -> frozenset:
+    return frozenset(_TASK_LOCK_SKILL_KEYS)
+
+
+def is_task_completion(data: Any) -> bool:
+    """True when a parsed tool-result envelope marks its task completed."""
+    if not isinstance(data, dict):
+        return False
+    if data.get("status") == "completed":
+        return True
+    return any(bool(data.get(flag)) for flag in _TASK_COMPLETION_FLAGS)
 
 
 # Backward-compatible aliases for tests and internal imports.

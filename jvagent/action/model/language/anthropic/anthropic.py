@@ -372,8 +372,47 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         mapped_tools = self._map_tools(tools)
         if mapped_tools:
             payload["tools"] = mapped_tools
+            choice = self._map_tool_choice(
+                kwargs.get("tool_choice"), kwargs.get("parallel_tool_calls")
+            )
+            if choice:
+                payload["tool_choice"] = choice
 
         return payload
+
+    @staticmethod
+    def _map_tool_choice(
+        tool_choice: Any, parallel_tool_calls: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Map OpenAI-style ``tool_choice`` / ``parallel_tool_calls`` to Anthropic.
+
+        ``auto`` / ``required`` / ``{"type":"function","function":{"name":X}}``
+        become ``auto`` / ``any`` / ``tool``; ``parallel_tool_calls=False`` sets
+        ``disable_parallel_tool_use`` so the model returns one call per turn.
+        ``none`` is expressed by the caller omitting ``tools`` (Anthropic has no
+        equivalent), so it maps to nothing here.
+        """
+        choice: Dict[str, Any] = {}
+        if isinstance(tool_choice, str):
+            key = tool_choice.strip().lower()
+            if key == "auto":
+                choice = {"type": "auto"}
+            elif key in ("required", "any"):
+                choice = {"type": "any"}
+        elif isinstance(tool_choice, dict):
+            kind = str(tool_choice.get("type") or "")
+            fn = tool_choice.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else tool_choice.get("name")
+            if kind in ("function", "tool") and name:
+                choice = {"type": "tool", "name": str(name)}
+            elif kind in ("auto", "any"):
+                choice = {"type": kind}
+        if parallel_tool_calls is False:
+            if not choice:
+                choice = {"type": "auto"}
+            if choice.get("type") in ("auto", "any", "tool"):
+                choice["disable_parallel_tool_use"] = True
+        return choice or None
 
     def _system_blocks(self, system_text: str) -> Any:
         """The ``system`` payload field, with a cache breakpoint when worthwhile.

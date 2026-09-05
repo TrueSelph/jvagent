@@ -36,7 +36,6 @@ class TurnState:
     # --- identity of the turn -------------------------------------------
     utterance: str
     interaction: Any
-    agent: Any
     history: List[Dict[str, str]]
 
     # --- the surface the model reasons over ------------------------------

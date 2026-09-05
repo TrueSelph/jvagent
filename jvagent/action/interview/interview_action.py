@@ -62,6 +62,34 @@ INTERVIEW_CORE_PARAMETERS = [
 ]
 
 
+def _register_orchestrator_vocabulary() -> None:
+    """Declare this plugin's result vocabulary to the orchestrator (dependency
+    inversion — the orchestrator carries no interview literals):
+
+    - ``interview__`` tool results are a trusted directive source (they carry
+      ``next_tool`` / ``response_directive``);
+    - ``interview_complete`` marks a task completion (ADR-0026 drain);
+    - ``interview_type`` names the owning task-lock skill in an envelope.
+
+    Runs at import and again on register (idempotent), so any process that
+    loads the plugin has the vocabulary before the first turn.
+    """
+    try:
+        from jvagent.action.orchestrator.constants import (
+            register_task_completion_flag,
+            register_task_lock_skill_key,
+            register_trusted_directive_prefix,
+        )
+    except Exception:  # pragma: no cover - orchestrator optional at load
+        return
+    register_trusted_directive_prefix("interview__")
+    register_task_completion_flag("interview_complete")
+    register_task_lock_skill_key("interview_type")
+
+
+_register_orchestrator_vocabulary()
+
+
 class InterviewAction(Action):
     """Provides interview tools for LLM-driven multi-turn flows."""
 
@@ -91,18 +119,7 @@ class InterviewAction(Action):
 
     async def on_register(self):
         await super().on_register()
-        # Declare the ``interview__`` tool namespace as a trusted directive
-        # source — interview tool results carry ``next_tool`` /
-        # ``response_directive`` (hooks.py). Dependency inversion keeps the
-        # orchestrator free of interview literals.
-        try:
-            from jvagent.action.orchestrator.constants import (
-                register_trusted_directive_prefix,
-            )
-
-            register_trusted_directive_prefix("interview__")
-        except Exception:  # pragma: no cover - orchestrator optional at load
-            pass
+        _register_orchestrator_vocabulary()
         await self._discover_specs()
 
     async def on_reload(self):
@@ -222,6 +239,77 @@ class InterviewAction(Action):
         await engine.clear_interview_session(
             visitor, retain_context_keys=retain_context_keys
         )
+
+    async def clear_task_lock_session(
+        self,
+        visitor: Any = None,
+        *,
+        retain_context_keys: Optional[List[str]] = None,
+    ) -> None:
+        """Task-lock hook: drop the live session (a prerequisite detour starts clean)."""
+        await self._clear_interview_session(
+            visitor, retain_context_keys=retain_context_keys
+        )
+
+    # -- task-lock hooks consumed by the orchestrator's soft-abandon rule ------
+    # (ADR-0034 L5). The orchestrator decides WHEN a locked skill is being
+    # abandoned; the action owns WHAT that means for its session and task.
+
+    async def task_lock_progress_count(
+        self, skill_name: str, visitor: Any = None
+    ) -> int:
+        """Collected-field count of the active session for ``skill_name`` (0 if none).
+
+        The soft-abandon strike resets when this grows between strikes — the
+        user answered a field between off-topic attempts.
+        """
+        session = await self._get_session(visitor)
+        if session is None or session.interview_type != skill_name:
+            return 0
+        try:
+            return len(session.get_collected_summary())
+        except Exception:  # pragma: no cover - defensive
+            return 0
+
+    def task_lock_title(self, skill_name: str) -> str:
+        """Human title for the one-turn switch ask (the spec's title, else "")."""
+        spec = self._registry.get(skill_name)
+        return str(getattr(spec, "title", "") or "") if spec is not None else ""
+
+    async def task_lock_abandon(self, skill_name: str, visitor: Any = None) -> bool:
+        """Apply this skill's ``on_abandon`` policy to its active task.
+
+        Reuses the reaper's park-or-cancel executor so the soft-abandon and the
+        staleness reaper share one code path: park (snapshot + park + clear the
+        live session) or cancel. Returns ``True`` when a task was found and the
+        policy applied, ``False`` otherwise.
+        """
+        conversation = getattr(visitor, "conversation", None)
+        if conversation is None or not skill_name:
+            return False
+        await self._ensure_specs_loaded()
+        spec = self._registry.get(skill_name)
+        if spec is None:
+            return False
+        from jvagent.action.interview.reaper import _apply_abandon
+
+        handle = tasks._find_existing_active_task(visitor, skill_name)
+        if handle is None:
+            return False
+        store = getattr(visitor, "tasks", None)
+        if store is None:
+            try:
+                from jvagent.memory.task_store import TaskStore
+
+                store = TaskStore(conversation)
+            except Exception:  # pragma: no cover - defensive
+                store = None
+        try:
+            await _apply_abandon(conversation, store, handle, spec)
+        except Exception as exc:
+            logger.warning("InterviewAction.task_lock_abandon failed: %s", exc)
+            return False
+        return True
 
     async def _close_task(
         self,

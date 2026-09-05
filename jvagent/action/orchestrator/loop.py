@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.constants import (
     _NON_SUBSTANTIVE_TOOLS,
+    DECISION_META_KEYS,
+    MODEL_ERROR_ACTION,
+    MODEL_TRUNCATED_ACTION,
+    TOOL_PROTOCOL_NATIVE,
     is_untrusted_directive_source,
 )
 from jvagent.action.orchestrator.loop_helpers import (
@@ -48,7 +52,49 @@ def _orch():
     return orchestrator_interact_action
 
 
+def _stamp_observations(
+    observations: List[Dict[str, Any]], since: int, meta: Dict[str, Any]
+) -> None:
+    """Tie the first observation a decision produced back to that decision.
+
+    Native protocol (ADR-0044): the provider's tool-call id (``call_id`` /
+    ``group_id``), the tool it named and the arguments it sent (``call_tool`` /
+    ``call_args``), and any prose it emitted (``assistant_text``) are attached
+    to the first non-server-prep observation appended after the decision — the
+    dispatched result, or the guard note that stood in for it. Server-prep notes
+    (skill-session bootstraps, re-grounding) are never model results and stay
+    plain harness notes. No-op for decisions without metadata (JSON protocol,
+    canned test decisions).
+    """
+    if not meta:
+        return
+    for obs in observations[since:]:
+        if not isinstance(obs, dict) or obs.get("kind") == "server_prep":
+            continue
+        if obs.get("call_id") or obs.get("assistant_text"):
+            return  # already stamped
+        for key, value in meta.items():
+            if value not in (None, ""):
+                obs.setdefault(key, value)
+        return
+
+
 class OrchestratorLoopMixin:
+    def _no_decision_nudge(self) -> str:
+        """The observation appended when the model returned nothing usable."""
+        protocol = getattr(self, "_protocol", None)
+        if callable(protocol) and protocol() == TOOL_PROTOCOL_NATIVE:
+            return (
+                "(Your previous response contained neither a tool call nor a "
+                "reply. Take exactly one step now: call one tool, or reply to "
+                "the user in plain text.)"
+            )
+        return (
+            "(Your previous response was not a single valid JSON object. Reply "
+            "with exactly ONE JSON object for your next step — a tool call or a "
+            "final answer. Keep it short.)"
+        )
+
     def _parameter_pool(self, visitor: Any) -> List[Any]:
         """The turn's parameter pool — the single read path for every rule.
 
@@ -165,6 +211,176 @@ class OrchestratorLoopMixin:
             update_prompt_cache("parameters", section)
         return section
 
+    async def _next_decision(
+        self,
+        visitor: "InteractWalker",
+        *,
+        utterance: str,
+        history: List[Dict[str, str]],
+        visible_tools: List[Any],
+        observations: List[Dict[str, Any]],
+        flow_note: str,
+        skills_section: str,
+        gear: str,
+        lean_surface: bool,
+        plan_note: str,
+        capabilities_section: str,
+        parameters_section: str,
+        nd_streak: int,
+        model_failures: int,
+    ):
+        """Obtain this tick's decision and classify it.
+
+        Returns ``(decision, outcome, nd_streak, model_failures)``. ``outcome``
+        is ``"ok"`` (a decision to normalise), ``"retry"`` (a transient model
+        fault or unusable output was noted — take another tick), or a terminal
+        ``"model_error"`` / ``"no_decision"`` the caller ends the loop with.
+
+        A provider that returned several tool calls at once (despite parallel
+        calls being disabled) had the extras queued by ``_run_model``; those are
+        drained before the model is asked again so every call it made gets a
+        result in the transcript.
+        """
+        pending = list(get_prompt_cache().get("pending_decisions") or [])
+        if pending:
+            decision = pending.pop(0)
+            update_prompt_cache("pending_decisions", pending)
+        else:
+            decision = await self._run_model(
+                visitor,
+                utterance,
+                history,
+                visible_tools,
+                observations,
+                flow_note,
+                skills_section,
+                gear=gear,
+                lean=lean_surface,
+                plan_note=plan_note,
+                capabilities_section=capabilities_section,
+                parameters_section=parameters_section,
+            )
+        fault = decision.get("action") if isinstance(decision, dict) else None
+        if fault == MODEL_ERROR_ACTION:
+            # The provider failed (after the model layer's own retries). One
+            # more attempt covers a transient blip; a second failure ends the
+            # turn honestly — the user is told the model is unavailable, never
+            # asked to rephrase.
+            model_failures += 1
+            if model_failures >= 2:
+                return None, "model_error", nd_streak, model_failures
+            return None, "retry", nd_streak, model_failures
+        model_failures = 0
+        if fault == MODEL_TRUNCATED_ACTION or decision is None:
+            # Nothing usable came back: the output hit the completion ceiling
+            # (say so — a generic "invalid JSON" nudge sends the model chasing
+            # the wrong fix) or was garbled (common when a verbose thinking model
+            # overruns the token cap). One transient miss → nudge and retry with
+            # the tool surface intact; only a persistent streak falls through to
+            # the partial-compose (work-done-but-can't-emit).
+            nd_streak += 1
+            if nd_streak >= 3:
+                return None, "no_decision", nd_streak, model_failures
+            if fault == MODEL_TRUNCATED_ACTION:
+                note = (
+                    "(Your previous response was cut off by the output length "
+                    "limit before it was complete. Respond again more concisely — "
+                    "a shorter reply, or a single tool call carrying only the "
+                    "arguments it needs.)"
+                )
+                tag = "(truncated)"
+            else:
+                note = self._no_decision_nudge()
+                tag = "(parse)"
+            observations.append({"tool": tag, "args": {}, "observation": note})
+            return None, "retry", nd_streak, model_failures
+        return decision, "ok", 0, model_failures
+
+    async def _companion_gate(
+        self,
+        visitor: "InteractWalker",
+        active_skill_doc: Any,
+        tool_name: str,
+        args: Dict[str, Any],
+        locked_companion_skill_names: Set[str],
+        loop_actions: List[Any],
+        observations: List[Dict[str, Any]],
+        soft_abandon_evaluated: bool,
+        soft_abandon_streak: int,
+        soft_abandon_title: str,
+    ):
+        """The companion gate for ``use_skill`` under a task-lock.
+
+        Returns ``None`` when the gate does not apply (no lock, not
+        ``use_skill``, or the requested skill is the locked one / a declared
+        companion). Otherwise ``(outcome, evaluated, streak, title)`` where
+        ``outcome`` is ``"bounce"`` (an observation was appended; the caller
+        takes another tick) or ``"unlock"`` (ADR-0034 L5 soft-abandon applied;
+        the caller drops the lock and re-runs the same utterance on the free
+        surface).
+
+        Two-strike soft-abandon: a non-companion ``use_skill`` under a task-lock
+        skill is a strike (the model chose to switch rather than continue).
+        Counted once per turn and escalated deterministically — streak 1
+        bounces, streak 2 also asks the one-turn switch question, and a streak
+        past the ask is the user's "yes": the bound action's abandon policy
+        applies and the lock releases.
+        """
+        requested = (args or {}).get("name")
+        if (
+            active_skill_doc is None
+            or tool_name != "use_skill"
+            or not requested
+            or requested == active_skill_doc.name
+            or requested in locked_companion_skill_names
+        ):
+            return None
+        if not soft_abandon_evaluated:
+            soft_abandon_evaluated = True
+            from jvagent.action.orchestrator.skill_tasks import action_for_skill
+
+            locked_bound = action_for_skill(active_skill_doc, loop_actions)
+            collected = await continuation.task_lock_progress_count(
+                locked_bound, active_skill_doc.name, visitor
+            )
+            soft_abandon_streak = await continuation.note_soft_abandon_strike(
+                visitor, active_skill_doc.name, collected_count=collected
+            )
+            soft_abandon_title = await continuation.task_lock_title(
+                locked_bound, active_skill_doc
+            )
+            if (
+                soft_abandon_streak > continuation.SOFT_ABANDON_ASK_STRIKE
+                and await continuation.apply_soft_abandon(
+                    visitor, locked_bound, active_skill_doc.name
+                )
+            ):
+                return (
+                    "unlock",
+                    soft_abandon_evaluated,
+                    soft_abandon_streak,
+                    soft_abandon_title,
+                )
+        if soft_abandon_streak == continuation.SOFT_ABANDON_ASK_STRIKE:
+            note = (
+                f"({requested} cannot be started while "
+                f"{active_skill_doc.name} is in progress. "
+                'Before switching, ask the user: "Want me '
+                f"to set aside the {soft_abandon_title} for "
+                'now and help with that instead?" and wait '
+                "for their answer.)"
+            )
+        else:
+            allowed = ", ".join(sorted(locked_companion_skill_names)) or "none"
+            note = (
+                f"({requested} cannot be started "
+                f"while {active_skill_doc.name} is in progress. "
+                f"Permitted companions: {allowed}. Finish or "
+                "cancel the active task first, then switch.)"
+            )
+        observations.append({"tool": tool_name, "args": args, "observation": note})
+        return "bounce", soft_abandon_evaluated, soft_abandon_streak, soft_abandon_title
+
     async def _prepare_turn(self, visitor: "InteractWalker") -> Optional[TurnState]:
         """Everything the turn needs before the first tick.
 
@@ -247,12 +463,16 @@ class OrchestratorLoopMixin:
         # off-topic; interruption/cancel is the IA's own concern.
         if self.lock_active_flow and flow_owner and flow_owner in tools:
             tool_t0 = time.perf_counter()
+            locked_timeout = float(
+                self._channel_cfg(visitor, "tool_call_timeout", self.tool_call_timeout)
+                or 0.0
+            )
             try:
-                if self.tool_call_timeout and self.tool_call_timeout > 0:
+                if locked_timeout > 0:
                     locked_result = (
                         await asyncio.wait_for(
                             tools[flow_owner].run({}),
-                            timeout=self.tool_call_timeout,
+                            timeout=locked_timeout,
                         )
                     ) or ""
                 else:
@@ -260,7 +480,7 @@ class OrchestratorLoopMixin:
             except asyncio.TimeoutError:
                 locked_result = (
                     f"(tool error: locked flow {flow_owner} timed out after "
-                    f"{self.tool_call_timeout}s)"
+                    f"{locked_timeout}s)"
                 )
             tool_timings.append(
                 {
@@ -567,7 +787,6 @@ class OrchestratorLoopMixin:
             ack_task=ack_task,
             activated=activated,
             active_skill_doc=active_skill_doc,
-            agent=agent,
             budget=budget,
             capabilities_section=capabilities_section,
             chain_deflections=chain_deflections,
@@ -616,14 +835,13 @@ class OrchestratorLoopMixin:
         state = await self._prepare_turn(visitor)
         if state is None:
             return  # the turn was completed during preparation
-        # The 47 names below are the entire interface between preparation and
+        # The names below are the entire interface between preparation and
         # the tick loop. Unpacked rather than used as `state.x` so the loop body
         # is unchanged by this split; shrinking this list is the next step.
         ack_started = state.ack_started
         ack_task = state.ack_task
         activated = state.activated
         active_skill_doc = state.active_skill_doc
-        agent = state.agent
         budget = state.budget
         capabilities_section = state.capabilities_section
         chain_deflections = state.chain_deflections
@@ -667,6 +885,13 @@ class OrchestratorLoopMixin:
         utterance = state.utterance
         visible = state.visible
         last_gear = "light"
+        # Native-protocol transcript bookkeeping (ADR-0044): the decision the
+        # previous tick acted on, and where its observations start, so the tool
+        # result it produced can be tied back to the provider's tool-call id.
+        last_dec_meta: Dict[str, Any] = {}
+        last_obs_len = len(observations)
+        # Consecutive provider failures this turn (a fault, not a model choice).
+        model_failures = 0
 
         try:
             while budget > 0:
@@ -675,6 +900,7 @@ class OrchestratorLoopMixin:
                     break
                 budget -= 1
                 ticks += 1
+                _stamp_observations(observations, last_obs_len, last_dec_meta)
                 # Gear selection (sticky, ADR-0041): heavy once a skill is
                 # active, planning is on, or after the first substantive tool.
                 # Single-model agents always run heavy.
@@ -695,45 +921,42 @@ class OrchestratorLoopMixin:
                     ack_started = True
                     ack_task = self._schedule_first_emit_ack(visitor)
                 visible_tools = [tools[n] for n in visible if n in tools]
-                decision = await self._run_model(
-                    visitor,
-                    utterance,
-                    history,
-                    visible_tools,
-                    observations,
-                    flow_note,
-                    skills_section,
-                    gear=gear,
-                    lean=lean_surface,
-                    plan_note=plan_note,
-                    capabilities_section=capabilities_section,
-                    parameters_section=parameters_section,
-                )
-                if decision is None:
-                    # A truncated/garbled decision (common when a verbose thinking
-                    # model overruns the token cap). One transient miss → nudge
-                    # and retry with the tool surface intact, so a productive turn
-                    # isn't aborted mid-task. Only a persistent streak falls
-                    # through to the partial-compose (work-done-but-can't-emit).
-                    nd_streak += 1
-                    if nd_streak >= 3:
-                        ended_via = "no_decision"
-                        break
-                    observations.append(
-                        {
-                            "tool": "(parse)",
-                            "args": {},
-                            "observation": (
-                                "(Your previous response was not a single valid "
-                                "JSON object. Reply with exactly ONE JSON object "
-                                "for your next step — a tool call or a final "
-                                "answer. Keep it short.)"
-                            ),
-                        }
+                decision, outcome, nd_streak, model_failures = (
+                    await self._next_decision(
+                        visitor,
+                        utterance=utterance,
+                        history=history,
+                        visible_tools=visible_tools,
+                        observations=observations,
+                        flow_note=flow_note,
+                        skills_section=skills_section,
+                        gear=gear,
+                        lean_surface=lean_surface,
+                        plan_note=plan_note,
+                        capabilities_section=capabilities_section,
+                        parameters_section=parameters_section,
+                        nd_streak=nd_streak,
+                        model_failures=model_failures,
                     )
+                )
+                if outcome in ("model_error", "no_decision"):
+                    ended_via = outcome
+                    break
+                if outcome == "retry" or decision is None:
                     continue
-                nd_streak = 0
+                # Strip the native-protocol bookkeeping before normalising so it
+                # can never be folded into tool arguments; it is re-attached to the
+                # observation this decision produces (see _stamp_observations).
+                last_dec_meta = {
+                    k[1:]: decision.pop(k)
+                    for k in list(decision.keys())
+                    if k in DECISION_META_KEYS
+                }
+                last_obs_len = len(observations)
                 action, tool_name, args = self._normalize(decision, tools, skill_names)
+                if last_dec_meta.get("call_id"):
+                    last_dec_meta["call_tool"] = tool_name
+                    last_dec_meta["call_args"] = dict(args or {})
                 if (
                     action == "tool"
                     and tool_name in skill_names
@@ -886,81 +1109,30 @@ class OrchestratorLoopMixin:
                             continue
                     # Companion gate: while a skill holds the turn-lock, use_skill
                     # may only (re)activate the locked skill itself or a declared
-                    # companion. Switching to an unrelated skill would abandon the
-                    # active task — block it and steer back.
-                    if (
-                        active_skill_doc is not None
-                        and tool_name == "use_skill"
-                        and (args or {}).get("name")
-                        and (args or {}).get("name") != active_skill_doc.name
-                        and (args or {}).get("name") not in locked_companion_skill_names
-                    ):
-                        requested = (args or {}).get("name")
-                        # ADR-0034 L5: a non-companion use_skill under a task-lock
-                        # interview is a soft-abandon strike (the model chose to
-                        # switch rather than answer the pending field). Count it
-                        # once per turn and escalate deterministically: streak 1
-                        # bounces, streak 2 also asks the one-turn switch question,
-                        # and a streak past the ask == the user's "yes" — apply the
-                        # skill's on_abandon and unlock so this same utterance
-                        # re-routes on the now-free surface.
-                        if not soft_abandon_evaluated:
-                            soft_abandon_evaluated = True
-                            collected = continuation.soft_abandon_collected_count(
-                                getattr(visitor, "conversation", None)
-                            )
-                            soft_abandon_streak = (
-                                await continuation.note_soft_abandon_strike(
-                                    visitor,
-                                    active_skill_doc.name,
-                                    collected_count=collected,
-                                )
-                            )
-                            soft_abandon_title = await continuation.soft_abandon_title(
-                                agent, active_skill_doc
-                            )
-                            if (
-                                soft_abandon_streak
-                                > continuation.SOFT_ABANDON_ASK_STRIKE
-                                and await continuation.apply_soft_abandon(
-                                    visitor, agent, active_skill_doc.name
-                                )
-                            ):
-                                active_skill_doc = None
-                                locked_companion_skill_names = set()
-                                locked_companion_tools = set()
-                                continue
-                        if soft_abandon_streak == continuation.SOFT_ABANDON_ASK_STRIKE:
-                            observations.append(
-                                {
-                                    "tool": tool_name,
-                                    "args": args,
-                                    "observation": (
-                                        f"({requested} cannot be started while "
-                                        f"{active_skill_doc.name} is in progress. "
-                                        'Before switching, ask the user: "Want me '
-                                        f"to set aside the {soft_abandon_title} for "
-                                        'now and help with that instead?" and wait '
-                                        "for their answer.)"
-                                    ),
-                                }
-                            )
-                            continue
-                        allowed = (
-                            ", ".join(sorted(locked_companion_skill_names)) or "none"
-                        )
-                        observations.append(
-                            {
-                                "tool": tool_name,
-                                "args": args,
-                                "observation": (
-                                    f"({requested} cannot be started "
-                                    f"while {active_skill_doc.name} is in progress. "
-                                    f"Permitted companions: {allowed}. Finish or "
-                                    "cancel the active task first, then switch.)"
-                                ),
-                            }
-                        )
+                    # companion (ADR-0034 L5 two-strike soft-abandon lives inside).
+                    gate = await self._companion_gate(
+                        visitor,
+                        active_skill_doc,
+                        tool_name,
+                        args,
+                        locked_companion_skill_names,
+                        loop_actions,
+                        observations,
+                        soft_abandon_evaluated,
+                        soft_abandon_streak,
+                        soft_abandon_title,
+                    )
+                    if gate is not None:
+                        (
+                            gate_outcome,
+                            soft_abandon_evaluated,
+                            soft_abandon_streak,
+                            soft_abandon_title,
+                        ) = gate
+                        if gate_outcome == "unlock":
+                            active_skill_doc = None
+                            locked_companion_skill_names = set()
+                            locked_companion_tools = set()
                         continue
                     # Repeat guard (pre-dispatch): a model that re-issues the
                     # SAME call (tool + args) makes no progress, and re-running
@@ -1314,6 +1486,22 @@ class OrchestratorLoopMixin:
             # runner is registered, so skill-only turns are unaffected.
             interaction = getattr(visitor, "interaction", None)
             emitted = bool(getattr(interaction, "response", "") if interaction else "")
+            _stamp_observations(observations, last_obs_len, last_dec_meta)
+            if ended_via == "model_error":
+                # The model is unreachable: no finalize call (it would fail the
+                # same way) and no clarify fallback (the user was not unclear).
+                # Deliver what the turn gathered, if anything, under an honest
+                # status line.
+                if not emitted:
+                    salvage = (
+                        _salvage_partial_answer(observations) if observations else ""
+                    )
+                    text = str(self.model_unavailable_text or "").strip()
+                    if salvage:
+                        text = f"{text}\n\n{salvage}".strip()
+                    if text:
+                        await self._send_reply(visitor, text)
+                return
             if not emitted:
                 drain_directive = await self._drain_runnable_tasks(
                     visitor, observations

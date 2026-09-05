@@ -84,10 +84,22 @@ async def test_a_gated_rule_is_absent_when_its_gate_is_off(wire):
 
 
 async def test_the_user_turn_reminder_is_the_measured_string(wire):
-    """The ~88% injection-resistance figure was measured on this exact wording.
-    If the rendered text drifts, the number stops describing what ships."""
-    cap = await wire.capture("hello there")
+    """The ~88% injection-resistance figure was measured on this exact wording
+    under the JSON protocol. If the rendered text drifts, the number stops
+    describing what ships."""
+    cap = await wire.capture("hello there", tool_protocol="json")
     assert SAFEGUARDS_REMINDER in cap.user
+
+
+async def test_the_native_reminder_keeps_the_behavioural_half(wire):
+    """Under the native protocol (ADR-0044) the same behavioural reminder rides
+    the user turn; only the JSON mechanics ("Return raw JSON only …") are gone,
+    since the provider's tool-calling API carries the decision."""
+    cap = await wire.capture("hello there", tool_protocol="native")
+    behavioural = SAFEGUARDS_REMINDER.split(" Return raw JSON only")[0]
+    assert behavioural in cap.user
+    assert "Return raw JSON only" not in cap.user
+    assert "Steps taken this turn" not in cap.user
 
 
 async def test_no_unfilled_template_slot_reaches_the_model(wire):

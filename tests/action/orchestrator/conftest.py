@@ -35,19 +35,25 @@ def _clear_skill_discovery_cache():
 
 @pytest.fixture(autouse=True)
 def _register_interview_directive_trust():
-    """Mirror ``InterviewAction.on_register`` at boot.
+    """Mirror ``InterviewAction``'s load-time vocabulary registration.
 
-    At runtime InterviewAction declares the ``interview__`` tool namespace as a
-    trusted directive source (its results carry ``next_tool`` /
-    ``response_directive``). These tests construct the loop without booting the
-    action, so register the namespace here so directive chaining from
-    ``interview__*`` results behaves as in production.
+    At runtime the interview plugin declares the ``interview__`` tool namespace
+    as a trusted directive source (its results carry ``next_tool`` /
+    ``response_directive``), ``interview_complete`` as a task-completion flag and
+    ``interview_type`` as its envelope's skill key. These tests construct the loop
+    without loading the plugin, so register the same vocabulary here so directive
+    chaining, completion detection and activation-catalog detection behave as in
+    production.
     """
     from jvagent.action.orchestrator.constants import (
+        register_task_completion_flag,
+        register_task_lock_skill_key,
         register_trusted_directive_prefix,
     )
 
     register_trusted_directive_prefix("interview__")
+    register_task_completion_flag("interview_complete")
+    register_task_lock_skill_key("interview_type")
     yield
 
 

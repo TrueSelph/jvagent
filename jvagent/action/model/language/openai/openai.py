@@ -299,6 +299,15 @@ class OpenAILanguageModelAction(LanguageModelAction):
 
         if tools:
             payload["tools"] = tools
+            # Tool-choice controls ride only with tools (OpenAI rejects them
+            # otherwise). The orchestrator sends ``parallel_tool_calls=False`` so
+            # each tick is exactly one call (SPEC §3.3 invariant 1).
+            tool_choice = kwargs.get("tool_choice")
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
+            parallel = kwargs.get("parallel_tool_calls")
+            if parallel is not None:
+                payload["parallel_tool_calls"] = bool(parallel)
 
         # response_format passthrough — callers (notably ReflexHelm) use
         # ``{"type": "json_object"}`` to force JSON mode on providers that

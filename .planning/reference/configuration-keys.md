@@ -174,8 +174,12 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 |---|---|---|
 | `model` | `gpt-4o-mini` | main/heavy orchestrator model (the reasoning tier when gearing is on) |
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
+| `tool_protocol` | `native` | how decisions are exchanged with the model (ADR-0044). `native`: JSON-Schema'd tool definitions go to the provider, its `tool_calls` are the step, plain text is the reply, and the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: the original one-JSON-object-per-step text contract (tools listed as prose) — for providers/models without reliable function calling |
+| `enforce_json_mode` | `true` | JSON protocol only: request `response_format=json_object`. Ignored under `native` and by providers without a JSON mode (Anthropic) |
+| `model_unavailable_text` | (built-in) | reply when the loop's model call fails on two consecutive attempts — the user is told the service is unavailable, never asked to rephrase (`clarify_text` is for silent turns) |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
 | `history_limit` | `4` | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit`. Loop history omits `[EVENT]` lines (ADR-0041) |
+| `history_statement_max_chars` | `4000` | per-statement cap on each replayed prior utterance/response (history is resent every tick). `0` disables |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
 | `proactive_tasks_enabled` | `true` | surface the `queue_task` tool for enqueueing `PROACTIVE` tasks (ADR-0022) |
@@ -197,9 +201,9 @@ piece and logs a warning, so a bad string never breaks a turn.
 
 | Key | Placeholders | Effect |
 |---|---|---|
-| `system_prompt` | `{identity_section}` `{session_context_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` `{extra_section}` | the main system-prompt body (identity → SESSION CONTEXT → protocol → extras → capabilities → tools → skills → OPERATING RULES). `{session_context_section}` is ADR-0042 clock/channel ground truth |
+| `system_prompt` | `{identity_section}` `{session_context_section}` `{protocol_section}` `{capabilities_section}` `{tools_section}` `{skills_section}` `{loop_protocol_extra}` `{parameters_section}` `{extra_section}` | the main system-prompt body (identity → SESSION CONTEXT → protocol → extras → capabilities → tools → skills → OPERATING RULES). `{session_context_section}` is ADR-0042 clock/channel ground truth; `{protocol_section}` is the decision-protocol paragraph for `tool_protocol` (ADR-0044). A persisted value equal to the pre-0044 built-in is treated as the default |
 | `system_prompt_extra` | — | extra text appended after the base body (safe additive; no placeholders needed) |
-| `user_prompt` | `{utterance}` `{observations_section}` (`{history_section}` accepted but rendered empty — history rides the structured-message channel) | the per-tick user prompt; the `SAFEGUARDS_REMINDER` (peak-attention OPERATING-RULES reminder) is appended to it each step |
+| `user_prompt` | `{utterance}` `{observations_section}` (`{history_section}` accepted but rendered empty — history rides the structured-message channel) | the per-tick user prompt; the `SAFEGUARDS_REMINDER` (peak-attention OPERATING-RULES reminder) is appended to it each step. Under `tool_protocol: native` the steps replay as messages and `{observations_section}` renders empty; the JSON-era default is swapped for the native template automatically |
 | `parameters` | — | scoped behavioural rules `{scope, condition?, response, enforcement?, detector?, placement?, key?, tier?}` (the **common parameter subsystem**, on the `Action` base). `scope: orchestration` rules render in the LOOP PROTOCOL; `scope: response` (default when unspecified) render in the reply compose; the executive natively owns the orchestration core, the ReplyAction the response core, and every action's params are pooled onto the interaction each turn |
 | `flow_in_progress_prompt` | `{flow_note}` | appended while a flow is active |
 | `finalize_prompt` | — | appended on the partial-compose finalize tick |
@@ -252,7 +256,7 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `max_duration_seconds` | `0` | wall-clock cap on the whole turn (alongside `activation_budget`); `0` disables |
 | `max_statement_length` | `None` | soft reply-length cap (chars), injected as a prompt instruction |
 | `tool_tier` | `standard` | core-tool tier: `minimal` \| `standard` \| `full` |
-| `tool_call_timeout` | `0` | per-tool-call timeout (s); `0` disables |
+| `tool_call_timeout` | `120` | per-tool-call timeout (s) — a tool that exceeds it returns a timeout observation instead of hanging the turn; `0` disables. Channel-overridable |
 | `block_raw_tool_invocation` | `false` | only surfaced (visible) tools are callable; hidden ones need `find_tool`/a skill |
 | `lean_tool_threshold` | `15` | lean tool surfacing (ADR-0018): when the count of hideable capability tools (action + MCP) exceeds this, the long tail is kept off the prompt and reached via `find_tool`. `0` disables (always list every tool). Egress/meta/core/active-flow tools are always visible |
 | `lean_presurface_k` | `6` | in lean mode, how many capability tools to pre-surface each turn by relevance to the user's message (token overlap, no model call), so common single-intent turns need no `find_tool` round-trip. **`0` = essentials-only** (see recipe below) |

@@ -465,8 +465,9 @@ async def push_unmet_prerequisites(
                     snap = await bound.snapshot_task_state(doc.name, visitor)
                     if snap:
                         await gated.set_snapshot(snap)
-                if hasattr(bound, "_clear_interview_session"):
-                    await bound._clear_interview_session(visitor)
+                clear = getattr(bound, "clear_task_lock_session", None)
+                if callable(clear):
+                    await clear(visitor)
             except Exception as exc:
                 logger.debug("push: snapshot/clear failed for %s: %s", doc.name, exc)
         seed = _build_seed(visitor, entry.get("seed_from") or [])
@@ -986,12 +987,21 @@ def _append_session_note(observations: List[Dict[str, Any]], note: str) -> None:
 
 
 def _observation_has_activation_catalog(text: str, skill_name: str) -> bool:
-    """True when ``text`` is a fresh activation envelope for ``skill_name``."""
+    """True when ``text`` is a fresh activation envelope for ``skill_name``.
+
+    An envelope names its owning task-lock skill under one of the registered
+    ``task_lock_skill_keys`` (the generic ``task_lock_skill``, plus whatever
+    key a plugin registered at load — the orchestrator carries no plugin
+    literals). A catalog is the typed envelope itself or a ``field_reference``
+    block following an activation line.
+    """
     if not text or not skill_name:
         return False
-    has_type = (
-        f'"interview_type": "{skill_name}"' in text
-        or f'"interview_type":"{skill_name}"' in text
+    from jvagent.action.orchestrator.constants import task_lock_skill_keys
+
+    has_type = any(
+        f'"{key}": "{skill_name}"' in text or f'"{key}":"{skill_name}"' in text
+        for key in task_lock_skill_keys()
     )
     activated = f"Activated skill '{skill_name}'" in text
     if not (activated or has_type):
@@ -1006,7 +1016,7 @@ def activation_catalog_in_observations(
     """True when this turn already has the skill's activation catalog.
 
     Used to skip ``prepare_task_lock_turn`` re-grounding on the same turn as
-    ``use_skill`` / skill-session bootstrap so ``interview_type`` +
+    ``use_skill`` / skill-session bootstrap so the typed envelope +
     ``field_reference`` appear once under Steps taken this turn.
     """
     for ob in observations:

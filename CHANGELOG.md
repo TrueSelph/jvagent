@@ -10,12 +10,46 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Native tool-calling decision protocol (ADR-0044).** `OrchestratorInteractAction.tool_protocol`
+  (`native`, default | `json`). Under `native` the loop hands the provider
+  JSON-Schema'd tool definitions, reads the decision from `tool_calls`, treats
+  plain text as the reply, and replays the turn's steps as assistant
+  `tool_calls` + `tool` result messages. `SkillTool` carries `parameters_schema`;
+  core/catalog/proactive tools declare theirs. `json` keeps the previous
+  structured-JSON-in-text contract byte for byte. Persisted JSON-era prompt
+  defaults are recognised and rendered with the protocol-correct built-ins.
+- **Model-fault decisions.** A failed provider call or a truncated completion
+  reaches the loop as `model_error` / `model_truncated` instead of `None`. Two
+  consecutive provider failures end the turn with the new
+  `model_unavailable_text` (never `clarify_text`) and skip the finalize call;
+  truncation gets its own nudge. `ended_via=model_error` is recorded.
+- **`history_statement_max_chars`** (default 4000) bounds each prior statement
+  replayed as loop history.
+- **Task-lock plugin hooks** (thin-harness invariants 6/8): `task_lock_progress_count`,
+  `task_lock_title`, `task_lock_abandon`, `clear_task_lock_session` on the bound
+  action, plus `register_task_completion_flag` / `register_task_lock_skill_key`
+  in `orchestrator/constants.py`. `InterviewAction` implements the hooks and
+  registers its vocabulary at load.
+- Audit: `.planning/reviews/2026-09-05-orchestrator-harness-audit.md`.
+
 - **Runbook: multi-container bootstrap** — ``.planning/runbooks/multi-container-bootstrap.md`` (Lambda/replica Redis lease, heal steps, checklist).
 - **`jvagent/core/upsert.py`** — ADR-0033 raw-record identity lookups for actions.
 - **`jvagent/action/registration.py`** — ``resolve_action_for_registration`` used by ``register_action``.
 
 ### Changed
 
+- **Orchestrator `tool_call_timeout` default is now 120 s** (was `0` =
+  unbounded): a hung tool returns a timeout observation instead of holding the
+  turn and the conversation lock indefinitely. `0` still disables; the locked
+  IA dispatch now honours the channel override too.
+- **Orchestrator no longer imports the interview package.** `continuation.py`
+  soft-abandon, `_append_directive_hint`, the prerequisite-push session clear
+  and completion/activation-envelope detection are generic (hooks + registered
+  vocabulary). `tests/action/orchestrator/test_no_interview_coupling.py` now
+  fails on any interview import, `InterviewAction` lookup or envelope literal.
+- `OpenAILanguageModelAction` passes `tool_choice` / `parallel_tool_calls`
+  through; `AnthropicLanguageModelAction` maps them to `tool_choice` /
+  `disable_parallel_tool_use`.
 - **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
   Removed `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` and
   `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`. Lambda cold starts and merge redeploys

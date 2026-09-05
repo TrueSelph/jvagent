@@ -62,12 +62,48 @@ def build_proactive_tools(action: Any, visitor: Any) -> List[SkillTool]:
         SkillTool(
             name="queue_task",
             description=(
-                "Queue a proactive task for later Orchestrator execution. "
-                "Args: directive (required), title, not_before, not_after, "
-                "priority, skill, requires_tasks, trigger_on "
-                "(schedule|user_message|keyword|mood|any), trigger_keyword, "
-                "trigger_mood, max_attempts."
+                "Queue a proactive task for later Orchestrator execution "
+                "(agent-initiated follow-up)."
             ),
             run=_queue_task,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "directive": {
+                        "type": "string",
+                        "description": "What the agent should do when the task runs.",
+                    },
+                    "title": {"type": "string"},
+                    "context": {
+                        "type": "string",
+                        "description": "Background the task needs to carry.",
+                    },
+                    "not_before": {
+                        "type": "string",
+                        "description": "ISO-8601 earliest run time.",
+                    },
+                    "not_after": {
+                        "type": "string",
+                        "description": "ISO-8601 latest run time.",
+                    },
+                    "priority": {"type": "string"},
+                    "skill": {
+                        "type": "string",
+                        "description": "Skill to activate when the task runs.",
+                    },
+                    "requires_tasks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "trigger_on": {
+                        "type": "string",
+                        "enum": ["schedule", "user_message", "keyword", "mood", "any"],
+                    },
+                    "trigger_keyword": {"type": "string"},
+                    "trigger_mood": {"type": "string"},
+                    "max_attempts": {"type": "integer"},
+                },
+                "required": ["directive"],
+            },
         )
     ]
