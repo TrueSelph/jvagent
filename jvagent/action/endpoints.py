@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError
+from jvspatial.api.exceptions import JVSpatialAPIException, ResourceNotFoundError
 from jvspatial.core.pager import ObjectPager
 
 from jvagent.action.base import Action
@@ -274,8 +274,19 @@ async def update_action(
 async def delete_action(action_id: str) -> Dict[str, Any]:
     """Delete an action and cascade to its child nodes.
 
-    Uses `Action.delete()` with cascade, which deletes all outgoing child nodes
-    before deleting the action itself.
+    Routes through ``Actions.deregister_action`` so the full lifecycle runs:
+    endpoint unregistration, module unload, ``on_deregister``, manager
+    disconnect, cascade delete, counter and cache invalidation.
+
+    A direct ``Action.delete(cascade=True)`` is used **only** when the action
+    has no reachable manager to route through (missing agent or missing
+    ``Actions`` node). That path skips lifecycle cleanup, so it is logged as a
+    warning rather than taken silently.
+
+    When ``deregister_action`` reports failure the node is left in place and the
+    error is surfaced. Falling back to a hard delete there would return 200
+    while endpoint unregistration, module unload and ``on_deregister`` had been
+    skipped — the action node disappears but its routes and modules stay live.
 
 
     **Args:**
@@ -291,6 +302,7 @@ async def delete_action(action_id: str) -> Dict[str, Any]:
     **Raises:**
 
     - ResourceNotFoundError: If action not found
+    - JVSpatialAPIException: If deregistration failed and the action still exists
     """
     action = await Action.get(action_id)
     if not action:
@@ -299,17 +311,68 @@ async def delete_action(action_id: str) -> Dict[str, Any]:
             details={"action_id": action_id},
         )
 
-    from jvagent.core.agent import Agent
+    agent_id = action.agent_id
+    agent = await Agent.get(agent_id)
+    actions_manager = await agent.get_actions_manager() if agent else None
 
-    agent = await Agent.get(action.agent_id)
-    if agent:
-        actions_manager = await agent.get_actions_manager()
-        if actions_manager and await actions_manager.deregister_action(action_id):
-            return {"message": "Action deleted successfully"}
+    if actions_manager is None:
+        logger.warning(
+            "Deleting action %s directly: no %s to deregister through. "
+            "Endpoint unregistration, module unload and on_deregister are skipped.",
+            action_id,
+            "agent" if agent is None else "Actions manager",
+            extra={
+                "details": {
+                    "action_id": action_id,
+                    "agent_id": agent_id,
+                    "context": "delete_action",
+                    "error_code": "action_delete_no_manager",
+                }
+            },
+        )
+        await action.delete(cascade=True)
+        return {"message": "Action deleted successfully"}
 
-    await action.delete(cascade=True)
+    if await actions_manager.deregister_action(action_id):
+        return {"message": "Action deleted successfully"}
 
-    return {"message": "Action deleted successfully"}
+    # deregister_action returned False. It swallows its own exceptions, so this
+    # covers both "the node was already gone" and "cleanup raised part-way
+    # through". Re-read to tell them apart: if the node is gone the delete did
+    # land (bookkeeping after it may not have), which is idempotent success.
+    if await Action.get(action_id) is None:
+        logger.warning(
+            "deregister_action reported failure for %s but the node is gone; "
+            "treating as deleted. Post-delete bookkeeping may not have completed.",
+            action_id,
+            extra={
+                "details": {
+                    "action_id": action_id,
+                    "agent_id": agent_id,
+                    "context": "delete_action",
+                    "error_code": "action_delete_partial",
+                }
+            },
+        )
+        return {"message": "Action deleted successfully"}
+
+    logger.error(
+        "Failed to deregister action %s; node left in place. See the "
+        "deregister_action error above for the underlying cause.",
+        action_id,
+        extra={
+            "details": {
+                "action_id": action_id,
+                "agent_id": agent_id,
+                "context": "delete_action",
+                "error_code": "action_deregister_failed",
+            }
+        },
+    )
+    raise JVSpatialAPIException(
+        message=f"Failed to deregister action '{action_id}'",
+        details={"action_id": action_id, "agent_id": agent_id},
+    )
 
 
 @endpoint(
