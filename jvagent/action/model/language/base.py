@@ -23,7 +23,12 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.model.base import BaseModelAction
 
 if TYPE_CHECKING:
-    pass
+    from jvagent.action.model.contract import (
+        ModelCapabilities,
+        ModelRequest,
+        ModelResponse,
+        Pricing,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -309,6 +314,18 @@ class ModelActionResult:
             if self.stream:
                 async for chunk in self.stream:
                     yield chunk
+
+    def to_response(self) -> "ModelResponse":
+        """The normalised :class:`~jvagent.action.model.contract.ModelResponse`.
+
+        Consumers should read this rather than ``finish_reason`` / ``tool_calls``
+        / ``metrics`` directly: finish reasons, tool-call arguments and cache
+        usage keys are normalised across providers here (Phase 1 of the
+        model-integration remediation).
+        """
+        from jvagent.action.model.contract import ModelResponse
+
+        return ModelResponse.from_result(self)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary for API responses.
@@ -996,6 +1013,68 @@ class LanguageModelAction(BaseModelAction, ABC):
                 result.stream = stream_with_estimation()
 
         return result
+
+    # ============================================================================
+    # Normalised contract (ModelAdapter) — Phase 1 of the model remediation
+    # ============================================================================
+
+    async def complete(
+        self,
+        request: "ModelRequest",
+        *,
+        calling_action_name: Optional[str] = None,
+    ) -> "ModelResponse":
+        """Run a :class:`~jvagent.action.model.contract.ModelRequest` and return
+        the normalised :class:`~jvagent.action.model.contract.ModelResponse`.
+
+        The contract entry point: the same observability, retries and slot
+        resolution as :meth:`query_messages`, with provider quirks (finish
+        reasons, tool-call argument parsing, cache usage keys) normalised in the
+        response. A streaming request is drained here and returned whole; use
+        :meth:`query_messages` directly to consume chunks.
+        """
+        kwargs = request.to_query_kwargs()
+        kwargs["calling_action_name"] = calling_action_name
+        result = await self.query_messages(**kwargs)
+        if request.stream:
+            await result.get_response()
+        return result.to_response()
+
+    def capabilities(self, model: Optional[str] = None) -> "ModelCapabilities":
+        """Per-model capabilities. Unknown until Phase 2 populates them from
+        provider metadata; subclasses may override with what they know."""
+        from jvagent.action.model.contract import ModelCapabilities
+
+        return ModelCapabilities(source="unknown")
+
+    def pricing(self, model: Optional[str] = None) -> Optional["Pricing"]:
+        """USD per million tokens for ``model`` (or this action's default), from
+        the bundled table; ``None`` when the model is not priced."""
+        from jvagent.action.model.contract import Pricing
+        from jvagent.action.model.cost_estimator import (
+            _LLM_PRICING_BY_PROVIDER,
+            cache_rates_for_provider,
+        )
+
+        provider = str(getattr(self, "provider", "") or "").lower()
+        model_id = str(model or self.model or "")
+        table = _LLM_PRICING_BY_PROVIDER.get(provider) or {}
+        entry = table.get(model_id)
+        if entry is None:
+            for key, value in table.items():
+                if key and model_id.startswith(key):
+                    entry = value
+                    break
+        if not entry:
+            return None
+        rates = cache_rates_for_provider(provider)
+        return Pricing(
+            input_per_million=float(entry.get("input", 0.0)),
+            output_per_million=float(entry.get("output", 0.0)),
+            cached_read_multiplier=float(rates.get("read", 1.0)),
+            cached_write_multiplier=float(rates.get("write", 1.0)),
+            source="bundled",
+        )
 
     async def query_sync(
         self,

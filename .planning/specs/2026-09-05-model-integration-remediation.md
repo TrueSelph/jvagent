@@ -1,6 +1,6 @@
 # Model integration remediation — proposal
 
-**Date:** 2026-09-05 · **Status:** Proposed · **Follows:** [2026-09-05 orchestrator harness audit](../reviews/2026-09-05-orchestrator-harness-audit.md), [ADR-0044](../adr/0044-native-tool-calling-protocol.md)
+**Date:** 2026-09-05 · **Status:** Accepted — Phase 1 landed (contract, adapter wrap, conformance suite; see CHANGELOG); Phases 2–4 pending · **Follows:** [2026-09-05 orchestrator harness audit](../reviews/2026-09-05-orchestrator-harness-audit.md), [ADR-0044](../adr/0044-native-tool-calling-protocol.md)
 
 ## 0. One-paragraph answer
 

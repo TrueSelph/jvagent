@@ -10,6 +10,26 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Normalised model contract (remediation Phase 1).** `jvagent/action/model/contract.py`:
+  `ModelRequest`, `ModelResponse`, `ToolCall`, `Usage`, `FinishReason`,
+  `ModelCapabilities`, `Pricing`, `ModelAdapter`. `LanguageModelAction.complete()`
+  runs a request and returns the normalised response; `ModelActionResult.to_response()`
+  converts legacy results. Finish reasons, tool-call arguments and cache usage
+  keys are unified across OpenAI, Anthropic and Ollama. The Orchestrator reads
+  only the contract. `capabilities()` / `pricing()` declared (unknown / bundled
+  table until Phase 2).
+- **Provider conformance suite** `tests/action/model/conformance/`: every
+  adapter × twelve scenarios (text, tool call, parallel calls, tool-result
+  round-trip, streamed text, streamed tool call, truncation, cached usage,
+  thinking, 429 retry, 5xx, malformed body) against replayed fixtures, with
+  `JVAGENT_CONFORMANCE_RECORD=1` to re-record from real endpoints.
+
+### Fixed
+
+- **Anthropic non-streaming dropped `thinking` blocks** unless the call itself
+  passed a `thinking` config; reasoning enabled server-side or via the generic
+  passthrough was lost. Found by the conformance suite.
+
 - **Native tool-calling decision protocol (ADR-0044).** `OrchestratorInteractAction.tool_protocol`
   (`native`, default | `json`). Under `native` the loop hands the provider
   JSON-Schema'd tool definitions, reads the decision from `tool_calls`, treats
