@@ -77,6 +77,60 @@ Example (`agent.yaml`):
     reasoning_effort: low
 ```
 
+## The normalised contract (`jvagent.action.model.contract`)
+
+Consumers read one shape, whatever the provider: [`ModelRequest`](../jvagent/action/model/contract.py)
+in, [`ModelResponse`](../jvagent/action/model/contract.py) out.
+
+```python
+from jvagent.action.model.contract import ModelRequest
+
+response = await model_action.complete(
+    ModelRequest(messages=messages, tools=tools, tool_choice="auto")
+)
+response.text            # str
+response.tool_calls      # [ToolCall(id, name, arguments: dict, raw_arguments)]
+response.finish_reason   # "stop" | "tool_calls" | "length" | "content_filter" | "error" | "unknown"
+response.usage           # Usage(prompt, completion, total, cached_read, cached_write, thinking, estimated)
+response.thinking        # provider reasoning text when present
+response.truncated       # finish_reason == "length"
+```
+
+Provider quirks are normalised in the contract, not at call sites: Anthropic
+`max_tokens` / `end_turn` / `tool_use` and Ollama `length` / `stop` map onto
+the same finish reasons (a response carrying tool calls is `tool_calls` even
+when the provider labelled it `stop`); OpenAI `prompt_tokens_details.cached_tokens`
+and Anthropic `cache_read_input_tokens` both land in `usage.cached_read_tokens`;
+tool-call arguments are parsed to a dict with the raw string kept for the
+unparseable case. `ModelActionResult.to_response()` returns the same object, so
+existing `query_messages()` callers can migrate one read at a time. The
+Orchestrator already consumes only the contract.
+
+`capabilities(model)` and `pricing(model)` are declared on every language-model
+action; in this phase capabilities are all "unknown" (never guessed) and pricing
+comes from the bundled table. Phase 2 of the
+[remediation plan](../.planning/specs/2026-09-05-model-integration-remediation.md)
+populates both from provider metadata.
+
+### Conformance suite
+
+`tests/action/model/conformance/` drives **every** adapter through the same
+twelve logical exchanges — plain text, one tool call, parallel tool calls, a
+tool-result round-trip (asserting the result went back in the provider's own
+shape), streamed text, streamed tool-call assembly, truncation, cached usage,
+thinking, a 429 retry, a 5xx failure and a malformed body — and asserts the same
+normalised `ModelResponse` for each. Responses replay from fixtures: a recording
+under `fixtures/<provider>/<scenario>.json` when present, otherwise the authored
+wire body in `authored.py`. To (re-)record a provider against its real endpoint:
+
+```bash
+JVAGENT_CONFORMANCE_RECORD=1 OPENAI_API_KEY=... pytest tests/action/model/conformance -k openai
+```
+
+Recording is skipped (not failed) for providers whose key is absent. Adding a
+provider means adding it to `PROVIDERS` and supplying bodies for every
+scenario — `test_scenario_matrix_is_complete` refuses a partial matrix.
+
 ## Loop integration (Orchestrator)
 
 The Orchestrator think-act-observe loop passes model kwargs to the active

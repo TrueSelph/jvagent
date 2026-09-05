@@ -520,18 +520,20 @@ class AnthropicLanguageModelAction(LanguageModelAction):
             response_text, tool_calls, finish_reason = self._extract_result_fields(data)
             usage = self._extract_usage(data)
 
-            # Extract thinking content if present
+            # Extract thinking content whenever the response carries it — not
+            # only when this call asked for it: reasoning may be enabled by a
+            # server-side default or the generic ``reasoning`` passthrough, and
+            # the conformance suite asserts thinking is surfaced when present.
             thinking_content = None
             thinking_tokens = None
-            thinking_config = kwargs.get("thinking")
-            if thinking_config:
-                content_items = data.get("content", [])
-                thinking_parts = [
-                    block.get("thinking", "")
-                    for block in content_items
-                    if isinstance(block, dict) and block.get("type") == "thinking"
-                ]
-                thinking_content = "".join(thinking_parts) or None
+            content_items = data.get("content", [])
+            thinking_parts = [
+                block.get("thinking", "")
+                for block in content_items
+                if isinstance(block, dict) and block.get("type") == "thinking"
+            ]
+            if any(thinking_parts):
+                thinking_content = "".join(thinking_parts)
                 thinking_tokens = usage.get("output_tokens", 0)
 
             return ModelActionResult(

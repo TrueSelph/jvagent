@@ -34,6 +34,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.utils.uploads import DEFAULT_UPLOAD_KEYS
+from jvagent.action.model.contract import ModelResponse
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.catalog import (
@@ -3677,12 +3678,15 @@ class OrchestratorInteractAction(
             trace = getattr(result, "thinking_content", None)
             if trace:
                 await self._emit_thought(visitor, str(trace))
-        raw = (getattr(result, "response", None) or "").strip()
-        finish = str(getattr(result, "finish_reason", "") or "").strip().lower()
-        truncated = finish in ("length", "max_tokens")
+        # Read the normalised contract, never provider fields: finish reasons
+        # (``length`` vs ``max_tokens``), tool-call argument parsing and cache
+        # usage keys are unified in ModelResponse (model remediation, Phase 1).
+        response = ModelResponse.from_result(result)
+        raw = response.text.strip()
+        truncated = response.truncated
         if native:
             decisions = decisions_from_native_result(
-                getattr(result, "tool_calls", None),
+                response.tool_calls_openai(),
                 raw,
                 alias_map=alias_map,
                 text_as_reply=(not finalize) and any(t.name == "reply" for t in tools),
