@@ -1,0 +1,38 @@
+# LiteLLM Language Model Action Package Descriptor
+
+package:
+  # Action name in namespace/action_name format
+  name: jvagent/litellm_lm
+
+  # Package author
+  author: jvagent
+
+  # Archetype: The main Action class name
+  archetype: LiteLLMLanguageModelAction
+
+  # Package version
+  version: 0.0.1
+
+  # Package metadata
+  meta:
+    title: LiteLLM Language Model Action
+    description: >-
+      Universal language-model adapter over LiteLLM (ADR-0045): one action for
+      100+ providers (OpenAI, Anthropic, Gemini, Bedrock, Azure, Mistral,
+      Groq, OpenRouter, Ollama, ...) with tool calling, streaming, per-model
+      capability metadata and upstream-maintained pricing, behind the
+      normalised jvagent model contract.
+    group: jvagent
+    type: language_model_action
+
+  # Package configuration
+  config:
+    order:
+      weight: 0
+
+  # Package dependencies
+  dependencies:
+    jvagent: ~0.0.1
+    # Pip dependencies (installed automatically before action loading)
+    pip:
+      - litellm>=1.82.0

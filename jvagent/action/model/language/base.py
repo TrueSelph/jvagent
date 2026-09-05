@@ -407,6 +407,16 @@ class LanguageModelAction(BaseModelAction, ABC):
     top_p: float = attribute(
         default=1.0, description="Nucleus sampling parameter", ge=0.0, le=1.0
     )
+    model_capabilities: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description=(
+            "Operator override for the model's capabilities (ADR-0045): any of "
+            "supports_tools, supports_parallel_tools, supports_json_mode, "
+            "supports_structured_output, supports_vision, supports_thinking, "
+            "context_window, max_output_tokens. Wins over LiteLLM metadata and "
+            "the bundled table; unset keys keep the resolved value."
+        ),
+    )
 
     # ============================================================================
     # Abstract Methods (Provider Implementation)
@@ -1041,39 +1051,23 @@ class LanguageModelAction(BaseModelAction, ABC):
         return result.to_response()
 
     def capabilities(self, model: Optional[str] = None) -> "ModelCapabilities":
-        """Per-model capabilities. Unknown until Phase 2 populates them from
-        provider metadata; subclasses may override with what they know."""
-        from jvagent.action.model.contract import ModelCapabilities
+        """Per-model capabilities (ADR-0045): operator override → LiteLLM
+        metadata (when installed) → bundled table → unknown. Never guessed."""
+        from jvagent.action.model.capabilities import resolve_capabilities
 
-        return ModelCapabilities(source="unknown")
-
-    def pricing(self, model: Optional[str] = None) -> Optional["Pricing"]:
-        """USD per million tokens for ``model`` (or this action's default), from
-        the bundled table; ``None`` when the model is not priced."""
-        from jvagent.action.model.contract import Pricing
-        from jvagent.action.model.cost_estimator import (
-            _LLM_PRICING_BY_PROVIDER,
-            cache_rates_for_provider,
+        return resolve_capabilities(
+            str(model or self.model or ""),
+            provider=str(getattr(self, "provider", "") or ""),
+            overrides=getattr(self, "model_capabilities", None),
         )
 
-        provider = str(getattr(self, "provider", "") or "").lower()
-        model_id = str(model or self.model or "")
-        table = _LLM_PRICING_BY_PROVIDER.get(provider) or {}
-        entry = table.get(model_id)
-        if entry is None:
-            for key, value in table.items():
-                if key and model_id.startswith(key):
-                    entry = value
-                    break
-        if not entry:
-            return None
-        rates = cache_rates_for_provider(provider)
-        return Pricing(
-            input_per_million=float(entry.get("input", 0.0)),
-            output_per_million=float(entry.get("output", 0.0)),
-            cached_read_multiplier=float(rates.get("read", 1.0)),
-            cached_write_multiplier=float(rates.get("write", 1.0)),
-            source="bundled",
+    def pricing(self, model: Optional[str] = None) -> Optional["Pricing"]:
+        """USD per million tokens for ``model`` (or this action's default):
+        LiteLLM metadata when available, else the bundled table, else ``None``."""
+        from jvagent.action.model.cost_estimator import pricing_for
+
+        return pricing_for(
+            str(getattr(self, "provider", "") or ""), str(model or self.model or "")
         )
 
     async def query_sync(
