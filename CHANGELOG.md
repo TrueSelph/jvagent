@@ -10,6 +10,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Model resilience policy (ADR-0046, remediation Phase 3).** Orchestrator
+  `model_fallbacks` / `light_model_fallbacks` (same-tick fallback chain),
+  `circuit_breaker_failures` / `circuit_breaker_cooldown_seconds` (per
+  action×model breaker, per event loop; skipped in the chain; reported by
+  `healthcheck()`), `max_turn_cost_usd` (ends the loop with
+  `ended_via=budget_exhausted` + one partial-compose) and
+  `max_conversation_cost_usd` / `budget_exhausted_text` (turn blocked without a
+  model call; spend accumulated on `conversation.context["_cost_usd_total"]`),
+  `structured_decisions` (JSON protocol sends the decision schema as
+  `response_format: json_schema`, or a forced decision tool on Anthropic, when
+  the model supports structured output). Activation events carry
+  `fallbacks_used` and `turn_cost_usd`. New module
+  `jvagent/action/model/resilience.py`.
+- **Retry hygiene** on every model action: `retry_total_deadline_seconds`
+  (default 60; a retry that would start past it is not attempted) and
+  `retry_on_timeout` (default on; off stops non-idempotent completion retries).
+
 - **Capability-driven model integration (ADR-0045, remediation Phase 2).**
   `jvagent/action/model/capabilities.py` resolves per-model capabilities
   (tools, parallel calls, JSON mode, structured output, vision, thinking,

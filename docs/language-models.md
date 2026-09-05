@@ -209,6 +209,22 @@ Recording is skipped (not failed) for providers whose key is absent. Adding a
 provider means adding it to `PROVIDERS` and supplying bodies for every
 scenario — `test_scenario_matrix_is_complete` refuses a partial matrix.
 
+## Retries and resilience
+
+Every model action retries transient failures (timeouts, transport errors,
+408/425/429/5xx, Retry-After honoured) with exponential backoff:
+`max_retries`, `retry_initial_delay`, `retry_max_delay`, `retry_backoff_multiplier`,
+`retry_jitter`, `retry_on_status_codes`. Two knobs bound the damage (ADR-0046):
+`retry_total_deadline_seconds` (default 60 — a retry that would start past the
+deadline is not attempted) and `retry_on_timeout` (default on; a completion is
+not idempotent at the provider, so operators on tight cost policies can stop
+timeouts from being retried). SDK-style exceptions carrying a `status_code`
+(LiteLLM) retry like httpx status errors.
+
+Above the adapter, the Orchestrator owns the policy — fallback chain, circuit
+breaker, cost ceilings, structured decisions — see
+[ORCHESTRATOR.md § Resilience](ORCHESTRATOR.md#resilience-adr-0046).
+
 ## Loop integration (Orchestrator)
 
 The Orchestrator think-act-observe loop passes model kwargs to the active

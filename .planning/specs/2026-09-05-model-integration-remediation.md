@@ -1,6 +1,6 @@
 # Model integration remediation — proposal
 
-**Date:** 2026-09-05 · **Status:** Accepted — Phases 1 (contract, adapter wrap, conformance suite) and 2 (LiteLLM adapter, capability registry, `tool_protocol: auto`, context pre-flight, metadata pricing; ADR-0045) landed; Phases 3–4 pending · **Follows:** [2026-09-05 orchestrator harness audit](../reviews/2026-09-05-orchestrator-harness-audit.md), [ADR-0044](../adr/0044-native-tool-calling-protocol.md)
+**Date:** 2026-09-05 · **Status:** Accepted — Phases 1 (contract, adapter wrap, conformance suite), 2 (LiteLLM adapter, capability registry, `tool_protocol: auto`, context pre-flight, metadata pricing; ADR-0045) and 3 (fallback chain, circuit breaker, retry deadline, budget guard, structured decisions; ADR-0046) landed; Phase 4 pending · **Follows:** [2026-09-05 orchestrator harness audit](../reviews/2026-09-05-orchestrator-harness-audit.md), [ADR-0044](../adr/0044-native-tool-calling-protocol.md)
 
 ## 0. One-paragraph answer
 

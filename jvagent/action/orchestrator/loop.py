@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.constants import (
     _NON_SUBSTANTIVE_TOOLS,
+    BUDGET_EXHAUSTED,
     DECISION_META_KEYS,
     MODEL_ERROR_ACTION,
     MODEL_TRUNCATED_ACTION,
@@ -245,6 +246,11 @@ class OrchestratorLoopMixin:
         if pending:
             decision = pending.pop(0)
             update_prompt_cache("pending_decisions", pending)
+        elif self._turn_budget_exhausted(visitor):
+            # ADR-0046 budget guard: this turn's model calls have met the
+            # per-turn cost ceiling — no further tick; the caller ends the loop
+            # and the partial-compose delivers what was gathered.
+            return None, BUDGET_EXHAUSTED, nd_streak, model_failures
         else:
             decision = await self._run_model(
                 visitor,
@@ -401,6 +407,24 @@ class OrchestratorLoopMixin:
         # injection site renders its scope.
         interaction = getattr(visitor, "interaction", None)
         await self._accumulate_parameters(interaction)
+
+        # Conversation cost ceiling (ADR-0046): a turn that starts over it makes
+        # no model call at all — the user is told plainly, and the activation
+        # event records why.
+        if self._conversation_budget_exhausted(visitor):
+            await self._send_reply(visitor, self.budget_exhausted_text)
+            await self._record_orchestrator_activation(
+                visitor,
+                continuation_mode="none",
+                flow_owner=None,
+                tools_invoked=[],
+                tick_count=0,
+                ended_via="conversation_budget",
+                activated=activated,
+                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
+                tool_timings=tool_timings,
+            )
+            return None
 
         # Resolve the active flow first so the surface gates its tool into the
         # prompt only when relevant (active flow, or anchor-relevant utterance).
@@ -939,7 +963,7 @@ class OrchestratorLoopMixin:
                         model_failures=model_failures,
                     )
                 )
-                if outcome in ("model_error", "no_decision"):
+                if outcome in ("model_error", "no_decision", BUDGET_EXHAUSTED):
                     ended_via = outcome
                     break
                 if outcome == "retry" or decision is None:
@@ -1527,6 +1551,7 @@ class OrchestratorLoopMixin:
                     "no_decision",
                     "repeat_guard",
                     "unknown",
+                    BUDGET_EXHAUSTED,
                 )
                 and observations
             ):

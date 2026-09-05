@@ -85,6 +85,26 @@ class BaseModelAction(Action, ABC):
         default=True,
         description="Randomize delay (0.5x–1.5x) to avoid thundering herd",
     )
+    retry_total_deadline_seconds: float = attribute(
+        default=60.0,
+        description=(
+            "Wall-clock ceiling for one logical call including all retries and "
+            "backoff. A retry that would start after the deadline is not "
+            "attempted; the last error propagates. 0 disables (unbounded — the "
+            "pre-ADR-0046 behaviour, worst case ~15 minutes with Retry-After)."
+        ),
+        ge=0.0,
+    )
+    retry_on_timeout: bool = attribute(
+        default=True,
+        description=(
+            "Retry a request that timed out (httpx timeouts / status 408). A "
+            "completion call is not idempotent at the provider — a retried call "
+            "that actually completed bills twice — so operators on tight cost "
+            "policies may turn this off; transport and 429/5xx retries are "
+            "unaffected."
+        ),
+    )
     retry_on_status_codes: List[int] = attribute(
         default_factory=lambda: [408, 425, 429, 500, 502, 503, 504],
         description="HTTP status codes that trigger a retry when raised as HTTPStatusError",
@@ -100,7 +120,7 @@ class BaseModelAction(Action, ABC):
         if isinstance(exc, asyncio.CancelledError):
             return False
         if isinstance(exc, httpx.TimeoutException):
-            return True
+            return bool(getattr(self, "retry_on_timeout", True))
         if isinstance(exc, httpx.TransportError):
             return True
         if isinstance(exc, httpx.HTTPStatusError):
@@ -168,6 +188,8 @@ class BaseModelAction(Action, ABC):
         ``op_factory`` must return a new coroutine each call (coroutines are single-use).
         """
         max_attempts = self.max_retries + 1
+        started = time.monotonic()
+        deadline = float(getattr(self, "retry_total_deadline_seconds", 0.0) or 0.0)
         for attempt in range(max_attempts):
             try:
                 coro = op_factory()
@@ -197,6 +219,19 @@ class BaseModelAction(Action, ABC):
                     )
                     raise
                 delay = self._compute_retry_delay_seconds(attempt, exc)
+                if deadline > 0 and (time.monotonic() - started) + delay > deadline:
+                    # ADR-0046: a retry that would land past the total deadline
+                    # is not worth the caller's wait — surface the last error.
+                    logger.error(
+                        "%s: retry deadline of %.0fs would be exceeded (attempt %s, "
+                        "next delay %.1fs); giving up: %s",
+                        op_name,
+                        deadline,
+                        attempt + 1,
+                        delay,
+                        exc,
+                    )
+                    raise
                 logger.warning(
                     "%s attempt %s/%s failed: %s; retrying in %.2fs",
                     op_name,

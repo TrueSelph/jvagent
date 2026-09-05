@@ -109,6 +109,39 @@ provider failure once, then ends the turn with `model_unavailable_text` (never
 `ended_via=model_error`. Truncation gets its own nudge; three unusable outputs
 in a row still end the turn as `no_decision`.
 
+## Resilience (ADR-0046)
+
+Policy the harness owns, uniform over every adapter, all configured on the
+Orchestrator and all off by default except the breaker:
+
+```yaml
+      model: gpt-4o-mini
+      model_fallbacks:                      # tried in the SAME tick when the primary fails
+        - { model: gpt-4o }                 #   same action, other model
+        - { model: anthropic/claude-sonnet-4-5, model_action_type: LiteLLMLanguageModelAction }
+      circuit_breaker_failures: 3           # consecutive failures → circuit open …
+      circuit_breaker_cooldown_seconds: 60  # … skipped in the chain until one probe passes
+      max_turn_cost_usd: 0.50               # loop ends budget_exhausted + one partial-compose
+      max_conversation_cost_usd: 5.00       # turn blocked, budget_exhausted_text replied
+      structured_decisions: true            # JSON protocol: schema-validated decisions
+```
+
+- **Fallback chain** — after the model layer's own retries fail, the next
+  candidate gets the same request (model id swapped, its own capability gates
+  applied). The loop sees a success or a final `model_error`; `fallbacks_used`
+  lands on the activation event.
+- **Circuit breaker** — per (action, model), per event loop; open circuits are
+  skipped; after the cooldown one probe decides. `healthcheck()` reports the
+  circuits.
+- **Budget guard** — turn cost is the metadata price of this turn's
+  `model_call` events (`turn_cost_usd` on the activation event); the
+  conversation total lives on `conversation.context._cost_usd_total` and is
+  only written when a conversation ceiling is set.
+- **Structured decisions** — with `tool_protocol` resolved to `json` and a model
+  that supports structured output, the decision schema travels as
+  `response_format: json_schema` (or a forced `orchestrator_decision` tool on
+  Anthropic), so "not valid JSON" nudges stop on capable providers.
+
 ## The unified tool surface
 
 Everything the agent can do is reachable as a tool, so there is no separate router or capability registry:

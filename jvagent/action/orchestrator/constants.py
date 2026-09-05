@@ -184,6 +184,35 @@ def is_task_completion(data: Any) -> bool:
     return any(bool(data.get(flag)) for flag in _TASK_COMPLETION_FLAGS)
 
 
+# JSON Schema of a loop decision under the JSON protocol (ADR-0046 §structured
+# decisions): sent as OpenAI ``response_format: json_schema`` or as a forced
+# Anthropic tool so the provider validates the shape instead of prompt obedience.
+DECISION_TOOL_NAME = "orchestrator_decision"
+DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["tool", "final"],
+            "description": "Call a tool, or finish the turn.",
+        },
+        "tool": {"type": "string", "description": "Exact tool name when action=tool."},
+        "args": {
+            "type": "object",
+            "description": "Arguments for the tool when action=tool.",
+        },
+        "answer": {
+            "type": "string",
+            "description": "Optional closing text when action=final.",
+        },
+    },
+    "required": ["action"],
+}
+
+# Loop outcome when a cost ceiling ends the turn (ADR-0046 §budget guard).
+BUDGET_EXHAUSTED = "budget_exhausted"
+
+
 # Backward-compatible aliases for tests and internal imports.
 _TEXT_KEYS = TEXT_KEYS
 _STEER_EXEMPT = STEER_EXEMPT
