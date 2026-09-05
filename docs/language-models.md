@@ -164,11 +164,49 @@ exception's `status_code`), streaming is assembled with
 `litellm.stream_chunk_builder`, and `provider: litellm` works in slot overrides.
 Reference the class as `LiteLLMLanguageModelAction` in `model_action_type`.
 
+### Transport switch (ADR-0047)
+
+Every first-party action can route its calls through the LiteLLM adapter
+without changing class, `agent.yaml` or credentials:
+
+```yaml
+  - action: jvagent/openai_lm
+    context:
+      model: gpt-4o-mini
+      transport: litellm        # default httpx; JVAGENT_MODEL_TRANSPORT=litellm overrides fleet-wide
+```
+
+The action hands the delegate its own model (`openai/gpt-4o-mini`), API key and
+non-default endpoint (`litellm_model_id()` / `litellm_call_config()`), and
+relabels the result with its own provider and model, so cost events, slot
+resolution and telemetry read exactly as before. Retries, breaker, fallbacks
+and budgets apply to both transports. Known gap under `litellm`: Anthropic
+`cache_control` breakpoints are not applied. The conformance matrix below runs
+each first-party adapter under both transports; the nightly live workflow runs
+the smoke scenarios on both. Deleting the own-wire clients is gated on that
+evidence (ADR-0047 §2.3).
+
+### Nightly live check
+
+`.github/workflows/live-providers.yaml` (03:00 UTC, or manual dispatch) runs per
+provider whose key secret is set: record conformance fixtures from the real
+endpoint → replay the suite → `scripts/live_smoke.py` on the own wire →
+again with `--transport litellm`. Failures open or comment on a `live-check`
+issue; recordings are uploaded as run artifacts (commit the ones you want to
+keep under `tests/action/model/conformance/fixtures/`). Locally:
+
+```bash
+OPENAI_API_KEY=... python scripts/live_smoke.py --provider openai --model gpt-4o-mini
+```
+
 ### Parity matrix
 
 The conformance suite (below) asserts the same normalised `ModelResponse` from
 every adapter for the same logical exchange. Authored wire fixtures; ✓ =
 passes, ○ = not applicable to the provider.
+
+Each first-party column is asserted under both transports (`httpx` own wire and
+`litellm` delegation); the `litellm` column is the adapter itself.
 
 | Scenario | openai | anthropic | ollama | groq | openrouter | litellm |
 |---|---|---|---|---|---|---|

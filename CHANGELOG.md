@@ -10,6 +10,29 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Transport delegation (ADR-0047, remediation Phase 4).** Every language-model
+  action has `transport: httpx | litellm` (default `httpx`; `JVAGENT_MODEL_TRANSPORT`
+  overrides process-wide). Under `litellm` the action delegates to the LiteLLM
+  adapter with its own model, credentials and endpoint (`litellm_model_id()`,
+  `litellm_call_config()` per provider) and relabels the result — same class,
+  same `agent.yaml`, same observability. The conformance matrix runs every
+  first-party adapter under both transports.
+- **Nightly live-provider check** (`.github/workflows/live-providers.yaml`):
+  re-records conformance fixtures from real endpoints, replays the suite, and
+  runs `scripts/live_smoke.py` (real Orchestrator loop, three CUCS smoke
+  scenarios, both transports) per provider; skipped without a key secret;
+  failures open/comment a `live-check` issue. `jvagent/testing/live_smoke.py`
+  builds a graph-less Orchestrator around a real model action.
+
+### Fixed
+
+- **Conformance matrix was missing the LiteLLM adapter column on `dev`.** The
+  Phase 2 change that added the `litellm` provider (and its fixture-backed
+  `_acompletion` stand-in) to `tests/action/model/conformance/conftest.py` did
+  not make it into PR #179, so the parity matrix documented in ADR-0045 §2.5
+  was not actually asserted. Restored here; `test_scenario_matrix_is_complete`
+  now fails if the LiteLLM column or either transport disappears.
+
 - **Model resilience policy (ADR-0046, remediation Phase 3).** Orchestrator
   `model_fallbacks` / `light_model_fallbacks` (same-tick fallback chain),
   `circuit_breaker_failures` / `circuit_breaker_cooldown_seconds` (per

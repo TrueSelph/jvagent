@@ -12,6 +12,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncGenerator,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -407,6 +408,18 @@ class LanguageModelAction(BaseModelAction, ABC):
     top_p: float = attribute(
         default=1.0, description="Nucleus sampling parameter", ge=0.0, le=1.0
     )
+    transport: str = attribute(
+        default="httpx",
+        description=(
+            "How this action reaches its provider (ADR-0047). 'httpx' (default): "
+            "the action's own client and wire parsing. 'litellm': delegate the "
+            "call to the LiteLLM universal adapter with this action's model, "
+            "credentials and endpoint — same class, same agent.yaml, same "
+            "result/observability. The JVAGENT_MODEL_TRANSPORT environment "
+            "variable overrides this for the whole process (fleet-wide A/B). "
+            "Requires the 'litellm' extra."
+        ),
+    )
     model_capabilities: Dict[str, Any] = attribute(
         default_factory=dict,
         description=(
@@ -775,14 +788,17 @@ class LanguageModelAction(BaseModelAction, ABC):
             if history is None:
                 history = _ext_history
 
-        # Route to appropriate implementation (retries for transient httpx failures)
+        # Route to appropriate implementation (retries for transient httpx failures).
+        # ADR-0047: the transport switch chooses this action's own wire client or
+        # the LiteLLM delegate; everything around the call is identical.
+        impl_query, impl_stream = self._transport_impls()
         if stream:
             thinking_queue: asyncio.Queue = asyncio.Queue()
             stream_kwargs = dict(kwargs)
             stream_kwargs["_jv_thinking_queue"] = thinking_queue
 
             result = await self._execute_with_retry(
-                lambda: self._query_stream(messages, tools, **stream_kwargs),
+                lambda: impl_stream(messages, tools, **stream_kwargs),
                 op_name="lm_query_stream_init",
             )
             result._thinking_queue = thinking_queue
@@ -842,9 +858,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                         )
                         await asyncio.sleep(delay)
                         ModelActionResult.drain_thinking_queue_sync(thinking_queue)
-                        new_result = await self._query_stream(
-                            messages, tools, **stream_kwargs
-                        )
+                        new_result = await impl_stream(messages, tools, **stream_kwargs)
                         outer_result.model = new_result.model
                         outer_result.provider = new_result.provider
                         outer_result.finish_reason = new_result.finish_reason
@@ -860,7 +874,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             result.stream = stream_with_retry()
         else:
             result = await self._execute_with_retry(
-                lambda: self._query(messages, tools, **kwargs),
+                lambda: impl_query(messages, tools, **kwargs),
                 op_name="lm_query",
             )
 
@@ -1022,6 +1036,106 @@ class LanguageModelAction(BaseModelAction, ABC):
 
                 result.stream = stream_with_estimation()
 
+        return result
+
+    # ============================================================================
+    # Transport delegation (ADR-0047) — httpx (own client) or the LiteLLM adapter
+    # ============================================================================
+
+    #: LiteLLM provider prefix for this action's models (``provider/model``).
+    #: Defaults to the ``provider`` attribute; subclasses override when the
+    #: LiteLLM slug differs from jvagent's provider label.
+    litellm_provider_prefix: ClassVar[str] = ""
+
+    def _effective_transport(self) -> str:
+        """``litellm`` or ``httpx`` — the env override wins over the attribute."""
+        from jvspatial.env import env
+
+        override = str(env("JVAGENT_MODEL_TRANSPORT") or "").strip().lower()
+        value = (
+            override or str(getattr(self, "transport", "") or "httpx").strip().lower()
+        )
+        return "litellm" if value == "litellm" else "httpx"
+
+    def _transport_impls(self) -> Any:
+        """``(query_impl, stream_impl)`` for the effective transport."""
+        if self._effective_transport() == "litellm":
+            return self._litellm_query, self._litellm_query_stream
+        return self._query, self._query_stream
+
+    def litellm_model_id(self, model: Optional[str] = None) -> str:
+        """This action's model in LiteLLM's ``provider/model`` form."""
+        model_id = str(model or self.model or "").strip()
+        if "/" in model_id:
+            return model_id
+        prefix = (
+            self.litellm_provider_prefix
+            or str(getattr(self, "provider", "") or "").strip().lower()
+        )
+        return f"{prefix}/{model_id}" if prefix else model_id
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        """Credentials/endpoint for the LiteLLM delegate: ``{api_key, api_base}``.
+
+        The base leaves both empty (LiteLLM reads the provider's own environment
+        variable); provider actions override to hand over the key and endpoint
+        their own client would have used, so switching transport never changes
+        which credentials are used.
+        """
+        return {}
+
+    def _litellm_delegate(self) -> Any:
+        """The (lazily built, per-action) LiteLLM adapter used by the ``litellm``
+        transport. Created in memory — not a registered action."""
+        delegate = getattr(self, "_litellm_delegate_instance", None)
+        if delegate is None:
+            from jvagent.action.model.language.litellm.litellm_lm import (
+                LiteLLMLanguageModelAction,
+            )
+
+            delegate = LiteLLMLanguageModelAction()
+            delegate.provider = str(getattr(self, "provider", "") or "litellm")
+            delegate.timeout = self.timeout
+            object.__setattr__(self, "_litellm_delegate_instance", delegate)
+        cfg = self.litellm_call_config() or {}
+        delegate.api_key = str(cfg.get("api_key") or "")
+        delegate.api_base = str(cfg.get("api_base") or "")
+        delegate.temperature = self.temperature
+        delegate.max_tokens = self.max_tokens
+        delegate.top_p = self.top_p
+        return delegate
+
+    def _relabel_delegate_result(self, result: "ModelActionResult", model: str) -> None:
+        """Present the delegate's result as this action's (provider, model)."""
+        result.provider = str(getattr(self, "provider", "") or result.provider)
+        result.model = model
+
+    async def _litellm_query(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ModelActionResult":
+        model = str(kwargs.get("model") or self.model or "")
+        delegate = self._litellm_delegate()
+        call_kwargs = dict(kwargs)
+        call_kwargs["model"] = self.litellm_model_id(model)
+        result = await delegate._query(messages, tools, **call_kwargs)
+        self._relabel_delegate_result(result, model)
+        return result
+
+    async def _litellm_query_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ModelActionResult":
+        model = str(kwargs.get("model") or self.model or "")
+        delegate = self._litellm_delegate()
+        call_kwargs = dict(kwargs)
+        call_kwargs["model"] = self.litellm_model_id(model)
+        result = await delegate._query_stream(messages, tools, **call_kwargs)
+        self._relabel_delegate_result(result, model)
         return result
 
     # ============================================================================
