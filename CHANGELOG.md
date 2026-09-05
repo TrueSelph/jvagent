@@ -10,6 +10,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **`POST /agents/{id}/interact` reports server faults as 500** (`interact_processing_error`, with `request_id`) instead of a 422 `ValidationError` (audit F3). Bad requests (`ValueError`) and typed API errors keep their statuses.
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
   body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
   `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →
