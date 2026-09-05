@@ -7,7 +7,7 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.constants import (
@@ -32,7 +32,7 @@ from jvagent.action.orchestrator.turn_cache import (
     set_prompt_cache,
     update_prompt_cache,
 )
-from jvagent.action.orchestrator.turn_state import TurnState
+from jvagent.action.orchestrator.turn_state import TickOutcome, TurnState
 from jvagent.action.parameters import (
     accumulate_skill_parameters,
     orchestration_parameters,
@@ -816,7 +816,6 @@ class OrchestratorLoopMixin:
             chain_deflections=chain_deflections,
             deadline=deadline,
             deflected_named=deflected_named,
-            drain_directive=drain_directive,
             ended_via=ended_via,
             flow_note=flow_note,
             flow_owner=flow_owner,
@@ -856,750 +855,749 @@ class OrchestratorLoopMixin:
         )
 
     async def _run_loop(self, visitor: "InteractWalker") -> None:
+        """Prepare the turn, step it tick by tick, then close it.
+
+        ``_prepare_turn`` decides what the turn *is*; :meth:`_tick` steps it once
+        per model decision and reports how the loop should proceed
+        (:class:`TickOutcome`); :meth:`_after_loop` turns an exhausted loop into
+        an answer; :meth:`_close_turn` always runs (ack, plan lifecycle,
+        telemetry). Every method reads and writes the same :class:`TurnState`,
+        so the loop's working set is one typed object rather than a scope.
+        """
         state = await self._prepare_turn(visitor)
         if state is None:
             return  # the turn was completed during preparation
-        # The names below are the entire interface between preparation and
-        # the tick loop. Unpacked rather than used as `state.x` so the loop body
-        # is unchanged by this split; shrinking this list is the next step.
-        ack_started = state.ack_started
-        ack_task = state.ack_task
-        activated = state.activated
-        active_skill_doc = state.active_skill_doc
-        budget = state.budget
-        capabilities_section = state.capabilities_section
-        chain_deflections = state.chain_deflections
-        deadline = state.deadline
-        deflected_named = state.deflected_named
-        drain_directive = state.drain_directive
-        ended_via = state.ended_via
-        flow_note = state.flow_note
-        flow_owner = state.flow_owner
-        grounding_deflections = state.grounding_deflections
-        history = state.history
-        interaction = state.interaction
-        last_obs = state.last_obs
-        last_sig = state.last_sig
-        lean_surface = state.lean_surface
-        locked_companion_skill_names = state.locked_companion_skill_names
-        locked_companion_tools = state.locked_companion_tools
-        loop_actions = state.loop_actions
-        loop_t0 = state.loop_t0
-        nd_streak = state.nd_streak
-        observations = state.observations
-        parameters_section = state.parameters_section
-        pending_chain = state.pending_chain
-        plan_deflections = state.plan_deflections
-        plan_note = state.plan_note
-        refreshed = state.refreshed
-        repeats = state.repeats
-        skill_docs = state.skill_docs
-        skill_names = state.skill_names
-        skills_section = state.skills_section
-        soft_abandon_evaluated = state.soft_abandon_evaluated
-        soft_abandon_streak = state.soft_abandon_streak
-        soft_abandon_title = state.soft_abandon_title
-        substantive_tool_calls = state.substantive_tool_calls
-        ticks = state.ticks
-        ticks_heavy = state.ticks_heavy
-        ticks_light = state.ticks_light
-        tool_timings = state.tool_timings
-        tools = state.tools
-        user_named_tools = state.user_named_tools
-        utterance = state.utterance
-        visible = state.visible
-        last_gear = "light"
-        # Native-protocol transcript bookkeeping (ADR-0044): the decision the
-        # previous tick acted on, and where its observations start, so the tool
-        # result it produced can be tied back to the provider's tool-call id.
-        last_dec_meta: Dict[str, Any] = {}
-        last_obs_len = len(observations)
-        # Consecutive provider failures this turn (a fault, not a model choice).
-        model_failures = 0
-
+        state.last_obs_len = len(state.observations)
         try:
-            while budget > 0:
-                if deadline and time.time() > deadline:
-                    ended_via = "duration"
-                    break
-                budget -= 1
-                ticks += 1
-                _stamp_observations(observations, last_obs_len, last_dec_meta)
-                # Gear selection (sticky, ADR-0041): heavy once a skill is
-                # active, planning is on, or after the first substantive tool.
-                # Single-model agents always run heavy.
-                gear = self._select_gear(
-                    substantive_tool_calls,
-                    bool(activated) or active_skill_doc is not None,
-                )
-                if gear == "light":
-                    ticks_light += 1
-                else:
-                    ticks_heavy += 1
-                last_gear = gear
-                # Arm the transient ack only once the turn proves COMPLEX — a
-                # skill is active, or it has made multiple substantive tool calls.
-                # Simple single-tool / reply-only turns never surface a "working
-                # on it" line (and so it can't trail after a fast reply).
-                if not ack_started and (bool(activated) or substantive_tool_calls >= 2):
-                    ack_started = True
-                    ack_task = self._schedule_first_emit_ack(visitor)
-                visible_tools = [tools[n] for n in visible if n in tools]
-                decision, outcome, nd_streak, model_failures = (
-                    await self._next_decision(
-                        visitor,
-                        utterance=utterance,
-                        history=history,
-                        visible_tools=visible_tools,
-                        observations=observations,
-                        flow_note=flow_note,
-                        skills_section=skills_section,
-                        gear=gear,
-                        lean_surface=lean_surface,
-                        plan_note=plan_note,
-                        capabilities_section=capabilities_section,
-                        parameters_section=parameters_section,
-                        nd_streak=nd_streak,
-                        model_failures=model_failures,
-                    )
-                )
-                if outcome in ("model_error", "no_decision", BUDGET_EXHAUSTED):
-                    ended_via = outcome
-                    break
-                if outcome == "retry" or decision is None:
-                    continue
-                # Strip the native-protocol bookkeeping before normalising so it
-                # can never be folded into tool arguments; it is re-attached to the
-                # observation this decision produces (see _stamp_observations).
-                last_dec_meta = {
-                    k[1:]: decision.pop(k)
-                    for k in list(decision.keys())
-                    if k in DECISION_META_KEYS
-                }
-                last_obs_len = len(observations)
-                action, tool_name, args = self._normalize(decision, tools, skill_names)
-                if last_dec_meta.get("call_id"):
-                    last_dec_meta["call_tool"] = tool_name
-                    last_dec_meta["call_args"] = dict(args or {})
-                if (
-                    action == "tool"
-                    and tool_name in skill_names
-                    and tool_name not in tools
-                    and active_skill_doc is not None
-                    and tool_name == getattr(active_skill_doc, "name", None)
-                ):
-                    observations.append(
-                        {
-                            "tool": tool_name,
-                            "args": args,
-                            "observation": (
-                                f"({tool_name} is the active locked skill, not a "
-                                "callable tool. Follow the ACTIVE SKILL procedure "
-                                "and use its listed tools, or reply/respond to the "
-                                "user. Do not invoke the skill name as a tool.)"
-                            ),
-                        }
-                    )
-                    continue
-                # Progress/reasoning line for the UI's REASONING disclosure. Fires
-                # on both gears so single-step (light) turns still show their
-                # reasoning, not just multi-step heavy ones. Skip when substantive
-                # tool thoughts will surface the same tick in TOOL CALLS.
-                if self.stream_internal_progress:
-                    await self._emit_thought(
-                        visitor,
-                        self._progress_line(action, tool_name, args, decision),
-                    )
-                if action == "final":
-                    if pending_chain and chain_deflections < 2:
-                        # A tool result told the model to call ``pending_chain``
-                        # next. Don't let it finalize (or claim completion) until
-                        # that step has run.
-                        chain_deflections += 1
-                        observations.append(
-                            {
-                                "tool": "(guard)",
-                                "args": {},
-                                "observation": (
-                                    f"(The task is not finished — call "
-                                    f"{pending_chain} now to continue. Do NOT give a "
-                                    "final answer or claim the process is "
-                                    "complete until it has run.)"
-                                ),
-                            }
-                        )
-                        continue
-                    if plan_deflections < int(self.plan_completion_max_deflections):
-                        open_steps = self._open_plan_step(visitor)
-                        if open_steps:
-                            # An active multi-step plan still has open steps —
-                            # don't finalize mid-task. Nudge the model to run the
-                            # next step (or close the plan if it's really done).
-                            plan_deflections += 1
-                            observations.append(self._plan_drain_nudge(open_steps))
-                            continue
-                    answer = _text_candidate(decision)
-                    if answer and grounding_deflections < int(
-                        self.grounding_max_deflections
-                    ):
-                        nudge = self._grounding_deflection(
-                            answer,
-                            substantive_tool_calls,
-                            self._grounding_corpus(utterance, history, observations),
-                            visitor,
-                        )
-                        if nudge is not None:
-                            grounding_deflections += 1
-                            observations.append(nudge)
-                            continue
-                    if answer:
-                        await self._maybe_emit_final(visitor, answer)
-                    ended_via = "final"
+            while state.budget > 0:
+                outcome = await self._tick(visitor, state)
+                if outcome.ended_via is not None:
+                    state.ended_via = outcome.ended_via
+                if outcome.kind == TickOutcome.RETURN:
                     return
-                if action == "tool":
-                    # Steering guard: the user named this exact tool — deflect it
-                    # once so tool selection stays the agent's call, driven by the
-                    # goal rather than the named tool.
-                    if (
-                        tool_name in user_named_tools
-                        and tool_name not in deflected_named
-                    ):
-                        deflected_named.add(tool_name)
-                        observations.append(
-                            {
-                                "tool": tool_name,
-                                "args": args,
-                                "observation": (
-                                    f"(You may not call {tool_name} just because "
-                                    "the user named it. Tool selection is your "
-                                    "responsibility — work out the user's "
-                                    "underlying goal and choose the right "
-                                    "tool(s) yourself, or answer directly.)"
-                                ),
-                            }
-                        )
-                        continue
-                    if (
-                        pending_chain
-                        and tool_name in ("reply", "respond")
-                        and chain_deflections < 2
-                    ):
-                        # A chained step is pending — don't let the model reply
-                        # (e.g. announce completion) before it runs.
-                        chain_deflections += 1
-                        observations.append(
-                            {
-                                "tool": "(guard)",
-                                "args": {},
-                                "observation": (
-                                    f"(The task is not finished — call "
-                                    f"{pending_chain} now, not reply/respond. Do NOT "
-                                    "tell the user the process is complete until it has run.)"
-                                ),
-                            }
-                        )
-                        continue
-                    if tool_name in (
-                        "reply",
-                        "respond",
-                    ) and grounding_deflections < int(self.grounding_max_deflections):
-                        nudge = self._grounding_deflection(
-                            str(
-                                (args or {}).get("text") or _text_candidate(args or {})
-                            ),
-                            substantive_tool_calls,
-                            self._grounding_corpus(utterance, history, observations),
-                            visitor,
-                        )
-                        if nudge is not None:
-                            grounding_deflections += 1
-                            observations.append(nudge)
-                            continue
-                    if tool_name in ("reply", "respond") and plan_deflections < int(
-                        self.plan_completion_max_deflections
-                    ):
-                        # Plan-drain: the orchestrator must not COMPLETE the turn
-                        # (reply/respond is terminal egress) while its active plan
-                        # still has unfinished steps — whether the reply is bare
-                        # narration coerced to a reply ("Proceeding to drafting
-                        # now") or a deliberate reply. Deflect and drive the model
-                        # to do the next step or explicitly close the plan. After
-                        # the cap the reply passes, so a genuine mid-plan question
-                        # to the user is never blocked forever.
-                        open_steps = self._open_plan_step(visitor)
-                        if open_steps:
-                            plan_deflections += 1
-                            observations.append(self._plan_drain_nudge(open_steps))
-                            continue
-                    # Companion gate: while a skill holds the turn-lock, use_skill
-                    # may only (re)activate the locked skill itself or a declared
-                    # companion (ADR-0034 L5 two-strike soft-abandon lives inside).
-                    gate = await self._companion_gate(
-                        visitor,
-                        active_skill_doc,
-                        tool_name,
-                        args,
-                        locked_companion_skill_names,
-                        loop_actions,
-                        observations,
-                        soft_abandon_evaluated,
-                        soft_abandon_streak,
-                        soft_abandon_title,
-                    )
-                    if gate is not None:
-                        (
-                            gate_outcome,
-                            soft_abandon_evaluated,
-                            soft_abandon_streak,
-                            soft_abandon_title,
-                        ) = gate
-                        if gate_outcome == "unlock":
-                            active_skill_doc = None
-                            locked_companion_skill_names = set()
-                            locked_companion_tools = set()
-                        continue
-                    # Repeat guard (pre-dispatch): a model that re-issues the
-                    # SAME call (tool + args) makes no progress, and re-running
-                    # a side-effecting tool (queue a task, POST to an API)
-                    # would duplicate its effects — so the duplicate is never
-                    # dispatched. One re-dispatch is allowed when the prior
-                    # attempt errored/timed out (transient failures deserve a
-                    # retry); a third identical call ends the turn.
-                    sig = (tool_name, str(args))
-                    repeats = repeats + 1 if sig == last_sig else 0
-                    last_sig = sig
-                    if repeats >= 2:
-                        # Break, don't return: the post-loop partial-compose
-                        # below is what turns gathered work into an answer. A
-                        # bare return skipped it, so a turn that had already
-                        # activated a skill, planned and fetched a page ended on
-                        # "Sorry, I didn't quite catch that" and threw all of it
-                        # away. Observed live on a research → report → assimilate
-                        # request.
-                        ended_via = "repeat_guard"
-                        break
-                    if repeats == 1:
-                        prior_errored = (
-                            last_obs.startswith("(tool error:")
-                            or " timed out after " in last_obs
-                        )
-                        if not prior_errored:
-                            observations.append(
-                                {
-                                    "tool": "(guard)",
-                                    "args": {},
-                                    "observation": (
-                                        f"(You have already called {tool_name} "
-                                        "with this exact input; its result is "
-                                        "above. Do NOT repeat the call — use a "
-                                        "different tool, change the arguments, "
-                                        'or finish with action "final".)'
-                                    ),
-                                }
-                            )
-                            continue
-                    tool = tools.get(tool_name)
-                    # Whether this iteration's ``obs`` is server-generated framing
-                    # (always trusted for the directive contract) rather than a
-                    # raw tool result. Set True wherever the loop constructs obs
-                    # itself (e.g. the prerequisite detour below).
-                    obs_server_generated = False
-                    if tool is None:
-                        # Genuinely unknown name (often a hallucinated tool) —
-                        # this is where find_tool earns its keep: point the model
-                        # at discovery instead of letting it guess again.
-                        obs = (
-                            f"(no such tool: {tool_name}. Call "
-                            "find_tool(query) to find the right tool by "
-                            "capability — e.g. find_tool('add to knowledge "
-                            "base'), find_tool('fetch url') — then call the "
-                            "exact name it returns. Pass gathered text in "
-                            "tool args; do not invent a write-file detour.)"
-                        )
-                    else:
-                        if self.block_raw_tool_invocation and tool_name not in visible:
-                            # The model named a REAL tool that lean surfacing had
-                            # hidden. Naming it IS effective intent (not a
-                            # hallucination), so promote it and run it — an
-                            # implicit load_tool — rather than dead-ending on a
-                            # find_tool demand the model just repeats until the
-                            # repeat-guard kills the turn. Dispatch already
-                            # resolves the full surface; hiding a tool from the
-                            # prompt never made it uncallable. (The user-named-tool
-                            # steer guard above still blocks tools the *user*
-                            # dictated.)
-                            visible.add(tool_name)
-                        # Structured tool thought for the UI's TOOL CALLS panel:
-                        # tool_call before, tool_result after (shared segment_id
-                        # so they fold into one element). Substantive tools only.
-                        tool_seg = (
-                            f"toolcall-{uuid.uuid4().hex[:10]}"
-                            if tool_name not in _NON_SUBSTANTIVE_TOOLS
-                            else None
-                        )
-                        if tool_seg:
-                            await self._emit_tool_thought(
-                                visitor, "tool_call", tool_name, tool_seg, args=args
-                            )
-                        # Voice-friendly ack: arm the transient ack before the
-                        # FIRST substantive tool runs, so a slow tool (Flow
-                        # send, web search) is covered by a spoken/visible
-                        # "One moment…" instead of dead air. Still gated by
-                        # first_emit_timeout_ms — fast tools surface nothing.
-                        if (
-                            not ack_started
-                            and self.ack_on_first_tool_call
-                            and tool_name not in _NON_SUBSTANTIVE_TOOLS
-                        ):
-                            ack_started = True
-                            ack_task = self._schedule_first_emit_ack(visitor)
-                        tool_call_timeout = float(
-                            self._channel_cfg(
-                                visitor, "tool_call_timeout", self.tool_call_timeout
-                            )
-                            or 0.0
-                        )
-                        tool_t0 = time.perf_counter()
-                        try:
-                            if tool_call_timeout > 0:
-                                obs = await asyncio.wait_for(
-                                    tool.run(args), timeout=tool_call_timeout
-                                )
-                            else:
-                                obs = await tool.run(args)
-                        except asyncio.TimeoutError:
-                            obs = (
-                                f"(tool {tool_name} timed out after "
-                                f"{tool_call_timeout}s)"
-                            )
-                        except Exception as exc:
-                            logger.warning(
-                                "orchestrator: tool %r raised: %s", tool_name, exc
-                            )
-                            obs = f"(tool error: {exc})"
-                        tool_timings.append(
-                            {
-                                "name": tool_name,
-                                "duration_ms": int(
-                                    (time.perf_counter() - tool_t0) * 1000
-                                ),
-                            }
-                        )
-                        # After (fires on success, timeout, or error — obs is
-                        # always a string by here).
-                        if tool_seg:
-                            await self._emit_tool_thought(
-                                visitor, "tool_result", tool_name, tool_seg, obs=obs
-                            )
-                    observations.append(
-                        {"tool": tool_name, "args": args, "observation": obs}
-                    )
-                    last_obs = obs if isinstance(obs, str) else str(obs)
-                    if tool_name == "use_skill":
-                        skill_name = ((args or {}).get("name") or "").strip()
-                        prep_obs_before = len(observations)
-                        locked_doc, tools, visible, new_section, detour_directive = (
-                            await self._apply_task_lock_after_use_skill(
-                                skill_name=skill_name,
-                                activation_obs=obs if isinstance(obs, str) else "",
-                                skill_docs=skill_docs,
-                                loop_actions=loop_actions,
-                                visitor=visitor,
-                                utterance=utterance,
-                                tools=tools,
-                                visible=visible,
-                                activated=activated,
-                                observations=observations,
-                            )
-                        )
-                        if locked_doc is not None:
-                            active_skill_doc = locked_doc
-                            refreshed = await self._absorb_skill_parameters(
-                                visitor, [locked_doc]
-                            )
-                            if refreshed:
-                                parameters_section = refreshed
-                            if new_section:
-                                skills_section = new_section
-                            await self._emit_server_prep_tool_thoughts(
-                                visitor, observations, since_index=prep_obs_before
-                            )
-                            # A prerequisite was pushed: deliver its first question
-                            # as the turn's terminal reply so the model cannot
-                            # fabricate the answer and skip the gate. The directive
-                            # contract below reads a JSON tool-result, so frame it as
-                            # one (no next_tool ⇒ it is treated as the terminal reply).
-                            if detour_directive:
-                                obs = json.dumps(
-                                    {"response_directive": detour_directive}
-                                )
-                                obs_server_generated = True
-                        elif (
-                            skill_name
-                            and isinstance(obs, str)
-                            and obs.startswith("Activated skill")
-                        ):
-                            # Non-task-lock: PROCEDURE lives in skills_section so
-                            # Steps taken this turn stays TOOL-only.
-                            from jvagent.action.orchestrator.skill_tasks import (
-                                activated_skill_section_text,
-                            )
-
-                            doc = next(
-                                (
-                                    d
-                                    for d in skill_docs
-                                    if getattr(d, "name", None) == skill_name
-                                ),
-                                None,
-                            )
-                            if doc is not None:
-                                skills_section = activated_skill_section_text(doc)
-                    # Companion detour: a companion capability (tool or skill) was
-                    # used while a parent skill holds the turn-lock. Re-ground the
-                    # parent in place so the model returns to it as soon as the side
-                    # request is handled — same turn, not next.
-                    if active_skill_doc is not None and (
-                        tool_name in locked_companion_tools
-                        or (
-                            tool_name == "use_skill"
-                            and ((args or {}).get("name") or "").strip()
-                            in locked_companion_skill_names
-                        )
-                    ):
-                        rg_before = len(observations)
-                        await self._reground_parent_lock(
-                            active_skill_doc, loop_actions, visitor, observations
-                        )
-                        if len(observations) > rg_before:
-                            await self._emit_server_prep_tool_thoughts(
-                                visitor, observations, since_index=rg_before
-                            )
-                    # Directive contract (see loop-state init): a tool result may
-                    # carry the authoritative next step. A pending ``next_tool`` is a
-                    # chain the model MUST take before it can finalize; a bare
-                    # "Tell the user or ask the user:" directive with no chain is the turn's reply,
-                    # delivered directly so the model cannot re-decide (e.g. re-call
-                    # the same tool). Generic — no tool is named in code.
-                    if isinstance(obs, str):
-                        # Trust boundary (AUDIT-orchestrator HIGH): only honor the
-                        # directive contract from server-generated framing or a
-                        # first-party tool. A raw MCP/third-party result is external
-                        # content — parsing next_tool/response_directive from it
-                        # would let a compromised server hijack the turn's reply or
-                        # force tool-chaining.
-                        if obs_server_generated or not is_untrusted_directive_source(
-                            tool_name
-                        ):
-                            nt, rd = self._result_next(obs)
-                        else:
-                            nt, rd = None, ""
-                        # Completion detection is safe to read regardless of the
-                        # directive trust boundary: it consults only the completion
-                        # flags (not the hijackable next_tool/response_directive), and
-                        # the resume it triggers self-guards on real task state — a
-                        # spoofed completion cannot choose which task resumes. Some
-                        # first-party field-store tools are otherwise treated as
-                        # untrusted here, which would hide a prerequisite's silent
-                        # completion (one that carries no reply directive of its own).
-                        obs_is_completion = self._result_is_completion(obs)
-                        says_reply = rd.strip().lower().startswith("tell the user")
-                        if nt:
-                            # The result chains to another tool the model MUST call.
-                            pending_chain = nt
-                            chain_deflections = 0
-                        elif says_reply or obs_is_completion:
-                            # Drain (ADR-0026): when a task-lock skill completes —
-                            # whether it emits a terminal reply ("tell the user…") or a
-                            # silent completion (a prerequisite finishing with no
-                            # user-facing reply of its own) — re-resolve the task lock.
-                            # If a parent task is now the top
-                            # runnable, resume it in THIS turn instead of leaving the
-                            # resume to a model tick that may narrate past a first field
-                            # the activation would auto-resolve. _maybe_resume self-guards:
-                            # it no-ops unless obs marks a completion and a parent waits.
-                            resumed = await self._maybe_resume_after_completion(
-                                obs,
-                                active_skill_doc,
-                                skill_docs,
-                                loop_actions,
-                                visitor,
-                                utterance,
-                                tools,
-                                visible,
-                                activated,
-                                observations,
-                            )
-                            if resumed is not None:
-                                (
-                                    active_skill_doc,
-                                    tools,
-                                    visible,
-                                    skills_section,
-                                    resume_terminal,
-                                ) = resumed
-                                if resume_terminal:
-                                    # The resumed skill voices its own next question:
-                                    # deliver it and end the turn (server-driven
-                                    # resume — the model cannot fabricate the answer).
-                                    await self._send_reply(
-                                        visitor, resume_terminal, compose=True
-                                    )
-                                    ended_via = "resume_reply"
-                                    return
-                                # The parent's surface (and its server-side activation)
-                                # is now applied; continue so the model finalizes on it.
-                                continue
-                            if says_reply:
-                                # Terminal reply directive with no chain — deliver it
-                                # and end so the model cannot re-decide (e.g. re-run a
-                                # tool it already ran). Compose (not literal relay): the
-                                # directive may carry model-facing guidance that must be
-                                # rendered into the agent's voice, not leaked verbatim.
-                                await self._send_reply(visitor, rd, compose=True)
-                                ended_via = "directive_reply"
-                                return
-                        elif pending_chain and tool_name == pending_chain:
-                            # The pending chain just ran and produced no further
-                            # chain — it's satisfied; let the model finalize.
-                            pending_chain = None
-                            chain_deflections = 0
-                    # Gearing: count substantive (non-meta, non-egress) tool calls
-                    # toward escalation to the heavy model.
-                    if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
-                        substantive_tool_calls += 1
-                    # End the turn once the user has been addressed: a persona
-                    # reply (by name), a terminal tool that owns its own output,
-                    # or any tool that already delivered a user-facing message
-                    # this turn (interaction.emitted). This also stops a model
-                    # that keeps choosing the same tool from looping until the
-                    # budget is exhausted.
-                    already_emitted = False
-                    if interaction is not None:
-                        has_emitted = getattr(interaction, "has_emitted", None)
-                        if callable(has_emitted):
-                            try:
-                                already_emitted = bool(has_emitted())
-                            except Exception:
-                                already_emitted = False
-                    if (
-                        tool_name in ("reply", "respond")
-                        or (tool is not None and tool.terminal)
-                        or already_emitted
-                    ):
-                        ended_via = (
-                            tool_name
-                            if tool_name in ("reply", "respond")
-                            else (
-                                "ia_tool"
-                                if (tool is not None and tool.terminal)
-                                else "emitted"
-                            )
-                        )
-                        return
-                    continue
-                # Unknown action — stop rather than loop, but still let the
-                # partial-compose below deliver whatever the turn gathered.
-                ended_via = "unknown"
-                break
-
-            # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
-            # finalize idle while runnable work remains. Drain non-skill runnable
-            # tasks now (some may have become runnable mid-turn — e.g. a completion
-            # unblocked one); if one blocks on input it owns the egress. Inert until a
-            # runner is registered, so skill-only turns are unaffected.
-            interaction = getattr(visitor, "interaction", None)
-            emitted = bool(getattr(interaction, "response", "") if interaction else "")
-            _stamp_observations(observations, last_obs_len, last_dec_meta)
-            if ended_via == "model_error":
-                # The model is unreachable: no finalize call (it would fail the
-                # same way) and no clarify fallback (the user was not unclear).
-                # Deliver what the turn gathered, if anything, under an honest
-                # status line.
-                if not emitted:
-                    salvage = (
-                        _salvage_partial_answer(observations) if observations else ""
-                    )
-                    text = str(self.model_unavailable_text or "").strip()
-                    if salvage:
-                        text = f"{text}\n\n{salvage}".strip()
-                    if text:
-                        await self._send_reply(visitor, text)
-                return
-            if not emitted:
-                drain_directive = await self._drain_runnable_tasks(
-                    visitor, observations
-                )
-                if drain_directive:
-                    await self._send_reply(visitor, drain_directive, compose=True)
-                    ended_via = f"{ended_via}_drained"
-                    return
-                emitted = bool(
-                    getattr(interaction, "response", "") if interaction else ""
-                )
-
-            # Budget/time ran out mid-task. Rather than dropping to the generic
-            # clarify fallback (which discards the work and misreports the
-            # cause), force ONE compose so the user gets the agent's best answer
-            # from what it gathered. Only when there's actual work to summarize.
-            if (
-                not emitted
-                and ended_via
-                in (
-                    "budget",
-                    "duration",
-                    "no_decision",
-                    "repeat_guard",
-                    "unknown",
-                    BUDGET_EXHAUSTED,
-                )
-                and observations
-            ):
-                decision = await self._run_model(
-                    visitor,
-                    utterance,
-                    history,
-                    [],
-                    observations,
-                    skills_section=skills_section,
-                    finalize=True,
-                    gear=last_gear,
-                    capabilities_section=capabilities_section,
-                    parameters_section=parameters_section,
-                )
-                answer = _text_candidate(decision) if decision else ""
-                # Finalize must be text-only. Models often ignore STEP LIMIT and
-                # emit another tool call (observed: find_tool → write-file path
-                # after repeat_guard). Never fall through to clarify_text when
-                # we already gathered work.
-                if not answer:
-                    answer = _salvage_partial_answer(observations)
-                if answer:
-                    await self._maybe_emit_final(visitor, answer)
-                    ended_via = f"{ended_via}_finalized"
+                if outcome.kind == TickOutcome.BREAK:
+                    break
+            await self._after_loop(visitor, state)
         finally:
-            if ack_task is not None and not ack_task.done():
-                ack_task.cancel()
-            # Plan lifecycle (ADR-0019): close a fully-done plan, leave a plan
-            # with pending steps ACTIVE so the next turn resumes it. Runs on
-            # every loop exit; no-op when planning is off.
-            await self._finalize_plan(visitor)
-            rec_continuation_mode = (
-                "locked"
-                if active_skill_doc
-                else ("model_mediated" if flow_owner else "none")
-            )
-            rec_flow_owner = active_skill_doc.name if active_skill_doc else flow_owner
-            await self._record_orchestrator_activation(
+            await self._close_turn(visitor, state)
+
+    # ------------------------------------------------------------------
+    # One tick
+    # ------------------------------------------------------------------
+
+    async def _tick(self, visitor: "InteractWalker", state: TurnState) -> TickOutcome:
+        """One think-act-observe step: obtain a decision, then act on it.
+
+        Returns how the loop proceeds. ``continue`` = take another tick;
+        ``break`` = the loop is over and :meth:`_after_loop` decides the
+        egress; ``return`` = the turn's output has been delivered.
+        """
+        if state.deadline and time.time() > state.deadline:
+            return TickOutcome.stop("duration")
+        state.budget -= 1
+        state.ticks += 1
+        _stamp_observations(state.observations, state.last_obs_len, state.last_dec_meta)
+        # Gear selection (sticky, ADR-0041): heavy once a skill is active,
+        # planning is on, or after the first substantive tool. Single-model
+        # agents always run heavy.
+        gear = self._select_gear(
+            state.substantive_tool_calls,
+            bool(state.activated) or state.active_skill_doc is not None,
+        )
+        if gear == "light":
+            state.ticks_light += 1
+        else:
+            state.ticks_heavy += 1
+        state.last_gear = gear
+        # Arm the transient ack only once the turn proves COMPLEX — a skill is
+        # active, or it has made multiple substantive tool calls. Simple
+        # single-tool / reply-only turns never surface a "working on it" line
+        # (and so it can't trail after a fast reply).
+        if not state.ack_started and (
+            bool(state.activated) or state.substantive_tool_calls >= 2
+        ):
+            state.ack_started = True
+            state.ack_task = self._schedule_first_emit_ack(visitor)
+        visible_tools = [state.tools[n] for n in state.visible if n in state.tools]
+        decision, outcome, state.nd_streak, state.model_failures = (
+            await self._next_decision(
                 visitor,
-                continuation_mode=rec_continuation_mode,
-                flow_owner=rec_flow_owner,
-                tools_invoked=[o.get("tool") for o in observations],
-                tick_count=ticks,
-                ended_via=ended_via,
-                activated=activated,
-                ticks_light=ticks_light,
-                ticks_heavy=ticks_heavy,
-                loop_duration_ms=int((time.perf_counter() - loop_t0) * 1000),
-                tool_timings=tool_timings,
+                utterance=state.utterance,
+                history=state.history,
+                visible_tools=visible_tools,
+                observations=state.observations,
+                flow_note=state.flow_note,
+                skills_section=state.skills_section,
+                gear=gear,
+                lean_surface=state.lean_surface,
+                plan_note=state.plan_note,
+                capabilities_section=state.capabilities_section,
+                parameters_section=state.parameters_section,
+                nd_streak=state.nd_streak,
+                model_failures=state.model_failures,
             )
+        )
+        if outcome in ("model_error", "no_decision", BUDGET_EXHAUSTED):
+            return TickOutcome.stop(outcome)
+        if outcome == "retry" or decision is None:
+            return TickOutcome.CONTINUE_
+        # Strip the native-protocol bookkeeping before normalising so it can
+        # never be folded into tool arguments; it is re-attached to the
+        # observation this decision produces (see _stamp_observations).
+        state.last_dec_meta = {
+            k[1:]: decision.pop(k)
+            for k in list(decision.keys())
+            if k in DECISION_META_KEYS
+        }
+        state.last_obs_len = len(state.observations)
+        action, tool_name, args = self._normalize(
+            decision, state.tools, state.skill_names
+        )
+        if state.last_dec_meta.get("call_id"):
+            state.last_dec_meta["call_tool"] = tool_name
+            state.last_dec_meta["call_args"] = dict(args or {})
+        if (
+            action == "tool"
+            and tool_name in state.skill_names
+            and tool_name not in state.tools
+            and state.active_skill_doc is not None
+            and tool_name == getattr(state.active_skill_doc, "name", None)
+        ):
+            state.observations.append(
+                {
+                    "tool": tool_name,
+                    "args": args,
+                    "observation": (
+                        f"({tool_name} is the active locked skill, not a "
+                        "callable tool. Follow the ACTIVE SKILL procedure "
+                        "and use its listed tools, or reply/respond to the "
+                        "user. Do not invoke the skill name as a tool.)"
+                    ),
+                }
+            )
+            return TickOutcome.CONTINUE_
+        # Progress/reasoning line for the UI's REASONING disclosure. Fires on
+        # both gears so single-step (light) turns still show their reasoning,
+        # not just multi-step heavy ones.
+        if self.stream_internal_progress:
+            await self._emit_thought(
+                visitor, self._progress_line(action, tool_name, args, decision)
+            )
+        if action == "final":
+            return await self._tick_final(visitor, state, decision)
+        if action == "tool":
+            return await self._tick_tool(visitor, state, tool_name, args)
+        # Unknown action — stop rather than loop, but still let the
+        # partial-compose deliver whatever the turn gathered.
+        return TickOutcome.stop("unknown")
+
+    async def _tick_final(
+        self, visitor: "InteractWalker", state: TurnState, decision: Dict[str, Any]
+    ) -> TickOutcome:
+        """The model wants to finish: guards, then deliver its closing text."""
+        if state.pending_chain and state.chain_deflections < 2:
+            # A tool result told the model to call ``pending_chain`` next. Don't
+            # let it finalize (or claim completion) until that step has run.
+            state.chain_deflections += 1
+            state.observations.append(
+                {
+                    "tool": "(guard)",
+                    "args": {},
+                    "observation": (
+                        f"(The task is not finished — call "
+                        f"{state.pending_chain} now to continue. Do NOT give a "
+                        "final answer or claim the process is "
+                        "complete until it has run.)"
+                    ),
+                }
+            )
+            return TickOutcome.CONTINUE_
+        if state.plan_deflections < int(self.plan_completion_max_deflections):
+            open_steps = self._open_plan_step(visitor)
+            if open_steps:
+                # An active multi-step plan still has open steps — don't
+                # finalize mid-task. Nudge the model to run the next step (or
+                # close the plan if it's really done).
+                state.plan_deflections += 1
+                state.observations.append(self._plan_drain_nudge(open_steps))
+                return TickOutcome.CONTINUE_
+        answer = _text_candidate(decision)
+        if answer and state.grounding_deflections < int(self.grounding_max_deflections):
+            nudge = self._grounding_deflection(
+                answer,
+                state.substantive_tool_calls,
+                self._grounding_corpus(
+                    state.utterance, state.history, state.observations
+                ),
+                visitor,
+            )
+            if nudge is not None:
+                state.grounding_deflections += 1
+                state.observations.append(nudge)
+                return TickOutcome.CONTINUE_
+        if answer:
+            await self._maybe_emit_final(visitor, answer)
+        return TickOutcome.done("final")
+
+    async def _tick_tool(
+        self,
+        visitor: "InteractWalker",
+        state: TurnState,
+        tool_name: str,
+        args: Dict[str, Any],
+    ) -> TickOutcome:
+        """The model wants a tool: guards → dispatch → the result's consequences."""
+        guard = await self._guard_tool_call(visitor, state, tool_name, args)
+        if guard is not None:
+            return guard
+        tool, obs = await self._dispatch_tool(visitor, state, tool_name, args)
+        return await self._after_dispatch(visitor, state, tool_name, args, tool, obs)
+
+    async def _guard_tool_call(
+        self,
+        visitor: "InteractWalker",
+        state: TurnState,
+        tool_name: str,
+        args: Dict[str, Any],
+    ) -> Optional[TickOutcome]:
+        """Pre-dispatch guards, in order. ``None`` means the call may run.
+
+        Each guard either deflects the call (appends an observation and asks for
+        another tick) or ends the loop; none of them dispatches anything.
+        """
+        # Steering guard: the user named this exact tool — deflect it once so
+        # tool selection stays the agent's call, driven by the goal rather than
+        # the named tool.
+        if (
+            tool_name in state.user_named_tools
+            and tool_name not in state.deflected_named
+        ):
+            state.deflected_named.add(tool_name)
+            state.observations.append(
+                {
+                    "tool": tool_name,
+                    "args": args,
+                    "observation": (
+                        f"(You may not call {tool_name} just because "
+                        "the user named it. Tool selection is your "
+                        "responsibility — work out the user's "
+                        "underlying goal and choose the right "
+                        "tool(s) yourself, or answer directly.)"
+                    ),
+                }
+            )
+            return TickOutcome.CONTINUE_
+        if (
+            state.pending_chain
+            and tool_name in ("reply", "respond")
+            and state.chain_deflections < 2
+        ):
+            # A chained step is pending — don't let the model reply (e.g.
+            # announce completion) before it runs.
+            state.chain_deflections += 1
+            state.observations.append(
+                {
+                    "tool": "(guard)",
+                    "args": {},
+                    "observation": (
+                        f"(The task is not finished — call "
+                        f"{state.pending_chain} now, not reply/respond. Do NOT "
+                        "tell the user the process is complete until it has run.)"
+                    ),
+                }
+            )
+            return TickOutcome.CONTINUE_
+        if tool_name in ("reply", "respond") and state.grounding_deflections < int(
+            self.grounding_max_deflections
+        ):
+            nudge = self._grounding_deflection(
+                str((args or {}).get("text") or _text_candidate(args or {})),
+                state.substantive_tool_calls,
+                self._grounding_corpus(
+                    state.utterance, state.history, state.observations
+                ),
+                visitor,
+            )
+            if nudge is not None:
+                state.grounding_deflections += 1
+                state.observations.append(nudge)
+                return TickOutcome.CONTINUE_
+        if tool_name in ("reply", "respond") and state.plan_deflections < int(
+            self.plan_completion_max_deflections
+        ):
+            # Plan-drain: the orchestrator must not COMPLETE the turn
+            # (reply/respond is terminal egress) while its active plan still has
+            # unfinished steps — whether the reply is bare narration coerced to
+            # a reply or a deliberate reply. After the cap the reply passes, so
+            # a genuine mid-plan question to the user is never blocked forever.
+            open_steps = self._open_plan_step(visitor)
+            if open_steps:
+                state.plan_deflections += 1
+                state.observations.append(self._plan_drain_nudge(open_steps))
+                return TickOutcome.CONTINUE_
+        # Companion gate: while a skill holds the turn-lock, use_skill may only
+        # (re)activate the locked skill itself or a declared companion
+        # (ADR-0034 L5 two-strike soft-abandon lives inside).
+        gate = await self._companion_gate(
+            visitor,
+            state.active_skill_doc,
+            tool_name,
+            args,
+            state.locked_companion_skill_names,
+            state.loop_actions,
+            state.observations,
+            state.soft_abandon_evaluated,
+            state.soft_abandon_streak,
+            state.soft_abandon_title,
+        )
+        if gate is not None:
+            (
+                gate_outcome,
+                state.soft_abandon_evaluated,
+                state.soft_abandon_streak,
+                state.soft_abandon_title,
+            ) = gate
+            if gate_outcome == "unlock":
+                state.active_skill_doc = None
+                state.locked_companion_skill_names = set()
+                state.locked_companion_tools = set()
+            return TickOutcome.CONTINUE_
+        # Repeat guard (pre-dispatch): a model that re-issues the SAME call
+        # (tool + args) makes no progress, and re-running a side-effecting tool
+        # (queue a task, POST to an API) would duplicate its effects — so the
+        # duplicate is never dispatched. One re-dispatch is allowed when the
+        # prior attempt errored/timed out (transient failures deserve a retry);
+        # a third identical call ends the turn.
+        sig = (tool_name, str(args))
+        state.repeats = state.repeats + 1 if sig == state.last_sig else 0
+        state.last_sig = sig
+        if state.repeats >= 2:
+            # Stop, don't return: the post-loop partial-compose is what turns
+            # gathered work into an answer. A bare return skipped it, so a turn
+            # that had already activated a skill, planned and fetched a page
+            # ended on "Sorry, I didn't quite catch that" and threw all of it
+            # away. Observed live on a research → report → assimilate request.
+            return TickOutcome.stop("repeat_guard")
+        if state.repeats == 1:
+            prior_errored = state.last_obs.startswith("(tool error:") or (
+                " timed out after " in state.last_obs
+            )
+            if not prior_errored:
+                state.observations.append(
+                    {
+                        "tool": "(guard)",
+                        "args": {},
+                        "observation": (
+                            f"(You have already called {tool_name} "
+                            "with this exact input; its result is "
+                            "above. Do NOT repeat the call — use a "
+                            "different tool, change the arguments, "
+                            'or finish with action "final".)'
+                        ),
+                    }
+                )
+                return TickOutcome.CONTINUE_
+        return None
+
+    async def _dispatch_tool(
+        self,
+        visitor: "InteractWalker",
+        state: TurnState,
+        tool_name: str,
+        args: Dict[str, Any],
+    ) -> Tuple[Optional[Any], Any]:
+        """Run the tool (bounded by ``tool_call_timeout``) and record the result.
+
+        Returns ``(tool, obs)``; ``tool`` is ``None`` for an unknown name, in
+        which case ``obs`` is the discovery steer. The observation is appended
+        and ``state.last_obs`` updated here, so every later reader sees it.
+        """
+        tool = state.tools.get(tool_name)
+        if tool is None:
+            # Genuinely unknown name (often a hallucinated tool) — this is where
+            # find_tool earns its keep: point the model at discovery instead of
+            # letting it guess again.
+            obs: Any = (
+                f"(no such tool: {tool_name}. Call "
+                "find_tool(query) to find the right tool by "
+                "capability — e.g. find_tool('add to knowledge "
+                "base'), find_tool('fetch url') — then call the "
+                "exact name it returns. Pass gathered text in "
+                "tool args; do not invent a write-file detour.)"
+            )
+        else:
+            if self.block_raw_tool_invocation and tool_name not in state.visible:
+                # The model named a REAL tool that lean surfacing had hidden.
+                # Naming it IS effective intent (not a hallucination), so promote
+                # it and run it — an implicit load_tool — rather than dead-ending
+                # on a find_tool demand. Dispatch already resolves the full
+                # surface; hiding a tool from the prompt never made it
+                # uncallable. (The user-named-tool steer guard still blocks tools
+                # the *user* dictated.)
+                state.visible.add(tool_name)
+            # Structured tool thought for the UI's TOOL CALLS panel: tool_call
+            # before, tool_result after (shared segment_id so they fold into one
+            # element). Substantive tools only.
+            tool_seg = (
+                f"toolcall-{uuid.uuid4().hex[:10]}"
+                if tool_name not in _NON_SUBSTANTIVE_TOOLS
+                else None
+            )
+            if tool_seg:
+                await self._emit_tool_thought(
+                    visitor, "tool_call", tool_name, tool_seg, args=args
+                )
+            # Voice-friendly ack: arm the transient ack before the FIRST
+            # substantive tool runs, so a slow tool is covered by a
+            # spoken/visible "One moment…" instead of dead air. Still gated by
+            # first_emit_timeout_ms — fast tools surface nothing.
+            if (
+                not state.ack_started
+                and self.ack_on_first_tool_call
+                and tool_name not in _NON_SUBSTANTIVE_TOOLS
+            ):
+                state.ack_started = True
+                state.ack_task = self._schedule_first_emit_ack(visitor)
+            tool_call_timeout = float(
+                self._channel_cfg(visitor, "tool_call_timeout", self.tool_call_timeout)
+                or 0.0
+            )
+            tool_t0 = time.perf_counter()
+            try:
+                if tool_call_timeout > 0:
+                    obs = await asyncio.wait_for(
+                        tool.run(args), timeout=tool_call_timeout
+                    )
+                else:
+                    obs = await tool.run(args)
+            except asyncio.TimeoutError:
+                obs = f"(tool {tool_name} timed out after {tool_call_timeout}s)"
+            except Exception as exc:
+                logger.warning("orchestrator: tool %r raised: %s", tool_name, exc)
+                obs = f"(tool error: {exc})"
+            state.tool_timings.append(
+                {
+                    "name": tool_name,
+                    "duration_ms": int((time.perf_counter() - tool_t0) * 1000),
+                }
+            )
+            # After (fires on success, timeout, or error — obs is always a
+            # string by here).
+            if tool_seg:
+                await self._emit_tool_thought(
+                    visitor, "tool_result", tool_name, tool_seg, obs=obs
+                )
+        state.observations.append({"tool": tool_name, "args": args, "observation": obs})
+        state.last_obs = obs if isinstance(obs, str) else str(obs)
+        return tool, obs
+
+    async def _after_dispatch(
+        self,
+        visitor: "InteractWalker",
+        state: TurnState,
+        tool_name: str,
+        args: Dict[str, Any],
+        tool: Optional[Any],
+        obs: Any,
+    ) -> TickOutcome:
+        """What a tool result means for the turn: skill activation and lock,
+        companion re-grounding, the directive contract, gearing, and whether
+        the user has now been addressed."""
+        # Whether ``obs`` is server-generated framing (always trusted for the
+        # directive contract) rather than a raw tool result. Set True wherever
+        # this method constructs obs itself (the prerequisite detour).
+        obs_server_generated = False
+        if tool_name == "use_skill":
+            skill_name = ((args or {}).get("name") or "").strip()
+            prep_obs_before = len(state.observations)
+            (
+                locked_doc,
+                state.tools,
+                state.visible,
+                new_section,
+                detour_directive,
+            ) = await self._apply_task_lock_after_use_skill(
+                skill_name=skill_name,
+                activation_obs=obs if isinstance(obs, str) else "",
+                skill_docs=state.skill_docs,
+                loop_actions=state.loop_actions,
+                visitor=visitor,
+                utterance=state.utterance,
+                tools=state.tools,
+                visible=state.visible,
+                activated=state.activated,
+                observations=state.observations,
+            )
+            if locked_doc is not None:
+                state.active_skill_doc = locked_doc
+                state.refreshed = await self._absorb_skill_parameters(
+                    visitor, [locked_doc]
+                )
+                if state.refreshed:
+                    state.parameters_section = state.refreshed
+                if new_section:
+                    state.skills_section = new_section
+                await self._emit_server_prep_tool_thoughts(
+                    visitor, state.observations, since_index=prep_obs_before
+                )
+                # A prerequisite was pushed: deliver its first question as the
+                # turn's terminal reply so the model cannot fabricate the answer
+                # and skip the gate. The directive contract below reads a JSON
+                # tool-result, so frame it as one (no next_tool ⇒ it is treated
+                # as the terminal reply).
+                if detour_directive:
+                    obs = json.dumps({"response_directive": detour_directive})
+                    obs_server_generated = True
+            elif (
+                skill_name
+                and isinstance(obs, str)
+                and obs.startswith("Activated skill")
+            ):
+                # Non-task-lock: PROCEDURE lives in skills_section so Steps
+                # taken this turn stays TOOL-only.
+                from jvagent.action.orchestrator.skill_tasks import (
+                    activated_skill_section_text,
+                )
+
+                doc = next(
+                    (
+                        d
+                        for d in state.skill_docs
+                        if getattr(d, "name", None) == skill_name
+                    ),
+                    None,
+                )
+                if doc is not None:
+                    state.skills_section = activated_skill_section_text(doc)
+        # Companion detour: a companion capability (tool or skill) was used
+        # while a parent skill holds the turn-lock. Re-ground the parent in
+        # place so the model returns to it as soon as the side request is
+        # handled — same turn, not next.
+        if state.active_skill_doc is not None and (
+            tool_name in state.locked_companion_tools
+            or (
+                tool_name == "use_skill"
+                and ((args or {}).get("name") or "").strip()
+                in state.locked_companion_skill_names
+            )
+        ):
+            rg_before = len(state.observations)
+            await self._reground_parent_lock(
+                state.active_skill_doc, state.loop_actions, visitor, state.observations
+            )
+            if len(state.observations) > rg_before:
+                await self._emit_server_prep_tool_thoughts(
+                    visitor, state.observations, since_index=rg_before
+                )
+        # Directive contract: a tool result may carry the authoritative next
+        # step. A pending ``next_tool`` is a chain the model MUST take before it
+        # can finalize; a bare "Tell the user or ask the user:" directive with
+        # no chain is the turn's reply, delivered directly so the model cannot
+        # re-decide (e.g. re-call the same tool). Generic — no tool is named.
+        if isinstance(obs, str):
+            # Trust boundary (AUDIT-orchestrator HIGH): only honor the directive
+            # contract from server-generated framing or a first-party tool. A
+            # raw MCP/third-party result is external content — parsing
+            # next_tool/response_directive from it would let a compromised
+            # server hijack the turn's reply or force tool-chaining.
+            if obs_server_generated or not is_untrusted_directive_source(tool_name):
+                nt, rd = self._result_next(obs)
+            else:
+                nt, rd = None, ""
+            # Completion detection is safe to read regardless of the directive
+            # trust boundary: it consults only the completion flags (not the
+            # hijackable next_tool/response_directive), and the resume it
+            # triggers self-guards on real task state — a spoofed completion
+            # cannot choose which task resumes.
+            obs_is_completion = self._result_is_completion(obs)
+            says_reply = rd.strip().lower().startswith("tell the user")
+            if nt:
+                # The result chains to another tool the model MUST call.
+                state.pending_chain = nt
+                state.chain_deflections = 0
+            elif says_reply or obs_is_completion:
+                # Drain (ADR-0026): when a task-lock skill completes — whether it
+                # emits a terminal reply or a silent completion — re-resolve the
+                # task lock. If a parent task is now the top runnable, resume it
+                # in THIS turn instead of leaving the resume to a model tick that
+                # may narrate past a first field the activation would
+                # auto-resolve. _maybe_resume self-guards.
+                resumed = await self._maybe_resume_after_completion(
+                    obs,
+                    state.active_skill_doc,
+                    state.skill_docs,
+                    state.loop_actions,
+                    visitor,
+                    state.utterance,
+                    state.tools,
+                    state.visible,
+                    state.activated,
+                    state.observations,
+                )
+                if resumed is not None:
+                    (
+                        state.active_skill_doc,
+                        state.tools,
+                        state.visible,
+                        state.skills_section,
+                        resume_terminal,
+                    ) = resumed
+                    if resume_terminal:
+                        # The resumed skill voices its own next question: deliver
+                        # it and end the turn (server-driven resume — the model
+                        # cannot fabricate the answer).
+                        await self._send_reply(visitor, resume_terminal, compose=True)
+                        return TickOutcome.done("resume_reply")
+                    # The parent's surface (and its server-side activation) is
+                    # now applied; continue so the model finalizes on it.
+                    return TickOutcome.CONTINUE_
+                if says_reply:
+                    # Terminal reply directive with no chain — deliver it and end
+                    # so the model cannot re-decide. Compose (not literal relay):
+                    # the directive may carry model-facing guidance that must be
+                    # rendered into the agent's voice, not leaked verbatim.
+                    await self._send_reply(visitor, rd, compose=True)
+                    return TickOutcome.done("directive_reply")
+            elif state.pending_chain and tool_name == state.pending_chain:
+                # The pending chain just ran and produced no further chain —
+                # it's satisfied; let the model finalize.
+                state.pending_chain = None
+                state.chain_deflections = 0
+        # Gearing: count substantive (non-meta, non-egress) tool calls toward
+        # escalation to the heavy model.
+        if tool is not None and tool_name not in _NON_SUBSTANTIVE_TOOLS:
+            state.substantive_tool_calls += 1
+        # End the turn once the user has been addressed: a persona reply (by
+        # name), a terminal tool that owns its own output, or any tool that
+        # already delivered a user-facing message this turn
+        # (interaction.emitted). This also stops a model that keeps choosing
+        # the same tool from looping until the budget is exhausted.
+        already_emitted = False
+        if state.interaction is not None:
+            has_emitted = getattr(state.interaction, "has_emitted", None)
+            if callable(has_emitted):
+                try:
+                    already_emitted = bool(has_emitted())
+                except Exception:
+                    already_emitted = False
+        if (
+            tool_name in ("reply", "respond")
+            or (tool is not None and tool.terminal)
+            or (already_emitted)
+        ):
+            return TickOutcome.done(
+                tool_name
+                if tool_name in ("reply", "respond")
+                else ("ia_tool" if (tool is not None and tool.terminal) else "emitted")
+            )
+        return TickOutcome.CONTINUE_
+
+    # ------------------------------------------------------------------
+    # After the loop
+    # ------------------------------------------------------------------
+
+    async def _after_loop(self, visitor: "InteractWalker", state: TurnState) -> None:
+        """The loop stopped without delivering: drain runnable work, or turn the
+        gathered observations into an answer (one partial-compose), or report an
+        unreachable model honestly."""
+        # Invariant 7 (ADR-0026): the loop ended, but the orchestrator must not
+        # finalize idle while runnable work remains. Drain non-skill runnable
+        # tasks now; if one blocks on input it owns the egress. Inert until a
+        # runner is registered, so skill-only turns are unaffected.
+        interaction = getattr(visitor, "interaction", None)
+        emitted = bool(getattr(interaction, "response", "") if interaction else "")
+        _stamp_observations(state.observations, state.last_obs_len, state.last_dec_meta)
+        if state.ended_via == "model_error":
+            # The model is unreachable: no finalize call (it would fail the same
+            # way) and no clarify fallback (the user was not unclear). Deliver
+            # what the turn gathered, if anything, under an honest status line.
+            if not emitted:
+                salvage = (
+                    _salvage_partial_answer(state.observations)
+                    if state.observations
+                    else ""
+                )
+                text = str(self.model_unavailable_text or "").strip()
+                if salvage:
+                    text = f"{text}\n\n{salvage}".strip()
+                if text:
+                    await self._send_reply(visitor, text)
+            return
+        if not emitted:
+            drain_directive = await self._drain_runnable_tasks(
+                visitor, state.observations
+            )
+            if drain_directive:
+                await self._send_reply(visitor, drain_directive, compose=True)
+                state.ended_via = f"{state.ended_via}_drained"
+                return
+            emitted = bool(getattr(interaction, "response", "") if interaction else "")
+
+        # Budget/time ran out mid-task. Rather than dropping to the generic
+        # clarify fallback (which discards the work and misreports the cause),
+        # force ONE compose so the user gets the agent's best answer from what
+        # it gathered. Only when there's actual work to summarize.
+        if (
+            not emitted
+            and state.ended_via
+            in (
+                "budget",
+                "duration",
+                "no_decision",
+                "repeat_guard",
+                "unknown",
+                BUDGET_EXHAUSTED,
+            )
+            and state.observations
+        ):
+            decision = await self._run_model(
+                visitor,
+                state.utterance,
+                state.history,
+                [],
+                state.observations,
+                skills_section=state.skills_section,
+                finalize=True,
+                gear=state.last_gear,
+                capabilities_section=state.capabilities_section,
+                parameters_section=state.parameters_section,
+            )
+            answer = _text_candidate(decision) if decision else ""
+            # Finalize must be text-only. Models often ignore STEP LIMIT and emit
+            # another tool call. Never fall through to clarify_text when we
+            # already gathered work.
+            if not answer:
+                answer = _salvage_partial_answer(state.observations)
+            if answer:
+                await self._maybe_emit_final(visitor, answer)
+                state.ended_via = f"{state.ended_via}_finalized"
+
+    async def _close_turn(self, visitor: "InteractWalker", state: TurnState) -> None:
+        """Always runs: cancel the ack, settle the plan, record the activation."""
+        if state.ack_task is not None and not state.ack_task.done():
+            state.ack_task.cancel()
+        # Plan lifecycle (ADR-0019): close a fully-done plan, leave a plan with
+        # pending steps ACTIVE so the next turn resumes it. No-op when planning
+        # is off.
+        await self._finalize_plan(visitor)
+        rec_continuation_mode = (
+            "locked"
+            if state.active_skill_doc
+            else ("model_mediated" if state.flow_owner else "none")
+        )
+        rec_flow_owner = (
+            state.active_skill_doc.name if state.active_skill_doc else state.flow_owner
+        )
+        await self._record_orchestrator_activation(
+            visitor,
+            continuation_mode=rec_continuation_mode,
+            flow_owner=rec_flow_owner,
+            tools_invoked=[o.get("tool") for o in state.observations],
+            tick_count=state.ticks,
+            ended_via=state.ended_via,
+            activated=state.activated,
+            ticks_light=state.ticks_light,
+            ticks_heavy=state.ticks_heavy,
+            loop_duration_ms=int((time.perf_counter() - state.loop_t0) * 1000),
+            tool_timings=state.tool_timings,
+        )
