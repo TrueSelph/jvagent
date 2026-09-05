@@ -8,6 +8,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Persisted text is no longer folded to ASCII by default.** jvspatial's
+  `JVSPATIAL_TEXT_NORMALIZATION_ENABLED` defaults to `true`, which stripped
+  accents and stored every other non-ASCII character as `?` on every save
+  (`café → naïve` came back `cafe ? naive`; CJK and Cyrillic as `?`). jvagent now
+  seeds the key to `false` at boot, before the database is initialised
+  (`jvagent/cli/server_config.py::_set_db_env_from_config`); an explicit
+  environment value still wins. Found running the example agent live.
+
 ### Changed
 
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
