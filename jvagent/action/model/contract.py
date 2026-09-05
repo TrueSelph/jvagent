@@ -329,7 +329,9 @@ class ModelResponse:
         return cls(
             text=text,
             tool_calls=calls,
-            finish_reason=normalize_finish_reason(raw_finish, has_tool_calls=bool(calls)),
+            finish_reason=normalize_finish_reason(
+                raw_finish, has_tool_calls=bool(calls)
+            ),
             raw_finish_reason=(
                 str(raw_finish) if isinstance(raw_finish, str) and raw_finish else None
             ),
@@ -342,7 +344,9 @@ class ModelResponse:
             model=str(getattr(result, "model", "") or ""),
             provider=str(getattr(result, "provider", "") or ""),
             latency_ms=(
-                int(float(duration) * 1000) if isinstance(duration, (int, float)) else None
+                int(float(duration) * 1000)
+                if isinstance(duration, (int, float))
+                else None
             ),
         )
 

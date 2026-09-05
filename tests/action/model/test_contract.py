@@ -34,7 +34,9 @@ def test_finish_reasons_normalise_across_providers():
 
 def test_tool_calls_outrank_a_stop_label():
     """Ollama labels a tool-calling turn ``stop``; what the model did wins."""
-    assert normalize_finish_reason("stop", has_tool_calls=True) == FinishReason.TOOL_CALLS
+    assert (
+        normalize_finish_reason("stop", has_tool_calls=True) == FinishReason.TOOL_CALLS
+    )
     assert normalize_finish_reason(None, has_tool_calls=True) == FinishReason.TOOL_CALLS
     assert normalize_finish_reason(None) == FinishReason.STOP
     # A truncated tool call stays truncated — the arguments may be incomplete.
@@ -46,12 +48,20 @@ def test_tool_calls_outrank_a_stop_label():
 
 def test_tool_call_parses_string_and_dict_arguments():
     a = ToolCall.from_openai(
-        {"id": "c1", "type": "function", "function": {"name": "f", "arguments": '{"x": 1}'}}
+        {
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "f", "arguments": '{"x": 1}'},
+        }
     )
     assert a and a.arguments == {"x": 1} and a.raw_arguments == '{"x": 1}'
-    b = ToolCall.from_openai({"id": "c2", "function": {"name": "f", "arguments": {"y": 2}}})
+    b = ToolCall.from_openai(
+        {"id": "c2", "function": {"name": "f", "arguments": {"y": 2}}}
+    )
     assert b and b.arguments == {"y": 2}
-    bad = ToolCall.from_openai({"id": "c3", "function": {"name": "f", "arguments": "{oops"}})
+    bad = ToolCall.from_openai(
+        {"id": "c3", "function": {"name": "f", "arguments": "{oops"}}
+    )
     assert bad and bad.arguments == {} and bad.raw_arguments == "{oops"
     assert ToolCall.from_openai({"id": "c4", "function": {}}) is None
     assert ToolCall.from_openai("nope") is None
@@ -66,10 +76,16 @@ def test_tool_call_parses_string_and_dict_arguments():
 
 
 def test_usage_reads_every_cache_spelling():
-    openai_flat = Usage.from_metrics({"prompt_tokens": 100, "completion_tokens": 5, "cached_tokens": 60})
+    openai_flat = Usage.from_metrics(
+        {"prompt_tokens": 100, "completion_tokens": 5, "cached_tokens": 60}
+    )
     assert (openai_flat.cached_read_tokens, openai_flat.total_tokens) == (60, 105)
     openai_nested = Usage.from_metrics(
-        {"prompt_tokens": 100, "completion_tokens": 5, "prompt_tokens_details": {"cached_tokens": 40}}
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 5,
+            "prompt_tokens_details": {"cached_tokens": 40},
+        }
     )
     assert openai_nested.cached_read_tokens == 40
     anthropic = Usage.from_metrics(
@@ -83,7 +99,11 @@ def test_usage_reads_every_cache_spelling():
     )
     assert (anthropic.cached_read_tokens, anthropic.cached_write_tokens) == (800, 100)
     reasoning = Usage.from_metrics(
-        {"prompt_tokens": 1, "completion_tokens": 50, "completion_tokens_details": {"reasoning_tokens": 30}}
+        {
+            "prompt_tokens": 1,
+            "completion_tokens": 50,
+            "completion_tokens_details": {"reasoning_tokens": 30},
+        }
     )
     assert reasoning.thinking_tokens == 30
     assert Usage.from_metrics(None).total_tokens == 0
@@ -94,7 +114,11 @@ def test_usage_reads_every_cache_spelling():
 
 
 def test_request_only_forwards_set_fields():
-    req = ModelRequest(messages=[{"role": "user", "content": "hi"}], max_tokens=10, extra={"thinking": {"type": "enabled"}})
+    req = ModelRequest(
+        messages=[{"role": "user", "content": "hi"}],
+        max_tokens=10,
+        extra={"thinking": {"type": "enabled"}},
+    )
     kwargs = req.to_query_kwargs()
     assert kwargs["messages"] == [{"role": "user", "content": "hi"}]
     assert kwargs["stream"] is False and kwargs["tools"] is None
@@ -108,19 +132,37 @@ def test_request_only_forwards_set_fields():
 def test_response_from_legacy_result_normalises_everything():
     result = ModelActionResult(
         response="",
-        usage={"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14, "cache_read_input_tokens": 6},
+        usage={
+            "prompt_tokens": 10,
+            "completion_tokens": 4,
+            "total_tokens": 14,
+            "cache_read_input_tokens": 6,
+        },
         model="claude",
         provider="anthropic",
         finish_reason="tool_use",
-        tool_calls=[{"id": "t1", "type": "function", "function": {"name": "f", "arguments": '{"a": 1}'}}],
+        tool_calls=[
+            {
+                "id": "t1",
+                "type": "function",
+                "function": {"name": "f", "arguments": '{"a": 1}'},
+            }
+        ],
         thinking_content="hmm",
         duration=0.25,
     )
     resp = result.to_response()
-    assert resp.finish_reason == FinishReason.TOOL_CALLS and resp.raw_finish_reason == "tool_use"
+    assert (
+        resp.finish_reason == FinishReason.TOOL_CALLS
+        and resp.raw_finish_reason == "tool_use"
+    )
     assert resp.tool_calls[0].arguments == {"a": 1}
     assert resp.usage.cached_read_tokens == 6 and resp.usage.total_tokens == 14
-    assert resp.thinking == "hmm" and resp.provider == "anthropic" and resp.latency_ms == 250
+    assert (
+        resp.thinking == "hmm"
+        and resp.provider == "anthropic"
+        and resp.latency_ms == 250
+    )
     assert resp.has_tool_calls and not resp.truncated
     assert resp.tool_calls_openai()[0]["function"]["name"] == "f"
 
@@ -134,7 +176,9 @@ def test_response_from_duck_typed_double_and_passthrough():
     assert ModelResponse.from_result(None).text == ""
     same = ModelResponse(text="x")
     assert ModelResponse.from_result(same) is same
-    truncated = ModelResponse.from_result(SimpleNamespace(response="par", finish_reason="max_tokens"))
+    truncated = ModelResponse.from_result(
+        SimpleNamespace(response="par", finish_reason="max_tokens")
+    )
     assert truncated.truncated
 
 

@@ -175,13 +175,22 @@ def _sse_headers() -> Dict[str, str]:
 # ---- OpenAI ----------------------------------------------------------------
 
 
-def _oai(message: Dict[str, Any], finish: str, usage: Dict[str, Any] | None = None) -> Dict:
+def _oai(
+    message: Dict[str, Any], finish: str, usage: Dict[str, Any] | None = None
+) -> Dict:
     return {
         "id": "chatcmpl-1",
         "object": "chat.completion",
         "model": "gpt-4o-mini",
-        "choices": [{"index": 0, "message": {"role": "assistant", **message}, "finish_reason": finish}],
-        "usage": usage or {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", **message},
+                "finish_reason": finish,
+            }
+        ],
+        "usage": usage
+        or {"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
     }
 
 
@@ -207,11 +216,24 @@ def _oai_chunk(delta: Dict[str, Any], finish: Any = None, usage: Any = None) -> 
 
 _OPENAI: Dict[str, List[Dict[str, Any]]] = {
     "text": [_resp(_oai({"content": "Hello there!"}, "stop"))],
-    "tool_call": [_resp(_oai({"content": None, "tool_calls": [_oai_call("call_1", "Paris")]}, "tool_calls"))],
+    "tool_call": [
+        _resp(
+            _oai(
+                {"content": None, "tool_calls": [_oai_call("call_1", "Paris")]},
+                "tool_calls",
+            )
+        )
+    ],
     "parallel_tool_calls": [
         _resp(
             _oai(
-                {"content": None, "tool_calls": [_oai_call("call_1", "Paris"), _oai_call("call_2", "Berlin")]},
+                {
+                    "content": None,
+                    "tool_calls": [
+                        _oai_call("call_1", "Paris"),
+                        _oai_call("call_2", "Berlin"),
+                    ],
+                },
                 "tool_calls",
             )
         )
@@ -242,13 +264,28 @@ _OPENAI: Dict[str, List[Dict[str, Any]]] = {
                                     "index": 0,
                                     "id": "call_1",
                                     "type": "function",
-                                    "function": {"name": "get_weather", "arguments": ""},
+                                    "function": {
+                                        "name": "get_weather",
+                                        "arguments": "",
+                                    },
                                 }
                             ]
                         }
                     ),
-                    _oai_chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"city": '}}]}),
-                    _oai_chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"Paris"}'}}]}),
+                    _oai_chunk(
+                        {
+                            "tool_calls": [
+                                {"index": 0, "function": {"arguments": '{"city": '}}
+                            ]
+                        }
+                    ),
+                    _oai_chunk(
+                        {
+                            "tool_calls": [
+                                {"index": 0, "function": {"arguments": '"Paris"}'}}
+                            ]
+                        }
+                    ),
                     _oai_chunk({}, finish="tool_calls"),
                 ]
             ),
@@ -272,17 +309,25 @@ _OPENAI: Dict[str, List[Dict[str, Any]]] = {
     ],
     "thinking": [_resp(_oai({"content": "42", "reasoning_content": "6*7=42"}, "stop"))],
     "retry_429": [
-        _resp({"error": {"message": "rate limited"}}, status=429, headers={"content-type": "application/json", "retry-after": "0"}),
+        _resp(
+            {"error": {"message": "rate limited"}},
+            status=429,
+            headers={"content-type": "application/json", "retry-after": "0"},
+        ),
         _resp(_oai({"content": "Hello there!"}, "stop")),
     ],
     "error_500": [_resp({"error": {"message": "boom"}}, status=500)],
-    "malformed_body": [_resp("<html>not json</html>", headers={"content-type": "text/html"})],
+    "malformed_body": [
+        _resp("<html>not json</html>", headers={"content-type": "text/html"})
+    ],
 }
 
 # ---- Anthropic -------------------------------------------------------------
 
 
-def _anth(content: List[Dict[str, Any]], stop: str, usage: Dict[str, Any] | None = None) -> Dict:
+def _anth(
+    content: List[Dict[str, Any]], stop: str, usage: Dict[str, Any] | None = None
+) -> Dict:
     return {
         "id": "msg_1",
         "type": "message",
@@ -295,7 +340,12 @@ def _anth(content: List[Dict[str, Any]], stop: str, usage: Dict[str, Any] | None
 
 
 def _anth_use(tid: str, city: str) -> Dict[str, Any]:
-    return {"type": "tool_use", "id": tid, "name": "get_weather", "input": {"city": city}}
+    return {
+        "type": "tool_use",
+        "id": tid,
+        "name": "get_weather",
+        "input": {"city": city},
+    }
 
 
 def _anth_sse(events: List[Dict[str, Any]]) -> str:
@@ -305,18 +355,49 @@ def _anth_sse(events: List[Dict[str, Any]]) -> str:
 _ANTHROPIC: Dict[str, List[Dict[str, Any]]] = {
     "text": [_resp(_anth([{"type": "text", "text": "Hello there!"}], "end_turn"))],
     "tool_call": [_resp(_anth([_anth_use("toolu_1", "Paris")], "tool_use"))],
-    "parallel_tool_calls": [_resp(_anth([_anth_use("toolu_1", "Paris"), _anth_use("toolu_2", "Berlin")], "tool_use"))],
-    "tool_result_roundtrip": [_resp(_anth([{"type": "text", "text": "It is 18C in Paris."}], "end_turn"))],
+    "parallel_tool_calls": [
+        _resp(
+            _anth(
+                [_anth_use("toolu_1", "Paris"), _anth_use("toolu_2", "Berlin")],
+                "tool_use",
+            )
+        )
+    ],
+    "tool_result_roundtrip": [
+        _resp(_anth([{"type": "text", "text": "It is 18C in Paris."}], "end_turn"))
+    ],
     "stream_text": [
         _resp(
             _anth_sse(
                 [
-                    {"type": "message_start", "message": {"id": "msg_1", "usage": {"input_tokens": 12, "output_tokens": 0}}},
-                    {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-                    {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}},
-                    {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "there!"}},
+                    {
+                        "type": "message_start",
+                        "message": {
+                            "id": "msg_1",
+                            "usage": {"input_tokens": 12, "output_tokens": 0},
+                        },
+                    },
+                    {
+                        "type": "content_block_start",
+                        "index": 0,
+                        "content_block": {"type": "text", "text": ""},
+                    },
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": "Hello "},
+                    },
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": "there!"},
+                    },
                     {"type": "content_block_stop", "index": 0},
-                    {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 3}},
+                    {
+                        "type": "message_delta",
+                        "delta": {"stop_reason": "end_turn"},
+                        "usage": {"output_tokens": 3},
+                    },
                     {"type": "message_stop"},
                 ]
             ),
@@ -327,23 +408,54 @@ _ANTHROPIC: Dict[str, List[Dict[str, Any]]] = {
         _resp(
             _anth_sse(
                 [
-                    {"type": "message_start", "message": {"id": "msg_1", "usage": {"input_tokens": 12, "output_tokens": 0}}},
+                    {
+                        "type": "message_start",
+                        "message": {
+                            "id": "msg_1",
+                            "usage": {"input_tokens": 12, "output_tokens": 0},
+                        },
+                    },
                     {
                         "type": "content_block_start",
                         "index": 0,
-                        "content_block": {"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {}},
+                        "content_block": {
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "get_weather",
+                            "input": {},
+                        },
                     },
-                    {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": '{"city": '}},
-                    {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": '"Paris"}'}},
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {
+                            "type": "input_json_delta",
+                            "partial_json": '{"city": ',
+                        },
+                    },
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {
+                            "type": "input_json_delta",
+                            "partial_json": '"Paris"}',
+                        },
+                    },
                     {"type": "content_block_stop", "index": 0},
-                    {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 9}},
+                    {
+                        "type": "message_delta",
+                        "delta": {"stop_reason": "tool_use"},
+                        "usage": {"output_tokens": 9},
+                    },
                     {"type": "message_stop"},
                 ]
             ),
             headers=_sse_headers(),
         )
     ],
-    "truncation": [_resp(_anth([{"type": "text", "text": "The quick brown"}], "max_tokens"))],
+    "truncation": [
+        _resp(_anth([{"type": "text", "text": "The quick brown"}], "max_tokens"))
+    ],
     "cached_usage": [
         _resp(
             _anth(
@@ -370,17 +482,36 @@ _ANTHROPIC: Dict[str, List[Dict[str, Any]]] = {
         )
     ],
     "retry_429": [
-        _resp({"type": "error", "error": {"type": "rate_limit_error", "message": "slow down"}}, status=429, headers={"content-type": "application/json", "retry-after": "0"}),
+        _resp(
+            {
+                "type": "error",
+                "error": {"type": "rate_limit_error", "message": "slow down"},
+            },
+            status=429,
+            headers={"content-type": "application/json", "retry-after": "0"},
+        ),
         _resp(_anth([{"type": "text", "text": "Hello there!"}], "end_turn")),
     ],
-    "error_500": [_resp({"type": "error", "error": {"type": "api_error", "message": "boom"}}, status=500)],
-    "malformed_body": [_resp("<html>not json</html>", headers={"content-type": "text/html"})],
+    "error_500": [
+        _resp(
+            {"type": "error", "error": {"type": "api_error", "message": "boom"}},
+            status=500,
+        )
+    ],
+    "malformed_body": [
+        _resp("<html>not json</html>", headers={"content-type": "text/html"})
+    ],
 }
 
 # ---- Ollama ----------------------------------------------------------------
 
 
-def _oll(message: Dict[str, Any], done_reason: str = "stop", prompt: int = 12, eval_count: int = 3) -> Dict:
+def _oll(
+    message: Dict[str, Any],
+    done_reason: str = "stop",
+    prompt: int = 12,
+    eval_count: int = 3,
+) -> Dict:
     return {
         "model": "llama3.1",
         "created_at": "2026-09-05T00:00:00Z",
@@ -403,14 +534,28 @@ def _ndjson(chunks: List[Dict[str, Any]]) -> str:
 _OLLAMA: Dict[str, List[Dict[str, Any]]] = {
     "text": [_resp(_oll({"content": "Hello there!"}))],
     "tool_call": [_resp(_oll({"content": "", "tool_calls": [_oll_call("Paris")]}))],
-    "parallel_tool_calls": [_resp(_oll({"content": "", "tool_calls": [_oll_call("Paris"), _oll_call("Berlin")]}))],
+    "parallel_tool_calls": [
+        _resp(
+            _oll(
+                {"content": "", "tool_calls": [_oll_call("Paris"), _oll_call("Berlin")]}
+            )
+        )
+    ],
     "tool_result_roundtrip": [_resp(_oll({"content": "It is 18C in Paris."}))],
     "stream_text": [
         _resp(
             _ndjson(
                 [
-                    {"model": "llama3.1", "message": {"role": "assistant", "content": "Hello "}, "done": False},
-                    {"model": "llama3.1", "message": {"role": "assistant", "content": "there!"}, "done": False},
+                    {
+                        "model": "llama3.1",
+                        "message": {"role": "assistant", "content": "Hello "},
+                        "done": False,
+                    },
+                    {
+                        "model": "llama3.1",
+                        "message": {"role": "assistant", "content": "there!"},
+                        "done": False,
+                    },
                     {
                         "model": "llama3.1",
                         "message": {"role": "assistant", "content": ""},
@@ -430,7 +575,11 @@ _OLLAMA: Dict[str, List[Dict[str, Any]]] = {
                 [
                     {
                         "model": "llama3.1",
-                        "message": {"role": "assistant", "content": "", "tool_calls": [_oll_call("Paris")]},
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [_oll_call("Paris")],
+                        },
                         "done": False,
                     },
                     {
@@ -450,11 +599,17 @@ _OLLAMA: Dict[str, List[Dict[str, Any]]] = {
     "cached_usage": [_resp(_oll({"content": "Hello there!"}, prompt=1000))],
     "thinking": [_resp(_oll({"content": "42", "thinking": "6*7=42"}))],
     "retry_429": [
-        _resp({"error": "rate limited"}, status=429, headers={"content-type": "application/json", "retry-after": "0"}),
+        _resp(
+            {"error": "rate limited"},
+            status=429,
+            headers={"content-type": "application/json", "retry-after": "0"},
+        ),
         _resp(_oll({"content": "Hello there!"})),
     ],
     "error_500": [_resp({"error": "boom"}, status=500)],
-    "malformed_body": [_resp("<html>not json</html>", headers={"content-type": "text/html"})],
+    "malformed_body": [
+        _resp("<html>not json</html>", headers={"content-type": "text/html"})
+    ],
 }
 
 BODIES: Dict[str, Dict[str, List[Dict[str, Any]]]] = {

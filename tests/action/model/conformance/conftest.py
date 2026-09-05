@@ -99,7 +99,9 @@ def make_case(
         transport: Any = RecordingTransport()
         fixture = {"source": "recorded", "provider": provider, "scenario": scenario}
     else:
-        fixture = load_recorded(provider, scenario) or authored_fixture(provider, scenario)
+        fixture = load_recorded(provider, scenario) or authored_fixture(
+            provider, scenario
+        )
         transport = ReplayTransport(fixture["responses"])
     action._http_client = httpx.AsyncClient(transport=transport)
     # Untracked client → adopted for the current loop (see _initialize_http_client).
