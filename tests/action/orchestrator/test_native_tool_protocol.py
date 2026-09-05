@@ -149,14 +149,20 @@ def test_text_maps_to_reply_on_the_surface_and_to_final_when_finalizing():
     assert reply[0]["action"] == "tool" and reply[0]["tool"] == "reply"
     assert reply[0]["args"] == {"text": "Hello!"}
     final = decisions_from_native_result([], "Hello!", text_as_reply=False)
-    assert final == [{"action": "final", "answer": "Hello!", "_assistant_text": "Hello!"}]
+    assert final == [
+        {"action": "final", "answer": "Hello!", "_assistant_text": "Hello!"}
+    ]
     assert decisions_from_native_result([], "") == []
 
 
 def test_malformed_arguments_degrade_to_empty_args():
     decisions = decisions_from_native_result([_tool_call("x", {})], "")
     assert decisions[0]["args"] == {}
-    broken = {"id": "c", "type": "function", "function": {"name": "x", "arguments": "{not json"}}
+    broken = {
+        "id": "c",
+        "type": "function",
+        "function": {"name": "x", "arguments": "{not json"},
+    }
     assert decisions_from_native_result([broken], "")[0]["args"] == {}
 
 
@@ -165,7 +171,12 @@ def test_malformed_arguments_degrade_to_empty_args():
 
 def test_observation_messages_pair_calls_with_results_and_merge_notes():
     observations = [
-        {"tool": "(skill-session)", "args": {}, "observation": "note A", "kind": "server_prep"},
+        {
+            "tool": "(skill-session)",
+            "args": {},
+            "observation": "note A",
+            "kind": "server_prep",
+        },
         {"tool": "(guard)", "args": {}, "observation": "note B"},
         {
             "tool": "web_fetch__fetch",
@@ -186,8 +197,17 @@ def test_observation_messages_pair_calls_with_results_and_merge_notes():
         },
     ]
     messages = render_observation_messages(observations)
-    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant", "tool"]
-    assert messages[0]["content"] == f"{HARNESS_NOTE_PREFIX}note A\n{HARNESS_NOTE_PREFIX}note B"
+    assert [m["role"] for m in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+    ]
+    assert (
+        messages[0]["content"]
+        == f"{HARNESS_NOTE_PREFIX}note A\n{HARNESS_NOTE_PREFIX}note B"
+    )
     assert messages[1]["content"] == "Fetching."
     assert messages[1]["tool_calls"][0]["id"] == "c1"
     assert messages[2] == {
@@ -207,11 +227,27 @@ def test_observation_messages_pair_calls_with_results_and_merge_notes():
 
 def test_observation_messages_group_parallel_calls_and_bound_size():
     observations = [
-        {"tool": "a", "args": {"p": "x" * 1000}, "observation": "r" * 5000, "call_id": "c1", "group_id": "g"},
-        {"tool": "b", "args": {}, "observation": "rb", "call_id": "c2", "group_id": "g"},
+        {
+            "tool": "a",
+            "args": {"p": "x" * 1000},
+            "observation": "r" * 5000,
+            "call_id": "c1",
+            "group_id": "g",
+        },
+        {
+            "tool": "b",
+            "args": {},
+            "observation": "rb",
+            "call_id": "c2",
+            "group_id": "g",
+        },
     ]
     messages = render_observation_messages(
-        observations, max_chars=100, stale_max_chars=50, full_recent=1, args_max_chars=40
+        observations,
+        max_chars=100,
+        stale_max_chars=50,
+        full_recent=1,
+        args_max_chars=40,
     )
     assert [m["role"] for m in messages] == ["assistant", "tool", "tool"]
     assert [tc["id"] for tc in messages[0]["tool_calls"]] == ["c1", "c2"]
@@ -225,7 +261,12 @@ def test_observation_messages_group_parallel_calls_and_bound_size():
 
 def test_observation_messages_replay_deflected_prose_as_assistant_text():
     observations = [
-        {"tool": "(guard)", "args": {}, "observation": "(not yet)", "assistant_text": "All done!"}
+        {
+            "tool": "(guard)",
+            "args": {},
+            "observation": "(not yet)",
+            "assistant_text": "All done!",
+        }
     ]
     messages = render_observation_messages(observations)
     assert messages[0] == {"role": "assistant", "content": "All done!"}
@@ -234,10 +275,14 @@ def test_observation_messages_replay_deflected_prose_as_assistant_text():
 
 def test_observation_messages_count_cap_notes_omission():
     observations = [
-        {"tool": "t", "args": {}, "observation": str(i), "call_id": f"c{i}"} for i in range(5)
+        {"tool": "t", "args": {}, "observation": str(i), "call_id": f"c{i}"}
+        for i in range(5)
     ]
     messages = render_observation_messages(observations, max_observations=2)
-    assert messages[0]["role"] == "user" and "3 earlier tool results omitted" in messages[0]["content"]
+    assert (
+        messages[0]["role"] == "user"
+        and "3 earlier tool results omitted" in messages[0]["content"]
+    )
     assert [m["tool_call_id"] for m in messages if m["role"] == "tool"] == ["c3", "c4"]
 
 
@@ -250,12 +295,21 @@ async def test_run_model_native_sends_definitions_and_replays_steps(
 ):
     ex = OrchestratorInteractAction()
     fake = _FakeModelAction(
-        [ModelActionResult(response="", tool_calls=[_tool_call("get_current_datetime", {})])]
+        [
+            ModelActionResult(
+                response="", tool_calls=[_tool_call("get_current_datetime", {})]
+            )
+        ]
     )
     _bind(monkeypatch, ex, fake)
     v = make_visitor(utterance="what time is it?")
     observations = [
-        {"tool": "find_tool", "args": {"query": "time"}, "observation": "hit", "call_id": "c0"}
+        {
+            "tool": "find_tool",
+            "args": {"query": "time"},
+            "observation": "hit",
+            "call_id": "c0",
+        }
     ]
     tools = [_tool("get_current_datetime"), _tool("reply"), _tool("find_tool")]
 
@@ -302,7 +356,11 @@ async def test_run_model_native_text_is_a_reply_and_finalize_offers_no_tools(
     assert decision["args"] == {"text": "Hi there!"}
 
     final = await ex._run_model(v, "hi", [], [], [], finalize=True)
-    assert final == {"action": "final", "answer": "Best answer.", "_assistant_text": "Best answer."}
+    assert final == {
+        "action": "final",
+        "answer": "Best answer.",
+        "_assistant_text": "Best answer.",
+    }
     assert "tools" not in fake.calls[1] or fake.calls[1]["tools"] is None
     assert P.FINALIZE_PROMPT_NATIVE in fake.calls[1]["messages"][0]["content"]
 
@@ -331,7 +389,11 @@ async def test_run_model_native_queues_extra_parallel_calls(make_visitor, monkey
 async def test_run_model_native_resolves_wire_aliases(make_visitor, monkeypatch):
     ex = OrchestratorInteractAction()
     fake = _FakeModelAction(
-        [ModelActionResult(response="", tool_calls=[_tool_call("mcp_fs__read_file", {"p": 1})])]
+        [
+            ModelActionResult(
+                response="", tool_calls=[_tool_call("mcp_fs__read_file", {"p": 1})]
+            )
+        ]
     )
     _bind(monkeypatch, ex, fake)
     v = make_visitor()
@@ -340,7 +402,9 @@ async def test_run_model_native_resolves_wire_aliases(make_visitor, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_run_model_surfaces_provider_failure_and_truncation(make_visitor, monkeypatch):
+async def test_run_model_surfaces_provider_failure_and_truncation(
+    make_visitor, monkeypatch
+):
     ex = OrchestratorInteractAction()
     fake = _FakeModelAction(
         [
@@ -353,7 +417,9 @@ async def test_run_model_surfaces_provider_failure_and_truncation(make_visitor, 
     v = make_visitor()
     tools = [_tool("reply")]
     assert (await ex._run_model(v, "go", [], tools, []))["action"] == MODEL_ERROR_ACTION
-    assert (await ex._run_model(v, "go", [], tools, []))["action"] == MODEL_TRUNCATED_ACTION
+    assert (await ex._run_model(v, "go", [], tools, []))[
+        "action"
+    ] == MODEL_TRUNCATED_ACTION
     assert await ex._run_model(v, "go", [], tools, []) is None
 
 
@@ -369,7 +435,9 @@ async def test_run_model_json_protocol_is_unchanged(make_visitor, monkeypatch):
             ModelActionResult(
                 response='{"action":"tool","tool":"reply","args":{"text":"hi"}}'
             ),
-            ModelActionResult(response='{"action":"tool","tool":', finish_reason="length"),
+            ModelActionResult(
+                response='{"action":"tool","tool":', finish_reason="length"
+            ),
         ]
     )
     _bind(monkeypatch, ex, fake)
@@ -405,9 +473,9 @@ def test_json_protocol_system_prompt_is_byte_identical_to_the_legacy_text():
         loop_protocol_extra="\n\nEXTRA",
         extra_section="",
     )
-    assert P.render_system_prompt(protocol="json", **sections) == P.LEGACY_JSON_SYSTEM_PROMPT.format(
-        **sections
-    )
+    assert P.render_system_prompt(
+        protocol="json", **sections
+    ) == P.LEGACY_JSON_SYSTEM_PROMPT.format(**sections)
 
 
 # --- persisted prompt overrides ---------------------------------------------
@@ -443,14 +511,16 @@ def test_operator_override_is_kept_verbatim_under_either_protocol():
 
 def test_protocol_text_swaps_only_the_unchanged_default():
     ex = OrchestratorInteractAction()
-    assert ex._protocol_text(P.FINALIZE_PROMPT, P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE) == (
-        P.FINALIZE_PROMPT_NATIVE
+    assert ex._protocol_text(
+        P.FINALIZE_PROMPT, P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE
+    ) == (P.FINALIZE_PROMPT_NATIVE)
+    assert (
+        ex._protocol_text("mine", P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE) == "mine"
     )
-    assert ex._protocol_text("mine", P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE) == "mine"
     ex.tool_protocol = "json"
-    assert ex._protocol_text(P.FINALIZE_PROMPT, P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE) == (
-        P.FINALIZE_PROMPT
-    )
+    assert ex._protocol_text(
+        P.FINALIZE_PROMPT, P.FINALIZE_PROMPT, P.FINALIZE_PROMPT_NATIVE
+    ) == (P.FINALIZE_PROMPT)
 
 
 # --- the loop end to end -----------------------------------------------------
@@ -467,7 +537,10 @@ async def test_loop_replays_a_native_transcript_across_ticks(
     ex = make_orchestrator(actions=[ReplyAction()])
     fake = _FakeModelAction(
         [
-            ModelActionResult(response="", tool_calls=[_tool_call("get_current_datetime", {}, "call_dt")]),
+            ModelActionResult(
+                response="",
+                tool_calls=[_tool_call("get_current_datetime", {}, "call_dt")],
+            ),
             ModelActionResult(response="It is now."),
         ]
     )

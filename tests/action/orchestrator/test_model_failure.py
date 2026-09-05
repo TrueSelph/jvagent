@@ -143,7 +143,9 @@ async def test_truncated_output_is_nudged_distinctly_from_garbled_output(
 
 
 @pytest.mark.asyncio
-async def test_three_unusable_outputs_end_the_turn(make_orchestrator, make_visitor, monkeypatch):
+async def test_three_unusable_outputs_end_the_turn(
+    make_orchestrator, make_visitor, monkeypatch
+):
     from jvagent.action.reply.reply_action import ReplyAction
 
     async def _rm(self, *a, **k):
@@ -157,7 +159,7 @@ async def test_three_unusable_outputs_end_the_turn(make_orchestrator, make_visit
     await ex.execute(v)
 
     assert seen["ended_via"].startswith("no_decision")
-    assert (v.interaction.response or "")  # the fallback still answers
+    assert v.interaction.response or ""  # the fallback still answers
 
 
 def test_json_protocol_keeps_the_json_nudge():

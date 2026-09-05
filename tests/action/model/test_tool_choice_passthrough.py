@@ -43,12 +43,18 @@ def test_openai_payload_passes_tool_controls_only_with_tools():
 def test_anthropic_payload_maps_tool_controls():
     action = AnthropicLanguageModelAction()
     payload = action._build_payload(
-        _MESSAGES, tools=_TOOLS, stream=False, tool_choice="auto", parallel_tool_calls=False
+        _MESSAGES,
+        tools=_TOOLS,
+        stream=False,
+        tool_choice="auto",
+        parallel_tool_calls=False,
     )
     assert payload["tools"][0]["name"] == "reply"
     assert payload["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
 
-    bare = action._build_payload(_MESSAGES, tools=None, stream=False, tool_choice="auto")
+    bare = action._build_payload(
+        _MESSAGES, tools=None, stream=False, tool_choice="auto"
+    )
     assert "tool_choice" not in bare
 
 
