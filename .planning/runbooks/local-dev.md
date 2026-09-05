@@ -21,8 +21,13 @@ cd jvagent
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pre-commit install                  # one-time hook setup
+pre-commit install                  # one-time hook setup (pre-commit + pre-push)
 ```
+
+`pre-commit run --all-files` checks **tracked** files only; stage new files
+(`git add -A`) before running it or they are silently skipped. The installed
+commit-time hook covers staged files, so keep the hooks installed
+(`ls .git/hooks/pre-commit` should exist).
 
 ---
 

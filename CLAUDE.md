@@ -158,6 +158,12 @@ pytest tests/                  # or the affected slice(s) at minimum
   red tests.
 - `pre-commit install` also installs a pre-push pytest hook (full suite on push);
   the manual run above is still required before every commit.
+- **Stage first, then run.** `pre-commit run --all-files` only checks files git
+  tracks — an untracked new file is skipped and reports nothing, so `git add -A`
+  BEFORE the run (PRs #176/#177 went red in CI on exactly this: new test files
+  passed locally untracked, CI's black reformatted them). With the git hooks
+  installed (`pre-commit install`) the commit-time hook covers staged files
+  regardless; check `.git/hooks/pre-commit` exists in your clone.
 - Do not use `git commit --no-verify` to bypass the gate.
 - Applies on every branch, including hotfix/docs/chore branches.
 
