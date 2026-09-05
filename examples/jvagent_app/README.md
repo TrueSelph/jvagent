@@ -228,7 +228,8 @@ agents/
 **`jvagent/orchestrator_agent`** (reference in `app.yaml`):
 - **Core actions** (from the jvagent library):
   - `jvagent/orchestrator` — Turn orchestration (tool selection loop)
-  - `jvagent/openai_lm` — OpenAI language model
+  - `jvagent/openai_lm` — OpenAI language model (`transport: litellm` routes it via LiteLLM, ADR-0047)
+  - `jvagent/litellm_lm` — LiteLLM universal adapter: any provider LiteLLM speaks, with per-model capabilities and pricing (disabled by default; `pip install "jvagent[litellm]"`)
   - `jvagent/reply` — Egress voice
   - `jvagent/intro_interact_action` — First-time user intro
   - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)

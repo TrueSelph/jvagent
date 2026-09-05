@@ -10,6 +10,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Examples updated for the model-integration work (ADR-0044–0047)**: the
+  orchestrator example documents `transport: litellm`, the native/JSON decision
+  protocol, fallbacks, breaker and budget keys (commented, off by default), ships
+  a disabled `jvagent/litellm_lm` action, and notes that `planning: true` pins the
+  heavy gear. Root README endpoint paths gained their `/api` prefix. A live
+  evaluation of the example (two transports, gpt-4.1) is recorded in
+  `.planning/reviews/2026-09-05-example-live-evaluation.md`.
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
   body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
   `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →

@@ -165,6 +165,7 @@ actions:
       enabled: true
       model: gpt-4o-mini
       temperature: 0.2
+      # transport: litellm     # route via LiteLLM (ADR-0047); JVAGENT_MODEL_TRANSPORT overrides
 
   # ── Vision — interprets attached images (uploads) with its own multimodal
   # model. Consumed by the orchestrator's vision reflex above.
