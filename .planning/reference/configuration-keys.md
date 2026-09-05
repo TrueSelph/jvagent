@@ -176,6 +176,14 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
 | `tool_protocol` | `auto` | how decisions are exchanged with the model (ADR-0044/0045). `auto`: `native` unless the model's resolved capabilities say it cannot call tools, then `json`. `native`: JSON-Schema'd tool definitions go to the provider, its `tool_calls` are the step, plain text is the reply, and the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: the original one-JSON-object-per-step text contract (tools listed as prose) — for providers/models without reliable function calling |
 | `model_capabilities` (on the LM action) | `{}` | operator override of the model's resolved capabilities (ADR-0045): `supports_tools`, `supports_parallel_tools`, `supports_json_mode`, `supports_structured_output`, `supports_vision`, `supports_thinking`, `context_window`, `max_output_tokens`. Wins over LiteLLM metadata and the bundled table |
+| `model_fallbacks` | `[]` | ordered fallbacks for the heavy model, tried within the same tick when the primary call fails after the model layer's retries: `{model, model_action_type?}` entries (action defaults to the primary's) or bare model ids; open circuits skipped (ADR-0046) |
+| `light_model_fallbacks` | `[]` | same, for the light gear |
+| `circuit_breaker_failures` | `3` | consecutive failures of one (action, model) before its circuit opens; `0` disables |
+| `circuit_breaker_cooldown_seconds` | `60` | how long an open circuit is skipped before one probe attempt is allowed |
+| `max_turn_cost_usd` | `0` | per-turn cost ceiling (estimated usage × pricing); at/over it the loop ends `budget_exhausted` and one partial-compose answers. `0` disables |
+| `max_conversation_cost_usd` | `0` | conversation cost ceiling; spend accumulates on `conversation.context._cost_usd_total`; a turn starting over it makes no model call and replies `budget_exhausted_text`. `0` disables |
+| `budget_exhausted_text` | (built-in) | reply when the conversation ceiling is reached |
+| `structured_decisions` | `true` | JSON protocol: send the decision schema (`response_format: json_schema`, or a forced decision tool on Anthropic) when the model supports structured output; else JSON mode |
 | `enforce_json_mode` | `true` | JSON protocol only: request `response_format=json_object`. Ignored under `native` and by providers without a JSON mode (Anthropic) |
 | `model_unavailable_text` | (built-in) | reply when the loop's model call fails on two consecutive attempts — the user is told the service is unavailable, never asked to rephrase (`clarify_text` is for silent turns) |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |

@@ -139,6 +139,8 @@ from jvagent.action.orchestrator.constants import (
     DECISION_RESERVED_KEYS as _DECISION_RESERVED_KEYS,
 )
 from jvagent.action.orchestrator.constants import (
+    DECISION_SCHEMA,
+    DECISION_TOOL_NAME,
     MODEL_ERROR_ACTION,
     MODEL_TRUNCATED_ACTION,
 )
@@ -406,6 +408,69 @@ class OrchestratorInteractAction(
         description="Soft cap (characters) on the reply, applied as a prompt "
         "instruction; None disables. Does not truncate loop history "
         "(history is always untruncated; interaction [EVENT] lines are omitted).",
+    )
+    # -- Resilience policy (ADR-0046): fallback chain, breaker, budgets ---------
+    model_fallbacks: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description=(
+            "Ordered fallbacks for the HEAVY model, tried within the same tick "
+            "when the primary call fails after the model layer's own retries. "
+            "Each entry {model, model_action_type?} (model_action_type defaults "
+            "to the primary's action) or a bare model id. Circuits the breaker "
+            "has opened are skipped. Empty = no fallback."
+        ),
+    )
+    light_model_fallbacks: List[Dict[str, Any]] = attribute(
+        default_factory=list,
+        description="Fallbacks for the LIGHT gear (same shape as model_fallbacks).",
+    )
+    circuit_breaker_failures: int = attribute(
+        default=3,
+        description=(
+            "Consecutive failures of one (action, model) before its circuit opens "
+            "and it is skipped in the fallback chain. 0 disables the breaker."
+        ),
+    )
+    circuit_breaker_cooldown_seconds: float = attribute(
+        default=60.0,
+        description=(
+            "How long an opened circuit stays open before one probe attempt is "
+            "allowed through (half-open); a success closes it, a failure re-opens."
+        ),
+    )
+    max_turn_cost_usd: float = attribute(
+        default=0.0,
+        description=(
+            "Cost ceiling for one turn (USD, estimated from usage × pricing). "
+            "When the turn's model calls so far meet it, the loop ends with "
+            "ended_via=budget_exhausted and one partial-compose delivers what was "
+            "gathered. 0 disables."
+        ),
+    )
+    max_conversation_cost_usd: float = attribute(
+        default=0.0,
+        description=(
+            "Cost ceiling for the whole conversation (USD, accumulated on "
+            "conversation.context across turns). A turn that starts over it makes "
+            "no model call and replies with budget_exhausted_text. 0 disables."
+        ),
+    )
+    budget_exhausted_text: str = attribute(
+        default=(
+            "I've reached the usage limit for this conversation, so I can't "
+            "continue right now. Please start a new conversation or try again later."
+        ),
+        description="Reply when the conversation cost ceiling has been reached.",
+    )
+    structured_decisions: bool = attribute(
+        default=True,
+        description=(
+            "JSON protocol only: when the model supports structured output, send "
+            "the decision schema (OpenAI response_format=json_schema; a forced "
+            "decision tool on Anthropic) so the provider validates the decision "
+            "shape instead of relying on prompt obedience. Falls back to JSON "
+            "mode when unsupported."
+        ),
     )
     history_limit: int = attribute(default=4)
     history_statement_max_chars: int = attribute(
@@ -818,6 +883,9 @@ class OrchestratorInteractAction(
         with bind_dispatch_context(visitor):
             await self._run_loop(visitor)
 
+        # Budget accounting (ADR-0046): fold this turn's spend into the
+        # conversation total when a conversation ceiling is configured.
+        await self._settle_conversation_cost(visitor)
         await self._finalize_proactive_task(visitor)
 
         # Single post-loop egress authority — renders any queued rails-IA
@@ -2408,6 +2476,12 @@ class OrchestratorInteractAction(
             data["tool_protocol"] = turn_cache["protocol"]
         if turn_cache.get("context_trims"):
             data["context_trims"] = int(turn_cache["context_trims"])
+        if turn_cache.get("fallbacks_used"):
+            data["fallbacks_used"] = list(turn_cache["fallbacks_used"])
+        try:
+            data["turn_cost_usd"] = round(self._turn_cost_usd(visitor), 6)
+        except Exception:  # pragma: no cover - defensive
+            pass
         event = {
             "event_type": "orchestrator_activation",
             "data": data,
@@ -3302,6 +3376,191 @@ class OrchestratorInteractAction(
             base = f"{base}\n\n{extras}"
         return base
 
+    # ------------------------------------------------------------------
+    # Resilience policy (ADR-0046)
+    # ------------------------------------------------------------------
+
+    def _structured_decision_mode(
+        self, model_action: Any, caps: ModelCapabilities
+    ) -> str:
+        """``"schema"`` (response_format json_schema), ``"tool"`` (forced decision
+        tool — providers without a response_format, i.e. Anthropic) or ``""``."""
+        if not self.structured_decisions or caps.supports_structured_output is not True:
+            return ""
+        provider = str(getattr(model_action, "provider", "") or "").lower()
+        return "tool" if provider == "anthropic" else "schema"
+
+    async def _call_with_fallbacks(
+        self,
+        model_action: Any,
+        model_id: Optional[str],
+        gear: str,
+        kwargs: Dict[str, Any],
+        *,
+        primary_caps: ModelCapabilities,
+    ) -> Any:
+        """Run the model call through the slot's candidates: primary, then the
+        configured fallbacks, skipping circuits the breaker has opened.
+
+        Each candidate gets the same request; a fallback swaps the model id,
+        drops the primary's reasoning passthrough, and re-applies its own
+        capability gates. The first success wins and closes its circuit; each
+        failure counts against its circuit. Returns the raw result, or ``None``
+        when every candidate failed (the last error is left on the turn cache).
+        Fallbacks used are recorded on the turn (``fallbacks_used``).
+        """
+        from jvagent.action.model.context import bind_model_gear
+        from jvagent.action.model.resilience import (
+            MODEL_BREAKER,
+            breaker_key,
+            fallback_candidates,
+        )
+
+        MODEL_BREAKER.threshold = int(self.circuit_breaker_failures or 0)
+        MODEL_BREAKER.cooldown_seconds = float(
+            self.circuit_breaker_cooldown_seconds or 0
+        )
+        fallbacks = (
+            self.light_model_fallbacks
+            if gear == "light" and self._gearing_on()
+            else self.model_fallbacks
+        )
+        candidates = await fallback_candidates(
+            (model_action, model_id), fallbacks, self._resolve_model_action
+        )
+        last_error: Any = None
+        for index, (cand_action, cand_model) in enumerate(candidates):
+            key = breaker_key(cand_action, cand_model)
+            if MODEL_BREAKER.is_open(key):
+                logger.info("orchestrator: skipping %s — circuit open", key)
+                continue
+            call_kwargs = dict(kwargs)
+            if index > 0:
+                call_kwargs["model"] = cand_model or getattr(cand_action, "model", None)
+                for reasoning_key in ("reasoning_effort", "reasoning"):
+                    call_kwargs.pop(reasoning_key, None)
+                cand_caps = self._model_capabilities(cand_action, call_kwargs["model"])
+                if (
+                    "parallel_tool_calls" in call_kwargs
+                    and cand_caps.supports_parallel_tools is False
+                ):
+                    call_kwargs.pop("parallel_tool_calls")
+                ceiling = cand_caps.max_output_tokens
+                if (
+                    ceiling
+                    and call_kwargs.get("max_tokens")
+                    and (int(call_kwargs["max_tokens"]) > int(ceiling))
+                ):
+                    call_kwargs["max_tokens"] = int(ceiling)
+            try:
+                with bind_model_gear(gear):
+                    result = await cand_action.query_messages(**call_kwargs)
+            except Exception as exc:
+                last_error = exc
+                MODEL_BREAKER.record_failure(key, exc)
+                logger.warning("orchestrator: model call on %s raised: %s", key, exc)
+                continue
+            MODEL_BREAKER.record_success(key)
+            if index > 0:
+                used = list(get_prompt_cache().get("fallbacks_used") or [])
+                used.append(key)
+                update_prompt_cache("fallbacks_used", used)
+                logger.warning(
+                    "orchestrator: fell back to %s after %s failed",
+                    key,
+                    breaker_key(model_action, model_id),
+                )
+            return result
+        update_prompt_cache(
+            "last_model_error",
+            str(last_error) if last_error else "all model candidates unavailable",
+        )
+        return None
+
+    def _turn_cost_usd(self, visitor: Any) -> float:
+        """Estimated USD spent by this turn's model calls so far (from the
+        ``model_call`` events already on the interaction)."""
+        from jvagent.action.model.cost_estimator import estimate_cost
+
+        interaction = getattr(visitor, "interaction", None)
+        events = getattr(interaction, "observability_metrics", None) or []
+        total = 0.0
+        for event in events:
+            if not isinstance(event, dict) or event.get("event_type") not in (
+                "model_call",
+                "embedding_call",
+            ):
+                continue
+            data = event.get("data") or {}
+            try:
+                total += float(
+                    estimate_cost(
+                        str(data.get("model") or ""),
+                        str(data.get("provider") or ""),
+                        dict(data.get("usage") or {}),
+                        event_type=str(event.get("event_type")),
+                    )
+                )
+            except Exception:  # pragma: no cover - defensive
+                continue
+        return total
+
+    @staticmethod
+    def _conversation_cost_usd(visitor: Any) -> float:
+        conversation = getattr(visitor, "conversation", None)
+        ctx = getattr(conversation, "context", None)
+        if not isinstance(ctx, dict):
+            return 0.0
+        try:
+            return float(ctx.get("_cost_usd_total") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _turn_budget_exhausted(self, visitor: Any) -> bool:
+        ceiling = float(self.max_turn_cost_usd or 0.0)
+        return ceiling > 0 and self._turn_cost_usd(visitor) >= ceiling
+
+    def _conversation_budget_exhausted(self, visitor: Any) -> bool:
+        ceiling = float(self.max_conversation_cost_usd or 0.0)
+        return ceiling > 0 and self._conversation_cost_usd(visitor) >= ceiling
+
+    async def _settle_conversation_cost(self, visitor: Any) -> float:
+        """Add this turn's estimated cost to the conversation's running total
+        (``conversation.context['_cost_usd_total']``) and persist it. Returns the
+        turn cost. Only accumulates when a conversation ceiling is configured, so
+        an agent without one carries no extra write."""
+        turn_cost = self._turn_cost_usd(visitor)
+        if float(self.max_conversation_cost_usd or 0.0) <= 0 or turn_cost <= 0:
+            return turn_cost
+        conversation = getattr(visitor, "conversation", None)
+        ctx = getattr(conversation, "context", None)
+        if not isinstance(ctx, dict):
+            return turn_cost
+        ctx["_cost_usd_total"] = self._conversation_cost_usd(visitor) + turn_cost
+        try:
+            from jvagent.memory.distributed_conversation_lock import (
+                conversation_mutation_lock,
+            )
+
+            conv_id = getattr(conversation, "id", None)
+            if conv_id:
+                async with conversation_mutation_lock(conv_id):
+                    await conversation.save()
+            else:
+                await conversation.save()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("orchestrator: conversation cost persist failed: %s", exc)
+        return turn_cost
+
+    async def healthcheck(self) -> Any:
+        """Enabled flag plus the model circuit breaker's current-loop state."""
+        from jvagent.action.model.resilience import MODEL_BREAKER
+
+        return {
+            "enabled": bool(self.enabled),
+            "model_circuits": MODEL_BREAKER.snapshot(),
+        }
+
     # Fraction of the context window the prompt may use; the rest is headroom
     # for tokenizer estimate error and provider-side overhead.
     CONTEXT_FIT_RATIO: ClassVar[float] = 0.95
@@ -3828,6 +4087,7 @@ class OrchestratorInteractAction(
             "calling_action_name": self.get_class_name(),
         }
         alias_map: Dict[str, str] = {}
+        structured_via_tool = False
         if native:
             # Native protocol (ADR-0044): the provider carries the tools and the
             # decision. Steps so far replay as assistant tool_calls + tool
@@ -3844,8 +4104,36 @@ class OrchestratorInteractAction(
                     # parameter; one that does not may reject the request.
                     if caps.supports_parallel_tools is not False:
                         kwargs["parallel_tool_calls"] = False
-        elif self.enforce_json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
+        else:
+            structured = self._structured_decision_mode(model_action, caps)
+            if structured == "tool":
+                # No response_format on this provider: force a decision tool so
+                # the schema is validated at the provider (ADR-0046).
+                structured_via_tool = True
+                kwargs["tools"] = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": DECISION_TOOL_NAME,
+                            "description": "Your next step: a tool call or the final answer.",
+                            "parameters": DECISION_SCHEMA,
+                        },
+                    }
+                ]
+                kwargs["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": DECISION_TOOL_NAME},
+                }
+            elif structured == "schema":
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": DECISION_TOOL_NAME,
+                        "schema": DECISION_SCHEMA,
+                    },
+                }
+            elif self.enforce_json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
         reverse_alias = {loop_name: wire for wire, loop_name in alias_map.items()}
         # Context pre-flight (ADR-0045): assemble the transcript, then trim
         # history and observation replay until the estimated prompt fits the
@@ -3871,18 +4159,21 @@ class OrchestratorInteractAction(
         kwargs["max_tokens"] = max_tokens
         if reasoning_on:  # reasoning only on the heavy gear
             kwargs.update(self._reasoning_kwargs())
-        from jvagent.action.model.context import bind_model_gear
-
-        try:
-            with bind_model_gear(gear):
-                result = await model_action.query_messages(**kwargs)
-        except Exception as exc:
-            # A provider fault, not a model choice: surfaced as a typed decision
-            # so the loop can retry once and then end the turn honestly
+        result = await self._call_with_fallbacks(
+            model_action, model_id, gear, kwargs, primary_caps=caps
+        )
+        if result is None:
+            # A provider fault, not a model choice: every candidate failed (or
+            # sat behind an open circuit). Surfaced as a typed decision so the
+            # loop can retry once and then end the turn honestly
             # (model_unavailable_text) instead of nudging the model to "reply
             # with valid JSON" into a dead endpoint.
-            logger.warning("orchestrator: model call raised: %s", exc)
-            return {"action": MODEL_ERROR_ACTION, "error": str(exc)}
+            return {
+                "action": MODEL_ERROR_ACTION,
+                "error": str(
+                    get_prompt_cache().get("last_model_error") or "unavailable"
+                ),
+            }
         # Surface the thinking trace only on the heavy gear (the light gear is a
         # completion model with no reasoning to show).
         if self.stream_reasoning_trace and gear == "heavy":
@@ -3907,6 +4198,12 @@ class OrchestratorInteractAction(
             if len(decisions) > 1:
                 update_prompt_cache("pending_decisions", decisions[1:])
             return decisions[0]
+        if structured_via_tool and response.tool_calls:
+            decision_call = next(
+                (c for c in response.tool_calls if c.name == DECISION_TOOL_NAME), None
+            )
+            if decision_call is not None and decision_call.arguments:
+                return dict(decision_call.arguments)
         parsed = parse_json_object(raw) if raw else None
         if parsed is None and truncated:
             return {"action": MODEL_TRUNCATED_ACTION}
