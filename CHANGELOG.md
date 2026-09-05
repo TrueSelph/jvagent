@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
+  body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
+  `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →
+  `_after_dispatch`), plus `_after_loop` and `_close_turn`; each returns a
+  `TickOutcome` (continue / break / return). Behaviour unchanged (the full
+  orchestrator suite is the net); `tests/action/orchestrator/test_turn_boundary.py`
+  now ratchets every step's size and asserts the steps touch exactly the
+  declared state.
+
 ### Added
 
 - **Transport delegation (ADR-0047, remediation Phase 4).** Every language-model

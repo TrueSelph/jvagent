@@ -140,7 +140,7 @@ predictability, **L** = hygiene. "Fixed" marks items addressed in this pass
 
 | # | Sev | Where | Finding | Status |
 |---|---|---|---|---|
-| S1 | M | `loop.py:_run_loop` | 47-name unpack of `TurnState` into locals; the tick body is ~700 lines in one `while`. Correct, but every new guard widens the same function. | Partially addressed — decision acquisition/fault classification (`_next_decision`) and the companion gate + soft-abandon rule (`_companion_gate`) extracted; `_run_loop` is ~745 lines under the 800 ratchet (`test_turn_boundary.py`). A full tick extraction is recommended as its own PR (see §5). |
+| S1 | M | `loop.py:_run_loop` | 47-name unpack of `TurnState` into locals; the tick body is ~700 lines in one `while`. Correct, but every new guard widens the same function. | **Fixed** (follow-up PR) — the tick is typed steps on `TurnState`: `_tick` → `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` → `_after_dispatch`), `_after_loop`, `_close_turn`, each returning a `TickOutcome`; `_run_loop` is a 25-line driver. Per-step size ratchets in `test_turn_boundary.py`. |
 | S2 | L | `orchestrator_interact_action.py` (3.5k lines) | Mixes config surface, surface assembly, skill-task orchestration, gearing and model call. Already split into mixins; `_assemble_tools` (500 lines) and the skill-task resume block are the remaining candidates. | Open. |
 | S3 | L | `constants.py` `_TEXT_KEYS`/`_STEER_EXEMPT` aliases, `catalog.py` re-exports | Backward-compat aliases with no remaining callers outside tests. | Open (harmless). |
 
@@ -178,10 +178,8 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
 
 ## 5. Recommended next steps (not done here)
 
-1. **Tick extraction.** Turn the `while budget > 0` body into `_tick(state)`
-   returning a `TickOutcome` (continue / return / break + `ended_via`), with
-   the guard chain as a list of small predicates. Pure refactor; land with
-   the existing 530 orchestrator tests as the net.
+1. ~~**Tick extraction.**~~ Done (follow-up PR after Phase 4): `_tick` and its
+   typed steps on `TurnState`, `TickOutcome`, per-step size ratchets.
 2. **Parallel tool calls.** The native protocol records grouped calls; the
    loop dispatches sequentially. Concurrent dispatch for non-terminal,
    non-side-effecting tools (`max_concurrent_tools`) is a contained follow-up.
