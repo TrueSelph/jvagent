@@ -185,3 +185,9 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 **Capability registry** — `jvagent/action/model/capabilities.py` (ADR-0045): resolves what a model can do (tools, parallel calls, JSON mode, structured output, vision, thinking, context window, output ceiling) from operator override → LiteLLM metadata → bundled table → unknown. Drives `tool_protocol: auto`, the output clamp and the context pre-flight.
 
 **Context pre-flight** — the Orchestrator's per-tick check that the assembled request fits the model's context window; trims oldest history, then observation replay, before calling the provider (ADR-0045).
+
+**Fallback chain** — the ordered `(action, model)` candidates the Orchestrator tries within one tick when the primary model call fails after the adapter's retries (`model_fallbacks`, ADR-0046); open circuits are skipped.
+
+**Model circuit breaker** — per (action, model), per event loop: consecutive failures open the circuit for a cooldown, during which the fallback chain skips it (ADR-0046; `jvagent/action/model/resilience.py`).
+
+**Budget guard** — the per-turn (`max_turn_cost_usd`) and per-conversation (`max_conversation_cost_usd`) cost ceilings the Orchestrator enforces from metadata-priced `model_call` events (ADR-0046).
