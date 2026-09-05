@@ -186,6 +186,6 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
 3. **Typed HTTP faults** at `/interact` (F3).
 4. ~~**Repeat-guard window**~~ Done (`repeat_guard_window`).
 5. **Live CUCS runs** against real providers for the native protocol (the
-   `LiveScenarioRunner` supports this; the suite here is canned).
+   `LiveScenarioRunner` supports this; the suite here is canned). **Status: done — ADR-0048, `max_concurrent_tools` (default `1`, so behaviour is unchanged until an operator opts in).**
 
 Model-integration remediation plan (contract + LiteLLM adapter + conformance + resilience policy): [`../specs/2026-09-05-model-integration-remediation.md`](../specs/2026-09-05-model-integration-remediation.md).

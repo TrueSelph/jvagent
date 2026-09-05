@@ -191,3 +191,5 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 **Model circuit breaker** — per (action, model), per event loop: consecutive failures open the circuit for a cooldown, during which the fallback chain skips it (ADR-0046; `jvagent/action/model/resilience.py`).
 
 **Budget guard** — the per-turn (`max_turn_cost_usd`) and per-conversation (`max_conversation_cost_usd`) cost ceilings the Orchestrator enforces from metadata-priced `model_call` events (ADR-0046).
+
+**Parallel batch** — the sibling tool calls one model response returned together (same `group_id`) that the Orchestrator dispatches concurrently within a single tick when `max_concurrent_tools` > 1; each sibling passes the pre-dispatch guards first and gets its own call-id-stamped observation (ADR-0048). Counted per turn as `parallel_batches` in the activation telemetry.

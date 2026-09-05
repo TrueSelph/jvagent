@@ -141,3 +141,5 @@ class TurnState:
     last_obs_len: int = 0
     # Consecutive provider failures this turn (a fault, not a model choice).
     model_failures: int = 0
+    # Ticks that dispatched more than one tool call (max_concurrent_tools > 1).
+    parallel_batches: int = 0

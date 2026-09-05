@@ -1045,12 +1045,150 @@ class OrchestratorLoopMixin:
         tool_name: str,
         args: Dict[str, Any],
     ) -> TickOutcome:
-        """The model wants a tool: guards → dispatch → the result's consequences."""
+        """The model wants a tool: guards → dispatch → the result's consequences.
+
+        With ``max_concurrent_tools`` > 1 (ADR-0048) the sibling calls the
+        provider returned in the same response — queued as pending decisions —
+        that pass the same guards are dispatched together in this tick, and
+        each result is then weighed in decision order.
+        """
         guard = await self._guard_tool_call(visitor, state, tool_name, args)
         if guard is not None:
             return guard
-        tool, obs = await self._dispatch_tool(visitor, state, tool_name, args)
-        return await self._after_dispatch(visitor, state, tool_name, args, tool, obs)
+        siblings = await self._guarded_siblings(visitor, state, tool_name)
+        if not siblings:
+            tool, obs = await self._dispatch_tool(visitor, state, tool_name, args)
+            return await self._after_dispatch(
+                visitor, state, tool_name, args, tool, obs
+            )
+        lead = (tool_name, args, dict(state.last_dec_meta))
+        return await self._dispatch_batch(visitor, state, [lead] + siblings)
+
+    def _parallel_eligible(self, name: str, tool: Any) -> bool:
+        """Only substantive, non-terminal tools share a tick: egress and
+        terminal tools end the turn, ``use_skill`` reshapes the surface, and
+        the meta tools (find/load) are cheap and order-sensitive."""
+        return (
+            tool is not None
+            and not getattr(tool, "terminal", False)
+            and name not in ("reply", "respond", "use_skill")
+            and name not in _NON_SUBSTANTIVE_TOOLS
+        )
+
+    async def _guarded_siblings(
+        self, visitor: "InteractWalker", state: TurnState, lead_name: str
+    ) -> List[Tuple[str, Dict[str, Any], Dict[str, Any]]]:
+        """The lead call's same-response siblings that may run alongside it.
+
+        Takes up to ``max_concurrent_tools - 1`` pending decisions from the
+        lead's ``group_id``, normalises each, runs the pre-dispatch guards on
+        it in order (so a duplicate sibling is nudged, never dispatched) and
+        returns ``(tool_name, args, meta)`` for those that passed. Decisions
+        that are not eligible stay queued for their own tick; a sibling the
+        guards refused gets a harness note carrying its call id so the
+        transcript still answers every call the model made.
+        """
+        width = self._max_concurrent_tools()
+        group = (state.last_dec_meta or {}).get("group_id")
+        if width <= 1 or not group or state.pending_chain:
+            return []
+        if not self._parallel_eligible(lead_name, state.tools.get(lead_name)):
+            return []
+        pending = list(get_prompt_cache().get("pending_decisions") or [])
+        taken: List[Tuple[str, Dict[str, Any], Dict[str, Any]]] = []
+        kept: List[Dict[str, Any]] = []
+        for decision in pending:
+            if len(taken) >= width - 1 or decision.get("_group_id") != group:
+                kept.append(decision)
+                continue
+            meta = {
+                k[1:]: decision.pop(k)
+                for k in list(decision.keys())
+                if k in DECISION_META_KEYS
+            }
+            action, name, args = self._normalize(
+                decision, state.tools, state.skill_names
+            )
+            if action != "tool" or not self._parallel_eligible(
+                name, state.tools.get(name)
+            ):
+                decision.update({f"_{k}": v for k, v in meta.items()})
+                kept.append(decision)
+                continue
+            meta["call_tool"] = name
+            meta["call_args"] = dict(args or {})
+            before = len(state.observations)
+            guard = await self._guard_tool_call(visitor, state, name, args)
+            if guard is None:
+                taken.append((name, args, meta))
+                continue
+            if len(state.observations) == before:
+                state.observations.append(
+                    {
+                        "tool": "(guard)",
+                        "args": {},
+                        "observation": (
+                            f"({name} was not run: it repeats a call already "
+                            "made this turn.)"
+                        ),
+                    }
+                )
+            _stamp_observations(state.observations, before, meta)
+        update_prompt_cache("pending_decisions", kept)
+        return taken
+
+    async def _dispatch_batch(
+        self,
+        visitor: "InteractWalker",
+        state: TurnState,
+        batch: List[Tuple[str, Dict[str, Any], Dict[str, Any]]],
+    ) -> TickOutcome:
+        """Run a guarded batch concurrently, then weigh each result in order.
+
+        Results land in completion order; they are put back in decision order
+        and each is stamped with its own call id so the transcript replays one
+        result per call. The repeat guard's error flags are recomputed per
+        call (``_dispatch_tool`` marks the most recent entry, which is only
+        right for a single dispatch).
+        """
+        state.parallel_batches += 1
+        first = len(state.observations)
+        results = await asyncio.gather(
+            *(
+                self._dispatch_tool(visitor, state, name, args)
+                for name, args, _ in batch
+            )
+        )
+        produced = state.observations[first:]
+        del state.observations[first:]
+        for (name, args, meta), (_tool, obs) in zip(batch, results):
+            entry = next(
+                (
+                    o
+                    for o in produced
+                    if o.get("tool") == name and str(o.get("args")) == str(args)
+                ),
+                None,
+            )
+            if entry is None:  # pragma: no cover - defensive
+                entry = {"tool": name, "args": args, "observation": obs}
+            else:
+                produced.remove(entry)
+            for key, value in meta.items():
+                if value not in (None, ""):
+                    entry.setdefault(key, value)
+            state.observations.append(entry)
+            text = obs if isinstance(obs, str) else str(obs)
+            errored = text.startswith("(tool error:") or " timed out after " in text
+            for call in state.recent_calls:
+                if call.sig == (name, str(args)):
+                    call.errored = errored
+        state.observations.extend(produced)
+        for (name, args, _meta), (tool, obs) in zip(batch, results):
+            outcome = await self._after_dispatch(visitor, state, name, args, tool, obs)
+            if outcome.kind != TickOutcome.CONTINUE:
+                return outcome
+        return TickOutcome.CONTINUE_
 
     async def _guard_tool_call(
         self,
@@ -1601,6 +1739,7 @@ class OrchestratorLoopMixin:
             activated=state.activated,
             ticks_light=state.ticks_light,
             ticks_heavy=state.ticks_heavy,
+            parallel_batches=state.parallel_batches,
             loop_duration_ms=int((time.perf_counter() - state.loop_t0) * 1000),
             tool_timings=state.tool_timings,
         )

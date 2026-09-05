@@ -109,9 +109,22 @@ remains, your step MUST be the tool call that does it. For multi-step tasks \
 (e.g. research → write a file → save it) do every step this turn, and only reply \
 when the deliverable is complete or you genuinely need the user's input. A \
 progress update is not a reason to stop.
+{call_rule}{loop_protocol_extra}"""
+
+# The last LOOP PROTOCOL rule of the native section, chosen by
+# ``max_concurrent_tools`` (ADR-0048): one call per step by default; with a
+# batch width above 1 the model may issue independent calls together.
+NATIVE_ONE_CALL_RULE = """\
 - **One call per step.** Make exactly one tool call per step and wait for its \
 result — never assume a result you have not seen. Take the fewest steps needed; \
-once the user has been answered, reply and stop.{loop_protocol_extra}"""
+once the user has been answered, reply and stop."""
+
+NATIVE_PARALLEL_CALL_RULE = """\
+- **Independent calls together, dependent ones one at a time.** You may make up \
+to {width} tool calls in one step when none of them needs another's result \
+(e.g. two separate lookups); a step that depends on a result waits for it — \
+never assume a result you have not seen. Take the fewest steps needed; once the \
+user has been answered, reply and stop."""
 
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 {identity_section}{session_context_section}{protocol_section}
@@ -164,17 +177,37 @@ PROTOCOL_SECTIONS = {
 
 
 def render_protocol_section(
-    protocol: str = "native", loop_protocol_extra: str = ""
+    protocol: str = "native",
+    loop_protocol_extra: str = "",
+    *,
+    parallel_width: int = 1,
 ) -> str:
-    """The decision-protocol paragraph for *protocol*, with its extras filled."""
+    """The decision-protocol paragraph for *protocol*, with its extras filled.
+
+    ``parallel_width`` is the Orchestrator's ``max_concurrent_tools``: above 1
+    the native section's last rule allows independent calls in one step
+    (ADR-0048). The JSON contract is one decision per reply regardless.
+    """
     section = PROTOCOL_SECTIONS.get(
         (protocol or "native").strip().lower(), NATIVE_PROTOCOL_SECTION
     )
-    return section.format(loop_protocol_extra=loop_protocol_extra or "")
+    width = max(1, int(parallel_width or 1))
+    call_rule = (
+        NATIVE_PARALLEL_CALL_RULE.format(width=width)
+        if width > 1
+        else NATIVE_ONE_CALL_RULE
+    )
+    return section.format(
+        loop_protocol_extra=loop_protocol_extra or "", call_rule=call_rule
+    )
 
 
 def render_system_prompt(
-    template: Optional[str] = None, *, protocol: str = "native", **sections: str
+    template: Optional[str] = None,
+    *,
+    protocol: str = "native",
+    parallel_width: int = 1,
+    **sections: str,
 ) -> str:
     """Render the orchestrator system prompt, defaulting any slot not supplied.
 
@@ -185,7 +218,9 @@ def render_system_prompt(
     values.update({k: v for k, v in sections.items() if v is not None})
     if not values.get("protocol_section"):
         values["protocol_section"] = render_protocol_section(
-            protocol, values.get("loop_protocol_extra", "")
+            protocol,
+            values.get("loop_protocol_extra", ""),
+            parallel_width=parallel_width,
         )
     return (template or ORCHESTRATOR_SYSTEM_PROMPT).format(**values)
 
