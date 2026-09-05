@@ -59,7 +59,12 @@ MODEL_FAULT_ACTIONS = frozenset({MODEL_ERROR_ACTION, MODEL_TRUNCATED_ACTION})
 # Tool-protocol names (``OrchestratorInteractAction.tool_protocol``).
 TOOL_PROTOCOL_NATIVE = "native"
 TOOL_PROTOCOL_JSON = "json"
-TOOL_PROTOCOLS = frozenset({TOOL_PROTOCOL_NATIVE, TOOL_PROTOCOL_JSON})
+# ``auto`` (default, ADR-0045): native unless the model's capabilities say it
+# cannot call tools.
+TOOL_PROTOCOL_AUTO = "auto"
+TOOL_PROTOCOLS = frozenset(
+    {TOOL_PROTOCOL_NATIVE, TOOL_PROTOCOL_JSON, TOOL_PROTOCOL_AUTO}
+)
 
 # Directive-contract trust boundary (AUDIT-orchestrator HIGH).
 # The next_tool / response_directive contract is a private control channel:

@@ -10,6 +10,33 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Capability-driven model integration (ADR-0045, remediation Phase 2).**
+  `jvagent/action/model/capabilities.py` resolves per-model capabilities
+  (tools, parallel calls, JSON mode, structured output, vision, thinking,
+  context window, output ceiling) from operator override → LiteLLM metadata →
+  bundled table → unknown; `LanguageModelAction.model_capabilities` is the
+  override. The Orchestrator now reads them: `tool_protocol: auto` (new
+  default — native unless the model is known not to call tools),
+  `parallel_tool_calls` withheld where unsupported, `model_max_tokens` clamped
+  to the output ceiling, and a **context pre-flight** that trims oldest history
+  then observation replay to fit the window (`context_trims` recorded).
+- **`jvagent/litellm_lm` — `LiteLLMLanguageModelAction`**: one action for every
+  provider LiteLLM speaks, behind the normalised contract (tool calling,
+  streaming via `stream_chunk_builder`, `drop_params`, lazy import, clear error
+  without the `litellm` extra). `provider: litellm` in slot overrides.
+- **Metadata-sourced pricing**: `cost_estimator.pricing_for` (LiteLLM →
+  bundled → none) now backs `estimate_cost`, so cost events carry real prices
+  for every model LiteLLM knows; cached tokens are read from raw
+  `prompt_tokens_details` too.
+- Conformance suite covers the LiteLLM adapter (same twelve scenarios, fed the
+  OpenAI wire through its `_acompletion` seam).
+
+### Changed
+
+- `BaseModelAction._is_retryable_exception` treats any exception carrying an
+  HTTP `status_code` attribute (LiteLLM / OpenAI SDK errors) like an httpx
+  status error for retry purposes.
+
 - **Normalised model contract (remediation Phase 1).** `jvagent/action/model/contract.py`:
   `ModelRequest`, `ModelResponse`, `ToolCall`, `Usage`, `FinishReason`,
   `ModelCapabilities`, `Pricing`, `ModelAdapter`. `LanguageModelAction.complete()`

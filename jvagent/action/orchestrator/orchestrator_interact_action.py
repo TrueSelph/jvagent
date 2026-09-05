@@ -28,13 +28,23 @@ import logging
 import re
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    FrozenSet,
+    List,
+    Optional,
+    Set,
+    Tuple,
+)
 
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.utils.uploads import DEFAULT_UPLOAD_KEYS
-from jvagent.action.model.contract import ModelResponse
+from jvagent.action.model.contract import ModelCapabilities, ModelResponse
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.catalog import (
@@ -135,6 +145,7 @@ from jvagent.action.orchestrator.constants import (
 from jvagent.action.orchestrator.constants import STEER_EXEMPT as _STEER_EXEMPT
 from jvagent.action.orchestrator.constants import (
     STOPWORDS,
+    TOOL_PROTOCOL_AUTO,
     TOOL_PROTOCOL_JSON,
     TOOL_PROTOCOL_NATIVE,
     is_task_completion,
@@ -293,16 +304,17 @@ class OrchestratorInteractAction(
         ),
     )
     tool_protocol: str = attribute(
-        default=TOOL_PROTOCOL_NATIVE,
+        default=TOOL_PROTOCOL_AUTO,
         description=(
-            "How the loop exchanges decisions with the model (ADR-0044). "
-            "'native' (default): tools go to the provider as JSON-Schema'd "
-            "function definitions, the model's tool_calls are the step, plain "
-            "text is the reply, and this turn's steps replay as assistant "
-            "tool_calls + tool-result messages. 'json': the original "
-            "structured-JSON-in-text contract (one JSON object per step, tools "
-            "listed as prose) — for providers or models without reliable "
-            "function calling. Unknown values fall back to 'native'."
+            "How the loop exchanges decisions with the model (ADR-0044/0045). "
+            "'auto' (default): 'native' unless the model's resolved capabilities "
+            "say it does not support tool calling, then 'json'. 'native': tools "
+            "go to the provider as JSON-Schema'd function definitions, the "
+            "model's tool_calls are the step, plain text is the reply, and this "
+            "turn's steps replay as assistant tool_calls + tool-result messages. "
+            "'json': the original structured-JSON-in-text contract (one JSON "
+            "object per step, tools listed as prose) — for providers or models "
+            "without reliable function calling. Unknown values behave as 'auto'."
         ),
     )
     enforce_json_mode: bool = attribute(
@@ -2391,6 +2403,11 @@ class OrchestratorInteractAction(
             data["loop_duration_ms"] = int(loop_duration_ms)
         if tools_list:
             data["tools"] = tools_list
+        turn_cache = get_prompt_cache()
+        if turn_cache.get("protocol"):
+            data["tool_protocol"] = turn_cache["protocol"]
+        if turn_cache.get("context_trims"):
+            data["context_trims"] = int(turn_cache["context_trims"])
         event = {
             "event_type": "orchestrator_activation",
             "data": data,
@@ -3146,10 +3163,59 @@ class OrchestratorInteractAction(
                 return template
 
     def _protocol(self) -> str:
-        """The effective decision protocol: ``native`` (default) or ``json``."""
+        """The effective decision protocol for this turn.
+
+        ``json`` / ``native`` are fixed. ``auto`` (the default) is resolved once
+        per turn from the model's capabilities by :meth:`_resolve_protocol` (in
+        ``_run_model``) and read back from the turn cache here; before that
+        resolution — and outside a turn — it reads as ``native``, the
+        mainstream default.
+        """
         value = str(self.tool_protocol or "").strip().lower()
+        if value == TOOL_PROTOCOL_JSON:
+            return TOOL_PROTOCOL_JSON
+        if value == TOOL_PROTOCOL_NATIVE:
+            return TOOL_PROTOCOL_NATIVE
+        cached = get_prompt_cache().get("protocol")
         return (
-            TOOL_PROTOCOL_JSON if value == TOOL_PROTOCOL_JSON else TOOL_PROTOCOL_NATIVE
+            TOOL_PROTOCOL_JSON if cached == TOOL_PROTOCOL_JSON else TOOL_PROTOCOL_NATIVE
+        )
+
+    def _resolve_protocol(self, caps: ModelCapabilities) -> str:
+        """Pin the turn's protocol (ADR-0045): a model known NOT to support tool
+        calling gets the JSON-text contract; anything else — including unknown —
+        gets native. Cached on the turn so every prompt piece agrees."""
+        value = str(self.tool_protocol or "").strip().lower()
+        if value in (TOOL_PROTOCOL_JSON, TOOL_PROTOCOL_NATIVE):
+            protocol = value
+        else:
+            protocol = (
+                TOOL_PROTOCOL_JSON
+                if caps.supports_tools is False
+                else TOOL_PROTOCOL_NATIVE
+            )
+        update_prompt_cache("protocol", protocol)
+        return protocol
+
+    @staticmethod
+    def _model_capabilities(
+        model_action: Any, model_id: Optional[str]
+    ) -> ModelCapabilities:
+        """The model's capabilities via the action's ``capabilities()`` (registry-
+        backed), tolerating test doubles that expose no usable implementation."""
+        fn = getattr(model_action, "capabilities", None)
+        if callable(fn):
+            try:
+                caps = fn(model_id)
+                if isinstance(caps, ModelCapabilities):
+                    return caps
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: capabilities() failed: %s", exc)
+        from jvagent.action.model.capabilities import resolve_capabilities
+
+        provider = getattr(model_action, "provider", "")
+        return resolve_capabilities(
+            str(model_id or ""), provider=provider if isinstance(provider, str) else ""
         )
 
     def _protocol_text(self, value: str, json_default: str, native_default: str) -> str:
@@ -3235,6 +3301,114 @@ class OrchestratorInteractAction(
         if extras and not inline_extra:
             base = f"{base}\n\n{extras}"
         return base
+
+    # Fraction of the context window the prompt may use; the rest is headroom
+    # for tokenizer estimate error and provider-side overhead.
+    CONTEXT_FIT_RATIO: ClassVar[float] = 0.95
+    _CONTEXT_FIT_MIN_OBSERVATIONS: ClassVar[int] = 2
+    _CONTEXT_FIT_MIN_CHARS: ClassVar[int] = 500
+
+    def _fit_context(
+        self,
+        *,
+        caps: ModelCapabilities,
+        model_id: str,
+        provider: str,
+        max_tokens: Optional[int],
+        system_prompt: str,
+        prior_messages: List[Dict[str, Any]],
+        listing_messages: List[Dict[str, Any]],
+        user_prompt_for: Any,
+        observations: List[Dict[str, Any]],
+        observation_caps: Dict[str, int],
+        native: bool,
+        reverse_alias: Dict[str, str],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Assemble the request messages, trimming until they fit the window.
+
+        Order of sacrifice: oldest history turns first (the model's working
+        context is this turn), then the observation replay — fewer, then
+        smaller, results — down to a floor. Returns ``(messages, prior)``; a
+        trim is logged and recorded on the turn (``context_trims``) so the
+        activation event shows it. With an unknown context window nothing is
+        trimmed.
+        """
+        from jvagent.action.model.utils.token_estimation import estimate_prompt_tokens
+
+        def build(prior: List[Dict[str, Any]], obs_caps: Dict[str, int]):
+            msgs: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                *prior,
+                *listing_messages,
+                {"role": "user", "content": user_prompt_for(obs_caps)},
+            ]
+            if native:
+                msgs.extend(
+                    render_observation_messages(
+                        observations, alias_for=reverse_alias, **obs_caps
+                    )
+                )
+            return msgs
+
+        def estimate(msgs: List[Dict[str, Any]]) -> int:
+            flat: List[Dict[str, Any]] = []
+            for m in msgs:
+                content = m.get("content") or ""
+                calls = m.get("tool_calls")
+                if calls:
+                    content = f"{content}\n{json.dumps(calls, ensure_ascii=False)}"
+                flat.append({"role": m.get("role", "user"), "content": content})
+            try:
+                return int(estimate_prompt_tokens(flat, model_id, provider))
+            except Exception:  # pragma: no cover - estimator is best-effort
+                return 0
+
+        prior = list(prior_messages)
+        obs_caps = dict(observation_caps)
+        messages = build(prior, obs_caps)
+        window = int(caps.context_window or 0)
+        if window <= 0:
+            return messages, prior
+        budget = int(window * self.CONTEXT_FIT_RATIO) - int(max_tokens or 0)
+        if budget <= 0:
+            return messages, prior
+        est = estimate(messages)
+        trims = 0
+        while est > budget:
+            if prior:
+                # Drop the oldest exchange (user + assistant) first.
+                prior = prior[2:] if len(prior) >= 2 else []
+            else:
+                cur_n = int(obs_caps.get("max_observations") or 0) or len(observations)
+                cur_chars = int(obs_caps.get("max_chars") or 0)
+                if cur_n <= self._CONTEXT_FIT_MIN_OBSERVATIONS and (
+                    cur_chars and cur_chars <= self._CONTEXT_FIT_MIN_CHARS
+                ):
+                    break  # at the floor — send what we have
+                obs_caps["max_observations"] = max(
+                    self._CONTEXT_FIT_MIN_OBSERVATIONS, cur_n // 2
+                )
+                obs_caps["max_chars"] = max(
+                    self._CONTEXT_FIT_MIN_CHARS, (cur_chars or 4000) // 2
+                )
+                obs_caps["stale_max_chars"] = max(
+                    200, int(obs_caps.get("stale_max_chars") or 600) // 2
+                )
+            trims += 1
+            messages = build(prior, obs_caps)
+            est = estimate(messages)
+        if trims:
+            logger.warning(
+                "orchestrator: prompt trimmed %d step(s) to fit %s's %d-token "
+                "window (est. %d tokens, budget %d)",
+                trims,
+                model_id,
+                window,
+                est,
+                budget,
+            )
+            update_prompt_cache("context_trims", trims)
+        return messages, prior
 
     async def _routable_flow_tool_names(self) -> Set[str]:
         """Class names of routable IAs exposed as tools (flow continuation keys)."""
@@ -3435,6 +3609,17 @@ class OrchestratorInteractAction(
         if model_action is None:
             logger.warning("orchestrator: no model action (%s)", self.model_action_type)
             return None
+        # Capability-driven knobs (ADR-0045): the decision protocol, whether the
+        # provider accepts parallel_tool_calls, the output ceiling, and the
+        # context window the pre-flight below fits the prompt into.
+        caps = self._model_capabilities(model_action, model_id)
+        self._resolve_protocol(caps)
+        if (
+            caps.max_output_tokens
+            and max_tokens
+            and int(max_tokens) > int(caps.max_output_tokens)
+        ):
+            max_tokens = int(caps.max_output_tokens)
         # Loop-protocol extras live INSIDE the loop-protocol section of the
         # system prompt (not trailing after the rules): planning, the tool-use
         # policy, and the upload-memory affordance are all about how to run the
@@ -3565,21 +3750,25 @@ class OrchestratorInteractAction(
             ORCHESTRATOR_USER_PROMPT_TEMPLATE,
             ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE,
         )
-        user_prompt = self._fmt(
-            user_template,
-            (
-                ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE
-                if native
-                else ORCHESTRATOR_USER_PROMPT_TEMPLATE
-            ),
-            history_section="",
-            utterance=utterance or "(no message)",
-            observations_section=(
-                ""
-                if native
-                else render_observations_section(observations, **observation_caps)
-            ),
-        )
+
+        def _user_body(obs_caps: Dict[str, int]) -> str:
+            return self._fmt(
+                user_template,
+                (
+                    ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE
+                    if native
+                    else ORCHESTRATOR_USER_PROMPT_TEMPLATE
+                ),
+                history_section="",
+                utterance=utterance or "(no message)",
+                observations_section=(
+                    ""
+                    if native
+                    else render_observations_section(observations, **obs_caps)
+                ),
+            )
+
+        user_prompt = _user_body(observation_caps)
         # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the
         # user turn (the slot the model weights most), so a weak model actually
         # obeys the safeguards when it writes a reply — the same technique that
@@ -3597,18 +3786,20 @@ class OrchestratorInteractAction(
             SAFEGUARDS_REMINDER_TEMPLATE,
             SAFEGUARDS_REMINDER_TEMPLATE_NATIVE,
         )
-        user_prompt = "{0}\n\n{1}".format(
-            user_prompt,
-            self._fmt(
-                reminder_template,
-                (
-                    SAFEGUARDS_REMINDER_TEMPLATE_NATIVE
-                    if native
-                    else SAFEGUARDS_REMINDER_TEMPLATE
-                ),
-                reminders=(" " + reminders) if reminders else "",
+        reminder_text = self._fmt(
+            reminder_template,
+            (
+                SAFEGUARDS_REMINDER_TEMPLATE_NATIVE
+                if native
+                else SAFEGUARDS_REMINDER_TEMPLATE
             ),
+            reminders=(" " + reminders) if reminders else "",
         )
+
+        def _user_prompt_for(obs_caps: Dict[str, int]) -> str:
+            return "{0}\n\n{1}".format(_user_body(obs_caps), reminder_text)
+
+        user_prompt = _user_prompt_for(observation_caps)
         prior_messages = list(history or [])
         # Under 'trailing', the listings ride in their own system message after
         # the history, so the cacheable prefix extends through the conversation
@@ -3649,15 +3840,35 @@ class OrchestratorInteractAction(
                 if tool_defs:
                     kwargs["tools"] = tool_defs
                     kwargs["tool_choice"] = "auto"
-                    kwargs["parallel_tool_calls"] = False
-            reverse_alias = {loop_name: wire for wire, loop_name in alias_map.items()}
-            messages.extend(
-                render_observation_messages(
-                    observations, alias_for=reverse_alias, **observation_caps
-                )
-            )
+                    # Only ask for single calls where the provider knows the
+                    # parameter; one that does not may reject the request.
+                    if caps.supports_parallel_tools is not False:
+                        kwargs["parallel_tool_calls"] = False
         elif self.enforce_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        reverse_alias = {loop_name: wire for wire, loop_name in alias_map.items()}
+        # Context pre-flight (ADR-0045): assemble the transcript, then trim
+        # history and observation replay until the estimated prompt fits the
+        # model's context window minus the output ceiling — instead of letting
+        # the provider reject the request mid-turn. No-op when the window is
+        # unknown.
+        messages, prior_messages = self._fit_context(
+            caps=caps,
+            model_id=model_id or "",
+            provider=str(getattr(model_action, "provider", "") or ""),
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+            prior_messages=prior_messages,
+            listing_messages=listing_messages,
+            user_prompt_for=_user_prompt_for,
+            observations=observations,
+            observation_caps=observation_caps,
+            native=native,
+            reverse_alias=reverse_alias,
+        )
+        kwargs["messages"] = messages
+        kwargs["history"] = prior_messages
+        kwargs["max_tokens"] = max_tokens
         if reasoning_on:  # reasoning only on the heavy gear
             kwargs.update(self._reasoning_kwargs())
         from jvagent.action.model.context import bind_model_gear

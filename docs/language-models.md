@@ -112,6 +112,84 @@ comes from the bundled table. Phase 2 of the
 [remediation plan](../.planning/specs/2026-09-05-model-integration-remediation.md)
 populates both from provider metadata.
 
+### Capabilities and pricing (ADR-0045)
+
+`capabilities(model)` resolves what a model can do — `supports_tools`,
+`supports_parallel_tools`, `supports_json_mode`, `supports_structured_output`,
+`supports_vision`, `supports_thinking`, `context_window`, `max_output_tokens` —
+field by field, first known value wins:
+
+1. `model_capabilities` on the language-model action (`agent.yaml` override);
+2. LiteLLM metadata (`litellm.get_model_info`) when the `litellm` extra is installed;
+3. a bundled table for the mainstream families (GPT-4o/4.1/5, o-series, Claude 3.x/4.x, common open models);
+4. unknown (`None`) — never guessed.
+
+The Orchestrator consumes them: `tool_protocol: auto` picks `json` only for a
+model known not to call tools; `parallel_tool_calls` is withheld from providers
+known to lack it; `model_max_tokens` is clamped to the output ceiling; and the
+**context pre-flight** trims oldest history, then observation replay, until the
+estimated request fits `0.95 × context_window − max_tokens` (recorded as
+`context_trims` on the activation event). Override a wrong entry per agent:
+
+```yaml
+  - action: jvagent/ollama_lm
+    context:
+      model: my-finetune
+      model_capabilities: { supports_tools: false, context_window: 8192 }
+```
+
+`pricing(model)` (and `cost_estimator.estimate_cost`) use LiteLLM's upstream
+price table when available, the bundled table otherwise — cost events carry a
+real price for every model LiteLLM knows.
+
+### LiteLLM universal adapter (`jvagent/litellm_lm`)
+
+One action for every provider LiteLLM speaks — OpenAI, Anthropic, Gemini,
+Bedrock, Azure, Mistral, Groq, OpenRouter, Ollama, … — behind the same contract:
+
+```yaml
+  - action: jvagent/litellm_lm
+    context:
+      enabled: true
+      model: anthropic/claude-sonnet-4-5     # LiteLLM provider/model id
+      # api_key: ...                          # else the provider's env var (ANTHROPIC_API_KEY)
+      # api_base: http://localhost:11434      # e.g. ollama/… against a local host
+      # drop_params: true                     # drop parameters the provider lacks
+```
+
+Install the extra: `pip install "jvagent[litellm]"`. The import is lazy — an
+install without it boots and the action raises a clear error on first use. The
+harness owns retries (`num_retries=0` is sent; `BaseModelAction` retries on the
+exception's `status_code`), streaming is assembled with
+`litellm.stream_chunk_builder`, and `provider: litellm` works in slot overrides.
+Reference the class as `LiteLLMLanguageModelAction` in `model_action_type`.
+
+### Parity matrix
+
+The conformance suite (below) asserts the same normalised `ModelResponse` from
+every adapter for the same logical exchange. Authored wire fixtures; ✓ =
+passes, ○ = not applicable to the provider.
+
+| Scenario | openai | anthropic | ollama | groq | openrouter | litellm |
+|---|---|---|---|---|---|---|
+| text | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| tool_call | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| parallel_tool_calls | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| tool_result_roundtrip (provider-shaped) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| stream_text | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| stream_tool_call (assembly) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| truncation → `length` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| cached_usage → `cached_read_tokens` | ✓ | ✓ | ○ (no cache) | ✓ | ✓ | ✓ |
+| thinking surfaced | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| retry_429 (Retry-After honoured, 2 requests) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| error_500 raised | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| malformed_body raised | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Groq and OpenRouter replay the OpenAI wire (their adapters subclass it); LiteLLM
+replays it through its `_acompletion` seam as real `litellm` response objects.
+Recording against live endpoints (`JVAGENT_CONFORMANCE_RECORD=1`) replaces the
+authored bodies per provider.
+
 ### Conformance suite
 
 `tests/action/model/conformance/` drives **every** adapter through the same

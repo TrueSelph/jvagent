@@ -105,6 +105,11 @@ class BaseModelAction(Action, ABC):
             return True
         if isinstance(exc, httpx.HTTPStatusError):
             return exc.response.status_code in self._retryable_status_codes()
+        # Provider SDK exceptions (LiteLLM / OpenAI-style APIStatusError) carry
+        # the HTTP status as an attribute rather than an httpx response.
+        code = getattr(exc, "status_code", None)
+        if isinstance(code, int):
+            return code in self._retryable_status_codes()
         return False
 
     def _parse_retry_after_header(self, response: httpx.Response) -> Optional[float]:

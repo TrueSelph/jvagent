@@ -35,6 +35,7 @@ Path convention: `jvagent/action/{dir}/`. Implementation file is `{dir}/{name}.p
 > | jvagent/stt_action/deepgram | jvagent/deepgram_stt |
 > | jvagent/tts_action/elevenlabs | jvagent/elevenlabs_tts |
 > | jvagent/model/language/anthropic | jvagent/anthropic_lm |
+> | jvagent/model/language/litellm | jvagent/litellm_lm |
 > | jvagent/model/language/ollama | jvagent/ollama_lm |
 
 ---

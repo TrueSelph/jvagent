@@ -77,7 +77,12 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
             with pytest.raises(Exception) as excinfo:
                 await _run(case, scenario)
             if expect["error"] == "HTTPStatusError":
-                assert isinstance(excinfo.value, httpx.HTTPStatusError)
+                # httpx raises HTTPStatusError; SDK-style adapters (LiteLLM)
+                # raise their own exception carrying the status code.
+                exc = excinfo.value
+                assert isinstance(exc, httpx.HTTPStatusError) or (
+                    getattr(exc, "status_code", None) == 500
+                ), type(exc)
             response = None
         else:
             response = await _run(case, scenario)
@@ -86,7 +91,9 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
             fixture = dict(case.fixture)
             fixture["responses"] = case.transport.captured
             save_recorded(provider, scenario_name, fixture)
-        await case.action._http_client.aclose()
+        client = getattr(case.action, "_http_client", None)
+        if client is not None:
+            await client.aclose()
 
     if response is None:
         return
@@ -114,7 +121,7 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
         )
         assert response.usage.estimated is False
     if "cached_read_tokens" in expect:
-        wire = "openai" if provider in ("groq", "openrouter") else provider
+        wire = "openai" if provider in ("groq", "openrouter", "litellm") else provider
         assert response.usage.cached_read_tokens == expect["cached_read_tokens"][wire]
         assert response.usage.cached_read_tokens <= response.usage.prompt_tokens
     if "request_has_tool_result" in expect:
