@@ -64,6 +64,51 @@ Resume is **soft**, mirroring `lock_active_flow=False`: at turn start, an unfini
 
 **Carrying work across the resume.** The checklist persists, but the turn's `observations` (gathered evidence, drafts) do not. So a step can record a short **`result`** — `{step, status:'done', result:'summarized 12 posts'}` — carried onto the persisted step (`Step.result`, bounded ~1k chars). `plan_resume_note` renders those under each step (a `↳` line), telling the model to **reuse** them rather than regenerate. Prefer passing substantial intermediate text **in the next tool's args** (e.g. report markdown into `pageindex__assimilate`'s `doc`) — do not detour through a write-file tool unless the user asked for a file. When a durable file *is* required, the per-user sandbox (file_interface/code_execution) is the home and `result` holds the path pointer. Paired with the model-floor and the plan-completion / salvage path on budget-exhaust, this closes both "nudge restarts the task" and "repeat_guard → clarify_text discards work".
 
+## Decision protocol (`tool_protocol`, ADR-0044)
+
+How the loop exchanges each step with the model is a configuration choice with
+two values. **`native`** (the default) uses the provider's function-calling API:
+
+- every tool on the visible surface goes up as a JSON-Schema'd function
+  definition (`SkillTool.parameters_schema`; `@tool`-decorated methods derive
+  theirs from the signature), so the provider validates arguments and the model
+  reads their names instead of guessing them;
+- the model's `tool_calls` entry **is** the step; plain text with no tool call is
+  the reply (delivered through `reply`, so directives and parameters still
+  apply); the finalize tick offers no tools, so only text can come back;
+- one call per tick is requested at the provider (`parallel_tool_calls=False`,
+  Anthropic `disable_parallel_tool_use`); any extra calls a provider returns are
+  queued and dispatched on the following ticks without a model round-trip, so
+  every call the model made gets a result;
+- this turn's steps replay as a real transcript — an assistant message carrying
+  the `tool_calls` entry, then a `tool` message with the size-bounded result
+  (same caps as the digest below). A guard that stood in for a dispatch replays
+  as that call's result; server notes (prep, seeds) replay as `[harness note]`
+  user messages.
+
+**`json`** keeps the original contract byte for byte: tools are listed as prose,
+the model answers with one JSON object per step, and the turn's steps are
+rendered as a `Steps taken this turn` digest in the user turn. Use it for a
+provider or model without reliable function calling. `enforce_json_mode`
+applies only here.
+
+Prompt pieces come in matching variants (protocol paragraph, user template,
+safeguards reminder, finalize prompt, no-decision nudge). Because Action
+attributes persist, an agent registered before ADR-0044 still carries the
+JSON-era built-in text as its `system_prompt`/`user_prompt`; the orchestrator
+recognises a value equal to that built-in as "unchanged" and renders the
+protocol-correct built-in. An operator override is always used verbatim — an
+override that inlines the JSON contract should be updated or paired with
+`tool_protocol: json`.
+
+**Model faults are decisions.** A provider call that raises (after the model
+layer's retries) reaches the loop as `model_error`; a completion cut off by the
+token ceiling with nothing usable as `model_truncated`. The loop retries a
+provider failure once, then ends the turn with `model_unavailable_text` (never
+`clarify_text`, never a finalize call into the same dead endpoint) and records
+`ended_via=model_error`. Truncation gets its own nudge; three unusable outputs
+in a row still end the turn as `no_decision`.
+
 ## The unified tool surface
 
 Everything the agent can do is reachable as a tool, so there is no separate router or capability registry:
@@ -297,6 +342,7 @@ actions:
     context:
       enabled: true
       activation_budget: 24       # max tool-using ticks/turn; raise for research
+      tool_protocol: native      # native (provider tool calling) | json (ADR-0044)
       model: gpt-4o-mini
       model_action_type: OpenAILanguageModelAction
       lock_active_flow: true     # deterministic turn-lock; false = model-mediated
@@ -393,7 +439,7 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
 - **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **4096** — the orchestrator is agentic (each tick emits reasoning plus an action, often the substantive answer, and thinking models spend completion tokens on reasoning), so it carries more headroom than a single-shot responder; raise further for long-form replies. `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft reply prompt cap; does not truncate loop history), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** on `last_gear` — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback. If that finalize tick still returns a tool call (models sometimes ignore STEP LIMIT), the loop **salvages** plan step `result`s / tool observations into a user-facing summary instead of `clarify_text`.
 - **Observation budget**: every tick resends this turn's prior tool results, so *unbounded* results make the per-turn input cost grow with the square of the tick count — an 8-tick research turn over 8 KB page fetches billed ~70k input tokens, a 20-tick one ~325k. `MAX_OBSERVATIONS_IN_PROMPT` bounds how *many* results replay; `observation_max_chars` (default 4000) and `stale_observation_max_chars` (default 600) bound how *big* each one is, with the most recent `observation_full_recent` (default 3) getting the generous budget. `observation_args_max_chars` (default 400) caps the arguments — a write-file call carries its whole payload there. Elision is middle-out and marked, so the model can re-run the tool if it truly needs the body; set any cap to `0` to disable it.
-- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout`, `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
+- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout` (default **120 s** — a hung tool returns a timeout observation instead of holding the turn and the conversation lock; `0` disables), `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
 - **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` is reserved for future parallel tool batches (the loop executes one tool per tick today).
 
 ```yaml

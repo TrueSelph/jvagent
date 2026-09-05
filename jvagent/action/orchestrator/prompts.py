@@ -31,8 +31,14 @@ from typing import Optional
 # turn moved. Recency governs adherence for the safety rules specifically, and
 # ~200 tokens of cache is not worth trading for that. Measure before moving
 # them again.
-ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
-{identity_section}{session_context_section}You operate as this agent's executive — a fast, conversational \
+# The decision protocol paragraph — how the model expresses each step. Two
+# variants (ADR-0044): ``native`` rides the provider's function-calling API
+# (tool calls are the step, plain text is the reply); ``json`` is the original
+# structured-JSON-in-text contract kept for providers/models without reliable
+# tool calling. ``render_system_prompt(protocol="json")`` reproduces the
+# pre-ADR-0044 text byte for byte, so the measured A/B results still apply.
+JSON_PROTOCOL_SECTION = """\
+You operate as this agent's executive — a fast, conversational \
 coordinator that gets things done by using TOOLS, one step at a time. Reply with \
 a single JSON object each step. No prose, no markdown, no ```json``` code fences — \
 raw JSON only.
@@ -70,7 +76,45 @@ your step MUST be the tool call that does it. For multi-step tasks (e.g. researc
 ``reply``/``final`` when the deliverable is complete or you genuinely need the \
 user's input. A progress update is not a reason to stop.
 - **Then stop.** Take the fewest steps needed; once the user has been answered \
-and nothing more is required, return action "final".{loop_protocol_extra}
+and nothing more is required, return action "final".{loop_protocol_extra}"""
+
+NATIVE_PROTOCOL_SECTION = """\
+You operate as this agent's executive — a fast, conversational \
+coordinator that gets things done by using TOOLS, one step at a time. Each step \
+is EITHER exactly one tool call OR your reply to the user as plain text.
+
+Everything you can do is a tool: looking things up, running structured flows \
+(e.g. signups/interviews), and following skills (standard operating \
+procedures). Routing IS tool selection — pick the tool whose description matches \
+the user's intent. Plain text with no tool call is delivered to the user as your \
+reply and ENDS the turn.
+
+LOOP PROTOCOL (How to choose each step) :
+- **Skills first.** If any AVAILABLE SKILL matches the user's task, activate it \
+with the ``use_skill`` tool BEFORE ad-hoc tool calls, then follow its procedure. \
+Don't re-activate an already-active skill — proceed with its steps.
+- **Reply as text.** To deliver your message, respond with plain text (or call \
+``reply``). Keep it natural and concise; pending directives and parameters are \
+applied for you.
+- **Look it up.** For factual lookups, current events, specific data, or \
+calculations, call the matching tool rather than answering from memory. If a \
+request matches a structured flow's tool (e.g. a signup interview), call it.
+- **Find the exact tool.** The tool list may be PARTIAL. If you don't see the \
+EXACT tool a step needs, call ``find_tool`` first, then call the tool it \
+returns (``load_tool`` gives you its full description). Never substitute a \
+near-match — a read/search tool used where you need to write/save will fail.
+- **Act, don't announce — and finish before replying.** Never say what you are \
+"about to" or "will now" do and then stop; a text reply ENDS your turn. If work \
+remains, your step MUST be the tool call that does it. For multi-step tasks \
+(e.g. research → write a file → save it) do every step this turn, and only reply \
+when the deliverable is complete or you genuinely need the user's input. A \
+progress update is not a reason to stop.
+- **One call per step.** Make exactly one tool call per step and wait for its \
+result — never assume a result you have not seen. Take the fewest steps needed; \
+once the user has been answered, reply and stop.{loop_protocol_extra}"""
+
+ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
+{identity_section}{session_context_section}{protocol_section}
 
 {extra_section}
 WHAT YOU CAN DO — your capabilities for the user. This list is COMPLETE even \
@@ -104,6 +148,7 @@ ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
 SYSTEM_PROMPT_PLACEHOLDERS = {
     "identity_section": "",
     "session_context_section": "",
+    "protocol_section": "",
     "tools_section": "",
     "skills_section": "",
     "capabilities_section": "",
@@ -112,12 +157,47 @@ SYSTEM_PROMPT_PLACEHOLDERS = {
     "extra_section": "",
 }
 
+PROTOCOL_SECTIONS = {
+    "native": NATIVE_PROTOCOL_SECTION,
+    "json": JSON_PROTOCOL_SECTION,
+}
 
-def render_system_prompt(template: Optional[str] = None, **sections: str) -> str:
-    """Render the orchestrator system prompt, defaulting any slot not supplied."""
+
+def render_protocol_section(
+    protocol: str = "native", loop_protocol_extra: str = ""
+) -> str:
+    """The decision-protocol paragraph for *protocol*, with its extras filled."""
+    section = PROTOCOL_SECTIONS.get(
+        (protocol or "native").strip().lower(), NATIVE_PROTOCOL_SECTION
+    )
+    return section.format(loop_protocol_extra=loop_protocol_extra or "")
+
+
+def render_system_prompt(
+    template: Optional[str] = None, *, protocol: str = "native", **sections: str
+) -> str:
+    """Render the orchestrator system prompt, defaulting any slot not supplied.
+
+    ``protocol_section`` is rendered from *protocol* (``native`` | ``json``)
+    unless supplied explicitly; ``loop_protocol_extra`` is folded into it.
+    """
     values = dict(SYSTEM_PROMPT_PLACEHOLDERS)
     values.update({k: v for k, v in sections.items() if v is not None})
+    if not values.get("protocol_section"):
+        values["protocol_section"] = render_protocol_section(
+            protocol, values.get("loop_protocol_extra", "")
+        )
     return (template or ORCHESTRATOR_SYSTEM_PROMPT).format(**values)
+
+
+# The pre-ADR-0044 built-in system prompt (JSON protocol inline, no
+# ``{protocol_section}`` slot). Deployments persist Action attributes, so an
+# agent registered before 0.1.9 carries this exact text as its ``system_prompt``;
+# the orchestrator recognises it as "the default" and renders the protocol-
+# correct built-in instead of instructing a tool-calling model to emit JSON.
+LEGACY_JSON_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT.replace(
+    "{protocol_section}", JSON_PROTOCOL_SECTION
+)
 
 
 ORCHESTRATOR_USER_PROMPT_TEMPLATE = """\
@@ -129,6 +209,14 @@ Steps taken this turn:
 
 Reply with one JSON object for your next step. Output raw JSON only — \
 do not wrap it in ```json``` code fences or any markdown formatting."""
+
+# Native protocol: this turn's steps replay as assistant tool_calls + tool
+# result messages (ADR-0044), so the user turn carries only the message. The
+# ``{observations_section}`` slot is accepted for template compatibility and
+# rendered empty.
+ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE = """\
+Current user message:
+{utterance}{observations_section}"""
 
 # Peak-attention reinforcement of the OPERATING RULES, appended to the user
 # prompt each step (the slot a model weights most). The system-prompt rules alone
@@ -153,6 +241,12 @@ SAFEGUARDS_REMINDER_TEMPLATE = (
     "a response.{reminders} Return raw JSON only — no ```json``` fences.]"
 )
 
+# Native-protocol variant: same behavioural reminder, minus the JSON mechanics.
+SAFEGUARDS_REMINDER_TEMPLATE_NATIVE = (
+    "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating "
+    "a response.{reminders}]"
+)
+
 # The pre-hardening text, kept so the A/B harness can restore it as an arm.
 SAFEGUARDS_REMINDER_BASIC = "[You MUST follow all OPERATING RULES and LOOP PROTOCOLS before generating a response. Return raw JSON only — no ```json``` fences.]"
 
@@ -175,6 +269,14 @@ FINALIZE_PROMPT = (
     "have already gathered. Return ONLY "
     '{"action":"final","answer":"<your reply>"} '
     "(include any link/path to work you produced this turn in the answer)."
+)
+
+# Native-protocol variant (no tools are offered on the finalize tick, so the
+# only possible output is the reply text).
+FINALIZE_PROMPT_NATIVE = (
+    "STEP LIMIT REACHED: Do NOT call any tool. Reply to the user now, as plain "
+    "text, with your best, most complete answer using what you have already "
+    "gathered (include any link/path to work you produced this turn)."
 )
 
 # Appended to the loop system prompt only when ``planning`` is on (ADR-0019).
@@ -308,9 +410,17 @@ def render_capabilities_section(capabilities: list) -> str:
 
 __all__ = [
     "ORCHESTRATOR_SYSTEM_PROMPT",
+    "LEGACY_JSON_SYSTEM_PROMPT",
+    "JSON_PROTOCOL_SECTION",
+    "NATIVE_PROTOCOL_SECTION",
+    "PROTOCOL_SECTIONS",
     "SYSTEM_PROMPT_PLACEHOLDERS",
+    "render_protocol_section",
     "render_system_prompt",
     "ORCHESTRATOR_USER_PROMPT_TEMPLATE",
+    "ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE",
+    "SAFEGUARDS_REMINDER_TEMPLATE_NATIVE",
+    "FINALIZE_PROMPT_NATIVE",
     "TOOL_USE_POLICY",
     "PLANNING_PROMPT",
     "MEMORY_PROMPT",

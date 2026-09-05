@@ -233,11 +233,34 @@ def build_catalog_tools(
             name="find_tool",
             description="Search the full tool surface by query when the tool you need isn't listed.",
             run=_find,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "The capability you need, in a few words "
+                            "(e.g. 'add to knowledge base', 'fetch url')."
+                        ),
+                    }
+                },
+                "required": ["query"],
+            },
         ),
         "load_tool": SkillTool(
             name="load_tool",
             description="Surface a tool by exact name so you can call it.",
             run=_load,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Exact tool name (from find_tool).",
+                    }
+                },
+                "required": ["name"],
+            },
         ),
     }
 
@@ -389,15 +412,34 @@ def build_skill_meta_tools(
             name="find_skill",
             description="Search available skills (standard operating procedures) by query.",
             run=_find,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What the user wants done, in a few words.",
+                    }
+                },
+                "required": ["query"],
+            },
         ),
         "use_skill": SkillTool(
             name="use_skill",
             description=(
-                "Activate a skill to load its procedure (SOP) and make its tools "
-                'callable. Call as {"action":"tool","tool":"use_skill",'
-                '"args":{"name":"<skill name>"}}.'
+                "Activate a skill by name to load its procedure (SOP) and make its "
+                "tools callable."
             ),
             run=_use,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Exact skill name from AVAILABLE SKILLS.",
+                    }
+                },
+                "required": ["name"],
+            },
         ),
     }
 

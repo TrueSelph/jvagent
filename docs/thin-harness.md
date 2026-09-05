@@ -32,7 +32,7 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 5. **No response inlining** — do not merge downstream tool payloads into upstream tool responses inside the server (e.g. auto-inlining “next step” content into a store response). `next_tool` hints and `response_directive` are allowed; the model still issues separate tool calls per SOP.
 
-6. **No orchestrator action special-casing** — the orchestrator must not post-process one action's tool results to force follow-up tool calls for that action. Turn-lock uses generic bound-action hooks only (`task_lock_runtime_ready`, `prepare_task_lock_turn`, `prune_task_lock_tools`).
+6. **No orchestrator action special-casing** — the orchestrator must not post-process one action's tool results to force follow-up tool calls for that action. Turn-lock uses generic bound-action hooks only (`task_lock_runtime_ready`, `prepare_task_lock_turn`, `prune_task_lock_tools`, `task_lock_entry_directive`, `gated_resume_auto_resolves`, `clear_task_lock_session`, `task_lock_progress_count`, `task_lock_title`, `task_lock_abandon`). A plugin whose result envelopes use their own field names registers them at load (`register_task_completion_flag`, `register_task_lock_skill_key`, `register_trusted_directive_prefix` in `orchestrator/constants.py`); the orchestrator itself reads only the generic keys. `tests/action/orchestrator/test_no_interview_coupling.py` fails on any interview import or literal in orchestrator source.
 
 7. **Lean tool surfacing** — list tools and skills; let the model discover details via `find_tool` / `load_tool` and `find_skill` / `use_skill` ([ADR-0018](../.planning/adr/0018-lean-tool-surfacing.md)). Do not duplicate full SOPs in tool descriptions.
 

@@ -71,14 +71,19 @@ from jvagent.action.orchestrator.core_tools import (
 )
 from jvagent.action.orchestrator.prompts import (
     FINALIZE_PROMPT,
+    FINALIZE_PROMPT_NATIVE,
     FLOW_IN_PROGRESS_PROMPT,
+    LEGACY_JSON_SYSTEM_PROMPT,
     LENGTH_LIMIT_PROMPT,
     NO_SKILLS_AVAILABLE,
     ORCHESTRATOR_SYSTEM_PROMPT,
     ORCHESTRATOR_USER_PROMPT_TEMPLATE,
+    ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE,
     PLANNING_PROMPT,
     SAFEGUARDS_REMINDER_TEMPLATE,
+    SAFEGUARDS_REMINDER_TEMPLATE_NATIVE,
     render_identity_section,
+    render_protocol_section,
 )
 from jvagent.action.orchestrator.skill_gate import build_skill_gate, install_skill_gate
 from jvagent.action.orchestrator.skills import discover_skill_docs
@@ -93,7 +98,10 @@ from jvagent.action.orchestrator.tools import (
     DEFAULT_STALE_OBSERVATION_MAX_CHARS,
     MAX_OBSERVATIONS_IN_PROMPT,
     SkillTool,
+    decisions_from_native_result,
+    native_tool_definitions,
     parse_json_object,
+    render_observation_messages,
     render_observations_section,
     render_tools_section,
     wrap_action_tool,
@@ -119,11 +127,19 @@ logger = logging.getLogger(__name__)
 from jvagent.action.orchestrator.constants import (
     DECISION_RESERVED_KEYS as _DECISION_RESERVED_KEYS,
 )
+from jvagent.action.orchestrator.constants import (
+    MODEL_ERROR_ACTION,
+    MODEL_TRUNCATED_ACTION,
+)
 from jvagent.action.orchestrator.constants import STEER_EXEMPT as _STEER_EXEMPT
 from jvagent.action.orchestrator.constants import (
     STOPWORDS,
+    TOOL_PROTOCOL_JSON,
+    TOOL_PROTOCOL_NATIVE,
+    is_task_completion,
     significant_tokens,
 )
+from jvagent.action.orchestrator.turn_cache import update_prompt_cache
 
 DEFAULT_ACTIVATION_BUDGET = 24
 
@@ -210,27 +226,25 @@ def _is_tool_chain_directive(directive: str) -> bool:
     )
 
 
+# The directive guidance marker (U+2063): text before it is user-facing, text
+# after it is model-only compose steering that ReplyAction voices but never
+# relays verbatim. It is the platform-wide directive contract (see
+# ``egress.py:_send_reply``), not a plugin's.
+DIRECTIVE_GUIDANCE_MARKER = "\u2063"
+
+
 def _append_directive_hint(directive: str, hint: str) -> str:
     """Append model-only compose steering onto a directive's guidance block.
 
-    Uses the interview directive contract's ``append_hint`` when the guidance
-    marker is present (the hint lands after the compose marker, never voiced
-    verbatim); otherwise appends as a trailing parenthetical model note.
+    When the directive already carries a guidance block (the U+2063 marker is
+    present) the hint lands inside it — after the marker, never voiced
+    verbatim. Otherwise it is appended as a trailing parenthetical model note.
     """
     hint = (hint or "").strip()
     if not hint or not directive:
         return directive
-    try:
-        from jvagent.action.interview.hooks import append_hint
-
-        appended = append_hint(directive, hint)
-        if appended != directive:
-            return appended
-    except Exception:  # pragma: no cover - defensive
-        logger.debug(
-            "orchestrator: appending the upload note failed; the turn proceeds without it",
-            exc_info=True,
-        )
+    if DIRECTIVE_GUIDANCE_MARKER in directive:
+        return f"{directive}\n{hint}"
     return f"{directive}\n({hint})"
 
 
@@ -277,7 +291,39 @@ class OrchestratorInteractAction(
             "still bound runaway loops."
         ),
     )
-    enforce_json_mode: bool = attribute(default=True)
+    tool_protocol: str = attribute(
+        default=TOOL_PROTOCOL_NATIVE,
+        description=(
+            "How the loop exchanges decisions with the model (ADR-0044). "
+            "'native' (default): tools go to the provider as JSON-Schema'd "
+            "function definitions, the model's tool_calls are the step, plain "
+            "text is the reply, and this turn's steps replay as assistant "
+            "tool_calls + tool-result messages. 'json': the original "
+            "structured-JSON-in-text contract (one JSON object per step, tools "
+            "listed as prose) — for providers or models without reliable "
+            "function calling. Unknown values fall back to 'native'."
+        ),
+    )
+    enforce_json_mode: bool = attribute(
+        default=True,
+        description=(
+            "JSON protocol only: request the provider's JSON mode "
+            "(response_format=json_object) so the decision parses. Ignored "
+            "under the native protocol, and by providers without a JSON mode "
+            "(Anthropic)."
+        ),
+    )
+    model_unavailable_text: str = attribute(
+        default=(
+            "I'm having trouble reaching my language model right now. Please "
+            "try again in a moment."
+        ),
+        description=(
+            "Reply sent when the loop's model call fails on consecutive attempts "
+            "(provider outage, auth, quota). Distinct from clarify_text — the "
+            "user is told the service is unavailable, not that they were unclear."
+        ),
+    )
 
     # -- Model gearing (ADR-0016): a LIGHT completion model for single-dimensional
     # turns (reply / one tool), the HEAVY model above for multi-step work. Set
@@ -349,6 +395,14 @@ class OrchestratorInteractAction(
         "(history is always untruncated; interaction [EVENT] lines are omitted).",
     )
     history_limit: int = attribute(default=4)
+    history_statement_max_chars: int = attribute(
+        default=4000,
+        description=(
+            "Per-statement cap (characters) on each prior utterance/response "
+            "replayed as loop history — every tick resends the history, so an "
+            "unbounded prior reply is billed on every step. 0 disables the cap."
+        ),
+    )
 
     # -- Observation replay budget. Every tick re-sends this turn's prior tool
     # results, so without caps the per-turn input cost grows quadratically in
@@ -642,8 +696,12 @@ class OrchestratorInteractAction(
         description="Core-tool tier: minimal | standard | full.",
     )
     tool_call_timeout: float = attribute(
-        default=0.0,
-        description="Per-tool-call timeout (seconds); 0 disables.",
+        default=120.0,
+        description=(
+            "Per-tool-call timeout (seconds). A tool that exceeds it returns a "
+            "timeout observation instead of hanging the turn (and the "
+            "conversation lock) indefinitely. 0 disables; channel-overridable."
+        ),
     )
     tool_thought_max_chars: int = attribute(
         default=0,
@@ -1865,9 +1923,7 @@ class OrchestratorInteractAction(
             data = json.loads(obs)
         except (json.JSONDecodeError, TypeError, ValueError):
             return None
-        if not isinstance(data, dict):
-            return None
-        if not (data.get("interview_complete") or data.get("status") == "completed"):
+        if not is_task_completion(data):
             return None
         # A skill completed → its task is closed and its session cleared. Re-resolve
         # the top runnable task-lock skill.
@@ -2406,9 +2462,7 @@ class OrchestratorInteractAction(
             data = json.loads(obs)
         except (json.JSONDecodeError, TypeError, ValueError):
             return False
-        if not isinstance(data, dict):
-            return False
-        return bool(data.get("interview_complete") or data.get("status") == "completed")
+        return is_task_completion(data)
 
     @staticmethod
     def _last_activation_directive(observations: List[Dict[str, Any]]) -> str:
@@ -3090,6 +3144,29 @@ class OrchestratorInteractAction(
             except (KeyError, IndexError, ValueError):
                 return template
 
+    def _protocol(self) -> str:
+        """The effective decision protocol: ``native`` (default) or ``json``."""
+        value = str(self.tool_protocol or "").strip().lower()
+        return (
+            TOOL_PROTOCOL_JSON if value == TOOL_PROTOCOL_JSON else TOOL_PROTOCOL_NATIVE
+        )
+
+    def _protocol_text(self, value: str, json_default: str, native_default: str) -> str:
+        """Resolve an overridable prompt piece for the active protocol.
+
+        Prompt pieces are persisted Action attributes, so a deployment created
+        under the JSON protocol still carries the JSON-era built-in text. A
+        value equal to that built-in is "unchanged by the operator" and is
+        swapped for the protocol-correct built-in; an operator override is
+        always honoured verbatim.
+        """
+        if (
+            self._protocol() == TOOL_PROTOCOL_NATIVE
+            and (value or "").strip() == (json_default or "").strip()
+        ):
+            return native_default
+        return value
+
     def _compose_system_prompt(
         self,
         *,
@@ -3101,15 +3178,18 @@ class OrchestratorInteractAction(
         loop_protocol_extra: str = "",
         extra_section: str = "",
         session_context_section: str = "",
+        protocol_section: str = "",
     ) -> str:
         """Build the base system prompt from the (overridable) ``system_prompt``
         template, then place ``system_prompt_extra`` (plus any caller-supplied
         ``extra_section``) and SESSION CONTEXT (ADR-0042).
 
         The built-in template carries ``{session_context_section}`` immediately
-        after identity (cacheable ground truth) and ``{extra_section}`` ahead of
-        the per-tick tool/skill listings. A custom ``system_prompt`` that
-        predates those slots gets extras/session context appended at the end.
+        after identity (cacheable ground truth), ``{protocol_section}`` (the
+        decision protocol paragraph for ``tool_protocol``, ADR-0044) and
+        ``{extra_section}`` ahead of the per-tick tool/skill listings. A custom
+        ``system_prompt`` that predates those slots gets extras/session context
+        appended at the end; one that inlines the JSON protocol keeps it.
         """
         extras = "\n\n".join(
             part
@@ -3125,6 +3205,14 @@ class OrchestratorInteractAction(
         elif session_ctx and not session_ctx.endswith("\n\n"):
             session_ctx = session_ctx + "\n"
         template = self.system_prompt
+        # A persisted pre-ADR-0044 default is still "the default": render the
+        # protocol-correct built-in rather than JSON instructions to a model that
+        # is being handed native tools.
+        if (template or "").strip() == LEGACY_JSON_SYSTEM_PROMPT.strip():
+            template = ORCHESTRATOR_SYSTEM_PROMPT
+        protocol = self._protocol()
+        if not protocol_section:
+            protocol_section = render_protocol_section(protocol, loop_protocol_extra)
         inline_extra = "{extra_section}" in template
         inline_session = "{session_context_section}" in template
         base = self._fmt(
@@ -3132,6 +3220,7 @@ class OrchestratorInteractAction(
             ORCHESTRATOR_SYSTEM_PROMPT,
             identity_section=identity_section,
             session_context_section=(session_ctx if inline_session else ""),
+            protocol_section=protocol_section,
             tools_section=tools_section,
             skills_section=skills_section,
             capabilities_section=capabilities_section,
@@ -3301,7 +3390,11 @@ class OrchestratorInteractAction(
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
                     with_event=False,
-                    max_statement_length=None,
+                    max_statement_length=(
+                        int(self.history_statement_max_chars)
+                        if int(self.history_statement_max_chars or 0) > 0
+                        else None
+                    ),
                 )
                 or []
             )
@@ -3370,6 +3463,8 @@ class OrchestratorInteractAction(
             loop_extra.append(memory_rule)
         loop_protocol_extra = ("\n\n" + "\n\n".join(loop_extra)) if loop_extra else ""
 
+        protocol = self._protocol()
+        native = protocol == TOOL_PROTOCOL_NATIVE
         prompt_cache = get_prompt_cache()
         # Channel-scoped extra instructions are invariant for the whole turn, so
         # they compose into the prompt's stable region rather than trailing after
@@ -3445,26 +3540,43 @@ class OrchestratorInteractAction(
                 )
                 system_prompt = f"{system_prompt}\n\n{limit}"
         if finalize:
-            system_prompt = f"{system_prompt}\n\n{self.finalize_prompt}"
+            finalize_text = self._protocol_text(
+                self.finalize_prompt, FINALIZE_PROMPT, FINALIZE_PROMPT_NATIVE
+            )
+            system_prompt = f"{system_prompt}\n\n{finalize_text}"
         # Conversation history travels as structured prior messages — the
         # model's designated history channel — NOT dumped as text into the user
-        # turn. The user prompt carries only the current message + this turn's
-        # steps. ``history_section`` is passed empty so an override template that
-        # still references it renders cleanly. (``history_section`` is left blank
-        # because enforce_json_mode keeps the decision structured even with real
-        # assistant/user turns in context.)
-        user_prompt = self._fmt(
+        # turn. The user prompt carries only the current message + (JSON
+        # protocol) this turn's steps as a digest. Under the native protocol the
+        # steps replay as assistant tool_calls + tool-result messages after the
+        # user turn, so the digest slot renders empty. ``history_section`` is
+        # passed empty so an override template that still references it renders
+        # cleanly.
+        observation_caps: Dict[str, int] = {
+            "max_chars": int(self.observation_max_chars),
+            "stale_max_chars": int(self.stale_observation_max_chars),
+            "full_recent": int(self.observation_full_recent),
+            "args_max_chars": int(self.observation_args_max_chars),
+            "max_observations": int(self.max_observations_in_prompt),
+        }
+        user_template = self._protocol_text(
             self.user_prompt,
             ORCHESTRATOR_USER_PROMPT_TEMPLATE,
+            ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE,
+        )
+        user_prompt = self._fmt(
+            user_template,
+            (
+                ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE
+                if native
+                else ORCHESTRATOR_USER_PROMPT_TEMPLATE
+            ),
             history_section="",
             utterance=utterance or "(no message)",
-            observations_section=render_observations_section(
-                observations,
-                max_chars=int(self.observation_max_chars),
-                stale_max_chars=int(self.stale_observation_max_chars),
-                full_recent=int(self.observation_full_recent),
-                args_max_chars=int(self.observation_args_max_chars),
-                max_observations=int(self.max_observations_in_prompt),
+            observations_section=(
+                ""
+                if native
+                else render_observations_section(observations, **observation_caps)
             ),
         )
         # Peak-attention reinforcement: the OPERATING-RULES reminder rides in the
@@ -3479,11 +3591,20 @@ class OrchestratorInteractAction(
         # persisted before this change has no ``{reminders}`` slot, so it
         # renders verbatim and that deployment keeps exactly today's string.
         reminders = render_user_turn_reminders(self._parameter_pool(visitor))
+        reminder_template = self._protocol_text(
+            self.safeguards_reminder,
+            SAFEGUARDS_REMINDER_TEMPLATE,
+            SAFEGUARDS_REMINDER_TEMPLATE_NATIVE,
+        )
         user_prompt = "{0}\n\n{1}".format(
             user_prompt,
             self._fmt(
-                self.safeguards_reminder,
-                SAFEGUARDS_REMINDER_TEMPLATE,
+                reminder_template,
+                (
+                    SAFEGUARDS_REMINDER_TEMPLATE_NATIVE
+                    if native
+                    else SAFEGUARDS_REMINDER_TEMPLATE
+                ),
                 reminders=(" " + reminders) if reminders else "",
             ),
         )
@@ -3496,13 +3617,14 @@ class OrchestratorInteractAction(
             if trailing_listing
             else []
         )
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            *prior_messages,
+            *listing_messages,
+            {"role": "user", "content": user_prompt},
+        ]
         kwargs: Dict[str, Any] = {
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                *prior_messages,
-                *listing_messages,
-                {"role": "user", "content": user_prompt},
-            ],
+            "messages": messages,
             "stream": False,
             "system": system_prompt,
             "history": prior_messages,
@@ -3513,7 +3635,27 @@ class OrchestratorInteractAction(
             "max_tokens": max_tokens,
             "calling_action_name": self.get_class_name(),
         }
-        if self.enforce_json_mode:
+        alias_map: Dict[str, str] = {}
+        if native:
+            # Native protocol (ADR-0044): the provider carries the tools and the
+            # decision. Steps so far replay as assistant tool_calls + tool
+            # results; the finalize tick offers no tools so only text can come
+            # back. One call per tick is an invariant (SPEC §3.3), so parallel
+            # tool calls are disabled at the provider and any extra calls a
+            # provider returns anyway are queued for the following ticks.
+            if tools and not finalize:
+                tool_defs, alias_map = native_tool_definitions(list(tools))
+                if tool_defs:
+                    kwargs["tools"] = tool_defs
+                    kwargs["tool_choice"] = "auto"
+                    kwargs["parallel_tool_calls"] = False
+            reverse_alias = {loop_name: wire for wire, loop_name in alias_map.items()}
+            messages.extend(
+                render_observation_messages(
+                    observations, alias_for=reverse_alias, **observation_caps
+                )
+            )
+        elif self.enforce_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         if reasoning_on:  # reasoning only on the heavy gear
             kwargs.update(self._reasoning_kwargs())
@@ -3523,8 +3665,12 @@ class OrchestratorInteractAction(
             with bind_model_gear(gear):
                 result = await model_action.query_messages(**kwargs)
         except Exception as exc:
+            # A provider fault, not a model choice: surfaced as a typed decision
+            # so the loop can retry once and then end the turn honestly
+            # (model_unavailable_text) instead of nudging the model to "reply
+            # with valid JSON" into a dead endpoint.
             logger.warning("orchestrator: model call raised: %s", exc)
-            return None
+            return {"action": MODEL_ERROR_ACTION, "error": str(exc)}
         # Surface the thinking trace only on the heavy gear (the light gear is a
         # completion model with no reasoning to show).
         if self.stream_reasoning_trace and gear == "heavy":
@@ -3532,7 +3678,24 @@ class OrchestratorInteractAction(
             if trace:
                 await self._emit_thought(visitor, str(trace))
         raw = (getattr(result, "response", None) or "").strip()
-        return parse_json_object(raw) if raw else None
+        finish = str(getattr(result, "finish_reason", "") or "").strip().lower()
+        truncated = finish in ("length", "max_tokens")
+        if native:
+            decisions = decisions_from_native_result(
+                getattr(result, "tool_calls", None),
+                raw,
+                alias_map=alias_map,
+                text_as_reply=(not finalize) and any(t.name == "reply" for t in tools),
+            )
+            if not decisions:
+                return {"action": MODEL_TRUNCATED_ACTION} if truncated else None
+            if len(decisions) > 1:
+                update_prompt_cache("pending_decisions", decisions[1:])
+            return decisions[0]
+        parsed = parse_json_object(raw) if raw else None
+        if parsed is None and truncated:
+            return {"action": MODEL_TRUNCATED_ACTION}
+        return parsed
 
 
 __all__ = ["OrchestratorInteractAction"]

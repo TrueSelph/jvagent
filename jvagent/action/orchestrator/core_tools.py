@@ -49,6 +49,7 @@ def _datetime_tool(action: Any) -> SkillTool:
             "fresh reading mid-turn."
         ),
         run=_run,
+        parameters_schema={"type": "object", "properties": {}},
     )
 
 
@@ -186,21 +187,53 @@ def _plan_tool(action: Any, visitor: Any) -> SkillTool:
         name="update_plan",
         description=(
             "Record or update your multi-step plan as a checklist that PERSISTS "
-            "across turns (so you can resume if interrupted). Argument shape: a "
-            "single key `steps` holding a LIST — re-send the WHOLE list every "
-            'call. Example: {"steps": [{"step": "Research", "status": "done", '
-            '"result": "summarized 12 posts"}, {"step": "Assimilate report", '
-            '"status": "in_progress"}]}. Each item is either a bare string (a '
-            "pending step) or an object with `step` (the text), optional "
-            "`status` (pending|in_progress|done|skipped), and optional "
-            "`result`. On a completed step set `result` to a short note of "
-            "what it produced (facts gathered, doc_name ingested) so a later "
+            "across turns (so you can resume if interrupted). Re-send the WHOLE "
+            "list every call. On a completed step set `result` to a short note "
+            "of what it produced (facts gathered, doc_name ingested) so a later "
             "turn reuses that work instead of redoing it. Prefer carrying "
             "report text in the next tool's args over writing a file unless "
             "the user asked for a file. Use for genuinely multi-step work; "
             "skip it for single-step requests."
         ),
         run=_run,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short title for the plan (optional).",
+                },
+                "steps": {
+                    "type": "array",
+                    "description": (
+                        "The whole checklist, in order. Each item is a step "
+                        "object (or a bare string for a pending step)."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step": {
+                                "type": "string",
+                                "description": "What this step does.",
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "done", "skipped"],
+                            },
+                            "result": {
+                                "type": "string",
+                                "description": (
+                                    "Short note of what a finished step produced "
+                                    "(e.g. a saved path or key facts)."
+                                ),
+                            },
+                        },
+                        "required": ["step"],
+                    },
+                },
+            },
+            "required": ["steps"],
+        },
     )
 
 
@@ -259,18 +292,34 @@ def build_artifact_tools(action: Any, visitor: Any) -> List[SkillTool]:
             name="list_artifacts",
             description=(
                 "List this conversation's artifacts (names + summaries only). "
-                "Optional args: source (e.g. 'vision'), tag. Then call "
-                "get_artifact to read the full content of one."
+                "Then call get_artifact to read the full content of one."
             ),
             run=_list,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Filter by source (e.g. 'vision', 'upload').",
+                    },
+                    "tag": {"type": "string", "description": "Filter by tag."},
+                },
+            },
         ),
         SkillTool(
             name="get_artifact",
             description=(
                 "Read the full content of a conversation artifact by its name "
-                '(from list_artifacts). Args: {"name": "<artifact name>"}.'
+                "(from list_artifacts)."
             ),
             run=_get,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The artifact name."}
+                },
+                "required": ["name"],
+            },
         ),
     ]
 

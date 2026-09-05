@@ -317,13 +317,13 @@ async def note_soft_abandon_strike(
     """Record a soft-abandon strike for ``locked_skill``; return the new streak.
 
     ADR-0034 L5. At the companion gate a non-companion ``use_skill`` under a
-    task-lock interview is a strike. The streak is persisted on
+    task-lock skill is a strike. The streak is persisted on
     ``conversation.context`` keyed by the locked skill name, together with the
-    interview's collected-field count at strike time.
+    skill's progress count (``task_lock_progress_count``) at strike time.
 
     Engagement reset (deterministic): if ``collected_count`` grew since the last
-    strike the user answered a field between off-topic attempts — they re-engaged
-    the interview — so the streak resets to 1. Otherwise it increments. Returns 0
+    strike the user advanced the task between off-topic attempts — they
+    re-engaged — so the streak resets to 1. Otherwise it increments. Returns 0
     when there is no conversation context to record against.
     """
     conversation = getattr(visitor, "conversation", None)
@@ -380,88 +380,68 @@ async def clear_soft_abandon_strike(conversation: Any, locked_skill: str) -> Non
             logger.debug("continuation: abandon streak clear persist failed: %s", exc)
 
 
-async def resolve_interview_spec(agent: Any, skill_name: str) -> Any:
-    """Resolve an interview spec by skill name via the InterviewAction registry.
+async def task_lock_progress_count(bound: Any, skill_name: str, visitor: Any) -> int:
+    """How far the locked skill has progressed, via its bound action's hook.
 
-    Returns ``None`` when the agent, action, or spec is unavailable — every
-    failure mode degrades to "no spec" so callers fall back gracefully.
+    Duck-typed ``task_lock_progress_count(skill_name, visitor) -> int`` on the
+    bound action (an interview reports collected fields). ``0`` when the action
+    exposes no hook or it fails — the strike accounting then simply never sees
+    re-engagement, which is the conservative reading.
     """
-    if agent is None or not skill_name:
-        return None
+    hook = getattr(bound, "task_lock_progress_count", None) if bound else None
+    if not callable(hook):
+        return 0
     try:
-        ia = await agent.get_action_by_type("InterviewAction")
-    except Exception as exc:
-        logger.debug("continuation: interview lookup failed: %s", exc)
-        return None
-    if ia is None:
-        return None
-    ensure = getattr(ia, "_ensure_specs_loaded", None)
-    if callable(ensure):
-        try:
-            await ensure()
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("continuation: ensure specs failed: %s", exc)
-    try:
-        return ia._registry.get(skill_name)
-    except Exception:
-        return None
+        return int(await hook(skill_name, visitor) or 0)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("continuation: task_lock_progress_count failed: %s", exc)
+        return 0
 
 
-async def soft_abandon_title(agent: Any, skill_doc: Any) -> str:
-    """Human title for the one-turn switch ask (spec.title, else skill name)."""
+async def task_lock_title(bound: Any, skill_doc: Any) -> str:
+    """Human title for the one-turn switch ask.
+
+    The bound action's ``task_lock_title(skill_name) -> str`` hook wins (an
+    interview spec's title); otherwise the skill name, humanised.
+    """
     name = str(getattr(skill_doc, "name", "") or "")
-    spec = await resolve_interview_spec(agent, name)
-    title = str(getattr(spec, "title", "") or "") if spec is not None else ""
+    hook = getattr(bound, "task_lock_title", None) if bound else None
+    title = ""
+    if callable(hook):
+        try:
+            result = hook(name)
+            if hasattr(result, "__await__"):
+                result = await result
+            title = str(result or "")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("continuation: task_lock_title failed: %s", exc)
     return title or name.replace("_", " ") or "current task"
 
 
-async def apply_soft_abandon(visitor: Any, agent: Any, locked_skill: str) -> bool:
-    """Apply the locked skill's ``on_abandon`` policy (ADR-0034 L5, streak >= 3).
+async def apply_soft_abandon(visitor: Any, bound: Any, locked_skill: str) -> bool:
+    """Apply the locked skill's abandon policy (ADR-0034 L5, streak >= 3).
 
-    Reuses the reaper's park-or-cancel executor so the soft-abandon and the
-    staleness reaper share one code path. Resolves the interview spec via the
-    InterviewAction registry, finds the active SKILL task for ``locked_skill``,
-    and applies park (snapshot + park + clear live session) or cancel. Returns
-    ``True`` when a task was found and the policy applied, ``False`` otherwise
-    (caller then bounces as usual, leaving the lock intact).
+    Delegates to the bound action's ``task_lock_abandon(skill_name, visitor)
+    -> bool`` hook — the action owns its session, its task and its
+    ``on_abandon`` policy (park or cancel); the orchestrator only decides *when*.
+    Returns ``True`` when the hook reports the policy applied (the strike streak
+    is then cleared), ``False`` otherwise (the caller bounces as usual, leaving
+    the lock intact).
     """
     conversation = getattr(visitor, "conversation", None)
-    if conversation is None or agent is None or not locked_skill:
+    if conversation is None or bound is None or not locked_skill:
         return False
-    spec = await resolve_interview_spec(agent, locked_skill)
-    if spec is None:
+    hook = getattr(bound, "task_lock_abandon", None)
+    if not callable(hook):
         return False
-
-    from jvagent.action.interview import tasks as interview_tasks
-    from jvagent.action.interview.reaper import _apply_abandon
-
-    handle = interview_tasks._find_existing_active_task(visitor, locked_skill)
-    if handle is None:
-        return False
-    store = getattr(visitor, "tasks", None) or _store(conversation)
     try:
-        await _apply_abandon(conversation, store, handle, spec)
+        applied = bool(await hook(locked_skill, visitor))
     except Exception as exc:
         logger.warning("continuation: apply_soft_abandon failed: %s", exc)
         return False
-    await clear_soft_abandon_strike(conversation, locked_skill)
-    return True
-
-
-def soft_abandon_collected_count(conversation: Any) -> int:
-    """Collected-field count of the active interview session (0 when none)."""
-    try:
-        from jvagent.action.interview.session import load_session
-
-        sess = load_session(conversation)
-    except Exception:
-        return 0
-    if sess is None:
-        return 0
-    try:
-        return len(sess.get_collected_summary())
-    except Exception:
-        return 0
+    if applied:
+        await clear_soft_abandon_strike(conversation, locked_skill)
+    return applied
 
 
 async def cancel_orphan_flow_tasks(
@@ -528,8 +508,7 @@ __all__ = [
     "note_soft_abandon_strike",
     "clear_soft_abandon_strike",
     "apply_soft_abandon",
-    "resolve_interview_spec",
-    "soft_abandon_title",
-    "soft_abandon_collected_count",
+    "task_lock_progress_count",
+    "task_lock_title",
     "SOFT_ABANDON_ASK_STRIKE",
 ]
