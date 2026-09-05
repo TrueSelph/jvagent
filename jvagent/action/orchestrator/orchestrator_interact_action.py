@@ -27,6 +27,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 import uuid
 from typing import (
     TYPE_CHECKING,
@@ -3292,18 +3293,89 @@ class OrchestratorInteractAction(
             str(model_id or ""), provider=provider if isinstance(provider, str) else ""
         )
 
+    # Phrases only the JSON-text contract uses. A prompt piece carrying one of
+    # them under the native protocol would instruct a tool-calling model to emit
+    # JSON as text — the exact failure a live run of the example agent showed
+    # (the persisted prompt differed from the legacy constant by one character,
+    # an em-dash the store had normalised to a hyphen, so exact-match detection
+    # missed it and `{"action":"reply",...}` reached the user).
+    _JSON_PROTOCOL_SENTINELS: ClassVar[Tuple[str, ...]] = (
+        "single JSON object",
+        "one JSON object",
+        "raw JSON",
+        '"action": "tool"',
+        '"action":"tool"',
+        '"action":"final"',
+        '"action": "final"',
+    )
+
+    @staticmethod
+    def _normalise_prompt_text(text: str) -> str:
+        """Comparison form for persisted prompt text.
+
+        jvspatial folds every persisted string to ASCII by default
+        (``JVSPATIAL_TEXT_NORMALIZATION_ENABLED``, ``normalize_text_to_ascii``):
+        accents stripped, unicode dashes/quotes replaced, anything else outside
+        ASCII replaced by ``?``. Observed live: the built-in prompt came back
+        from the store with its two arrows as ``?`` and an em-dash as ``-``, so
+        an exact comparison against the constant called it an operator
+        override. Both sides go through the store's own fold (with a local
+        equivalent if jvspatial's helper is unavailable), then whitespace is
+        collapsed.
+        """
+        out = str(text or "")
+        try:
+            from jvspatial.utils.normalization import normalize_text_to_ascii
+
+            out = normalize_text_to_ascii(out)
+        except Exception:  # pragma: no cover - jvspatial is a hard dependency
+            for src, dst in (
+                ("\u2014", "-"),
+                ("\u2013", "-"),
+                ("\u2018", "'"),
+                ("\u2019", "'"),
+                ("\u201c", '"'),
+                ("\u201d", '"'),
+                ("\u2026", "..."),
+            ):
+                out = out.replace(src, dst)
+            decomposed = unicodedata.normalize("NFKD", out)
+            out = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+            out = "".join(ch if ord(ch) < 128 else "?" for ch in out)
+        return " ".join(out.split())
+
+    def _is_json_era_default(self, value: str, json_default: str) -> bool:
+        """True when a persisted prompt piece is the JSON-era built-in, compared
+        after normalisation. An operator override that merely *mentions* the JSON
+        contract is not swapped — it is theirs — but it is warned about, because
+        under native tools those instructions fight the protocol (the loop's
+        JSON-text safety net catches the fallout)."""
+        text = self._normalise_prompt_text(value)
+        if not text:
+            return False
+        if text == self._normalise_prompt_text(json_default):
+            return True
+        if any(s in text for s in self._JSON_PROTOCOL_SENTINELS):
+            logger.warning(
+                "orchestrator: a prompt override still carries the JSON-text "
+                "contract while tool_protocol resolves to native; set "
+                "tool_protocol: json or update the override (ADR-0044)"
+            )
+        return False
+
     def _protocol_text(self, value: str, json_default: str, native_default: str) -> str:
         """Resolve an overridable prompt piece for the active protocol.
 
         Prompt pieces are persisted Action attributes, so a deployment created
-        under the JSON protocol still carries the JSON-era built-in text. A
-        value equal to that built-in is "unchanged by the operator" and is
-        swapped for the protocol-correct built-in; an operator override is
-        always honoured verbatim.
+        under the JSON protocol still carries the JSON-era built-in text. Under
+        the native protocol a value that is that built-in (compared after
+        normalisation) — or that still carries the JSON contract's mechanics —
+        is swapped for the protocol-correct built-in: JSON instructions cannot
+        coexist with native tools. Any other operator override is honoured
+        verbatim.
         """
-        if (
-            self._protocol() == TOOL_PROTOCOL_NATIVE
-            and (value or "").strip() == (json_default or "").strip()
+        if self._protocol() == TOOL_PROTOCOL_NATIVE and self._is_json_era_default(
+            value, json_default
         ):
             return native_default
         return value
@@ -3346,12 +3418,17 @@ class OrchestratorInteractAction(
         elif session_ctx and not session_ctx.endswith("\n\n"):
             session_ctx = session_ctx + "\n"
         template = self.system_prompt
+        protocol = self._protocol()
         # A persisted pre-ADR-0044 default is still "the default": render the
         # protocol-correct built-in rather than JSON instructions to a model that
-        # is being handed native tools.
-        if (template or "").strip() == LEGACY_JSON_SYSTEM_PROMPT.strip():
+        # is being handed native tools. Compared after normalisation, and any
+        # template still carrying the JSON mechanics is swapped too.
+        if self._normalise_prompt_text(template) == self._normalise_prompt_text(
+            LEGACY_JSON_SYSTEM_PROMPT
+        ):
             template = ORCHESTRATOR_SYSTEM_PROMPT
-        protocol = self._protocol()
+        elif protocol == TOOL_PROTOCOL_NATIVE:
+            self._is_json_era_default(template, LEGACY_JSON_SYSTEM_PROMPT)  # warns
         if not protocol_section:
             protocol_section = render_protocol_section(protocol, loop_protocol_extra)
         inline_extra = "{extra_section}" in template
@@ -4187,6 +4264,20 @@ class OrchestratorInteractAction(
         raw = response.text.strip()
         truncated = response.truncated
         if native:
+            # Safety net: a model that still answers in the JSON-text contract
+            # (a stale prompt override, or habit) must not have that object
+            # delivered to the user as prose. Text that parses as a decision is
+            # treated as one and goes through the normal normaliser.
+            if not response.tool_calls and raw.startswith("{"):
+                parsed = parse_json_object(raw)
+                if isinstance(parsed, dict) and (
+                    "action" in parsed or "tool" in parsed
+                ):
+                    logger.info(
+                        "orchestrator: model answered with a JSON decision under "
+                        "the native protocol; treating it as a decision"
+                    )
+                    return parsed
             decisions = decisions_from_native_result(
                 response.tool_calls_openai(),
                 raw,

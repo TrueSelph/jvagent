@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native protocol: JSON-era prompts persisted with a normalised character
+  were not recognised as the default**, so the JSON contract stayed in force
+  under native tools and `{"action":"reply",...}` reached users as text (found
+  running the example agent live). Legacy-default detection now compares a
+  normalised form (unicode dashes/quotes, whitespace); an operator override
+  that still mentions the JSON contract is honoured but warned about. Safety
+  net: under the native protocol, model text that parses as a decision object
+  is treated as a decision, never delivered as prose.
+
 ### Changed
 
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
