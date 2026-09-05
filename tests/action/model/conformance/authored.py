@@ -146,6 +146,9 @@ WIRE_FOR = {
     "openrouter": "openai",
     "anthropic": "anthropic",
     "ollama": "ollama",
+    # LiteLLM's response objects are OpenAI-shaped; its fake acompletion is fed
+    # the openai bodies (see conftest._LiteLLMTransport).
+    "litellm": "openai",
 }
 
 # --------------------------------------------------------------------------- #

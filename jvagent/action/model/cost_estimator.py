@@ -6,9 +6,12 @@ per-call cost estimation from observability event data.
 """
 
 import logging
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from jvagent.action.model.contract import Pricing
 
 # Pricing per 1M tokens (USD). Keys: model identifier. Values: {"input": float, "output": float}
 # For embeddings, "output" is typically 0 or same as input (single rate).
@@ -76,7 +79,8 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
     Both providers report cached counts as a *subset* of the prompt tokens
     (jvagent's Anthropic action folds its separately-reported cache counters in),
     so these are carved out of the total rather than added to it. Reads are
-    ``cached_tokens`` (OpenAI) or ``cache_read_input_tokens`` (Anthropic).
+    ``cached_tokens`` (OpenAI, flattened) or ``prompt_tokens_details.cached_tokens``
+    (OpenAI, raw) or ``cache_read_input_tokens`` (Anthropic).
     """
 
     def _int(key: str) -> int:
@@ -86,9 +90,104 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
             return 0
 
     prompt_tokens = _int("prompt_tokens")
-    read = min(_int("cached_tokens") or _int("cache_read_input_tokens"), prompt_tokens)
+    nested = 0
+    details = usage.get("prompt_tokens_details")
+    if isinstance(details, dict):
+        try:
+            nested = max(0, int(details.get("cached_tokens", 0) or 0))
+        except (TypeError, ValueError):
+            nested = 0
+    read = min(
+        _int("cached_tokens") or _int("cache_read_input_tokens") or nested,
+        prompt_tokens,
+    )
     write = min(_int("cache_creation_input_tokens"), prompt_tokens - read)
     return prompt_tokens - read - write, read, write
+
+
+_litellm_pricing_cache: Dict[Tuple[str, str], Optional["Pricing"]] = {}
+
+
+def _litellm_pricing(provider: str, model: str) -> Optional["Pricing"]:
+    """Per-million pricing from ``litellm.get_model_info`` when LiteLLM is
+    installed and knows the model; ``None`` otherwise. Cached per process."""
+    from jvagent.action.model.contract import Pricing
+
+    key = (str(provider or ""), str(model or ""))
+    if key in _litellm_pricing_cache:
+        return _litellm_pricing_cache[key]
+    result: Optional[Pricing] = None
+    try:
+        import litellm  # optional extra
+
+        custom = (provider or "").strip().lower()
+        if custom in ("", "litellm") or "/" in str(model):
+            info = litellm.get_model_info(model)
+        else:
+            info = litellm.get_model_info(model, custom_llm_provider=custom)
+        inp = info.get("input_cost_per_token") if isinstance(info, dict) else None
+        out = info.get("output_cost_per_token") if isinstance(info, dict) else None
+        if inp is not None and out is not None:
+            inp_f, out_f = float(inp), float(out)
+            read = info.get("cache_read_input_token_cost")
+            write = info.get("cache_creation_input_token_cost")
+            result = Pricing(
+                input_per_million=inp_f * 1_000_000,
+                output_per_million=out_f * 1_000_000,
+                cached_read_multiplier=(
+                    (float(read) / inp_f) if (read is not None and inp_f) else 1.0
+                ),
+                cached_write_multiplier=(
+                    (float(write) / inp_f) if (write is not None and inp_f) else 1.0
+                ),
+                source="litellm",
+            )
+    except ImportError:
+        result = None
+    except Exception as exc:  # unmapped model — fall back to the bundled table
+        logger.debug(
+            "pricing: litellm has no entry for %r/%r: %s", provider, model, exc
+        )
+        result = None
+    _litellm_pricing_cache[key] = result
+    return result
+
+
+def _bundled_pricing(provider: str, model: str) -> Optional["Pricing"]:
+    from jvagent.action.model.contract import Pricing
+
+    provider_key = (provider or "").strip().lower()
+    lookup_model = model.split("/")[-1] if "/" in model else model
+    table = _LLM_PRICING_BY_PROVIDER.get(provider_key) or (
+        _LLM_PRICING if provider_key in ("", "litellm") else {}
+    )
+    entry = table.get(lookup_model) or table.get(model)
+    if not entry:
+        for key, value in table.items():
+            if key and lookup_model.startswith(key):
+                entry = value
+                break
+    if not entry:
+        return None
+    rates = cache_rates_for_provider(provider)
+    return Pricing(
+        input_per_million=float(entry.get("input", 0.0)),
+        output_per_million=float(entry.get("output", 0.0)),
+        cached_read_multiplier=float(rates.get("read", 1.0)),
+        cached_write_multiplier=float(rates.get("write", 1.0)),
+        source="bundled",
+    )
+
+
+def pricing_for(provider: str, model: str) -> Optional["Pricing"]:
+    """Effective pricing for ``model`` on ``provider``: LiteLLM metadata when
+    available (maintained upstream for hundreds of models), else the bundled
+    table, else ``None`` (the caller decides on a conservative default)."""
+    return _litellm_pricing(provider, model) or _bundled_pricing(provider, model)
+
+
+def clear_pricing_cache() -> None:
+    _litellm_pricing_cache.clear()
 
 
 def estimate_cost(
@@ -121,8 +220,29 @@ def estimate_cost(
         total_tokens = usage.get("total_tokens", 0) or 0
         return (total_tokens / 1_000_000) * rate
 
-    # LLM: separate input/output
-    if provider_key in {"openai", "openrouter", "anthropic", "ollama"}:
+    # LLM: separate input/output. Metadata-sourced pricing first (LiteLLM's
+    # table when installed, per-provider bundled table otherwise) — this is
+    # what makes cost policy real for models the four-entry dict never knew.
+    priced = pricing_for(provider, model)
+    if priced is not None:
+        prompt_tokens = usage.get("prompt_tokens", 0) or 0
+        completion_tokens = usage.get("completion_tokens", 0) or 0
+        if prompt_tokens == 0 and completion_tokens == 0:
+            total = usage.get("total_tokens", 0) or 0
+            return (total / 1_000_000) * priced.input_per_million
+        uncached, cache_read, cache_write = split_cached_prompt_tokens(usage)
+        prompt_cost = (
+            (
+                uncached
+                + cache_read * priced.cached_read_multiplier
+                + cache_write * priced.cached_write_multiplier
+            )
+            / 1_000_000
+            * priced.input_per_million
+        )
+        return prompt_cost + (completion_tokens / 1_000_000) * priced.output_per_million
+
+    if provider_key in {"openai", "openrouter", "anthropic", "ollama", "litellm"}:
         provider_pricing = _LLM_PRICING_BY_PROVIDER.get(provider_key, {})
         pricing = provider_pricing.get(lookup_model) or provider_pricing.get(model)
     else:

@@ -16,6 +16,7 @@ PROVIDER_MODEL_ACTION_CLASSES: Dict[str, str] = {
     "ollama": "OllamaLanguageModelAction",
     "openrouter": "OpenRouterLanguageModelAction",
     "groq": "GroqLanguageModelAction",
+    "litellm": "LiteLLMLanguageModelAction",
 }
 
 # Canonical model slots for resident-harness BYOK (Integral and other hosts).

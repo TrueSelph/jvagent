@@ -181,3 +181,7 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 **Tool protocol** — how the Orchestrator exchanges each step with the model (`tool_protocol`, ADR-0044). `native` (default): the provider's function-calling API carries JSON-Schema'd tool definitions up and `tool_calls` back; plain text is the reply; the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: one JSON object per step as text, tools listed as prose, steps replayed as a digest.
 
 **Model fault** — a typed loop decision (`model_error`, `model_truncated`) standing in for a provider failure or a token-ceiling truncation, so the loop can retry/nudge correctly and end the turn with `model_unavailable_text` rather than `clarify_text`.
+
+**Capability registry** — `jvagent/action/model/capabilities.py` (ADR-0045): resolves what a model can do (tools, parallel calls, JSON mode, structured output, vision, thinking, context window, output ceiling) from operator override → LiteLLM metadata → bundled table → unknown. Drives `tool_protocol: auto`, the output clamp and the context pre-flight.
+
+**Context pre-flight** — the Orchestrator's per-tick check that the assembled request fits the model's context window; trims oldest history, then observation replay, before calling the provider (ADR-0045).
