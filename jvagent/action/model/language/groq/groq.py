@@ -28,7 +28,7 @@ Configuration:
 """
 
 import logging
-from typing import Any
+from typing import Any, Dict
 
 from jvspatial.core.annotations import attribute
 
@@ -71,6 +71,11 @@ class GroqLanguageModelAction(OpenAILanguageModelAction):
         ),
     )
     provider: str = attribute(default="groq", description="Provider name")
+
+    litellm_provider_prefix = "groq"
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        return {"api_key": self._http_bearer_token()}
 
     def _http_bearer_token(self) -> str:
         """Resolve the bearer token for Groq API requests.

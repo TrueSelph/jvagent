@@ -87,6 +87,16 @@ class OllamaLanguageModelAction(LanguageModelAction):
             translated.update(dict(cfg.reasoning_extra))
         return translated
 
+    litellm_provider_prefix = "ollama"
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        """LiteLLM's ollama route needs the host root; bearer auth if configured."""
+        cfg: Dict[str, Any] = {"api_base": ollama_host_root(self.api_endpoint)}
+        api_key = self.api_key_from_context("OLLAMA_API_KEY")
+        if api_key:
+            cfg["api_key"] = api_key
+        return cfg
+
     def _build_headers(self) -> Dict[str, str]:
         """Build request headers.
 

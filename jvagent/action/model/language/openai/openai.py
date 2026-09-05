@@ -8,7 +8,7 @@ both synchronous and streaming responses. Supports multimodal queries
 import json
 import logging
 import re
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional, Union
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -157,6 +157,17 @@ class OpenAILanguageModelAction(LanguageModelAction):
     def _http_bearer_token(self) -> str:
         """Bearer token for Authorization header (subclasses may change env fallbacks)."""
         return self.api_key_from_context("OPENAI_API_KEY")
+
+    litellm_provider_prefix = "openai"
+    _DEFAULT_API_ENDPOINT: ClassVar[str] = "https://api.openai.com/v1"
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        """Hand the LiteLLM delegate the same key and (non-default) endpoint."""
+        cfg: Dict[str, Any] = {"api_key": self._http_bearer_token()}
+        endpoint = str(self.api_endpoint or "").rstrip("/")
+        if endpoint and endpoint != self._DEFAULT_API_ENDPOINT:
+            cfg["api_base"] = endpoint
+        return cfg
 
     # ============================================================================
     # Query Implementation

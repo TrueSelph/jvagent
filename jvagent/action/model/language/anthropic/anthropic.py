@@ -7,7 +7,7 @@ both synchronous and streaming responses, tool calling, and multimodal input.
 import base64
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional, Tuple
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -62,6 +62,19 @@ class AnthropicLanguageModelAction(LanguageModelAction):
         "cache-write attempt with nothing to show for it. ~3000 chars ≈ 750 "
         "tokens, a deliberately conservative floor.",
     )
+
+    litellm_provider_prefix = "anthropic"
+    _DEFAULT_API_ENDPOINT: ClassVar[str] = "https://api.anthropic.com/v1"
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        """Same key and (non-default) endpoint as the httpx client uses."""
+        cfg: Dict[str, Any] = {
+            "api_key": self.api_key_from_context("ANTHROPIC_API_KEY")
+        }
+        endpoint = str(self.api_endpoint or "").rstrip("/")
+        if endpoint and endpoint != self._DEFAULT_API_ENDPOINT:
+            cfg["api_base"] = endpoint
+        return cfg
 
     async def on_register(self) -> None:
         """Called when action is registered during installation."""
