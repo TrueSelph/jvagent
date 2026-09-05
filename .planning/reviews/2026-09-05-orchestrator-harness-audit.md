@@ -189,3 +189,5 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
 4. **Repeat-guard window** of the last N signatures (M7).
 5. **Live CUCS runs** against real providers for the native protocol (the
    `LiveScenarioRunner` supports this; the suite here is canned).
+
+Model-integration remediation plan (contract + LiteLLM adapter + conformance + resilience policy): [`../specs/2026-09-05-model-integration-remediation.md`](../specs/2026-09-05-model-integration-remediation.md).
