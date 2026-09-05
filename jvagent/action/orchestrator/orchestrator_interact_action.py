@@ -472,6 +472,16 @@ class OrchestratorInteractAction(
             "mode when unsupported."
         ),
     )
+    repeat_guard_window: int = attribute(
+        default=8,
+        description=(
+            "How many recent tool calls the repeat guard remembers. A call that "
+            "repeats one already in the window (same tool, same arguments) is "
+            "nudged once and ends the turn on the second repeat — so an A/B/A/B "
+            "oscillation is caught, not only back-to-back repeats. A repeat of a "
+            "call that errored or timed out is allowed one retry. Minimum 2."
+        ),
+    )
     history_limit: int = attribute(default=4)
     history_statement_max_chars: int = attribute(
         default=4000,

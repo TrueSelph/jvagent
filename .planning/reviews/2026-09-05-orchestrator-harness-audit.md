@@ -114,7 +114,7 @@ predictability, **L** = hygiene. "Fixed" marks items addressed in this pass
 | M4 | M | `anthropic.py:_build_payload` | `enforce_json_mode` is silently ignored on Anthropic (no `response_format` equivalent) — the JSON protocol relies on prompt obedience there. | Mitigated by M1 (native protocol needs no JSON mode). Documented. |
 | M5 | M | `orchestrator_interact_action.py:3287-3309` | Loop history is fetched with `max_statement_length=None` — an unbounded prior reply is resent on every tick. | **Fixed** — bounded by `history_statement_max_chars` (default 4000). |
 | M6 | M | `catalog.py:391-396` (`use_skill` description), `core_tools.py` (`update_plan`, `queue_task` descriptions) | Tool descriptions embed JSON call examples and prose argument lists because there was no schema channel. | **Fixed** — schemas added; descriptions trimmed to capability text. |
-| M7 | L | `loop.py` repeat guard | Compares only the last signature — A/B/A/B oscillation is not caught (2026-09-01 LOW, still open). | Open; bounded by the budget. |
+| M7 | L | `loop.py` repeat guard | Compares only the last signature — A/B/A/B oscillation is not caught (2026-09-01 LOW, still open). | **Fixed** (follow-up PR) — windowed guard (`repeat_guard_window`, default 8) over recent call signatures with per-call errored flag. |
 
 ### 3.2 Failsafes
 
@@ -184,7 +184,7 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
    loop dispatches sequentially. Concurrent dispatch for non-terminal,
    non-side-effecting tools (`max_concurrent_tools`) is a contained follow-up.
 3. **Typed HTTP faults** at `/interact` (F3).
-4. **Repeat-guard window** of the last N signatures (M7).
+4. ~~**Repeat-guard window**~~ Done (`repeat_guard_window`).
 5. **Live CUCS runs** against real providers for the native protocol (the
    `LiveScenarioRunner` supports this; the suite here is canned).
 

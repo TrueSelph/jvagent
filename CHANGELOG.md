@@ -10,6 +10,11 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Orchestrator repeat guard remembers a window (audit M7).** The guard now
+  tracks the last `repeat_guard_window` (default 8) tool calls, so an A/B/A/B
+  oscillation is nudged and then stopped like a back-to-back repeat; a repeat
+  of a call that errored or timed out still gets one retry. `TurnState` carries
+  `recent_calls` instead of `last_obs` / `last_sig` / `repeats`.
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
   body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
   `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →

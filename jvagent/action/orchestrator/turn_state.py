@@ -61,6 +61,15 @@ TickOutcome.CONTINUE_ = TickOutcome(TickOutcome.CONTINUE)
 
 
 @dataclass
+class RecentCall:
+    """One dispatched tool call the repeat guard remembers: its signature
+    (tool name + serialised args) and whether the attempt errored/timed out."""
+
+    sig: tuple
+    errored: bool = False
+
+
+@dataclass
 class TurnState:
     """The turn's working set: built by ``_prepare_turn``, stepped by ``_tick``."""
 
@@ -103,8 +112,9 @@ class TurnState:
     # --- observations and telemetry --------------------------------------
     observations: List[Dict[str, Any]]
     tool_timings: List[Dict[str, Any]]
-    last_obs: Any
-    last_sig: Any
+    # Recent tool-call signatures with whether each attempt errored (repeat
+    # guard, ADR audit M7): a bounded deque of ``RecentCall``.
+    recent_calls: Any
     ended_via: str
 
     # --- guard counters (ADR-0034 / ADR-0037 enforcement) -----------------
@@ -112,7 +122,6 @@ class TurnState:
     plan_deflections: int
     grounding_deflections: int
     deflected_named: Set[str]
-    repeats: Any
     nd_streak: int
     substantive_tool_calls: int
     soft_abandon_evaluated: bool

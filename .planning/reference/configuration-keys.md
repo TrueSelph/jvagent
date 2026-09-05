@@ -188,6 +188,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `enforce_json_mode` | `true` | JSON protocol only: request `response_format=json_object`. Ignored under `native` and by providers without a JSON mode (Anthropic) |
 | `model_unavailable_text` | (built-in) | reply when the loop's model call fails on two consecutive attempts — the user is told the service is unavailable, never asked to rephrase (`clarify_text` is for silent turns) |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
+| `repeat_guard_window` | `8` | how many recent tool calls the repeat guard remembers; a call repeating one in the window (same tool + args) is nudged once and ends the turn on the second repeat; a repeat after an error/timeout gets one retry |
 | `history_limit` | `4` | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit`. Loop history omits `[EVENT]` lines (ADR-0041) |
 | `history_statement_max_chars` | `4000` | per-statement cap on each replayed prior utterance/response (history is resent every tick). `0` disables |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
