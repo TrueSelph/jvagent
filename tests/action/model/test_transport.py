@@ -157,3 +157,68 @@ def test_delegate_is_reused_and_reconfigured_each_call(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k2")
     second = action._litellm_delegate()
     assert second is first and second.api_key == "k2"
+
+
+@pytest.mark.asyncio
+async def test_model_call_telemetry_names_the_transport(monkeypatch):
+    """A canary verifies the switch from telemetry: the delegated result is
+    relabelled as the action's own provider (by design), so ``transport`` is the
+    one field that says which wire carried the call."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from jvagent.action.model.language.litellm.litellm_lm import (
+        LiteLLMLanguageModelAction,
+    )
+
+    def _interaction():
+        i = MagicMock()
+        i.observability_metrics = []
+        i.save = AsyncMock()
+        return i
+
+    def _result(provider):
+        return SimpleNamespace(
+            system="s",
+            prompt="p",
+            history=[],
+            response="r",
+            provider=provider,
+            model="gpt-4.1",
+            metrics={"total_tokens": 2},
+            is_streaming=False,
+            calling_action_name="Orchestrator",
+            finish_reason="stop",
+            tool_calls=None,
+            _usage_estimated=False,
+        )
+
+    monkeypatch.delenv("JVAGENT_MODEL_TRANSPORT", raising=False)
+    action = OpenAILanguageModelAction()
+    seen = {}
+    for transport in ("httpx", "litellm"):
+        action.transport = transport
+        interaction = _interaction()
+        await action._emit_observability(
+            interaction, {"total_tokens": 2}, 0.1, result=_result("openai")
+        )
+        data = interaction.observability_metrics[0]["data"]
+        seen[transport] = (data["provider"], data["transport"])
+    assert seen == {"httpx": ("openai", "httpx"), "litellm": ("openai", "litellm")}
+
+    # The env override is what a canary flips; it wins over the attribute.
+    action.transport = "httpx"
+    monkeypatch.setenv("JVAGENT_MODEL_TRANSPORT", "litellm")
+    interaction = _interaction()
+    await action._emit_observability(
+        interaction, {"total_tokens": 2}, 0.1, result=_result("openai")
+    )
+    assert interaction.observability_metrics[0]["data"]["transport"] == "litellm"
+
+    # The adapter itself always reports litellm.
+    adapter = LiteLLMLanguageModelAction()
+    interaction = _interaction()
+    await adapter._emit_observability(
+        interaction, {"total_tokens": 2}, 0.1, result=_result("litellm")
+    )
+    assert interaction.observability_metrics[0]["data"]["transport"] == "litellm"

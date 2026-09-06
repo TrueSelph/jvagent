@@ -18,7 +18,7 @@ package:
     jvagent: ~0.0.1
     actions: []
     pip:
-      - "litellm>=1.82.0"
+      - "litellm>=1.100.0,<1.101"
       - "openai>=1.70.0"
       - "PyPDF2>=3.0.1"
       - "pypdfium2>=4.30.0"
