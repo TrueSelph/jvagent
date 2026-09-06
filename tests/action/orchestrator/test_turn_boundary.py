@@ -28,7 +28,7 @@ LOOP_PY = pathlib.Path("jvagent/action/orchestrator/loop.py")
 # the split moved the four values the tick carried between iterations as
 # loop-locals (last_gear, last_dec_meta, last_obs_len, model_failures) onto the
 # same object, because the steps that read them are now separate methods.
-BOUNDARY_CEILING = 49
+BOUNDARY_CEILING = 49  # 47 at M7 + parallel_batches (ADR-0048) = 48
 
 # The methods that step a turn. Every one takes ``state: TurnState``; together
 # they are the whole tick loop.
@@ -37,6 +37,8 @@ TICK_METHODS = (
     "_tick",
     "_tick_final",
     "_tick_tool",
+    "_guarded_siblings",
+    "_dispatch_batch",
     "_guard_tool_call",
     "_dispatch_tool",
     "_after_dispatch",
@@ -51,7 +53,11 @@ METHOD_CEILINGS: Dict[str, int] = {
     "_run_loop": 40,
     "_tick": 120,
     "_tick_final": 60,
-    "_tick_tool": 25,
+    "_tick_tool": 30,
+    # ADR-0048: sibling selection + guarding, and the concurrent dispatch, are
+    # their own steps so the single-call path stays readable.
+    "_guarded_siblings": 75,
+    "_dispatch_batch": 60,
     "_guard_tool_call": 160,
     "_dispatch_tool": 110,
     "_after_dispatch": 210,
