@@ -210,6 +210,44 @@ class Actions(Node):
                 )
                 return False
 
+    @staticmethod
+    def _merge_kept_differences(
+        existing_action: Action,
+        source_action: Action,
+        declared_keys: Optional[set],
+    ) -> List[str]:
+        """YAML-declared keys whose persisted value differs from agent.yaml.
+
+        ``declared_keys`` is the set of keys the action's ``context`` block
+        actually set (the loader passes it as ``property_overrides``); only
+        those are compared, so class defaults never count as drift. Values are
+        compared by simple equality after ``str`` fallback for unhashables.
+        """
+        out: List[str] = []
+        for key in sorted(declared_keys or ()):
+            if not isinstance(key, str) or key.startswith("_"):
+                continue
+            if key in {
+                "id",
+                "enabled",
+                "metadata",
+                "module_path",
+                "label",
+                "namespace",
+            }:
+                continue
+            if not hasattr(source_action, key) or not hasattr(existing_action, key):
+                continue
+            wanted = getattr(source_action, key)
+            have = getattr(existing_action, key)
+            try:
+                same = wanted == have
+            except Exception:  # pragma: no cover - exotic values
+                same = str(wanted) == str(have)
+            if not same:
+                out.append(key)
+        return out
+
     async def _merge_existing_action(
         self,
         existing_action: Action,
@@ -231,6 +269,23 @@ class Actions(Node):
             True if successful, False otherwise
         """
         try:
+            # Merge keeps every persisted value. Say which YAML values it is
+            # therefore NOT applying — a migration edited in agent.yaml and
+            # synced in merge mode otherwise looks applied and is not (the
+            # example's LiteLLM switch ran four turns on the old model class
+            # before anyone noticed).
+            kept = self._merge_kept_differences(
+                existing_action, source_action, property_overrides
+            )
+            if kept:
+                logger.warning(
+                    "merge sync kept persisted values on action %s (agent %s) "
+                    "that differ from agent.yaml: %s — run "
+                    "`jvagent <app> --update --source` to apply them",
+                    existing_action.label,
+                    existing_action.agent_id,
+                    ", ".join(kept),
+                )
             existing_action.metadata = source_action.metadata
             existing_action.module_path = Action.canonical_import_module_path(
                 source_action.metadata
