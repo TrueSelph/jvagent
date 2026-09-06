@@ -301,7 +301,7 @@ gated by these knobs.
 | `ack_interval_ms` | `12000` | delay between subsequent acks |
 | `ack_statements` | `["One moment…", "Still working on it…"]` | ordered ack bodies emitted while a slow turn runs |
 | `tool_servers` | `-all` | MCP gateways to pull tools from: `-all` for every enabled `jvagent/mcp` action, or a list of action names. Tools surface as `mcp_<server>__<tool>` |
-| `max_concurrent_tools` | `0` | reserved for future parallel tool batches; loop executes one tool per tick today |
+| `max_concurrent_tools` | `1` | how many tool calls one tick may dispatch concurrently (ADR-0048). `1` (or the legacy `0`) = one call per tick: parallel calls disabled at the provider, extras drained one per tick. Above 1, the native protocol lets the provider return several calls and the guarded siblings run together; reply/respond, `use_skill`, meta and terminal tools always take their own tick |
 
 ### `jvagent/reply` (ReplyAction — Orchestrator egress, ADR-0014)
 

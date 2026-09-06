@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Parallel tool dispatch, opt-in (ADR-0048).** `max_concurrent_tools` on the
+  Orchestrator (default `1`, unchanged behaviour) lets one tick dispatch the
+  sibling tool calls a provider returned in the same response. Each sibling
+  passes the same pre-dispatch guards (a duplicate is nudged, never run), only
+  substantive non-terminal tools share a tick, results are recorded in decision
+  order with their own call ids, and the turn's `parallel_batches` count is in
+  the activation telemetry. Above 1, `parallel_tool_calls=False` is no longer
+  sent to the provider and the loop prompt allows independent calls together.
+
 ### Changed
 
 - **Orchestrator repeat guard remembers a window (audit M7).** The guard now
