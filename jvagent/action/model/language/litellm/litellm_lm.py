@@ -121,8 +121,18 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
             and "reasoning_effort" not in out
         ):
             out["reasoning_effort"] = str(reasoning["effort"])
-        if self.api_key:
-            out["api_key"] = self.api_key
+        # Per-turn BYOK override wins, then the configured attribute, then
+        # nothing -- in which case LiteLLM resolves the provider's own env var
+        # from the model prefix (openai/... -> OPENAI_API_KEY, and so on).
+        #
+        # Without the override lookup a multi-tenant host silently bills every
+        # user to whichever key sits in agent.yaml: the per-turn credential
+        # never reaches the call, and nothing fails loudly enough to notice.
+        # Every first-party adapter resolves keys this way (see
+        # openai.py::_http_bearer_token); this one did not.
+        api_key = self.api_key_from_context() or self.api_key
+        if api_key:
+            out["api_key"] = api_key
         if self.api_base:
             out["api_base"] = self.api_base
         if self.extra_params:
