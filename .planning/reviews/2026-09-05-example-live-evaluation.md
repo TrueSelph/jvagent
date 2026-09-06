@@ -79,7 +79,9 @@ and list the key in `docs/environment-keys-reference.md`. Raise upstream
 whether the default should flip in jvspatial itself. Tracked as a follow-up
 to this evaluation.
 
-### 2.3 Zero prompt-cache hits (open — measure before changing)
+### 2.3 Zero prompt-cache hits (resolved — ADR-0049)
+
+> **Resolved 2026-09-06.** Measured once `cached_tokens` reached telemetry: identical first turns in two sessions cached **0** tokens (prompts diverged at character ~220, the clock); within a turn the provider did cache but the count was dropped in the harness. After ADR-0049 (block rendered last, breakdowns carried through, persisted old template recognised as the default): new-session greeting **1,920 / 3,584** cached, turn cost $0.0073 → $0.0044; second tick of a turn **4,352 / 4,505**. Details in [ADR-0049](../adr/0049-session-context-placement-and-cache-telemetry.md).
 
 OpenAI's usage never reported cached prompt tokens across any turn. The
 system prompt is several thousand tokens and stable, so the prefix should hit

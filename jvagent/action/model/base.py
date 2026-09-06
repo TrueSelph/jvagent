@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+# Usage keys carried through to the ``model_call`` event beside the three token
+# totals: cache breakdowns (a subset of ``prompt_tokens``, never an addition)
+# and reasoning tokens. The cost estimator prices cached reads at the provider's
+# discount; the Interaction aggregates them as ``cached_prompt_tokens``.
+USAGE_BREAKDOWN_KEYS = (
+    "cached_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "reasoning_tokens",
+    "thinking_tokens",
+)
+
+
 class BaseModelAction(Action, ABC):
     """Base class for all model actions with common attributes and operations.
 
@@ -408,12 +421,22 @@ class BaseModelAction(Action, ABC):
                     result_metrics.get(key, 0) > 0
                     for key in ["prompt_tokens", "completion_tokens", "total_tokens"]
                 ):
-                    # Use the updated metrics from result
+                    # Use the updated metrics from result. The cache and
+                    # reasoning breakdowns ride along: ``cached_tokens`` (OpenAI /
+                    # LiteLLM, a subset of prompt_tokens) and Anthropic's
+                    # cache_read/creation counts are what the cost estimator
+                    # discounts and what a prompt-cache measurement reads back
+                    # from the ``model_call`` event — dropping them here made
+                    # cache hits unobservable in telemetry.
                     usage = {
                         "prompt_tokens": result_metrics.get("prompt_tokens", 0),
                         "completion_tokens": result_metrics.get("completion_tokens", 0),
                         "total_tokens": result_metrics.get("total_tokens", 0),
                     }
+                    for extra_key in USAGE_BREAKDOWN_KEYS:
+                        value = result_metrics.get(extra_key)
+                        if isinstance(value, (int, float)) and value:
+                            usage[extra_key] = int(value)
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
             # Get model from result if available (actual model used), otherwise fall back to self.model

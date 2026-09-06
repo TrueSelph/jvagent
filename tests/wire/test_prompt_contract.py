@@ -158,3 +158,42 @@ async def test_an_operator_override_replaces_the_core_text_on_the_wire(wire):
     cap = await wire.capture("hi", parameters=override, block_raw_tool_invocation=True)
     assert "REMEMBER THINGS PLEASE." in cap.system
     assert MEMORY_PROMPT not in cap.system
+
+
+async def test_session_context_renders_last_even_from_a_persisted_old_template(wire):
+    """ADR-0049. ``system_prompt`` is persisted at bootstrap, so moving the
+    SESSION CONTEXT slot in code changed nothing live — the store still held
+    the pre-0049 template and the block kept rendering after identity, capping
+    the prompt-cache prefix at ~200 characters. Asserted on the orchestrator
+    loaded back out of the database: its persisted template is the current
+    built-in, and a node still carrying the previous built-in renders the
+    current layout without a source-mode sync."""
+    from jvagent.action.orchestrator import prompts as P
+
+    ex = wire.orchestrator
+    assert ex.system_prompt.strip() == P.ORCHESTRATOR_SYSTEM_PROMPT.strip()
+
+    block = (
+        "SESSION CONTEXT (authoritative for this turn):\n"
+        "CURRENT DATE/TIME: Monday, July 27, 2026 13:45:00 (UTC)\n\n"
+    )
+
+    def _render():
+        return ex._compose_system_prompt(
+            identity_section="You are Wire Agent.\n",
+            session_context_section=block,
+            tools_section="(none)",
+            skills_section="(none)",
+            capabilities_section="(none)",
+            parameters_section="(none)",
+        )
+
+    out = _render()
+    assert out.count("SESSION CONTEXT (authoritative") == 1
+    assert out.index("OPERATING RULES") < out.index("SESSION CONTEXT (authoritative")
+
+    # An upgraded deployment: the node still holds the pre-0049 template.
+    ex.system_prompt = P.ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049
+    out = _render()
+    assert out.count("SESSION CONTEXT (authoritative") == 1
+    assert out.index("OPERATING RULES") < out.index("SESSION CONTEXT (authoritative")

@@ -280,3 +280,62 @@ class TestConversationGetStatisticsFallback:
             assert stats["total_duration"] == 0.2
         finally:
             await conv.delete(cascade=True)
+
+
+class TestCachedPromptTokens:
+    """Cache breakdowns must survive aggregation (live finding, 2026-09-06):
+    ``cached_tokens`` was dropped between the adapter and the ``model_call``
+    event, so prompt-cache hits were unobservable and the earlier "zero cache
+    hits" conclusion was inference, not data."""
+
+    def test_compute_usage_aggregates_cache_reads_and_writes(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "openai",
+                    "model": "gpt-4.1",
+                    "usage": {
+                        "prompt_tokens": 4000,
+                        "completion_tokens": 50,
+                        "total_tokens": 4050,
+                        "cached_tokens": 3072,
+                    },
+                    "duration": 0.5,
+                },
+            },
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                    "usage": {
+                        "prompt_tokens": 5000,
+                        "completion_tokens": 20,
+                        "total_tokens": 5020,
+                        "cache_read_input_tokens": 1000,
+                        "cache_creation_input_tokens": 2000,
+                    },
+                    "duration": 0.5,
+                },
+            },
+        ]
+        usage = Interaction.compute_usage(obj)
+        assert usage["prompt_tokens"] == 9000
+        assert usage["cached_prompt_tokens"] == 4072
+        assert usage["cache_write_tokens"] == 2000
+        # Discounted: cheaper than the same tokens priced uncached.
+        full = estimate_cost(
+            "gpt-4.1",
+            "openai",
+            {"prompt_tokens": 4000, "completion_tokens": 50},
+            "model_call",
+        )
+        discounted = estimate_cost(
+            "gpt-4.1",
+            "openai",
+            {"prompt_tokens": 4000, "completion_tokens": 50, "cached_tokens": 3072},
+            "model_call",
+        )
+        assert 0 < discounted < full

@@ -21,7 +21,7 @@ from typing import (
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.base import BaseModelAction
+from jvagent.action.model.base import USAGE_BREAKDOWN_KEYS, BaseModelAction
 
 if TYPE_CHECKING:
     from jvagent.action.model.contract import (
@@ -911,12 +911,18 @@ class LanguageModelAction(BaseModelAction, ABC):
             result._model_for_estimation = kwargs.get("model", self.model)
             result._provider_for_estimation = getattr(self, "provider", "")
 
-        # Track usage metrics (including duration)
+        # Track usage metrics (including duration). The cache/reasoning
+        # breakdowns ride along with the three totals (ADR-0049) — they are
+        # what the cost estimator discounts and what makes cache hits visible.
         usage_dict = {
             "prompt_tokens": result.metrics.get("prompt_tokens", 0),
             "completion_tokens": result.metrics.get("completion_tokens", 0),
             "total_tokens": result.metrics.get("total_tokens", 0),
         }
+        for extra_key in USAGE_BREAKDOWN_KEYS:
+            extra_value = result.metrics.get(extra_key)
+            if isinstance(extra_value, (int, float)) and extra_value:
+                usage_dict[extra_key] = int(extra_value)
 
         # For streaming results, skip initial observability emission
         # We'll emit after token estimation completes to avoid duplicate entries

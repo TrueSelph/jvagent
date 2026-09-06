@@ -578,11 +578,16 @@ class Interaction(DeferredSaveMixin, Node):
         Returns:
             The computed usage dict
         """
-        from jvagent.action.model.cost_estimator import estimate_cost
+        from jvagent.action.model.cost_estimator import (
+            estimate_cost,
+            split_cached_prompt_tokens,
+        )
 
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
+        cached_prompt_tokens = 0
+        cache_write_tokens = 0
         model_call_count = 0
         estimated_cost_usd = 0.0
         total_duration_seconds = 0.0
@@ -605,6 +610,11 @@ class Interaction(DeferredSaveMixin, Node):
             prompt_tokens += pt
             completion_tokens += ct
             total_tokens += tt
+            # Cache breakdown (subset of prompt_tokens): what a prompt-cache
+            # measurement reads, and what the cost below discounts.
+            _uncached, cache_read, cache_write = split_cached_prompt_tokens(usage)
+            cached_prompt_tokens += cache_read
+            cache_write_tokens += cache_write
             duration = data.get("duration") or 0.0
             if isinstance(duration, (int, float)):
                 total_duration_seconds += float(duration)
@@ -618,6 +628,8 @@ class Interaction(DeferredSaveMixin, Node):
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
+            "cached_prompt_tokens": cached_prompt_tokens,
+            "cache_write_tokens": cache_write_tokens,
             "model_call_count": model_call_count,
             "estimated_cost_usd": round(estimated_cost_usd, 6),
             "total_duration_seconds": round(total_duration_seconds, 3),
