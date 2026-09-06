@@ -42,8 +42,8 @@ actions:
       # once the turn is multi-step. Empty light_model = single-model.
       # LIGHT gear handles single-tool turns (e.g. sending a form) — nano-class
       # models announce instead of tool-calling, so mini is the floor here.
-      light_model: gpt-4.1-mini
-      light_model_action_type: OpenAILanguageModelAction
+      light_model: openai/gpt-4.1-mini
+      light_model_action_type: LiteLLMLanguageModelAction
       light_model_temperature: 0.2
       light_model_max_tokens: 1024
 
@@ -55,9 +55,27 @@ actions:
       # Opus/Sonnet for any agent that runs multi-step skills/plans. The class
       # default (gpt-4o-mini) is for cheap single-step agents only. See
       # docs/ORCHESTRATOR.md "Model floor".
-      model: gpt-4.1
-      model_action_type: OpenAILanguageModelAction
+      # Both slots run through the LiteLLM universal adapter (`jvagent/litellm_lm`
+      # below, ADR-0045): model ids are LiteLLM's `provider/model`, credentials
+      # come from the provider's usual env var (OPENAI_API_KEY here), and the
+      # model's capabilities and pricing come from LiteLLM's metadata. Swap the
+      # provider by changing the id — `anthropic/claude-sonnet-4-5`,
+      # `gemini/gemini-2.5-pro`, `bedrock/...` — nothing else moves. To go back
+      # to the first-party OpenAI wire: `model: gpt-4.1` +
+      # `model_action_type: OpenAILanguageModelAction` (both slots).
+      model: openai/gpt-4.1
+      model_action_type: LiteLLMLanguageModelAction
       model_temperature: 0.2
+      # Decision protocol (ADR-0044/0045): `auto` (default) uses native tool
+      # calling unless the model is known not to support it, then the JSON
+      # contract. Resilience (ADR-0046) — all off by default except the breaker:
+      # tool_protocol: auto
+      # model_fallbacks:            # tried in the same tick when gpt-4.1 fails
+      #   - { model: openai/gpt-4o }
+      #   - { model: anthropic/claude-sonnet-4-5 }   # needs ANTHROPIC_API_KEY
+      # circuit_breaker_failures: 3
+      # max_turn_cost_usd: 0.50
+      # max_conversation_cost_usd: 5.00
       # Agentic/research headroom: each tick is one tool call, so multistep
       # research (search/fetch/write/reply) needs a generous ceiling. The
       # repeat-guard still bounds runaway loops. Thinking models also want more
@@ -76,6 +94,10 @@ actions:
       # An unfinished plan is re-surfaced next turn, so an interrupted multi-step
       # turn resumes instead of re-planning. Off by default (zero cost); on here
       # to exercise the feature.
+      # NOTE: planning forces the HEAVY gear from tick 0 (the model must reason
+      # about `update_plan`), so while this is on the `light_model` above is never
+      # used — a live run of this agent showed ticks_light=0 on every turn. Turn
+      # planning off to get light/heavy gearing back, or drop `light_model`.
       planning: true
 
       # Vision (ADR-0021): a pre-loop reflex interprets attached images via the
@@ -162,7 +184,9 @@ actions:
       # "One moment…" instead of dead air. Fast tools still surface nothing
       # (the ack only fires if the turn outlives first_emit_timeout_ms).
       ack_on_first_tool_call: true
-      max_concurrent_tools: 0             # 0 = unbounded
+      max_concurrent_tools: 1             # 1 = one tool call per tick; >1 lets a
+                                          # tick run that many independent calls
+                                          # the model issued together (ADR-0048)
 
       # -- Voice-call loop profile: WhatsApp calls run a tighter/faster loop
       # than chat (shorter history prompt, tick + wall-clock caps, per-tool
@@ -366,6 +390,13 @@ actions:
       enabled: true
 
   # ── Supporting actions ──
+  # Every language-model action speaks the normalised model contract (Phase 1)
+  # and can route its calls through the LiteLLM adapter without changing class,
+  # model or credentials: `transport: litellm` (default httpx), or
+  # JVAGENT_MODEL_TRANSPORT=litellm for the whole process (ADR-0047). The
+  # orchestrator picks the decision protocol from the model's capabilities
+  # (`tool_protocol: auto`, ADR-0045) and can fall back across models
+  # (`model_fallbacks`, ADR-0046) — see docs/language-models.md.
   - action: jvagent/openai_lm
     context:
       enabled: true
@@ -374,6 +405,7 @@ actions:
       temperature: 0.2
       max_tokens: 4096
       timeout: 60
+      # transport: litellm     # route this action's calls via LiteLLM (needs jvagent[litellm])
 
   # ── Ollama Language Model (agentic loop) ──
   - action: jvagent/ollama_lm
@@ -386,6 +418,25 @@ actions:
       temperature: 0.2
       max_tokens: 16384
       timeout: 120
+      # transport: litellm     # same model/key/host, calls via LiteLLM's ollama route
+
+  # ── LiteLLM universal adapter (ADR-0045) — the orchestrator's model ──
+  # One action for every provider LiteLLM speaks — OpenAI, Anthropic, Gemini,
+  # Bedrock, Azure, Mistral, Together, Ollama, ... — behind the same contract,
+  # with per-model capabilities and pricing from LiteLLM's metadata. Model ids
+  # are LiteLLM's `provider/model`; credentials come from the provider's usual
+  # environment variable (or `api_key` / `api_base` here). The orchestrator's
+  # heavy and light slots above point at this action. `model` here is only the
+  # default when a caller names none; the orchestrator always names its slot.
+  # Requires the extra: pip install "jvagent[litellm]".
+  - action: jvagent/litellm_lm
+    context:
+      enabled: true
+      model: openai/gpt-4.1
+      temperature: 0.2
+      max_tokens: 8192
+      timeout: 120
+      drop_params: true
 
   # ReplyAction — the Orchestrator-native egress voice (ADR-0014). Identity
   # comes from the Agent (alias + role above); ReplyAction just voices output.

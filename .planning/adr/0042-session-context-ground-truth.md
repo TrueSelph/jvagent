@@ -1,6 +1,6 @@
 # ADR 0042 — Authoritative SESSION CONTEXT in the Orchestrator prompt
 
-**Status**: Accepted
+**Status**: Accepted — placement amended by [ADR-0049](0049-session-context-placement-and-cache-telemetry.md) (the block now renders LAST in the system prompt; content and authority unchanged)
 **Date**: 2026-07-27
 **Relation**: Extends the CURRENT CHANNEL ground-truth pattern
 ([`loop.py`](../../jvagent/action/orchestrator/loop.py)). Complements

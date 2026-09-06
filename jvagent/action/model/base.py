@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+# Usage keys carried through to the ``model_call`` event beside the three token
+# totals: cache breakdowns (a subset of ``prompt_tokens``, never an addition)
+# and reasoning tokens. The cost estimator prices cached reads at the provider's
+# discount; the Interaction aggregates them as ``cached_prompt_tokens``.
+USAGE_BREAKDOWN_KEYS = (
+    "cached_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "reasoning_tokens",
+    "thinking_tokens",
+)
+
+
 class BaseModelAction(Action, ABC):
     """Base class for all model actions with common attributes and operations.
 
@@ -85,6 +98,26 @@ class BaseModelAction(Action, ABC):
         default=True,
         description="Randomize delay (0.5x–1.5x) to avoid thundering herd",
     )
+    retry_total_deadline_seconds: float = attribute(
+        default=60.0,
+        description=(
+            "Wall-clock ceiling for one logical call including all retries and "
+            "backoff. A retry that would start after the deadline is not "
+            "attempted; the last error propagates. 0 disables (unbounded — the "
+            "pre-ADR-0046 behaviour, worst case ~15 minutes with Retry-After)."
+        ),
+        ge=0.0,
+    )
+    retry_on_timeout: bool = attribute(
+        default=True,
+        description=(
+            "Retry a request that timed out (httpx timeouts / status 408). A "
+            "completion call is not idempotent at the provider — a retried call "
+            "that actually completed bills twice — so operators on tight cost "
+            "policies may turn this off; transport and 429/5xx retries are "
+            "unaffected."
+        ),
+    )
     retry_on_status_codes: List[int] = attribute(
         default_factory=lambda: [408, 425, 429, 500, 502, 503, 504],
         description="HTTP status codes that trigger a retry when raised as HTTPStatusError",
@@ -100,11 +133,16 @@ class BaseModelAction(Action, ABC):
         if isinstance(exc, asyncio.CancelledError):
             return False
         if isinstance(exc, httpx.TimeoutException):
-            return True
+            return bool(getattr(self, "retry_on_timeout", True))
         if isinstance(exc, httpx.TransportError):
             return True
         if isinstance(exc, httpx.HTTPStatusError):
             return exc.response.status_code in self._retryable_status_codes()
+        # Provider SDK exceptions (LiteLLM / OpenAI-style APIStatusError) carry
+        # the HTTP status as an attribute rather than an httpx response.
+        code = getattr(exc, "status_code", None)
+        if isinstance(code, int):
+            return code in self._retryable_status_codes()
         return False
 
     def _parse_retry_after_header(self, response: httpx.Response) -> Optional[float]:
@@ -163,6 +201,8 @@ class BaseModelAction(Action, ABC):
         ``op_factory`` must return a new coroutine each call (coroutines are single-use).
         """
         max_attempts = self.max_retries + 1
+        started = time.monotonic()
+        deadline = float(getattr(self, "retry_total_deadline_seconds", 0.0) or 0.0)
         for attempt in range(max_attempts):
             try:
                 coro = op_factory()
@@ -192,6 +232,19 @@ class BaseModelAction(Action, ABC):
                     )
                     raise
                 delay = self._compute_retry_delay_seconds(attempt, exc)
+                if deadline > 0 and (time.monotonic() - started) + delay > deadline:
+                    # ADR-0046: a retry that would land past the total deadline
+                    # is not worth the caller's wait — surface the last error.
+                    logger.error(
+                        "%s: retry deadline of %.0fs would be exceeded (attempt %s, "
+                        "next delay %.1fs); giving up: %s",
+                        op_name,
+                        deadline,
+                        attempt + 1,
+                        delay,
+                        exc,
+                    )
+                    raise
                 logger.warning(
                     "%s attempt %s/%s failed: %s; retrying in %.2fs",
                     op_name,
@@ -300,6 +353,24 @@ class BaseModelAction(Action, ABC):
         except Exception as e:
             logger.debug(f"Failed to emit observability: {e}")
 
+    def _telemetry_transport(self, provider: Optional[str] = None) -> str:
+        """The wire that carried a call, for the ``model_call`` event (ADR-0047).
+
+        ``litellm`` for the LiteLLM adapter itself and for any first-party action
+        whose effective transport is LiteLLM; ``httpx`` otherwise. Subclasses
+        that expose ``_effective_transport`` (language models) are asked; a model
+        action without a transport switch reports its own wire.
+        """
+        if str(provider or "").strip().lower() == "litellm":
+            return "litellm"
+        effective = getattr(self, "_effective_transport", None)
+        if callable(effective):
+            try:
+                return "litellm" if effective() == "litellm" else "httpx"
+            except Exception:  # pragma: no cover - defensive
+                return "httpx"
+        return "httpx"
+
     async def _emit_observability(
         self,
         interaction: Any,
@@ -350,12 +421,22 @@ class BaseModelAction(Action, ABC):
                     result_metrics.get(key, 0) > 0
                     for key in ["prompt_tokens", "completion_tokens", "total_tokens"]
                 ):
-                    # Use the updated metrics from result
+                    # Use the updated metrics from result. The cache and
+                    # reasoning breakdowns ride along: ``cached_tokens`` (OpenAI /
+                    # LiteLLM, a subset of prompt_tokens) and Anthropic's
+                    # cache_read/creation counts are what the cost estimator
+                    # discounts and what a prompt-cache measurement reads back
+                    # from the ``model_call`` event — dropping them here made
+                    # cache hits unobservable in telemetry.
                     usage = {
                         "prompt_tokens": result_metrics.get("prompt_tokens", 0),
                         "completion_tokens": result_metrics.get("completion_tokens", 0),
                         "total_tokens": result_metrics.get("total_tokens", 0),
                     }
+                    for extra_key in USAGE_BREAKDOWN_KEYS:
+                        value = result_metrics.get(extra_key)
+                        if isinstance(value, (int, float)) and value:
+                            usage[extra_key] = int(value)
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
             # Get model from result if available (actual model used), otherwise fall back to self.model
@@ -404,6 +485,11 @@ class BaseModelAction(Action, ABC):
                 "duration": duration,
                 "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
                 "called_by": action_name,  # Always include called_by with action name
+                # Which wire carried the call (ADR-0047): ``httpx`` (the action's
+                # own client) or ``litellm``. Transport delegation relabels the
+                # result as the action's own provider, so this is the only field a
+                # canary can read to confirm the switch took.
+                "transport": self._telemetry_transport(provider),
             }
 
             # Add system prompt (the actual prompt that was executed)

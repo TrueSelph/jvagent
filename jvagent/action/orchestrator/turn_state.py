@@ -1,37 +1,77 @@
-"""The typed boundary between preparing a turn and stepping it.
+"""The loop's working set, and how one tick tells the loop to proceed.
 
 ``_run_loop`` was 1090 lines in one scope: roughly 390 lines deciding what the
 turn *is* (tools, skills, parameters, flow ownership, budget) followed by 700
-lines stepping it, with 82 locals visible to both halves. Any change to either
-could reach the other, which is how several fixes on this branch had to be
-threaded through by hand.
+lines stepping it, with 82 locals visible to both halves. The first split
+(``_prepare_turn`` → ``TurnState`` → loop) made the interface between the two
+halves explicit: 47 names, measured by walking the AST. The second split
+(audit follow-up S1) cut the 700-line tick into ``_tick`` / ``_tick_final`` /
+``_tick_tool`` (``_guard_tool_call`` → ``_dispatch_tool`` → ``_after_dispatch``)
+plus ``_after_loop`` and ``_close_turn`` — and those methods share state the
+same way: through this object, not a scope. The four names the tick used to
+keep as loop-locals across iterations (``last_gear``, ``last_dec_meta``,
+``last_obs_len``, ``model_failures``) live here now for the same reason.
 
-The two halves actually communicate through exactly 47 names — measured, not
-guessed, by walking the function's AST for names stored before the split and
-loaded after it. Four more looked like they crossed and do not: ``doc``,
-``emitted``, ``prep_obs_before`` and ``tool_t0`` are assigned by the loop before
-it reads them, so they are loop-locals that merely share a name with a setup
-binding.
+It is a mutable dataclass because the tool surface genuinely changes mid-turn
+when a skill activates and the counters are loop state; a frozen context would
+have to lie about a third of the fields. It does not try to be a good
+abstraction — it is an honest inventory of a working set that used to be
+invisible, and a list you can argue about and shrink.
 
-Of the 47, **18 are read-only** and 29 are rebound during the loop. That is why
-this is a mutable dataclass rather than a frozen one: the tool surface genuinely
-changes mid-turn when a skill activates, and the counters are loop state. A
-frozen context would have to lie about a third of the fields.
-
-This class does not try to be a good abstraction. It is an honest inventory of a
-boundary that used to be invisible — and a list of 47 is something you can argue
-about and shrink, which 82 shared locals is not.
+:class:`TickOutcome` is what one tick returns: keep going, stop the loop (the
+post-loop path decides the egress), or the turn's output is delivered.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, ClassVar, Dict, List, Optional, Set
+
+
+@dataclass(frozen=True)
+class TickOutcome:
+    """How the loop proceeds after one tick.
+
+    ``continue`` — take another tick. ``break`` — the loop is over; ``ended_via``
+    says why and :meth:`_after_loop` decides the egress. ``return`` — the turn's
+    output has been delivered (a reply, a terminal tool, a directive); nothing
+    more is sent.
+    """
+
+    CONTINUE: ClassVar[str] = "continue"
+    BREAK: ClassVar[str] = "break"
+    RETURN: ClassVar[str] = "return"
+
+    kind: str
+    ended_via: Optional[str] = None
+
+    # The shared "take another tick" outcome (no reason to carry).
+    CONTINUE_: ClassVar["TickOutcome"]
+
+    @classmethod
+    def stop(cls, ended_via: str) -> "TickOutcome":
+        return cls(cls.BREAK, ended_via)
+
+    @classmethod
+    def done(cls, ended_via: str) -> "TickOutcome":
+        return cls(cls.RETURN, ended_via)
+
+
+TickOutcome.CONTINUE_ = TickOutcome(TickOutcome.CONTINUE)
+
+
+@dataclass
+class RecentCall:
+    """One dispatched tool call the repeat guard remembers: its signature
+    (tool name + serialised args) and whether the attempt errored/timed out."""
+
+    sig: tuple
+    errored: bool = False
 
 
 @dataclass
 class TurnState:
-    """What ``_prepare_turn`` hands to the tick loop."""
+    """The turn's working set: built by ``_prepare_turn``, stepped by ``_tick``."""
 
     # --- identity of the turn -------------------------------------------
     utterance: str
@@ -58,7 +98,6 @@ class TurnState:
     flow_note: str
     plan_note: str
     pending_chain: Any
-    drain_directive: Any
     locked_companion_skill_names: Any
     locked_companion_tools: Any
 
@@ -73,8 +112,9 @@ class TurnState:
     # --- observations and telemetry --------------------------------------
     observations: List[Dict[str, Any]]
     tool_timings: List[Dict[str, Any]]
-    last_obs: Any
-    last_sig: Any
+    # Recent tool-call signatures with whether each attempt errored (repeat
+    # guard, ADR audit M7): a bounded deque of ``RecentCall``.
+    recent_calls: Any
     ended_via: str
 
     # --- guard counters (ADR-0034 / ADR-0037 enforcement) -----------------
@@ -82,7 +122,6 @@ class TurnState:
     plan_deflections: int
     grounding_deflections: int
     deflected_named: Set[str]
-    repeats: Any
     nd_streak: int
     substantive_tool_calls: int
     soft_abandon_evaluated: bool
@@ -92,3 +131,15 @@ class TurnState:
     # --- the transient acknowledgement task -------------------------------
     ack_started: bool
     ack_task: Any = field(default=None)
+
+    # --- carried across ticks (tick-loop locals before the S1 split) -------
+    last_gear: str = "light"
+    # Native-protocol transcript bookkeeping (ADR-0044): the decision the
+    # previous tick acted on, and where its observations start, so the tool
+    # result it produced can be tied back to the provider's tool-call id.
+    last_dec_meta: Dict[str, Any] = field(default_factory=dict)
+    last_obs_len: int = 0
+    # Consecutive provider failures this turn (a fault, not a model choice).
+    model_failures: int = 0
+    # Ticks that dispatched more than one tool call (max_concurrent_tools > 1).
+    parallel_batches: int = 0

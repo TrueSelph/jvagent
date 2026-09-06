@@ -45,6 +45,9 @@ Use this split for new app descriptors:
 - `JVAGENT_INTERACT_TOKEN_REFRESH_GRACE_SECONDS` - Post-expiry window in which an expired session token may still be exchanged at the refresh endpoint (default `604800` = 7 days; `0` disables — refresh then requires a still-valid token). Expired tokens are never accepted on `interact` itself.
 - `JVAGENT_TRUST_PROXY_HEADERS` - When `true`, `extract_client_ip` trusts `X-Forwarded-For`/`X-Real-IP`/`CF-Connecting-IP` for rate-limit bucketing. Default `false` (fail-safe): proxy headers are ignored and `request.client.host` is used. Enable ONLY behind a trusted reverse proxy that overwrites these headers.
 
+### Model transport
+- `JVAGENT_MODEL_TRANSPORT` - Process-wide transport for every first-party language-model action (`openai_lm`, `anthropic_lm`, `groq_lm`, `openrouter_lm`, `ollama_lm`): `httpx` (default, each action's own wire) or `litellm` (delegate to the LiteLLM adapter with the same model, key and endpoint; needs `jvagent[litellm]`). Overrides the per-action `transport` attribute; read at call time, so no graph sync is needed — this is the canary switch (see [`.planning/runbooks/litellm-canary.md`](../.planning/runbooks/litellm-canary.md)). Any other value falls back to `httpx`.
+
 ### PageIndex
 - `JVAGENT_PAGEINDEX_DB_TYPE` - PageIndex backend type.
 - `JVAGENT_PAGEINDEX_DB_PATH` - PageIndex JSON/SQLite path.
@@ -110,6 +113,7 @@ These are commonly used by `jvagent` and should be configured in `jvagent` deplo
 - `JVSPATIAL_POSTGRES_MIN_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_MAX_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_POOLER_MODE` - `session` (default) or `transaction` for PgBouncer / RDS Proxy.
+- `JVSPATIAL_TEXT_NORMALIZATION_ENABLED` - jvspatial folds every persisted string to ASCII when this is `true` (its own default): accents are stripped and any other non-ASCII character is stored as `?`, so `日本語` becomes `???`. jvagent seeds it to `false` at boot (`jvagent/cli/server_config.py::_set_db_env_from_config`) because that is data loss for conversational memory; set it explicitly to `true` only if a downstream store cannot hold UTF-8.
 
 ### Auth/rate limit (framework side)
 - `JVSPATIAL_JWT_SECRET_KEY`

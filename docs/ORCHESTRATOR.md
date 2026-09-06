@@ -109,6 +109,39 @@ provider failure once, then ends the turn with `model_unavailable_text` (never
 `ended_via=model_error`. Truncation gets its own nudge; three unusable outputs
 in a row still end the turn as `no_decision`.
 
+## Resilience (ADR-0046)
+
+Policy the harness owns, uniform over every adapter, all configured on the
+Orchestrator and all off by default except the breaker:
+
+```yaml
+      model: gpt-4o-mini
+      model_fallbacks:                      # tried in the SAME tick when the primary fails
+        - { model: gpt-4o }                 #   same action, other model
+        - { model: anthropic/claude-sonnet-4-5, model_action_type: LiteLLMLanguageModelAction }
+      circuit_breaker_failures: 3           # consecutive failures → circuit open …
+      circuit_breaker_cooldown_seconds: 60  # … skipped in the chain until one probe passes
+      max_turn_cost_usd: 0.50               # loop ends budget_exhausted + one partial-compose
+      max_conversation_cost_usd: 5.00       # turn blocked, budget_exhausted_text replied
+      structured_decisions: true            # JSON protocol: schema-validated decisions
+```
+
+- **Fallback chain** — after the model layer's own retries fail, the next
+  candidate gets the same request (model id swapped, its own capability gates
+  applied). The loop sees a success or a final `model_error`; `fallbacks_used`
+  lands on the activation event.
+- **Circuit breaker** — per (action, model), per event loop; open circuits are
+  skipped; after the cooldown one probe decides. `healthcheck()` reports the
+  circuits.
+- **Budget guard** — turn cost is the metadata price of this turn's
+  `model_call` events (`turn_cost_usd` on the activation event); the
+  conversation total lives on `conversation.context._cost_usd_total` and is
+  only written when a conversation ceiling is set.
+- **Structured decisions** — with `tool_protocol` resolved to `json` and a model
+  that supports structured output, the decision schema travels as
+  `response_format: json_schema` (or a forced `orchestrator_decision` tool on
+  Anthropic), so "not valid JSON" nudges stop on capable providers.
+
 ## The unified tool surface
 
 Everything the agent can do is reachable as a tool, so there is no separate router or capability registry:
@@ -439,8 +472,8 @@ All off/neutral by default — the reference agent is unchanged. Full table in [
 - **Thinking stream** (needs a live bus): `stream_internal_progress` emits each tick as a transient `thought`; `stream_reasoning_trace` surfaces `result.thinking_content`.
 - **Budgets**: `activation_budget` (max tool-using ticks/turn, default **24** — each tick is one tool call, so multistep research/agentic work wants 30–50; the repeat-guard bounds runaway loops). `model_max_tokens` defaults to **4096** — the orchestrator is agentic (each tick emits reasoning plus an action, often the substantive answer, and thinking models spend completion tokens on reasoning), so it carries more headroom than a single-shot responder; raise further for long-form replies. `max_duration_seconds` (wall-clock, alongside the tick budget), `max_statement_length` (soft reply prompt cap; does not truncate loop history), `history_limit` (loop working context; the rolling memory window is the agent-level `interaction_limit`). When a turn exhausts its budget or time mid-task, the loop **forces one partial-compose** on `last_gear` — it replies with the agent's best answer from what it gathered rather than dropping to the generic clarify fallback. If that finalize tick still returns a tool call (models sometimes ignore STEP LIMIT), the loop **salvages** plan step `result`s / tool observations into a user-facing summary instead of `clarify_text`.
 - **Observation budget**: every tick resends this turn's prior tool results, so *unbounded* results make the per-turn input cost grow with the square of the tick count — an 8-tick research turn over 8 KB page fetches billed ~70k input tokens, a 20-tick one ~325k. `MAX_OBSERVATIONS_IN_PROMPT` bounds how *many* results replay; `observation_max_chars` (default 4000) and `stale_observation_max_chars` (default 600) bound how *big* each one is, with the most recent `observation_full_recent` (default 3) getting the generous budget. `observation_args_max_chars` (default 400) caps the arguments — a write-file call carries its whole payload there. Elision is middle-out and marked, so the model can re-run the tool if it truly needs the body; set any cap to `0` to disable it.
-- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout` (default **120 s** — a hung tool returns a timeout observation instead of holding the turn and the conversation lock; `0` disables), `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
-- **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` is reserved for future parallel tool batches (the loop executes one tool per tick today).
+- **Tooling / UX**: `tool_tier` (minimal/standard/full), `tool_call_timeout` (default **120 s** — a hung tool returns a timeout observation instead of holding the turn and the conversation lock; `0` disables), `enable_transient_ack` + `first_emit_timeout_ms` + `ack_statements`. `max_concurrent_tools` (default **1**) lets one tick dispatch the sibling tool calls a provider returned together — substantive, non-terminal tools only, each still passing the pre-dispatch guards — so two independent lookups cost one model round-trip instead of two ([ADR-0048](../.planning/adr/0048-parallel-tool-dispatch.md)). `block_raw_tool_invocation` adds a **tool-use policy** to the loop prompt so the *user* can't steer tool selection — naming a tool/function/argument is treated as intent, not a command; a tool the user named is deflected once so selection stays the agent's call. It does **not** block the model from calling a real tool that lean surfacing merely hid: naming a real tool is valid intent, so it is **auto-promoted and run** (an implicit `load_tool`) — only a genuinely unknown/hallucinated name is bounced to `find_tool`. (Earlier this flag hard-gated hidden tools, which dead-looped when a weak model repeatedly named a correct-but-hidden tool.)
+- **MCP tool servers**: `tool_servers` (`-all` or action-name list) pulls tools from `jvagent/mcp` `MCPAction`(s); they surface as `mcp_<server>__<tool>` and route per-user (the loop binds the dispatch context for the turn). `max_concurrent_tools` (see Tooling above) sets how many of a response's sibling tool calls one tick may run together.
 
 ```yaml
   - action: jvagent/mcp           # sandboxed MCP gateway (declares the `mcp` pip extra)

@@ -38,10 +38,11 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Tune / query logging** | [`.planning/reference/observability.md`](.planning/reference/observability.md) + [`docs/logging.md`](docs/logging.md) |
 | **Find a config key** | [`.planning/reference/configuration-keys.md`](.planning/reference/configuration-keys.md) + [`docs/environment-keys-reference.md`](docs/environment-keys-reference.md) |
 | **Run on PostgreSQL** | [`docs/postgres.md`](docs/postgres.md) |
-| **Understand the Orchestrator pattern** | [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md) + ADRs [0012](.planning/adr/0012-skill-executive-architecture.md) (architecture), [0013](.planning/adr/0013-togglable-deterministic-turn-lock.md) (turn-lock), [0014](.planning/adr/0014-identity-on-agent-replyaction-egress.md) (identity/egress), [0015](.planning/adr/0015-skill-executive-configuration-surface.md) (config surface), [0016](.planning/adr/0016-model-gearing-light-heavy.md) (model gearing), [0017](.planning/adr/0017-two-skill-specs-code-execution-substrate.md) (skill specs + code execution), [0018](.planning/adr/0018-lean-tool-surfacing.md) (lean surfacing), [0019](.planning/adr/0019-orchestrator-resumable-plan.md) (resumable plan), [0041](.planning/adr/0041-gearing-and-cost-policy-in-core.md) (gearing/cost in core), [0042](.planning/adr/0042-session-context-ground-truth.md) (session clock/channel), [0044](.planning/adr/0044-native-tool-calling-protocol.md) (native tool-calling protocol) |
+| **Understand the Orchestrator pattern** | [`docs/ORCHESTRATOR.md`](docs/ORCHESTRATOR.md) + ADRs [0012](.planning/adr/0012-skill-executive-architecture.md) (architecture), [0013](.planning/adr/0013-togglable-deterministic-turn-lock.md) (turn-lock), [0014](.planning/adr/0014-identity-on-agent-replyaction-egress.md) (identity/egress), [0015](.planning/adr/0015-skill-executive-configuration-surface.md) (config surface), [0016](.planning/adr/0016-model-gearing-light-heavy.md) (model gearing), [0017](.planning/adr/0017-two-skill-specs-code-execution-substrate.md) (skill specs + code execution), [0018](.planning/adr/0018-lean-tool-surfacing.md) (lean surfacing), [0019](.planning/adr/0019-orchestrator-resumable-plan.md) (resumable plan), [0041](.planning/adr/0041-gearing-and-cost-policy-in-core.md) (gearing/cost in core), [0042](.planning/adr/0042-session-context-ground-truth.md) (session clock/channel), [0048](.planning/adr/0048-parallel-tool-dispatch.md) (parallel tool dispatch), [0044](.planning/adr/0044-native-tool-calling-protocol.md) (native tool-calling protocol) |
 | **Document conversational test scenarios (CUCS)** | [`.planning/reference/conversation-use-cases.md`](.planning/reference/conversation-use-cases.md) + [ADR-0027](.planning/adr/0027-conversation-use-case-spec.md) |
 | **Run jvagent locally** | [`.planning/runbooks/local-dev.md`](.planning/runbooks/local-dev.md) |
 | **Add a new action end-to-end** | [`.planning/runbooks/add-action.md`](.planning/runbooks/add-action.md) |
+| **Canary the LiteLLM transport on one deployment** | [`.planning/runbooks/litellm-canary.md`](.planning/runbooks/litellm-canary.md) + [`docs/language-models.md`](docs/language-models.md) (migration guide) |
 | **Send a proactive (agent-initiated) message** | [`docs/proactive-messages.md`](docs/proactive-messages.md) |
 | **Embed the customer-facing popup chat** | [`docs/jvmessenger.md`](docs/jvmessenger.md) + [ADR-0035](.planning/adr/0035-embeddable-chat-messenger.md) (source: [`jvmessenger/`](jvmessenger/), served by `jvagent messenger` from [`jvagent/messenger/`](jvagent/messenger/)) |
 | **See design rationale** | [`.planning/adr/`](.planning/adr/) |
@@ -158,6 +159,12 @@ pytest tests/                  # or the affected slice(s) at minimum
   red tests.
 - `pre-commit install` also installs a pre-push pytest hook (full suite on push);
   the manual run above is still required before every commit.
+- **Stage first, then run.** `pre-commit run --all-files` only checks files git
+  tracks — an untracked new file is skipped and reports nothing, so `git add -A`
+  BEFORE the run (PRs #176/#177 went red in CI on exactly this: new test files
+  passed locally untracked, CI's black reformatted them). With the git hooks
+  installed (`pre-commit install`) the commit-time hook covers staged files
+  regardless; check `.git/hooks/pre-commit` exists in your clone.
 - Do not use `git commit --no-verify` to bypass the gate.
 - Applies on every branch, including hotfix/docs/chore branches.
 

@@ -25,10 +25,12 @@ async def render_session_context(
     tz = getattr(now.tzinfo, "key", None) or (
         str(now.tzinfo) if now.tzinfo else "local"
     )
+    abbrev = now.strftime("%Z")
+    zone = f"{tz}, {abbrev}" if abbrev and abbrev != tz else tz
     lines = [
         "SESSION CONTEXT (authoritative for this turn):",
         f"CURRENT DATE/TIME: {now.strftime('%A, %B %d, %Y')} "
-        f"{now.strftime('%H:%M:%S')} ({tz})",
+        f"{now.strftime('%H:%M:%S')} ({zone})",
         f"ISO 8601: {now.isoformat()}",
     ]
     channel = str(getattr(visitor, "channel", "") or "").strip()

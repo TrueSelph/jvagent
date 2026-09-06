@@ -12,6 +12,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncGenerator,
+    ClassVar,
     Dict,
     List,
     Optional,
@@ -20,7 +21,7 @@ from typing import (
 
 from jvspatial.core.annotations import attribute
 
-from jvagent.action.model.base import BaseModelAction
+from jvagent.action.model.base import USAGE_BREAKDOWN_KEYS, BaseModelAction
 
 if TYPE_CHECKING:
     from jvagent.action.model.contract import (
@@ -407,6 +408,28 @@ class LanguageModelAction(BaseModelAction, ABC):
     top_p: float = attribute(
         default=1.0, description="Nucleus sampling parameter", ge=0.0, le=1.0
     )
+    transport: str = attribute(
+        default="httpx",
+        description=(
+            "How this action reaches its provider (ADR-0047). 'httpx' (default): "
+            "the action's own client and wire parsing. 'litellm': delegate the "
+            "call to the LiteLLM universal adapter with this action's model, "
+            "credentials and endpoint — same class, same agent.yaml, same "
+            "result/observability. The JVAGENT_MODEL_TRANSPORT environment "
+            "variable overrides this for the whole process (fleet-wide A/B). "
+            "Requires the 'litellm' extra."
+        ),
+    )
+    model_capabilities: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description=(
+            "Operator override for the model's capabilities (ADR-0045): any of "
+            "supports_tools, supports_parallel_tools, supports_json_mode, "
+            "supports_structured_output, supports_vision, supports_thinking, "
+            "context_window, max_output_tokens. Wins over LiteLLM metadata and "
+            "the bundled table; unset keys keep the resolved value."
+        ),
+    )
 
     # ============================================================================
     # Abstract Methods (Provider Implementation)
@@ -765,14 +788,17 @@ class LanguageModelAction(BaseModelAction, ABC):
             if history is None:
                 history = _ext_history
 
-        # Route to appropriate implementation (retries for transient httpx failures)
+        # Route to appropriate implementation (retries for transient httpx failures).
+        # ADR-0047: the transport switch chooses this action's own wire client or
+        # the LiteLLM delegate; everything around the call is identical.
+        impl_query, impl_stream = self._transport_impls()
         if stream:
             thinking_queue: asyncio.Queue = asyncio.Queue()
             stream_kwargs = dict(kwargs)
             stream_kwargs["_jv_thinking_queue"] = thinking_queue
 
             result = await self._execute_with_retry(
-                lambda: self._query_stream(messages, tools, **stream_kwargs),
+                lambda: impl_stream(messages, tools, **stream_kwargs),
                 op_name="lm_query_stream_init",
             )
             result._thinking_queue = thinking_queue
@@ -832,9 +858,7 @@ class LanguageModelAction(BaseModelAction, ABC):
                         )
                         await asyncio.sleep(delay)
                         ModelActionResult.drain_thinking_queue_sync(thinking_queue)
-                        new_result = await self._query_stream(
-                            messages, tools, **stream_kwargs
-                        )
+                        new_result = await impl_stream(messages, tools, **stream_kwargs)
                         outer_result.model = new_result.model
                         outer_result.provider = new_result.provider
                         outer_result.finish_reason = new_result.finish_reason
@@ -850,7 +874,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             result.stream = stream_with_retry()
         else:
             result = await self._execute_with_retry(
-                lambda: self._query(messages, tools, **kwargs),
+                lambda: impl_query(messages, tools, **kwargs),
                 op_name="lm_query",
             )
 
@@ -887,12 +911,18 @@ class LanguageModelAction(BaseModelAction, ABC):
             result._model_for_estimation = kwargs.get("model", self.model)
             result._provider_for_estimation = getattr(self, "provider", "")
 
-        # Track usage metrics (including duration)
+        # Track usage metrics (including duration). The cache/reasoning
+        # breakdowns ride along with the three totals (ADR-0049) — they are
+        # what the cost estimator discounts and what makes cache hits visible.
         usage_dict = {
             "prompt_tokens": result.metrics.get("prompt_tokens", 0),
             "completion_tokens": result.metrics.get("completion_tokens", 0),
             "total_tokens": result.metrics.get("total_tokens", 0),
         }
+        for extra_key in USAGE_BREAKDOWN_KEYS:
+            extra_value = result.metrics.get(extra_key)
+            if isinstance(extra_value, (int, float)) and extra_value:
+                usage_dict[extra_key] = int(extra_value)
 
         # For streaming results, skip initial observability emission
         # We'll emit after token estimation completes to avoid duplicate entries
@@ -1015,6 +1045,106 @@ class LanguageModelAction(BaseModelAction, ABC):
         return result
 
     # ============================================================================
+    # Transport delegation (ADR-0047) — httpx (own client) or the LiteLLM adapter
+    # ============================================================================
+
+    #: LiteLLM provider prefix for this action's models (``provider/model``).
+    #: Defaults to the ``provider`` attribute; subclasses override when the
+    #: LiteLLM slug differs from jvagent's provider label.
+    litellm_provider_prefix: ClassVar[str] = ""
+
+    def _effective_transport(self) -> str:
+        """``litellm`` or ``httpx`` — the env override wins over the attribute."""
+        from jvspatial.env import env
+
+        override = str(env("JVAGENT_MODEL_TRANSPORT") or "").strip().lower()
+        value = (
+            override or str(getattr(self, "transport", "") or "httpx").strip().lower()
+        )
+        return "litellm" if value == "litellm" else "httpx"
+
+    def _transport_impls(self) -> Any:
+        """``(query_impl, stream_impl)`` for the effective transport."""
+        if self._effective_transport() == "litellm":
+            return self._litellm_query, self._litellm_query_stream
+        return self._query, self._query_stream
+
+    def litellm_model_id(self, model: Optional[str] = None) -> str:
+        """This action's model in LiteLLM's ``provider/model`` form."""
+        model_id = str(model or self.model or "").strip()
+        if "/" in model_id:
+            return model_id
+        prefix = (
+            self.litellm_provider_prefix
+            or str(getattr(self, "provider", "") or "").strip().lower()
+        )
+        return f"{prefix}/{model_id}" if prefix else model_id
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        """Credentials/endpoint for the LiteLLM delegate: ``{api_key, api_base}``.
+
+        The base leaves both empty (LiteLLM reads the provider's own environment
+        variable); provider actions override to hand over the key and endpoint
+        their own client would have used, so switching transport never changes
+        which credentials are used.
+        """
+        return {}
+
+    def _litellm_delegate(self) -> Any:
+        """The (lazily built, per-action) LiteLLM adapter used by the ``litellm``
+        transport. Created in memory — not a registered action."""
+        delegate = getattr(self, "_litellm_delegate_instance", None)
+        if delegate is None:
+            from jvagent.action.model.language.litellm.litellm_lm import (
+                LiteLLMLanguageModelAction,
+            )
+
+            delegate = LiteLLMLanguageModelAction()
+            delegate.provider = str(getattr(self, "provider", "") or "litellm")
+            delegate.timeout = self.timeout
+            object.__setattr__(self, "_litellm_delegate_instance", delegate)
+        cfg = self.litellm_call_config() or {}
+        delegate.api_key = str(cfg.get("api_key") or "")
+        delegate.api_base = str(cfg.get("api_base") or "")
+        delegate.temperature = self.temperature
+        delegate.max_tokens = self.max_tokens
+        delegate.top_p = self.top_p
+        return delegate
+
+    def _relabel_delegate_result(self, result: "ModelActionResult", model: str) -> None:
+        """Present the delegate's result as this action's (provider, model)."""
+        result.provider = str(getattr(self, "provider", "") or result.provider)
+        result.model = model
+
+    async def _litellm_query(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ModelActionResult":
+        model = str(kwargs.get("model") or self.model or "")
+        delegate = self._litellm_delegate()
+        call_kwargs = dict(kwargs)
+        call_kwargs["model"] = self.litellm_model_id(model)
+        result = await delegate._query(messages, tools, **call_kwargs)
+        self._relabel_delegate_result(result, model)
+        return result
+
+    async def _litellm_query_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> "ModelActionResult":
+        model = str(kwargs.get("model") or self.model or "")
+        delegate = self._litellm_delegate()
+        call_kwargs = dict(kwargs)
+        call_kwargs["model"] = self.litellm_model_id(model)
+        result = await delegate._query_stream(messages, tools, **call_kwargs)
+        self._relabel_delegate_result(result, model)
+        return result
+
+    # ============================================================================
     # Normalised contract (ModelAdapter) — Phase 1 of the model remediation
     # ============================================================================
 
@@ -1041,39 +1171,23 @@ class LanguageModelAction(BaseModelAction, ABC):
         return result.to_response()
 
     def capabilities(self, model: Optional[str] = None) -> "ModelCapabilities":
-        """Per-model capabilities. Unknown until Phase 2 populates them from
-        provider metadata; subclasses may override with what they know."""
-        from jvagent.action.model.contract import ModelCapabilities
+        """Per-model capabilities (ADR-0045): operator override → LiteLLM
+        metadata (when installed) → bundled table → unknown. Never guessed."""
+        from jvagent.action.model.capabilities import resolve_capabilities
 
-        return ModelCapabilities(source="unknown")
-
-    def pricing(self, model: Optional[str] = None) -> Optional["Pricing"]:
-        """USD per million tokens for ``model`` (or this action's default), from
-        the bundled table; ``None`` when the model is not priced."""
-        from jvagent.action.model.contract import Pricing
-        from jvagent.action.model.cost_estimator import (
-            _LLM_PRICING_BY_PROVIDER,
-            cache_rates_for_provider,
+        return resolve_capabilities(
+            str(model or self.model or ""),
+            provider=str(getattr(self, "provider", "") or ""),
+            overrides=getattr(self, "model_capabilities", None),
         )
 
-        provider = str(getattr(self, "provider", "") or "").lower()
-        model_id = str(model or self.model or "")
-        table = _LLM_PRICING_BY_PROVIDER.get(provider) or {}
-        entry = table.get(model_id)
-        if entry is None:
-            for key, value in table.items():
-                if key and model_id.startswith(key):
-                    entry = value
-                    break
-        if not entry:
-            return None
-        rates = cache_rates_for_provider(provider)
-        return Pricing(
-            input_per_million=float(entry.get("input", 0.0)),
-            output_per_million=float(entry.get("output", 0.0)),
-            cached_read_multiplier=float(rates.get("read", 1.0)),
-            cached_write_multiplier=float(rates.get("write", 1.0)),
-            source="bundled",
+    def pricing(self, model: Optional[str] = None) -> Optional["Pricing"]:
+        """USD per million tokens for ``model`` (or this action's default):
+        LiteLLM metadata when available, else the bundled table, else ``None``."""
+        from jvagent.action.model.cost_estimator import pricing_for
+
+        return pricing_for(
+            str(getattr(self, "provider", "") or ""), str(model or self.model or "")
         )
 
     async def query_sync(

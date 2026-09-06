@@ -41,6 +41,8 @@ jvagent_app/
 
 After installing jvagent, you can run this example application:
 
+> **LiteLLM adapter**: both bundled agents run their orchestrator through the LiteLLM universal adapter (`jvagent/litellm_lm`, ADR-0045) — install jvagent with the litellm extra: `pip install "jvagent[litellm]"` or `pip install -e ".[litellm]"` from the repo. Model ids are LiteLLM's `provider/model` (`openai/gpt-4.1` here, credentials from `OPENAI_API_KEY`); change the id to change provider. Without the extra the server boots and the orchestrator's model call raises a clear error on first use.
+>
 > **PageIndex document retrieval**: The example agent includes `jvagent/pageindex_action`. Install jvagent with the pageindex extra: `pip install jvagent[pageindex]` or `pip install -e ".[pageindex]"` from the jvagent repo. Documents must be ingested via `POST /pageindex/documents` before retrieval works. Ingestion options (`node_summary`, `node_text`, etc.) are configured under the action's `config` block in `agent.yaml`—see [PageIndex README](../jvagent/action/pageindex/README.md).
 
 1. **Navigate to the jvagent repository root** (where you installed jvagent)
@@ -51,7 +53,8 @@ After installing jvagent, you can run this example application:
    cp .env.example .env
    # Edit .env and set at minimum:
    # - JVAGENT_ADMIN_PASSWORD (required)
-   # - OPENAI_API_KEY (needed for the bundled agents' OpenAI actions)
+   # - OPENAI_API_KEY (the bundled agents' orchestrators run openai/gpt-4.1 via LiteLLM;
+   #   the first-party openai_lm action reads the same key)
    # For resolv/resolv_demo only: RESOLV_TEST_* variables (see .env.example)
    cd ../..
    ```
@@ -228,7 +231,8 @@ agents/
 **`jvagent/orchestrator_agent`** (reference in `app.yaml`):
 - **Core actions** (from the jvagent library):
   - `jvagent/orchestrator` — Turn orchestration (tool selection loop)
-  - `jvagent/openai_lm` — OpenAI language model
+  - `jvagent/litellm_lm` — LiteLLM universal adapter (ADR-0045): the orchestrator's heavy (`openai/gpt-4.1`) and light (`openai/gpt-4.1-mini`) model slots run through it; any provider LiteLLM speaks, with per-model capabilities and pricing from its metadata (`pip install "jvagent[litellm]"`)
+  - `jvagent/openai_lm` — first-party OpenAI language model, used by PageIndex; `transport: litellm` routes it via LiteLLM without changing class (ADR-0047)
   - `jvagent/reply` — Egress voice
   - `jvagent/intro_interact_action` — First-time user intro
   - `jvagent/pageindex_action` — PageIndex RAG (install `jvagent[pageindex]`)
@@ -244,15 +248,19 @@ actions:
   - action: jvagent/orchestrator
     context:
       enabled: true
-      model_action_type: OpenAILanguageModelAction
-      model: gpt-4o-mini
+      model_action_type: LiteLLMLanguageModelAction   # via jvagent/litellm_lm below
+      model: openai/gpt-4.1                           # LiteLLM provider/model id
       skills_source: both
       skills: "-all"
+
+  - action: jvagent/litellm_lm
+    context:
+      enabled: true
 
   - action: jvagent/reply
     context:
       enabled: true
-      model_action_type: OpenAILanguageModelAction
+      model_action_type: OpenAILanguageModelAction    # first-party wire still available
       model: gpt-4o-mini
 ```
 

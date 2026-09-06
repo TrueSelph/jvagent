@@ -149,3 +149,36 @@ def test_core_dependency_specs_match() -> None:
             if expected is not None and spec != expected:
                 mismatched.append(f"{filename}: {spec!r} != pyproject {expected!r}")
     assert not mismatched, "version specs out of sync:\n  " + "\n  ".join(mismatched)
+
+
+# --- litellm pin policy ------------------------------------------------------
+
+LITELLM_DECLARATIONS = (
+    "pyproject.toml",
+    "requirements-all.txt",
+    "jvagent/action/model/language/litellm/info.yaml",
+    "jvagent/action/pageindex/pageindex_action/info.yaml",
+)
+
+
+def test_litellm_is_pinned_to_one_minor_everywhere() -> None:
+    """litellm releases near-daily and had a PyPI supply-chain compromise in
+    March 2026, so it is pinned to a single minor (``>=X.Y.Z,<X.Y+1``) and the
+    fleet moves deliberately. Every place that declares it must carry the same
+    spec — an action's ``info.yaml`` is what auto-installs at load, so a floor
+    left there would quietly undo the pin."""
+    specs = set()
+    for name in LITELLM_DECLARATIONS:
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        found = re.findall(r"litellm(>=[0-9][^\s\"'#]*)", text)
+        assert found, f"{name} no longer declares litellm"
+        specs.update(found)
+    assert len(specs) == 1, f"litellm specs differ across declarations: {sorted(specs)}"
+    spec = specs.pop()
+    assert re.fullmatch(
+        r">=\d+\.\d+\.\d+,<\d+\.\d+", spec
+    ), f"litellm spec {spec!r} is not a single-minor pin (expected '>=X.Y.Z,<X.Y+1')"
+    lo, hi = spec[2:].split(",<")
+    lo_major, lo_minor = (int(x) for x in lo.split(".")[:2])
+    hi_major, hi_minor = (int(x) for x in hi.split("."))
+    assert (hi_major, hi_minor) == (lo_major, lo_minor + 1), spec

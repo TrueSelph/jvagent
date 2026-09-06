@@ -174,10 +174,22 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 |---|---|---|
 | `model` | `gpt-4o-mini` | main/heavy orchestrator model (the reasoning tier when gearing is on) |
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
-| `tool_protocol` | `native` | how decisions are exchanged with the model (ADR-0044). `native`: JSON-Schema'd tool definitions go to the provider, its `tool_calls` are the step, plain text is the reply, and the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: the original one-JSON-object-per-step text contract (tools listed as prose) — for providers/models without reliable function calling |
+| `tool_protocol` | `auto` | how decisions are exchanged with the model (ADR-0044/0045). `auto`: `native` unless the model's resolved capabilities say it cannot call tools, then `json`. `native`: JSON-Schema'd tool definitions go to the provider, its `tool_calls` are the step, plain text is the reply, and the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: the original one-JSON-object-per-step text contract (tools listed as prose) — for providers/models without reliable function calling |
+| `transport` (on the LM action) | `httpx` | `httpx` = the action's own wire client; `litellm` = delegate the call to the LiteLLM adapter with this action's model/credentials/endpoint (ADR-0047). `JVAGENT_MODEL_TRANSPORT` env overrides for the whole process. Needs the `litellm` extra |
+| `model_capabilities` (on the LM action) | `{}` | operator override of the model's resolved capabilities (ADR-0045): `supports_tools`, `supports_parallel_tools`, `supports_json_mode`, `supports_structured_output`, `supports_vision`, `supports_thinking`, `context_window`, `max_output_tokens`. Wins over LiteLLM metadata and the bundled table |
+| `model_fallbacks` | `[]` | ordered fallbacks for the heavy model, tried within the same tick when the primary call fails after the model layer's retries: `{model, model_action_type?}` entries (action defaults to the primary's) or bare model ids; open circuits skipped (ADR-0046) |
+| `light_model_fallbacks` | `[]` | same, for the light gear |
+| `circuit_breaker_failures` | `3` | consecutive failures of one (action, model) before its circuit opens; `0` disables |
+| `circuit_breaker_cooldown_seconds` | `60` | how long an open circuit is skipped before one probe attempt is allowed |
+| `max_turn_cost_usd` | `0` | per-turn cost ceiling (estimated usage × pricing); at/over it the loop ends `budget_exhausted` and one partial-compose answers. `0` disables |
+| `max_conversation_cost_usd` | `0` | conversation cost ceiling; spend accumulates on `conversation.context._cost_usd_total`; a turn starting over it makes no model call and replies `budget_exhausted_text`. `0` disables |
+| `budget_exhausted_text` | (built-in) | reply when the conversation ceiling is reached |
+| `structured_decisions` | `true` | JSON protocol: send the decision schema (`response_format: json_schema`, or a forced decision tool on Anthropic) when the model supports structured output; else JSON mode |
 | `enforce_json_mode` | `true` | JSON protocol only: request `response_format=json_object`. Ignored under `native` and by providers without a JSON mode (Anthropic) |
 | `model_unavailable_text` | (built-in) | reply when the loop's model call fails on two consecutive attempts — the user is told the service is unavailable, never asked to rephrase (`clarify_text` is for silent turns) |
 | `activation_budget` | 24 | max think-act-observe iterations per turn |
+| `grounding_max_deflections` | `2` | how many times a turn may be deflected for an unsupported source claim or an invented specific before the reply passes; `0` disables. The corpus a reply is checked against is the user message, history, this turn's tool results and the SESSION CONTEXT block, so a year or date read from the clock is grounded |
+| `repeat_guard_window` | `8` | how many recent tool calls the repeat guard remembers; a call repeating one in the window (same tool + args) is nudged once and ends the turn on the second repeat; a repeat after an error/timeout gets one retry |
 | `history_limit` | `4` | prior turns fed into the loop prompt (working context). The rolling memory window is the agent-level `interaction_limit`. Loop history omits `[EVENT]` lines (ADR-0041) |
 | `history_statement_max_chars` | `4000` | per-statement cap on each replayed prior utterance/response (history is resent every tick). `0` disables |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
@@ -290,7 +302,7 @@ gated by these knobs.
 | `ack_interval_ms` | `12000` | delay between subsequent acks |
 | `ack_statements` | `["One moment…", "Still working on it…"]` | ordered ack bodies emitted while a slow turn runs |
 | `tool_servers` | `-all` | MCP gateways to pull tools from: `-all` for every enabled `jvagent/mcp` action, or a list of action names. Tools surface as `mcp_<server>__<tool>` |
-| `max_concurrent_tools` | `0` | reserved for future parallel tool batches; loop executes one tool per tick today |
+| `max_concurrent_tools` | `1` | how many tool calls one tick may dispatch concurrently (ADR-0048). `1` (or the legacy `0`) = one call per tick: parallel calls disabled at the provider, extras drained one per tick. Above 1, the native protocol lets the provider return several calls and the guarded siblings run together; reply/respond, `use_skill`, meta and terminal tools always take their own tick |
 
 ### `jvagent/reply` (ReplyAction — Orchestrator egress, ADR-0014)
 

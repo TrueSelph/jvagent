@@ -21,8 +21,12 @@ actions:
   - action: jvagent/orchestrator
     context:
       enabled: true
-      model: gpt-4.1
-      model_action_type: OpenAILanguageModelAction
+      # Runs through the LiteLLM adapter (`jvagent/litellm_lm` below, ADR-0045):
+      # LiteLLM `provider/model` id, credentials from OPENAI_API_KEY, capabilities
+      # and pricing from LiteLLM's metadata. Back to the first-party wire:
+      # `model: gpt-4.1` + `model_action_type: OpenAILanguageModelAction`.
+      model: openai/gpt-4.1
+      model_action_type: LiteLLMLanguageModelAction
       model_temperature: 0.3
       skills_source: both
       skills:
@@ -165,6 +169,18 @@ actions:
       enabled: true
       model: gpt-4o-mini
       temperature: 0.2
+      # transport: litellm     # route via LiteLLM (ADR-0047); JVAGENT_MODEL_TRANSPORT overrides
+
+  # LiteLLM universal adapter (ADR-0045) — the orchestrator's model above.
+  # Requires the extra: pip install "jvagent[litellm]".
+  - action: jvagent/litellm_lm
+    context:
+      enabled: true
+      model: openai/gpt-4.1
+      temperature: 0.3
+      max_tokens: 4096
+      timeout: 120
+      drop_params: true
 
   # ── Vision — interprets attached images (uploads) with its own multimodal
   # model. Consumed by the orchestrator's vision reflex above.

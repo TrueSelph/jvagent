@@ -59,7 +59,12 @@ MODEL_FAULT_ACTIONS = frozenset({MODEL_ERROR_ACTION, MODEL_TRUNCATED_ACTION})
 # Tool-protocol names (``OrchestratorInteractAction.tool_protocol``).
 TOOL_PROTOCOL_NATIVE = "native"
 TOOL_PROTOCOL_JSON = "json"
-TOOL_PROTOCOLS = frozenset({TOOL_PROTOCOL_NATIVE, TOOL_PROTOCOL_JSON})
+# ``auto`` (default, ADR-0045): native unless the model's capabilities say it
+# cannot call tools.
+TOOL_PROTOCOL_AUTO = "auto"
+TOOL_PROTOCOLS = frozenset(
+    {TOOL_PROTOCOL_NATIVE, TOOL_PROTOCOL_JSON, TOOL_PROTOCOL_AUTO}
+)
 
 # Directive-contract trust boundary (AUDIT-orchestrator HIGH).
 # The next_tool / response_directive contract is a private control channel:
@@ -177,6 +182,35 @@ def is_task_completion(data: Any) -> bool:
     if data.get("status") == "completed":
         return True
     return any(bool(data.get(flag)) for flag in _TASK_COMPLETION_FLAGS)
+
+
+# JSON Schema of a loop decision under the JSON protocol (ADR-0046 §structured
+# decisions): sent as OpenAI ``response_format: json_schema`` or as a forced
+# Anthropic tool so the provider validates the shape instead of prompt obedience.
+DECISION_TOOL_NAME = "orchestrator_decision"
+DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["tool", "final"],
+            "description": "Call a tool, or finish the turn.",
+        },
+        "tool": {"type": "string", "description": "Exact tool name when action=tool."},
+        "args": {
+            "type": "object",
+            "description": "Arguments for the tool when action=tool.",
+        },
+        "answer": {
+            "type": "string",
+            "description": "Optional closing text when action=final.",
+        },
+    },
+    "required": ["action"],
+}
+
+# Loop outcome when a cost ceiling ends the turn (ADR-0046 §budget guard).
+BUDGET_EXHAUSTED = "budget_exhausted"
 
 
 # Backward-compatible aliases for tests and internal imports.

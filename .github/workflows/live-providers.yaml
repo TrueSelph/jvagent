@@ -1,0 +1,136 @@
+name: Live providers (nightly)
+
+# Runs the model layer against REAL provider endpoints (costs a few cents per
+# provider per night):
+#   1. re-record the conformance fixtures for the provider and replay the suite
+#      on the fresh recordings (a provider-side change becomes a failing
+#      recorded fixture, not a production incident);
+#   2. drive the real Orchestrator loop through the live smoke scenarios on the
+#      native tool protocol, on both transports (own wire, LiteLLM delegate).
+# A provider whose key secret is absent is skipped. Failures open (or comment
+# on) an issue instead of turning a PR red — nothing here gates merges.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: openai
+            model: gpt-4o-mini
+            key: OPENAI_API_KEY
+          - provider: anthropic
+            model: claude-3-5-haiku-latest
+            key: ANTHROPIC_API_KEY
+          - provider: groq
+            model: llama-3.3-70b-versatile
+            key: GROQ_API_KEY
+          - provider: openrouter
+            model: openai/gpt-4o-mini
+            key: OPENROUTER_API_KEY
+    env:
+      PROVIDER_KEY: ${{ secrets[matrix.key] }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Skip when the provider key is not configured
+        id: gate
+        run: |
+          if [ -z "$PROVIDER_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ matrix.key }} not set — skipping ${{ matrix.provider }}"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install jvagent with test dependencies
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+
+      - name: Record conformance fixtures against the live endpoint
+        if: steps.gate.outputs.skip == 'false'
+        id: record
+        continue-on-error: true
+        env:
+          JVAGENT_CONFORMANCE_RECORD: "1"
+        run: |
+          export ${{ matrix.key }}="$PROVIDER_KEY"
+          pytest tests/action/model/conformance -k "${{ matrix.provider }}-httpx" -q --tb=short
+
+      - name: Replay the suite on the fresh recordings
+        if: steps.gate.outputs.skip == 'false'
+        id: replay
+        continue-on-error: true
+        run: |
+          pytest tests/action/model/conformance -k "${{ matrix.provider }}" -q --tb=short
+
+      - name: Live smoke — own wire
+        if: steps.gate.outputs.skip == 'false'
+        id: smoke_httpx
+        continue-on-error: true
+        run: |
+          export ${{ matrix.key }}="$PROVIDER_KEY"
+          python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}"
+
+      - name: Live smoke — LiteLLM transport
+        if: steps.gate.outputs.skip == 'false'
+        id: smoke_litellm
+        continue-on-error: true
+        run: |
+          export ${{ matrix.key }}="$PROVIDER_KEY"
+          python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}" --transport litellm
+
+      - name: Upload recorded fixtures
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-recordings-${{ matrix.provider }}
+          path: tests/action/model/conformance/fixtures/${{ matrix.provider }}
+          if-no-files-found: ignore
+
+      - name: Open or update the tracking issue on failure
+        if: >
+          steps.gate.outputs.skip == 'false' && (
+            steps.record.outcome == 'failure' ||
+            steps.replay.outcome == 'failure' ||
+            steps.smoke_httpx.outcome == 'failure' ||
+            steps.smoke_litellm.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Nightly live check failing: ${{ matrix.provider }}"
+          body="Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          | step | outcome |
+          |---|---|
+          | record fixtures | ${{ steps.record.outcome }} |
+          | replay | ${{ steps.replay.outcome }} |
+          | smoke (own wire) | ${{ steps.smoke_httpx.outcome }} |
+          | smoke (LiteLLM transport) | ${{ steps.smoke_litellm.outcome }} |
+
+          Recorded fixtures are attached to the run as an artifact."
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label "live-check"
+          fi

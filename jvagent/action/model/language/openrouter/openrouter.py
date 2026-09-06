@@ -71,6 +71,11 @@ class OpenRouterLanguageModelAction(OpenAILanguageModelAction):
     # Lifecycle Hooks
     # ============================================================================
 
+    litellm_provider_prefix = "openrouter"
+
+    def litellm_call_config(self) -> Dict[str, Any]:
+        return {"api_key": self._http_bearer_token()}
+
     def _http_bearer_token(self) -> str:
         return self.api_key_from_context("OPENROUTER_API_KEY", "OPENAI_API_KEY")
 

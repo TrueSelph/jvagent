@@ -6,6 +6,7 @@ replacing the legacy monolithic interact endpoint.
 
 import asyncio
 import logging
+from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from fastapi import Request
@@ -54,6 +55,21 @@ _STREAM_CLIENT_ERROR = (
     "Something went wrong while processing your request. "
     "If you need help, contact support with the request_id from this response."
 )
+
+
+class InteractProcessingError(JVSpatialAPIException):
+    """A server-side fault while processing a turn (audit F3).
+
+    Raised for any unexpected exception in the interact path so the client sees
+    a **500** with a client-safe message and the ``request_id`` to quote — not a
+    422 ``ValidationError`` that blames the request. Typed API errors
+    (404/422/429/…) and ``ValueError`` (a genuine bad request) keep their own
+    statuses.
+    """
+
+    status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+    error_code = "interact_processing_error"
+    default_message = _STREAM_CLIENT_ERROR
 
 
 def _sse_error_event(
@@ -852,8 +868,9 @@ async def interact_endpoint(
                 profile.request_id,
                 exc_info=True,
             )
-            raise ValidationError(
-                message=_STREAM_CLIENT_ERROR,
+            # A server fault is a 5xx, not a validation error (audit F3): the
+            # client did nothing wrong and should retry / quote the request_id.
+            raise InteractProcessingError(
                 details={"request_id": profile.request_id},
             ) from e
         finally:

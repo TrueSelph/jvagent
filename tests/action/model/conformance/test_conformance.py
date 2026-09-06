@@ -21,13 +21,14 @@ import pytest
 from jvagent.action.model.contract import FinishReason, ModelRequest, ModelResponse
 from tests.action.model.conformance._transport import save_recorded
 from tests.action.model.conformance.authored import SCENARIOS
-from tests.action.model.conformance.conftest import PROVIDERS, make_case
+from tests.action.model.conformance.conftest import PROVIDERS, TRANSPORTS, make_case
 
 pytestmark = pytest.mark.asyncio
 
 _CASES = [
-    pytest.param(provider, scenario, id=f"{provider}-{scenario}")
+    pytest.param(provider, scenario, transport, id=f"{provider}-{transport}-{scenario}")
     for provider in PROVIDERS
+    for transport in (TRANSPORTS if provider != "litellm" else ("httpx",))
     for scenario in SCENARIOS
 ]
 
@@ -64,20 +65,30 @@ async def _run(case, scenario: Dict[str, Any]) -> ModelResponse:
     return await case.action.complete(request)
 
 
-@pytest.mark.parametrize("provider,scenario_name", _CASES)
-async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
+@pytest.mark.parametrize("provider,scenario_name,transport", _CASES)
+async def test_adapter_conforms(
+    provider: str, scenario_name: str, transport: str, monkeypatch
+):
     scenario = SCENARIOS[scenario_name]
     expect = scenario["expect"]
-    case = make_case(provider, scenario_name, monkeypatch)
+    case = make_case(provider, scenario_name, monkeypatch, transport=transport)
     if case is None:
         pytest.skip(f"recording requested but no key for {provider}")
+    # Under LiteLLM delegation the wire is LiteLLM's (OpenAI-shaped) whatever the
+    # provider: the tool-result round-trip and cache accounting read that shape.
+    wire_provider = provider if transport == "httpx" else "litellm"
 
     try:
         if expect.get("error"):
             with pytest.raises(Exception) as excinfo:
                 await _run(case, scenario)
             if expect["error"] == "HTTPStatusError":
-                assert isinstance(excinfo.value, httpx.HTTPStatusError)
+                # httpx raises HTTPStatusError; SDK-style adapters (LiteLLM)
+                # raise their own exception carrying the status code.
+                exc = excinfo.value
+                assert isinstance(exc, httpx.HTTPStatusError) or (
+                    getattr(exc, "status_code", None) == 500
+                ), type(exc)
             response = None
         else:
             response = await _run(case, scenario)
@@ -86,7 +97,9 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
             fixture = dict(case.fixture)
             fixture["responses"] = case.transport.captured
             save_recorded(provider, scenario_name, fixture)
-        await case.action._http_client.aclose()
+        client = getattr(case.action, "_http_client", None)
+        if client is not None:
+            await client.aclose()
 
     if response is None:
         return
@@ -114,12 +127,16 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
         )
         assert response.usage.estimated is False
     if "cached_read_tokens" in expect:
-        wire = "openai" if provider in ("groq", "openrouter") else provider
+        wire = (
+            "openai"
+            if wire_provider in ("groq", "openrouter", "litellm")
+            else wire_provider
+        )
         assert response.usage.cached_read_tokens == expect["cached_read_tokens"][wire]
         assert response.usage.cached_read_tokens <= response.usage.prompt_tokens
     if "request_has_tool_result" in expect:
         assert _has_tool_result(
-            provider, case.request_json(), expect["request_has_tool_result"]
+            wire_provider, case.request_json(), expect["request_has_tool_result"]
         )
     if "requests" in expect:
         assert case.request_count == expect["requests"]
@@ -127,10 +144,18 @@ async def test_adapter_conforms(provider: str, scenario_name: str, monkeypatch):
 
 async def test_scenario_matrix_is_complete():
     """Every provider must have an authored body for every scenario, so a new
-    scenario cannot silently skip a provider."""
+    scenario cannot silently skip a provider — and the matrix must carry the
+    columns the docs claim (the LiteLLM adapter, both transports)."""
     from tests.action.model.conformance.authored import BODIES, WIRE_FOR
 
     for provider in PROVIDERS:
         wire = WIRE_FOR[provider]
         missing = sorted(set(SCENARIOS) - set(BODIES[wire]))
         assert not missing, f"{provider} lacks bodies for {missing}"
+    assert "litellm" in PROVIDERS, "the LiteLLM adapter column is part of the matrix"
+    assert set(TRANSPORTS) == {"httpx", "litellm"}
+    first_party = [p for p in PROVIDERS if p != "litellm"]
+    ids = {c.id for c in _CASES}
+    for provider in first_party:
+        for transport in TRANSPORTS:
+            assert f"{provider}-{transport}-text" in ids, (provider, transport)
