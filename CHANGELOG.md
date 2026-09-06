@@ -8,6 +8,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **The grounding guard no longer contradicts the session clock.** A reply
+  read straight from the SESSION CONTEXT block (ADR-0042, "authoritative for
+  this turn") was deflected as an invented year — twice per time/date question
+  before the model gave in and called the datetime tool, half the cost of the
+  turn (found running the example agent live). The session block is now part of
+  the grounding corpus (`_grounding_corpus`), and the block names the zone both
+  ways (`America/New_York, EDT`) so abbreviations are grounded too.
+
 ### Changed
 
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
