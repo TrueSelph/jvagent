@@ -472,6 +472,16 @@ class OrchestratorInteractAction(
             "mode when unsupported."
         ),
     )
+    repeat_guard_window: int = attribute(
+        default=8,
+        description=(
+            "How many recent tool calls the repeat guard remembers. A call that "
+            "repeats one already in the window (same tool, same arguments) is "
+            "nudged once and ends the turn on the second repeat — so an A/B/A/B "
+            "oscillation is caught, not only back-to-back repeats. A repeat of a "
+            "call that errored or timed out is allowed one retry. Minimum 2."
+        ),
+    )
     history_limit: int = attribute(default=4)
     history_statement_max_chars: int = attribute(
         default=4000,
@@ -844,8 +854,18 @@ class OrchestratorInteractAction(
         "enabled MCPAction, or a finite list of action names.",
     )
     max_concurrent_tools: int = attribute(
-        default=0,
-        description="Bound on concurrent tool execution; 0 = unbounded.",
+        default=1,
+        description=(
+            "How many tool calls one tick may dispatch concurrently (ADR-0048). "
+            "1 keeps one call per tick: parallel tool calls are disabled at the "
+            "provider and any extras it returns anyway are drained one per tick. "
+            "Above 1, the native protocol lets the provider return several calls "
+            "at once and the sibling calls that pass the same pre-dispatch guards "
+            "run together in that tick (substantive, non-terminal tools only — "
+            "reply/respond, use_skill and IA tools always take their own tick). "
+            "0 is read as 1 (the key was reserved before ADR-0048 with '0 = "
+            "unbounded' semantics that were never implemented)."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -2432,6 +2452,7 @@ class OrchestratorInteractAction(
         activated: List[str],
         ticks_light: int = 0,
         ticks_heavy: int = 0,
+        parallel_batches: int = 0,
         loop_duration_ms: Optional[int] = None,
         tool_timings: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
@@ -2465,6 +2486,7 @@ class OrchestratorInteractAction(
             "gearing": self._gearing_on(),
             "ticks_light": int(ticks_light),
             "ticks_heavy": int(ticks_heavy),
+            "parallel_batches": int(parallel_batches),
             "escalated": bool(ticks_heavy) and self._gearing_on(),
         }
         if loop_duration_ms is not None:
@@ -3236,6 +3258,14 @@ class OrchestratorInteractAction(
             except (KeyError, IndexError, ValueError):
                 return template
 
+    def _max_concurrent_tools(self) -> int:
+        """Effective batch width for one tick: ``max_concurrent_tools`` clamped to
+        at least 1 (``0``, the pre-ADR-0048 reserved value, means single)."""
+        try:
+            return max(1, int(self.max_concurrent_tools or 1))
+        except (TypeError, ValueError):
+            return 1
+
     def _protocol(self) -> str:
         """The effective decision protocol for this turn.
 
@@ -3353,7 +3383,11 @@ class OrchestratorInteractAction(
             template = ORCHESTRATOR_SYSTEM_PROMPT
         protocol = self._protocol()
         if not protocol_section:
-            protocol_section = render_protocol_section(protocol, loop_protocol_extra)
+            protocol_section = render_protocol_section(
+                protocol,
+                loop_protocol_extra,
+                parallel_width=self._max_concurrent_tools(),
+            )
         inline_extra = "{extra_section}" in template
         inline_session = "{session_context_section}" in template
         base = self._fmt(
@@ -4092,9 +4126,11 @@ class OrchestratorInteractAction(
             # Native protocol (ADR-0044): the provider carries the tools and the
             # decision. Steps so far replay as assistant tool_calls + tool
             # results; the finalize tick offers no tools so only text can come
-            # back. One call per tick is an invariant (SPEC §3.3), so parallel
-            # tool calls are disabled at the provider and any extra calls a
-            # provider returns anyway are queued for the following ticks.
+            # back. One MODEL call per tick is the invariant (SPEC §3.3). By
+            # default parallel tool calls are disabled at the provider and any
+            # extra calls it returns anyway are queued for the following ticks;
+            # with ``max_concurrent_tools`` > 1 the provider may return several
+            # and the loop dispatches the guarded siblings together (ADR-0048).
             if tools and not finalize:
                 tool_defs, alias_map = native_tool_definitions(list(tools))
                 if tool_defs:
@@ -4102,7 +4138,10 @@ class OrchestratorInteractAction(
                     kwargs["tool_choice"] = "auto"
                     # Only ask for single calls where the provider knows the
                     # parameter; one that does not may reject the request.
-                    if caps.supports_parallel_tools is not False:
+                    if (
+                        caps.supports_parallel_tools is not False
+                        and self._max_concurrent_tools() <= 1
+                    ):
                         kwargs["parallel_tool_calls"] = False
         else:
             structured = self._structured_decision_mode(model_action, caps)

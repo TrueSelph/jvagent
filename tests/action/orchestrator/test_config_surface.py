@@ -1209,9 +1209,15 @@ async def test_stream_internal_progress_emits_during_execute(
     assert emitted  # at least one progress line for the tool tick
 
 
-async def test_max_concurrent_tools_default_is_unbounded():
+async def test_max_concurrent_tools_defaults_to_one_call_per_tick():
+    """ADR-0048: the key used to be reserved (0 = "unbounded", never read).
+    It now defaults to 1 — one tool call per tick — and the legacy 0 reads as
+    1 so a persisted store never wakes up unbounded."""
     ex = OrchestratorInteractAction()
-    assert ex.max_concurrent_tools == 0
+    assert ex.max_concurrent_tools == 1
+    assert ex._max_concurrent_tools() == 1
+    ex.max_concurrent_tools = 0
+    assert ex._max_concurrent_tools() == 1
 
 
 # --- downstream compatibility ------------------------------------------------

@@ -110,7 +110,7 @@ In both modes a flow's only orchestrator-facing modification is being exposed vi
 
 **Invariants:**
 
-1. **One model call per tick**; the loop is bounded by an activation budget (each tick is at most one model round-trip).
+1. **One model call per tick**; the loop is bounded by an activation budget (each tick is at most one model round-trip). A tick dispatches one tool call by default; with `max_concurrent_tools` > 1 it may dispatch the *sibling* calls that single model response returned together, after each has passed the pre-dispatch guards ([ADR-0048](adr/0048-parallel-tool-dispatch.md)). Egress, `use_skill` and terminal tools always take their own tick.
 2. **Flow continuation mode is configurable** via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)). Active-flow detection (`active_flow_owner`) is always a deterministic read of persisted `TaskStore` state (no model).
 3. **Turn-lock is deterministic when `lock_active_flow=True`** (default — the loop restricts its callable surface to the active flow's IA tool and dispatches it with no model round-trip) and **emergent/model-mediated when `False`** (the flow's tool is surfaced and the model decides whether to continue or detour). In both modes the control-task persists across turns and is cleared only by the flow's own session logic.
 4. **Routing is tool selection.** There is no separate router or capability registry; IAs (as tools forwarding to `execute(visitor)`), persona `reply`/`respond`, core services, and skills are all tools. An IA's tool *description* is built from its manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent.
