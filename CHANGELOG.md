@@ -19,8 +19,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   the activation telemetry. Above 1, `parallel_tool_calls=False` is no longer
   sent to the provider and the loop prompt allows independent calls together.
 
+- **Transport delegation (ADR-0047, remediation Phase 4).** Every language-model
+  action has `transport: httpx | litellm` (default `httpx`; `JVAGENT_MODEL_TRANSPORT`
+  overrides process-wide). Under `litellm` the action delegates to the LiteLLM
+  adapter with its own model, credentials and endpoint (`litellm_model_id()`,
+  `litellm_call_config()` per provider) and relabels the result — same class,
+  same `agent.yaml`, same observability. The conformance matrix runs every
+  first-party adapter under both transports.
+- **Nightly live-provider check** (`.github/workflows/live-providers.yaml`):
+  re-records conformance fixtures from real endpoints, replays the suite, and
+  runs `scripts/live_smoke.py` (real Orchestrator loop, three CUCS smoke
+  scenarios, both transports) per provider; skipped without a key secret;
+  failures open/comment a `live-check` issue. `jvagent/testing/live_smoke.py`
+  builds a graph-less Orchestrator around a real model action.
+
 ### Changed
 
+- **`POST /agents/{id}/interact` reports server faults as 500** (`interact_processing_error`, with `request_id`) instead of a 422 `ValidationError` (audit F3). Bad requests (`ValueError`) and typed API errors keep their statuses.
 - **Orchestrator repeat guard remembers a window (audit M7).** The guard now
   tracks the last `repeat_guard_window` (default 8) tool calls, so an A/B/A/B
   oscillation is nudged and then stopped like a back-to-back repeat; a repeat
@@ -35,21 +50,43 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   now ratchets every step's size and asserts the steps touch exactly the
   declared state.
 
-### Added
+- `BaseModelAction._is_retryable_exception` treats any exception carrying an
+  HTTP `status_code` attribute (LiteLLM / OpenAI SDK errors) like an httpx
+  status error for retry purposes.
 
-- **Transport delegation (ADR-0047, remediation Phase 4).** Every language-model
-  action has `transport: httpx | litellm` (default `httpx`; `JVAGENT_MODEL_TRANSPORT`
-  overrides process-wide). Under `litellm` the action delegates to the LiteLLM
-  adapter with its own model, credentials and endpoint (`litellm_model_id()`,
-  `litellm_call_config()` per provider) and relabels the result — same class,
-  same `agent.yaml`, same observability. The conformance matrix runs every
-  first-party adapter under both transports.
-- **Nightly live-provider check** (`.github/workflows/live-providers.yaml`):
-  re-records conformance fixtures from real endpoints, replays the suite, and
-  runs `scripts/live_smoke.py` (real Orchestrator loop, three CUCS smoke
-  scenarios, both transports) per provider; skipped without a key secret;
-  failures open/comment a `live-check` issue. `jvagent/testing/live_smoke.py`
-  builds a graph-less Orchestrator around a real model action.
+- **Normalised model contract (remediation Phase 1).** `jvagent/action/model/contract.py`:
+  `ModelRequest`, `ModelResponse`, `ToolCall`, `Usage`, `FinishReason`,
+  `ModelCapabilities`, `Pricing`, `ModelAdapter`. `LanguageModelAction.complete()`
+  runs a request and returns the normalised response; `ModelActionResult.to_response()`
+  converts legacy results. Finish reasons, tool-call arguments and cache usage
+  keys are unified across OpenAI, Anthropic and Ollama. The Orchestrator reads
+  only the contract. `capabilities()` / `pricing()` declared (unknown / bundled
+  table until Phase 2).
+- **Provider conformance suite** `tests/action/model/conformance/`: every
+  adapter × twelve scenarios (text, tool call, parallel calls, tool-result
+  round-trip, streamed text, streamed tool call, truncation, cached usage,
+  thinking, 429 retry, 5xx, malformed body) against replayed fixtures, with
+  `JVAGENT_CONFORMANCE_RECORD=1` to re-record from real endpoints.
+
+- **Orchestrator `tool_call_timeout` default is now 120 s** (was `0` =
+  unbounded): a hung tool returns a timeout observation instead of holding the
+  turn and the conversation lock indefinitely. `0` still disables; the locked
+  IA dispatch now honours the channel override too.
+- **Orchestrator no longer imports the interview package.** `continuation.py`
+  soft-abandon, `_append_directive_hint`, the prerequisite-push session clear
+  and completion/activation-envelope detection are generic (hooks + registered
+  vocabulary). `tests/action/orchestrator/test_no_interview_coupling.py` now
+  fails on any interview import, `InterviewAction` lookup or envelope literal.
+- `OpenAILanguageModelAction` passes `tool_choice` / `parallel_tool_calls`
+  through; `AnthropicLanguageModelAction` maps them to `tool_choice` /
+  `disable_parallel_tool_use`.
+- **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
+  Removed `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` and
+  `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`. Lambda cold starts and merge redeploys
+  always POST jvconnect `webhook/register`; same agent `callback_url` is a
+  Meta no-op on jvconnect (returns existing secret). Serverless register
+  timeout default raised from 5s to 15s; register is still awaited in the
+  uvicorn lifespan hook on Lambda.
 
 ### Fixed
 
@@ -98,28 +135,6 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - Conformance suite covers the LiteLLM adapter (same twelve scenarios, fed the
   OpenAI wire through its `_acompletion` seam).
 
-### Changed
-
-- `BaseModelAction._is_retryable_exception` treats any exception carrying an
-  HTTP `status_code` attribute (LiteLLM / OpenAI SDK errors) like an httpx
-  status error for retry purposes.
-
-- **Normalised model contract (remediation Phase 1).** `jvagent/action/model/contract.py`:
-  `ModelRequest`, `ModelResponse`, `ToolCall`, `Usage`, `FinishReason`,
-  `ModelCapabilities`, `Pricing`, `ModelAdapter`. `LanguageModelAction.complete()`
-  runs a request and returns the normalised response; `ModelActionResult.to_response()`
-  converts legacy results. Finish reasons, tool-call arguments and cache usage
-  keys are unified across OpenAI, Anthropic and Ollama. The Orchestrator reads
-  only the contract. `capabilities()` / `pricing()` declared (unknown / bundled
-  table until Phase 2).
-- **Provider conformance suite** `tests/action/model/conformance/`: every
-  adapter × twelve scenarios (text, tool call, parallel calls, tool-result
-  round-trip, streamed text, streamed tool call, truncation, cached usage,
-  thinking, 429 retry, 5xx, malformed body) against replayed fixtures, with
-  `JVAGENT_CONFORMANCE_RECORD=1` to re-record from real endpoints.
-
-### Fixed
-
 - **Anthropic non-streaming dropped `thinking` blocks** unless the call itself
   passed a `thinking` config; reasoning enabled server-side or via the generic
   passthrough was lost. Found by the conformance suite.
@@ -149,30 +164,6 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 - **Runbook: multi-container bootstrap** — ``.planning/runbooks/multi-container-bootstrap.md`` (Lambda/replica Redis lease, heal steps, checklist).
 - **`jvagent/core/upsert.py`** — ADR-0033 raw-record identity lookups for actions.
 - **`jvagent/action/registration.py`** — ``resolve_action_for_registration`` used by ``register_action``.
-
-### Changed
-
-- **Orchestrator `tool_call_timeout` default is now 120 s** (was `0` =
-  unbounded): a hung tool returns a timeout observation instead of holding the
-  turn and the conversation lock indefinitely. `0` still disables; the locked
-  IA dispatch now honours the channel override too.
-- **Orchestrator no longer imports the interview package.** `continuation.py`
-  soft-abandon, `_append_directive_hint`, the prerequisite-push session clear
-  and completion/activation-envelope detection are generic (hooks + registered
-  vocabulary). `tests/action/orchestrator/test_no_interview_coupling.py` now
-  fails on any interview import, `InterviewAction` lookup or envelope literal.
-- `OpenAILanguageModelAction` passes `tool_choice` / `parallel_tool_calls`
-  through; `AnthropicLanguageModelAction` maps them to `tool_choice` /
-  `disable_parallel_tool_use`.
-- **WhatsApp Meta (jvconnect): always register webhook on startup and reload.**
-  Removed `WHATSAPP_SKIP_STARTUP_WEBHOOK_REGISTRATION` and
-  `WHATSAPP_RELOAD_WEBHOOK_SUBSCRIBE`. Lambda cold starts and merge redeploys
-  always POST jvconnect `webhook/register`; same agent `callback_url` is a
-  Meta no-op on jvconnect (returns existing secret). Serverless register
-  timeout default raised from 5s to 15s; register is still awaited in the
-  uvicorn lifespan hook on Lambda.
-
-### Fixed
 
 - **2026-09-01 stability pass:** HTTP `/interact` acquires conversation turn lock after bootstrap; graph repair releases in-memory reattach context on stall/restart/completion; Facebook `get_mime_type` blocks SSRF targets before outbound HEAD; optional `JVAGENT_REQUIRE_DISTRIBUTED_CONVERSATION_LOCK` fails fast in serverless without Redis/DynamoDB.
 - **2026-09-01 code review (CRITICAL/HIGH/MEDIUM):** Streaming UTF-8 incremental decode; separate interact action cache key; walker spawn finalize; orchestrator `ContextVar` prompt cache and type-safe `_normalize`; Facebook verify token, page-id filter, attachment CDN allowlist; path-safe scaffold/CLI; graph repair reattach serialization and edge-sync paging; MCP streamable-HTTP client; interview vault namespacing and selective context clear; plus orchestrator continuation, memory deferred-save flush, per-loop locks, SSE dedup, WhatsApp dedup, and related HIGH/MEDIUM items from `.planning/reviews/2026-09-01-full-code-review.md`.

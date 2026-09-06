@@ -122,7 +122,7 @@ predictability, **L** = hygiene. "Fixed" marks items addressed in this pass
 |---|---|---|---|---|
 | F1 | H | `orchestrator_interact_action.py` attrs `tool_call_timeout=0.0`, `max_duration_seconds=0.0` | No default bound on a tool call or on the turn. A hung MCP/HTTP tool blocks the turn and holds the conversation mutation lock. | **Fixed** — `tool_call_timeout` default 120 s (0 still disables). `max_duration_seconds` left at 0 (documented as an operator choice; the tool bound plus tick budget now bound the turn). |
 | F2 | M | `loop.py` (`nd_streak`) | Three unparseable decisions end the turn with `clarify_text` even when tools already ran — partial-compose only runs when `observations` is non-empty, fine; but the text blames the user. | **Fixed** via M2 (separate model-failure copy). |
-| F3 | M | `interact/endpoints.py:848` | Any exception in the walker path returns HTTP 422 `ValidationError` with generic text — a server fault is reported as a client validation error. | Open — recommend a 5xx typed error; out of orchestrator scope. |
+| F3 | M | `interact/endpoints.py:848` | Any exception in the walker path returns HTTP 422 `ValidationError` with generic text — a server fault is reported as a client validation error. | **Fixed** (follow-up PR) — `InteractProcessingError` (500, `interact_processing_error`, carries `request_id`); `ValueError` stays 422. |
 | F4 | L | `loop.py` locked dispatch | Locked IA dispatch honours `tool_call_timeout` but not the channel override (`_channel_cfg`). | **Fixed**. |
 | F5 | L | `egress.py:_egress` | Fallback `clarify_text` is used for *every* silent ending; no distinction for `model_error`. | **Fixed** via M2. |
 
@@ -183,7 +183,7 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
 2. **Parallel tool calls.** The native protocol records grouped calls; the
    loop dispatches sequentially. Concurrent dispatch for non-terminal,
    non-side-effecting tools (`max_concurrent_tools`) is a contained follow-up.
-3. **Typed HTTP faults** at `/interact` (F3).
+3. ~~**Typed HTTP faults** at `/interact`~~ Done (`InteractProcessingError`).
 4. ~~**Repeat-guard window**~~ Done (`repeat_guard_window`).
 5. **Live CUCS runs** against real providers for the native protocol (the
    `LiveScenarioRunner` supports this; the suite here is canned). **Status: done — ADR-0048, `max_concurrent_tools` (default `1`, so behaviour is unchanged until an operator opts in).**
