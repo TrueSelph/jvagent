@@ -94,10 +94,11 @@ actions:
       # An unfinished plan is re-surfaced next turn, so an interrupted multi-step
       # turn resumes instead of re-planning. Off by default (zero cost); on here
       # to exercise the feature.
-      # NOTE: planning forces the HEAVY gear from tick 0 (the model must reason
-      # about `update_plan`), so while this is on the `light_model` above is never
-      # used — a live run of this agent showed ticks_light=0 on every turn. Turn
-      # planning off to get light/heavy gearing back, or drop `light_model`.
+      # Gearing with planning on (ADR-0050): a fresh turn starts on the LIGHT
+      # model and escalates on the first substantive tool call or when a plan
+      # from a prior turn is open. `planning_heavy_first_tick: true` restores
+      # heavy-from-tick-0 (which made the light model dead config — a live run
+      # showed ticks_light=0 on every turn).
       planning: true
 
       # Vision (ADR-0021): a pre-loop reflex interprets attached images via the

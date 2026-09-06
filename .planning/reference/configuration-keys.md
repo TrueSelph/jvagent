@@ -194,6 +194,7 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `history_statement_max_chars` | `4000` | per-statement cap on each replayed prior utterance/response (history is resent every tick). `0` disables |
 | `lock_active_flow` | `true` | deterministic turn-lock to an active flow's IA; `false` = model-mediated continuation (ADR-0013) |
 | `planning` | `false` | surface the `update_plan` tool so the model records a multi-step plan that persists across turns (`AGENTIC_LOOP` task on the `TaskStore`) and resumes an interrupted turn; off = zero cost (ADR-0019) |
+| `planning_heavy_first_tick` | `false` | with planning on, run the first tick of every turn on the heavy model (pre-ADR-0050 behaviour). Default: a fresh turn starts light and escalates on the first substantive tool call or when a prior plan is open |
 | `proactive_tasks_enabled` | `true` | surface the `queue_task` tool for enqueueing `PROACTIVE` tasks (ADR-0022) |
 | `default_max_attempts` | `3` | default retry ceiling for `queue_task` when `max_attempts` is omitted |
 | `planning_prompt` | (built-in) | override the gated nudge appended when `planning` is on |
@@ -242,7 +243,7 @@ from these keys.)
 
 ### Model gearing (ADR-0016 / ADR-0041)
 
-Set `light_model` to engage gearing; empty = single-model (current `model*` used everywhere). Escalation policy is **fixed in core** (ADR-0041): skill active, `planning: true`, or ≥1 substantive tool → heavy; finalize keeps `last_gear`. No escalate_* / sticky_* attributes.
+Set `light_model` to engage gearing; empty = single-model (current `model*` used everywhere). Escalation policy is **fixed in core** (ADR-0041, amended by ADR-0050): skill active, `planning: true` with an open plan from a prior turn (or `planning_heavy_first_tick: true`), or ≥1 substantive tool → heavy; finalize keeps `last_gear`. No escalate_* / sticky_* attributes.
 
 | Key | Default | Effect |
 |---|---|---|

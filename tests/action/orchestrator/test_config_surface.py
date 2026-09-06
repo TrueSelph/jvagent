@@ -361,7 +361,14 @@ async def test_select_gear_logic():
     assert ex._select_gear(1, False) == "heavy"  # after first substantive tool
     assert ex._select_gear(0, True) == "heavy"  # skill active
     ex.planning = True
-    assert ex._select_gear(0, False) == "heavy"  # planning on → heavy tick 0
+    # ADR-0050: planning alone no longer pins tick 0 to heavy — a fresh turn
+    # starts light; an OPEN plan (resumed from a prior turn) or the opt-in knob
+    # escalates from tick 0.
+    assert ex._select_gear(0, False) == "light"
+    assert ex._select_gear(0, False, plan_open=True) == "heavy"
+    ex.planning_heavy_first_tick = True
+    assert ex._select_gear(0, False) == "heavy"  # pre-0050 behaviour, opt-in
+    ex.planning_heavy_first_tick = False
     ex.planning = False
     assert ex._select_gear(0, False) == "light"
 

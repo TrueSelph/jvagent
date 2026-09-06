@@ -8,6 +8,28 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Merge-mode sync reports what it kept.** `jvagent <app> --update` (merge)
+  preserves persisted action values by design; it now logs a warning per
+  action listing the `agent.yaml` keys whose values differ and were not
+  applied, with the `--update --source` hint — an edited model slot synced in
+  merge mode no longer looks applied when it is not.
+- **`curate_walk_path` no longer logs "caller-supplied action(s) were not in
+  the queue" every turn.** The orchestrator only hands the walker actions that
+  are still queued (itself and already-run `always_execute` IAs were never
+  there).
+
+- **Planning no longer pins the heavy gear at tick 0 (ADR-0050).** With
+  `planning: true` a fresh turn now starts on the light model and escalates on
+  the first substantive tool call or when a plan from a prior turn is open; the
+  old behaviour made the light model dead config for every planning agent
+  (live: `ticks_light` was 0 on all turns). `planning_heavy_first_tick: true`
+  restores it.
+- **Guard steps are attributable.** Each `(guard)` observation carries the
+  guard that produced it (`grounding:<param>` / `chain` / `repeat` / `plan`)
+  and the `orchestrator_activation` event lists them in order as `guards`.
+
 ### Added
 
 - **Prompt-cache telemetry and layout (ADR-0049).** Cached prompt tokens now
