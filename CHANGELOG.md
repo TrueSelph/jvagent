@@ -35,6 +35,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
+  body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
+  `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →
+  `_after_dispatch`), plus `_after_loop` and `_close_turn`; each returns a
+  `TickOutcome` (continue / break / return). Behaviour unchanged (the full
+  orchestrator suite is the net); `tests/action/orchestrator/test_turn_boundary.py`
+  now ratchets every step's size and asserts the steps touch exactly the
+  declared state.
+
 - **`POST /agents/{id}/interact` reports server faults as 500** (`interact_processing_error`, with `request_id`) instead of a 422 `ValidationError` (audit F3). Bad requests (`ValueError`) and typed API errors keep their statuses.
 - **Orchestrator repeat guard remembers a window (audit M7).** The guard now
   tracks the last `repeat_guard_window` (default 8) tool calls, so an A/B/A/B
@@ -89,6 +98,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   uvicorn lifespan hook on Lambda.
 
 ### Fixed
+
+- **Native protocol: JSON-era prompts persisted with a normalised character
+  were not recognised as the default**, so the JSON contract stayed in force
+  under native tools and `{"action":"reply",...}` reached users as text (found
+  running the example agent live). Legacy-default detection now compares a
+  normalised form (unicode dashes/quotes, whitespace); an operator override
+  that still mentions the JSON contract is honoured but warned about. Safety
+  net: under the native protocol, model text that parses as a decision object
+  is treated as a decision, never delivered as prose.
 
 - **Conformance matrix was missing the LiteLLM adapter column on `dev`.** The
   Phase 2 change that added the `litellm` provider (and its fixture-backed
