@@ -184,7 +184,9 @@ actions:
       # "One moment…" instead of dead air. Fast tools still surface nothing
       # (the ack only fires if the turn outlives first_emit_timeout_ms).
       ack_on_first_tool_call: true
-      max_concurrent_tools: 0             # 0 = unbounded
+      max_concurrent_tools: 1             # 1 = one tool call per tick; >1 lets a
+                                          # tick run that many independent calls
+                                          # the model issued together (ADR-0048)
 
       # -- Voice-call loop profile: WhatsApp calls run a tighter/faster loop
       # than chat (shorter history prompt, tick + wall-clock caps, per-tool

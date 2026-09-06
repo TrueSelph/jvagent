@@ -114,7 +114,7 @@ predictability, **L** = hygiene. "Fixed" marks items addressed in this pass
 | M4 | M | `anthropic.py:_build_payload` | `enforce_json_mode` is silently ignored on Anthropic (no `response_format` equivalent) — the JSON protocol relies on prompt obedience there. | Mitigated by M1 (native protocol needs no JSON mode). Documented. |
 | M5 | M | `orchestrator_interact_action.py:3287-3309` | Loop history is fetched with `max_statement_length=None` — an unbounded prior reply is resent on every tick. | **Fixed** — bounded by `history_statement_max_chars` (default 4000). |
 | M6 | M | `catalog.py:391-396` (`use_skill` description), `core_tools.py` (`update_plan`, `queue_task` descriptions) | Tool descriptions embed JSON call examples and prose argument lists because there was no schema channel. | **Fixed** — schemas added; descriptions trimmed to capability text. |
-| M7 | L | `loop.py` repeat guard | Compares only the last signature — A/B/A/B oscillation is not caught (2026-09-01 LOW, still open). | Open; bounded by the budget. |
+| M7 | L | `loop.py` repeat guard | Compares only the last signature — A/B/A/B oscillation is not caught (2026-09-01 LOW, still open). | **Fixed** (follow-up PR) — windowed guard (`repeat_guard_window`, default 8) over recent call signatures with per-call errored flag. |
 
 ### 3.2 Failsafes
 
@@ -122,7 +122,7 @@ predictability, **L** = hygiene. "Fixed" marks items addressed in this pass
 |---|---|---|---|---|
 | F1 | H | `orchestrator_interact_action.py` attrs `tool_call_timeout=0.0`, `max_duration_seconds=0.0` | No default bound on a tool call or on the turn. A hung MCP/HTTP tool blocks the turn and holds the conversation mutation lock. | **Fixed** — `tool_call_timeout` default 120 s (0 still disables). `max_duration_seconds` left at 0 (documented as an operator choice; the tool bound plus tick budget now bound the turn). |
 | F2 | M | `loop.py` (`nd_streak`) | Three unparseable decisions end the turn with `clarify_text` even when tools already ran — partial-compose only runs when `observations` is non-empty, fine; but the text blames the user. | **Fixed** via M2 (separate model-failure copy). |
-| F3 | M | `interact/endpoints.py:848` | Any exception in the walker path returns HTTP 422 `ValidationError` with generic text — a server fault is reported as a client validation error. | Open — recommend a 5xx typed error; out of orchestrator scope. |
+| F3 | M | `interact/endpoints.py:848` | Any exception in the walker path returns HTTP 422 `ValidationError` with generic text — a server fault is reported as a client validation error. | **Fixed** (follow-up PR) — `InteractProcessingError` (500, `interact_processing_error`, carries `request_id`); `ValueError` stays 422. |
 | F4 | L | `loop.py` locked dispatch | Locked IA dispatch honours `tool_call_timeout` but not the channel override (`_channel_cfg`). | **Fixed**. |
 | F5 | L | `egress.py:_egress` | Fallback `clarify_text` is used for *every* silent ending; no distinction for `model_error`. | **Fixed** via M2. |
 
@@ -183,9 +183,9 @@ Verification: `pytest tests/` (see CHANGELOG for counts) and
 2. **Parallel tool calls.** The native protocol records grouped calls; the
    loop dispatches sequentially. Concurrent dispatch for non-terminal,
    non-side-effecting tools (`max_concurrent_tools`) is a contained follow-up.
-3. **Typed HTTP faults** at `/interact` (F3).
-4. **Repeat-guard window** of the last N signatures (M7).
+3. ~~**Typed HTTP faults** at `/interact`~~ Done (`InteractProcessingError`).
+4. ~~**Repeat-guard window**~~ Done (`repeat_guard_window`).
 5. **Live CUCS runs** against real providers for the native protocol (the
-   `LiveScenarioRunner` supports this; the suite here is canned).
+   `LiveScenarioRunner` supports this; the suite here is canned). **Status: done — ADR-0048, `max_concurrent_tools` (default `1`, so behaviour is unchanged until an operator opts in).**
 
 Model-integration remediation plan (contract + LiteLLM adapter + conformance + resilience policy): [`../specs/2026-09-05-model-integration-remediation.md`](../specs/2026-09-05-model-integration-remediation.md).

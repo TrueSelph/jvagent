@@ -110,6 +110,7 @@ These are commonly used by `jvagent` and should be configured in `jvagent` deplo
 - `JVSPATIAL_POSTGRES_MIN_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_MAX_POOL_SIZE`
 - `JVSPATIAL_POSTGRES_POOLER_MODE` - `session` (default) or `transaction` for PgBouncer / RDS Proxy.
+- `JVSPATIAL_TEXT_NORMALIZATION_ENABLED` - jvspatial folds every persisted string to ASCII when this is `true` (its own default): accents are stripped and any other non-ASCII character is stored as `?`, so `日本語` becomes `???`. jvagent seeds it to `false` at boot (`jvagent/cli/server_config.py::_set_db_env_from_config`) because that is data loss for conversational memory; set it explicitly to `true` only if a downstream store cannot hold UTF-8.
 
 ### Auth/rate limit (framework side)
 - `JVSPATIAL_JWT_SECRET_KEY`
