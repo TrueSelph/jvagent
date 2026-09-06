@@ -35,6 +35,27 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Examples run their orchestrator through the LiteLLM adapter (ADR-0045).**
+  Both bundled agents point their model slots at `jvagent/litellm_lm`
+  (`openai/gpt-4.1`, light `openai/gpt-4.1-mini`); the first-party
+  `openai_lm` stays for PageIndex. The example needs `jvagent[litellm]`. The
+  orchestrator example also documents the decision protocol, fallbacks,
+  breaker and budget keys (commented, off by default) and notes that
+  `planning: true` pins the heavy gear. Root README endpoint paths gained
+  their `/api` prefix. `docs/language-models.md` gains "Migrating a deployed
+  agent to LiteLLM" (transport first, class second, sync the graph, rollback).
+  A live evaluation of the example (first-party wire, LiteLLM transport, and
+  the adapter end-to-end) is recorded in
+  `.planning/reviews/2026-09-05-example-live-evaluation.md`.
+- **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
+  body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
+  `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →
+  `_after_dispatch`), plus `_after_loop` and `_close_turn`; each returns a
+  `TickOutcome` (continue / break / return). Behaviour unchanged (the full
+  orchestrator suite is the net); `tests/action/orchestrator/test_turn_boundary.py`
+  now ratchets every step's size and asserts the steps touch exactly the
+  declared state.
+
 - **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
   body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
   `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →

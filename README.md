@@ -30,7 +30,7 @@
 
 jvagent is built on [jvspatial](https://github.com/TrueSelph/jvspatial)'s object-spatial graph framework. Everything an agent knows and does is a **Node** or **Edge**: the agent, its actions, and its per-user memory all live in one graph that persists across turns and processes.
 
-An **app** declares one or more **agents** in `app.yaml` / `agent.yaml`. Each agent owns a graph of **actions** (namespaced plugins, loaded on demand) plus a per-user memory subgraph (`User → Conversation → Interaction`). Traffic at `POST /agents/{id}/interact` becomes an `Interaction`; the **Orchestrator** runs the whole turn in one `execute()` — a deterministic continuation check (resume an in-flight flow) followed by a bounded think-act-observe loop over a unified tool surface. **Routing is tool selection. Turn-lock is an active flow that hasn't returned `COMPLETE`.**
+An **app** declares one or more **agents** in `app.yaml` / `agent.yaml`. Each agent owns a graph of **actions** (namespaced plugins, loaded on demand) plus a per-user memory subgraph (`User → Conversation → Interaction`). Traffic at `POST /api/agents/{id}/interact` becomes an `Interaction`; the **Orchestrator** runs the whole turn in one `execute()` — a deterministic continuation check (resume an in-flight flow) followed by a bounded think-act-observe loop over a unified tool surface. **Routing is tool selection. Turn-lock is an active flow that hasn't returned `COMPLETE`.**
 
 Most agent frameworks hand you a Python library and leave the production concerns — tenancy, persistence, auth, channels, deployment — as an exercise. jvagent ships them. It is the **harness** you wrap around the model: many agents per app, isolated state per user, the same agent voiced to WhatsApp / Messenger / email / web, and [Anthropic Agent Skills](https://www.anthropic.com/news/skills) dropped into a per-user sandbox without writing Python.
 
@@ -155,12 +155,12 @@ The server starts on `http://127.0.0.1:8000` (configurable). Interactive API doc
 
 ```bash
 # Log in with the admin credentials from .env
-curl -X POST http://localhost:8000/auth/login \
+curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "admin@jvagent.example", "password": "your-admin-password"}'
 
 # Send a turn (use the token from the login response)
-curl -X POST http://localhost:8000/agents/{agent_id}/interact \
+curl -X POST http://localhost:8000/api/agents/{agent_id}/interact \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"utterance": "Hello"}'
@@ -195,7 +195,7 @@ An **Action** is a namespaced plugin (`namespace/action_name`) declared by an `i
 ### The turn
 
 ```
-POST /agents/{id}/interact
+POST /api/agents/{id}/interact
         │
         ▼
   new Interaction ──> InteractWalker (weight order)

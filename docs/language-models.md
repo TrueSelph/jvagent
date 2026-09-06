@@ -186,6 +186,63 @@ each first-party adapter under both transports; the nightly live workflow runs
 the smoke scenarios on both. Deleting the own-wire clients is gated on that
 evidence (ADR-0047 §2.3).
 
+### Migrating a deployed agent to LiteLLM
+
+The example app's agents run their orchestrator through the adapter
+(`examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml`). Moving a
+deployed agent is a two-step, reversible change; do the steps in order and
+verify between them.
+
+1. **Install the extra on the deployment**: `pip install "jvagent[litellm]"`
+   (or add `litellm` to the image). Without it the server still boots; the
+   first model call through the adapter raises a clear error.
+2. **Flip the transport first, class second.** Set `transport: litellm` on the
+   agent's existing first-party model action (`jvagent/openai_lm`,
+   `jvagent/anthropic_lm`, …). Nothing else changes — same class, model id,
+   key and endpoint — so cost events, slot overrides and telemetry read as
+   before while every call goes through LiteLLM. Run the agent's normal
+   traffic for a while; a regression here is LiteLLM's wire, not your config.
+3. **Then point the orchestrator at the adapter.** Add `jvagent/litellm_lm`
+   (enabled) to the agent's actions and set the orchestrator's slots to
+   LiteLLM ids: `model: openai/gpt-4.1`, `model_action_type:
+   LiteLLMLanguageModelAction` (and the `light_model*` pair if gearing is on).
+   From here changing provider is changing the id (`anthropic/…`, `gemini/…`,
+   `bedrock/…`) plus the provider's key in the environment; capabilities and
+   pricing follow from LiteLLM's metadata (ADR-0045), so `tool_protocol: auto`
+   picks native tool calling where the model supports it.
+4. **Turn on the resilience you want** once the new path is steady:
+   `model_fallbacks` (same adapter, different id), `circuit_breaker_failures`,
+   `max_turn_cost_usd` (ADR-0046). All default off except the breaker.
+
+**Sync the graph after each edit — in source mode.** Every `attribute` is
+persisted on the action node at bootstrap, so editing `agent.yaml` changes
+nothing on a running deployment until you sync. Merge mode (`--update`) adds
+new actions and new keys but **keeps existing values**, so it will register
+`jvagent/litellm_lm` yet leave the orchestrator's `model_action_type` on the
+old class — the live check of exactly this migration ran four turns on the
+first-party wire after a merge sync before anyone noticed. Use
+
+```bash
+jvagent <app> --update --source --yes     # or JVAGENT_ASSUME_YES=1; prompts otherwise
+```
+
+which replaces action config from YAML (conversation memory is untouched —
+the example's interaction count was identical before and after), then confirm
+on the persisted node or in the `model_call` telemetry (`provider: litellm`).
+See "Persisted config outruns your edits" in [ORCHESTRATOR.md](ORCHESTRATOR.md).
+
+**Rollback** is the same edit in reverse (`model: gpt-4.1`,
+`model_action_type: OpenAILanguageModelAction`, drop `transport`), followed by
+the same sync. The first-party adapters stay in the tree until live parity has
+held across the nightly check (ADR-0047 §2.3).
+
+**What LiteLLM does and does not change.** It replaces the per-provider wire
+code and supplies the capability/pricing metadata; the native tool protocol,
+typed model faults, repeat/chain/grounding guards, retries, breaker, fallback
+chain and budget guard are harness-level and behave identically on either
+route. Known gap under `litellm`: Anthropic `cache_control` breakpoints are
+not applied.
+
 ### Nightly live check
 
 `.github/workflows/live-providers.yaml` (03:00 UTC, or manual dispatch) runs per
