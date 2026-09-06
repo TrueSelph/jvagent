@@ -7,7 +7,8 @@ import json
 import logging
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from collections import deque
+from typing import TYPE_CHECKING, Any, Deque, Dict, List, Optional, Set, Tuple
 
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.constants import (
@@ -32,7 +33,7 @@ from jvagent.action.orchestrator.turn_cache import (
     set_prompt_cache,
     update_prompt_cache,
 )
-from jvagent.action.orchestrator.turn_state import TickOutcome, TurnState
+from jvagent.action.orchestrator.turn_state import RecentCall, TickOutcome, TurnState
 from jvagent.action.parameters import (
     accumulate_skill_parameters,
     orchestration_parameters,
@@ -739,9 +740,9 @@ class OrchestratorLoopMixin:
         history = await self._history(visitor)
         ticks = 0
         ended_via = "budget"
-        last_sig: Optional[tuple] = None
-        last_obs: str = ""
-        repeats = 0
+        recent_calls: Deque[RecentCall] = deque(
+            maxlen=max(2, int(self.repeat_guard_window or 8))
+        )
         # Directive contract: a tool result carries the authoritative next step.
         # ``pending_chain`` holds a tool the model MUST call before it can finalize
         # (so it can't fabricate "you're all set" without running it); a terminal
@@ -822,8 +823,7 @@ class OrchestratorLoopMixin:
             grounding_deflections=grounding_deflections,
             history=history,
             interaction=interaction,
-            last_obs=last_obs,
-            last_sig=last_sig,
+            recent_calls=recent_calls,
             lean_surface=lean_surface,
             locked_companion_skill_names=locked_companion_skill_names,
             locked_companion_tools=locked_companion_tools,
@@ -836,7 +836,6 @@ class OrchestratorLoopMixin:
             plan_deflections=plan_deflections,
             plan_note=plan_note,
             refreshed=refreshed,
-            repeats=repeats,
             skill_docs=skill_docs,
             skill_names=skill_names,
             skills_section=skills_section,
@@ -1162,41 +1161,40 @@ class OrchestratorLoopMixin:
                 state.locked_companion_skill_names = set()
                 state.locked_companion_tools = set()
             return TickOutcome.CONTINUE_
-        # Repeat guard (pre-dispatch): a model that re-issues the SAME call
-        # (tool + args) makes no progress, and re-running a side-effecting tool
-        # (queue a task, POST to an API) would duplicate its effects — so the
-        # duplicate is never dispatched. One re-dispatch is allowed when the
-        # prior attempt errored/timed out (transient failures deserve a retry);
-        # a third identical call ends the turn.
+        # Repeat guard (pre-dispatch, audit M7): a model that re-issues a call
+        # already made this turn (same tool + args) makes no progress, and
+        # re-running a side-effecting tool (queue a task, POST to an API) would
+        # duplicate its effects — so the duplicate is never dispatched. The guard
+        # remembers the last ``repeat_guard_window`` calls, so an A/B/A/B
+        # oscillation is caught as well as a back-to-back repeat. One re-dispatch
+        # is allowed when the earlier attempt errored/timed out (transient
+        # failures deserve a retry); a third occurrence ends the turn.
         sig = (tool_name, str(args))
-        state.repeats = state.repeats + 1 if sig == state.last_sig else 0
-        state.last_sig = sig
-        if state.repeats >= 2:
+        earlier = [c for c in state.recent_calls if c.sig == sig]
+        if len(earlier) >= 2:
             # Stop, don't return: the post-loop partial-compose is what turns
             # gathered work into an answer. A bare return skipped it, so a turn
             # that had already activated a skill, planned and fetched a page
             # ended on "Sorry, I didn't quite catch that" and threw all of it
             # away. Observed live on a research → report → assimilate request.
             return TickOutcome.stop("repeat_guard")
-        if state.repeats == 1:
-            prior_errored = state.last_obs.startswith("(tool error:") or (
-                " timed out after " in state.last_obs
+        if len(earlier) == 1 and not earlier[-1].errored:
+            state.recent_calls.append(RecentCall(sig))
+            state.observations.append(
+                {
+                    "tool": "(guard)",
+                    "args": {},
+                    "observation": (
+                        f"(You have already called {tool_name} "
+                        "with this exact input; its result is "
+                        "above. Do NOT repeat the call — use a "
+                        "different tool, change the arguments, "
+                        'or finish with action "final".)'
+                    ),
+                }
             )
-            if not prior_errored:
-                state.observations.append(
-                    {
-                        "tool": "(guard)",
-                        "args": {},
-                        "observation": (
-                            f"(You have already called {tool_name} "
-                            "with this exact input; its result is "
-                            "above. Do NOT repeat the call — use a "
-                            "different tool, change the arguments, "
-                            'or finish with action "final".)'
-                        ),
-                    }
-                )
-                return TickOutcome.CONTINUE_
+            return TickOutcome.CONTINUE_
+        state.recent_calls.append(RecentCall(sig))
         return None
 
     async def _dispatch_tool(
@@ -1210,7 +1208,8 @@ class OrchestratorLoopMixin:
 
         Returns ``(tool, obs)``; ``tool`` is ``None`` for an unknown name, in
         which case ``obs`` is the discovery steer. The observation is appended
-        and ``state.last_obs`` updated here, so every later reader sees it.
+        here; the repeat guard's record of the call is marked errored when the
+        result was a tool error or timeout (so one retry is allowed).
         """
         tool = state.tools.get(tool_name)
         if tool is None:
@@ -1288,7 +1287,11 @@ class OrchestratorLoopMixin:
                     visitor, "tool_result", tool_name, tool_seg, obs=obs
                 )
         state.observations.append({"tool": tool_name, "args": args, "observation": obs})
-        state.last_obs = obs if isinstance(obs, str) else str(obs)
+        if state.recent_calls:
+            text = obs if isinstance(obs, str) else str(obs)
+            state.recent_calls[-1].errored = text.startswith("(tool error:") or (
+                " timed out after " in text
+            )
         return tool, obs
 
     async def _after_dispatch(
