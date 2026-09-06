@@ -80,7 +80,14 @@ def _set_db_env_from_config(app_root: str) -> None:
 
     Must be called before any database initialization.
     Uses canonical ``JVSPATIAL_DB_PATH`` only (jvspatial forbids JSONDB/SQLITE env keys).
+
+    Also seeds ``JVSPATIAL_TEXT_NORMALIZATION_ENABLED=false`` unless the
+    operator set it: jvspatial's default folds every persisted string to ASCII
+    (accents stripped, anything else outside ASCII stored as ``?``), which for a
+    conversational agent is silent data loss on utterances, replies and memory
+    in any non-Latin script. An explicit value in the environment always wins.
     """
+    os.environ.setdefault("JVSPATIAL_TEXT_NORMALIZATION_ENABLED", "false")
     app_config = load_app_config(app_root)
     db_type = get_config_value(app_config, "database.type", "JVSPATIAL_DB_TYPE", "json")
     db_path = resolve_db_path(app_root, app_config, db_type)
