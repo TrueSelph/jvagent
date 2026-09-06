@@ -169,3 +169,43 @@ def test_capabilities_and_pricing_come_from_upstream_metadata():
     assert json.dumps(
         action.capabilities("openai/gpt-4o-mini").__dict__
     )  # serialisable
+
+
+def test_per_turn_byok_key_reaches_the_call():
+    """A multi-tenant host's per-user key must reach LiteLLM.
+
+    Every first-party adapter resolves credentials through
+    ``api_key_from_context`` (openai.py::_http_bearer_token and siblings), so
+    a host that binds a per-turn override gets that user's key. This adapter
+    read only its configured attribute, so on a litellm-only deployment every
+    user's turn silently billed to whichever key sat in agent.yaml -- the
+    override never reached the provider and nothing failed loudly.
+    """
+    from jvagent.action.model.context import per_turn_model_override, set_model_override
+
+    action = _action(api_key="platform-key")
+    token = set_model_override(
+        {"provider": "litellm", "model": "openai/gpt-4o-mini", "api_key": "user-key"}
+    )
+    try:
+        kw = action._build_kwargs(
+            [{"role": "user", "content": "hi"}], None, stream=False
+        )
+        assert (
+            kw["api_key"] == "user-key"
+        ), "the per-turn override did not reach the call"
+    finally:
+        per_turn_model_override.reset(token)
+
+    # With no override the configured attribute still applies.
+    kw = action._build_kwargs([{"role": "user", "content": "hi"}], None, stream=False)
+    assert kw["api_key"] == "platform-key"
+
+
+def test_no_key_anywhere_lets_litellm_resolve_the_provider_env_var():
+    """Passing no api_key is meaningful: LiteLLM reads the provider's own env
+    var from the model prefix. Sending an empty string instead would override
+    that resolution with a value that cannot authenticate."""
+    action = _action(api_key="")
+    kw = action._build_kwargs([{"role": "user", "content": "hi"}], None, stream=False)
+    assert "api_key" not in kw
