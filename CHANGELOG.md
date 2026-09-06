@@ -184,6 +184,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **LiteLLM adapter now honours the per-turn BYOK key.** It read `api_key`
+  only from its configured attribute, while every other first-party adapter
+  resolves through `api_key_from_context` (per-turn override, then
+  environment). On a litellm-only deployment that meant each user's own key
+  never reached the provider: every turn billed to whichever key sat in
+  `agent.yaml`, and nothing failed loudly enough to notice. Resolution is now
+  override → attribute → nothing, the last deliberate so LiteLLM can resolve
+  the provider's own env var from the model prefix.
+
 - **The grounding guard no longer contradicts the session clock.** A reply
   read straight from the SESSION CONTEXT block (ADR-0042, "authoritative for
   this turn") was deflected as an invented year — twice per time/date question
