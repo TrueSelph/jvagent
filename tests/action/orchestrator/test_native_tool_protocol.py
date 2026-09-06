@@ -601,3 +601,110 @@ async def test_loop_strips_meta_before_dispatch_and_stamps_the_observation(
     assert obs["call_tool"] == "get_current_datetime"
     assert obs["assistant_text"] == "checking"
     assert "_call_id" not in obs.get("args", {})
+
+
+# --- regressions from the live example run (2026-09-05) ---------------------------
+
+
+def _store_fold(text: str) -> str:
+    """What jvspatial does to every persisted string by default
+    (``JVSPATIAL_TEXT_NORMALIZATION_ENABLED``): accents stripped, unicode
+    dashes/quotes folded to ASCII, every other non-ASCII character replaced by
+    ``?`` — observed live as ``café → naïve`` coming back ``cafe ? naive``."""
+    from jvspatial.utils.normalization import normalize_text_to_ascii
+
+    return normalize_text_to_ascii(text)
+
+
+def test_legacy_default_is_recognised_after_store_normalisation():
+    """The example agent's persisted prompt differed from the legacy constant
+    only by characters the JSON store had folded — an em-dash to a hyphen, two
+    arrows to ``?`` — so the exact match missed it and the JSON contract stayed
+    in force under native tools, leaking ``{"action":"reply",...}`` to the
+    user. Detection now compares a form both sides are pushed through."""
+    ex = OrchestratorInteractAction()
+    mangled = _store_fold(P.LEGACY_JSON_SYSTEM_PROMPT)
+    assert mangled != P.LEGACY_JSON_SYSTEM_PROMPT  # the constant does carry arrows
+    assert "?" in mangled
+    ex.system_prompt = mangled
+    out = _compose(ex)
+    assert "Plain text with no tool call is delivered to the user" in out
+    assert "Reply with a single JSON object" not in out
+    # Same for the user turn and the safeguards reminder.
+    ex.user_prompt = _store_fold(P.ORCHESTRATOR_USER_PROMPT_TEMPLATE)
+    assert (
+        ex._protocol_text(
+            ex.user_prompt,
+            P.ORCHESTRATOR_USER_PROMPT_TEMPLATE,
+            P.ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE,
+        )
+        == P.ORCHESTRATOR_USER_PROMPT_TEMPLATE_NATIVE
+    )
+    ex.safeguards_reminder = _store_fold(P.SAFEGUARDS_REMINDER_TEMPLATE)
+    assert (
+        ex._protocol_text(
+            ex.safeguards_reminder,
+            P.SAFEGUARDS_REMINDER_TEMPLATE,
+            P.SAFEGUARDS_REMINDER_TEMPLATE_NATIVE,
+        )
+        == P.SAFEGUARDS_REMINDER_TEMPLATE_NATIVE
+    )
+
+
+def test_an_override_carrying_json_mechanics_is_kept_but_warned(caplog):
+    """An operator's own prompt is theirs even when it mentions the JSON
+    contract; under native it is honoured verbatim and a warning names the
+    conflict (the JSON-text safety net below covers the fallout)."""
+    import logging
+
+    ex = OrchestratorInteractAction()
+    ex.system_prompt = (
+        "{identity_section}MINE. Reply with a single JSON object each step. "
+        "{tools_section} {skills_section}"
+    )
+    with caplog.at_level(logging.WARNING):
+        out = _compose(ex)
+    assert out.startswith("You are Ada.\n\nMINE.")
+    assert any("JSON-text contract" in r.message for r in caplog.records)
+    caplog.clear()
+    ex.tool_protocol = "json"
+    with caplog.at_level(logging.WARNING):
+        _compose(ex)
+    assert not any("JSON-text contract" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_json_shaped_text_under_native_is_a_decision_not_a_reply(
+    make_visitor, monkeypatch
+):
+    """Live: gpt-4.1 answered `{"action":"reply","text":"Hello!..."}` as text and the
+    braces reached the user. Under native, JSON-shaped text is a decision."""
+    ex = OrchestratorInteractAction()
+    fake = _FakeModelAction(
+        [
+            ModelActionResult(
+                response='{"action":"reply","text":"Hello! How can I help?"}'
+            ),
+            ModelActionResult(
+                response='{"action":"tool","tool":"get_current_datetime","args":{}}'
+            ),
+            ModelActionResult(response="{not a decision"),
+        ]
+    )
+    _bind(monkeypatch, ex, fake)
+    v = make_visitor()
+    tools = [_tool("reply"), _tool("get_current_datetime")]
+    first = await ex._run_model(v, "hi", [], tools, [])
+    assert first["action"] == "reply" and first["text"] == "Hello! How can I help?"
+    action, tool_name, args = ex._normalize(
+        dict(first), {t.name: t for t in tools}, set()
+    )
+    assert (action, tool_name, args) == (
+        "tool",
+        "reply",
+        {"text": "Hello! How can I help?"},
+    )
+    second = await ex._run_model(v, "time?", [], tools, [])
+    assert second == {"action": "tool", "tool": "get_current_datetime", "args": {}}
+    third = await ex._run_model(v, "x", [], tools, [])
+    assert third["tool"] == "reply" and third["args"]["text"] == "{not a decision"
