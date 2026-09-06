@@ -454,14 +454,14 @@ constructed in memory.
 
 Optional: pair a **light** completion model with the **heavy** reasoning model so single-dimensional turns don't pay the reasoning tax. The existing `model*`/`reasoning_*` are the heavy profile; set `light_model` (+ `light_model_action_type`, `light_model_temperature`, `light_model_max_tokens`) to engage gearing — empty leaves the agent single-model.
 
-Policy is **fixed in core** ([ADR-0041](../.planning/adr/0041-gearing-and-cost-policy-in-core.md)): the loop starts light and escalates to heavy when a skill is active, when `planning: true`, or after ≥1 substantive tool call (egress/meta excluded). Escalation is sticky; budget finalize keeps `last_gear`. Reasoning kwargs apply only on the heavy gear. The `orchestrator_activation` event reports `ticks_light`/`ticks_heavy`/`escalated`.
+Policy is **fixed in core** ([ADR-0041](../.planning/adr/0041-gearing-and-cost-policy-in-core.md)): the loop starts light and escalates to heavy when a skill is active, when `planning: true` **and a plan from a prior turn is open** (ADR-0050; `planning_heavy_first_tick: true` restores heavy-from-tick-0), or after ≥1 substantive tool call (egress/meta excluded). Escalation is sticky; budget finalize keeps `last_gear`. Reasoning kwargs apply only on the heavy gear. The `orchestrator_activation` event reports `ticks_light`/`ticks_heavy`/`escalated`.
 
 ```yaml
       model: kimi-k2.6:cloud            # heavy / reasoning
       model_action_type: OllamaLanguageModelAction
       light_model: gpt-4o-mini          # light / completion (engages gearing)
       light_model_action_type: OpenAILanguageModelAction
-      # planning: true                  # also forces heavy from tick 0
+      # planning: true                  # heavy from tick 0 only when a prior plan is open (ADR-0050)
 ```
 
 ### Extended config surface (ADR-0015)

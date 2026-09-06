@@ -672,6 +672,16 @@ class OrchestratorInteractAction(
             "when on, cost is incurred only when the model calls update_plan."
         ),
     )
+    planning_heavy_first_tick: bool = attribute(
+        default=False,
+        description=(
+            "With planning on, run the FIRST tick of every turn on the heavy "
+            "model (pre-ADR-0050 behaviour). Default False: a fresh turn starts "
+            "on the light gear and escalates on the first substantive tool call "
+            "or when a plan from a prior turn is open; set True only if the "
+            "light model provably fails to call update_plan for multi-step tasks."
+        ),
+    )
     proactive_tasks_enabled: bool = attribute(
         default=True,
         description="When True, surface queue_task for proactive task enqueueing.",
@@ -2455,6 +2465,7 @@ class OrchestratorInteractAction(
         ticks_light: int = 0,
         ticks_heavy: int = 0,
         parallel_batches: int = 0,
+        guards: Optional[List[str]] = None,
         loop_duration_ms: Optional[int] = None,
         tool_timings: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
@@ -2489,6 +2500,9 @@ class OrchestratorInteractAction(
             "ticks_light": int(ticks_light),
             "ticks_heavy": int(ticks_heavy),
             "parallel_batches": int(parallel_batches),
+            # Which guard produced each "(guard)" step, in order (grounding:<param>,
+            # chain, repeat, plan) — the marker alone was not attributable.
+            "guards": list(guards or []),
             "escalated": bool(ticks_heavy) and self._gearing_on(),
         }
         if loop_duration_ms is not None:
@@ -2637,6 +2651,7 @@ class OrchestratorInteractAction(
         as a chat message — the observed failure mode."""
         return {
             "tool": "(guard)",
+            "guard": "plan",
             "args": {},
             "observation": (
                 "(Your active plan still has unfinished steps:\n"
@@ -3061,22 +3076,29 @@ class OrchestratorInteractAction(
         self,
         substantive_tool_calls: int,
         skill_active: bool,
+        plan_open: bool = False,
     ) -> str:
-        """Light until multi-step work is in play, then heavy (ADR-0041).
+        """Light until multi-step work is in play, then heavy (ADR-0041/0050).
 
         Fixed policy when gearing is on (``light_model`` set with a main model):
         - skill active → heavy
-        - ``planning`` enabled → heavy (tick 0 must reason about ``update_plan``)
+        - ``planning`` on and a plan is OPEN (resumed from a prior turn) → heavy
+        - ``planning`` on and ``planning_heavy_first_tick`` → heavy from tick 0
+          (the pre-ADR-0050 behaviour, which made the light model dead config
+          for every planning agent — live: ``ticks_light`` was 0 on all turns)
         - ≥1 substantive tool call (egress/meta excluded) → heavy
         - else light (reply-only)
 
-        Single-model agents (no light_model, or no main_model) always run heavy.
+        A fresh turn with planning on therefore starts light; the first
+        substantive tool call escalates it, and ``update_plan`` is available on
+        the heavy ticks that follow. Single-model agents (no light_model, or no
+        main_model) always run heavy.
         """
         if not self._gearing_on():
             return "heavy"
         if skill_active:
             return "heavy"
-        if bool(self.planning):
+        if bool(self.planning) and (plan_open or bool(self.planning_heavy_first_tick)):
             return "heavy"
         if substantive_tool_calls >= 1:
             return "heavy"

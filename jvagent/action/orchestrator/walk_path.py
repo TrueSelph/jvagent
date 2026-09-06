@@ -50,6 +50,20 @@ class OrchestratorWalkPathMixin:
             if triggers:
                 continue  # routable/tool IA — omit from the walk path
             keep.append(action)  # non-routable IA — keep in the weight chain
+        # Only ask the walker to keep what is still queued. This orchestrator is
+        # executing (not queued) and an always_execute IA at a lower weight has
+        # already run, so passing them made the walker log a "caller-supplied
+        # action(s) were not in the queue" line on every turn — noise that hid
+        # the real case that message exists for.
+        get_queue = getattr(visitor, "get_queue", None)
+        if callable(get_queue):
+            try:
+                queued_ids = {
+                    getattr(item, "id", None) for item in (await get_queue() or [])
+                }
+                keep = [a for a in keep if getattr(a, "id", None) in queued_ids]
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("orchestrator: get_queue failed: %s", exc)
         try:
             await curate(keep)
         except Exception as exc:
