@@ -128,7 +128,71 @@ make this diagnosable from telemetry alone.
 - **The live store directory is `jvdb`**, not `jvagent_db` as some older notes
   say.
 
-## 3. Follow-ups raised
+## 3. LiteLLM adapter end-to-end (2026-09-06)
+
+The example was then switched to run its orchestrator **through the LiteLLM
+adapter** (`jvagent/litellm_lm`; heavy `openai/gpt-4.1`, light
+`openai/gpt-4.1-mini`, `LiteLLMLanguageModelAction` in both slots) and
+re-tested — first with the smoke harness, then the live server.
+
+**Smoke** (`scripts/live_smoke.py --provider litellm --model openai/gpt-4.1`):
+3/3 — greeting (1 tick), datetime tool then reply (2 ticks), act-don't-announce
+(3 ticks, one guard). Cents.
+
+**Live server**, same four turns as §1, all `provider: litellm` in the
+`model_call` telemetry, 16 LiteLLM completions in the log, `tool_protocol:
+native` resolved from `auto` via LiteLLM's model metadata:
+
+| Turn | Wall | Ticks | Model calls | Prompt tokens | Cost (USD) | Per-call latency |
+|---|---|---|---|---|---|---|
+| "Hello! Quick check-in." | 4.6s | 1 | 2 | 4,219 | 0.0073 | 1.4s (+0.7s reply compose on `openai_lm`) |
+| "What time is it right now?" | 3.3s | 4 | 4 | 16,092 | 0.0328 | 0.5–0.7s |
+| web search (2026 Tour de France) | 3.8s | 2 | 2 | 8,786 | 0.0180 | 0.7s |
+| "Summarise … in one line." | 1.6s | 1 | 1 | 4,136 | 0.0085 | 0.9s |
+
+Same answers, same tick shapes, same guards and costs as the first-party wire
+(§1) — the harness behaves identically on the adapter, which is the point of
+the contract. Memory carried across the four turns and survived the config
+sync. Pricing came from LiteLLM's metadata (the model id in telemetry is the
+resolved `gpt-4.1-2025-04-14`).
+
+### 3.1 Merge-mode sync silently kept the old model class (trap, documented)
+
+The first attempt ran `jvagent . --update` (merge) after editing the YAML. It
+registered the new `jvagent/litellm_lm` action but **kept** the orchestrator's
+persisted `model_action_type: OpenAILanguageModelAction`, so four "LiteLLM"
+turns ran on the first-party wire (zero LiteLLM log lines, `provider: openai`)
+and looked fine. Merge adds actions and keys; it does not overwrite existing
+values. `--update --source --yes` replaced the slots and left conversation
+memory intact (interaction count identical before and after); without `--yes`
+it prompts and, under `nohup`, aborts. Now spelled out in
+`docs/language-models.md` "Migrating a deployed agent to LiteLLM" — any
+deployed-agent migration that skips this step is a no-op.
+
+### 3.2 The grounding guard fights the session clock (open — harness fix)
+
+The two `(guard)` ticks on "What time is it right now?" are now attributable
+from the persisted `model_call` payloads: on tick 1 the model replied *"It is
+currently Saturday, September 5, 2026, 11:59 PM (Eastern Time)"* — correct,
+read from the SESSION CONTEXT block that ADR-0042 declares authoritative — and
+the grounding guard deflected it because no substantive tool had run. Tick 2:
+same answer, same deflection (`grounding_max_deflections` = 2). Tick 3 finally
+called `get_current_datetime`, tick 4 replied with the same time. Two model
+calls, ~$0.016, about half the turn's cost, spent contradicting ground truth
+the harness itself supplied. Fix: include the SESSION CONTEXT facts in the
+grounding corpus (`_grounding_corpus`) so a reply grounded in them passes, or
+exempt replies whose claims appear there. Small, self-contained; not part of
+the examples change.
+
+### 3.3 Persisted prompts carry the store's fold
+
+The live system prompt read *"research ? write a file ? save it"* — the
+built-in template's arrows, folded to `?` by the store and rendered from the
+persisted attribute (§2.2). Harmless to the model here, but it is the same
+mechanism that broke legacy-prompt detection (#185); #187 stops it for future
+syncs (re-sync in source mode after upgrading).
+
+## 4. Follow-ups raised
 
 | # | Item | Where |
 |---|---|---|
@@ -137,3 +201,5 @@ make this diagnosable from telemetry alone.
 | 3 | Record the guard name in `orchestrator_activation` | `jvagent/action/orchestrator/loop.py` |
 | 4 | Decide whether planning should force heavy on every tick | ADR-0016 / ADR-0019 |
 | 5 | Silence or fix the `curate_walk_path` debug line | `jvagent/action/interact/interact_walker.py` |
+| 6 | Grounding guard: treat SESSION CONTEXT facts as grounded (§3.2) | `jvagent/action/orchestrator/loop.py::_grounding_corpus` |
+| 7 | Merge-mode sync keeps existing values — consider warning when a YAML value differs from the persisted one | `jvagent/cli/bootstrap.py` |
