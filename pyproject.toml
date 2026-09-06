@@ -72,7 +72,7 @@ test = [
     "openai>=1.0.0",
     "filetype>=1.2.0",
     "tiktoken>=0.5.0",
-    "litellm>=1.82.0",
+    "litellm>=1.100.0,<1.101",
     "PyPDF2>=3.0.1",
     "pypdfium2>=4.30.0",
     "sortedcontainers>=2.4.0",
@@ -84,6 +84,16 @@ test = [
     # instantiates PostgresDB and therefore needs the driver. Without it the
     # suite passes only on machines that happen to have asyncpg installed.
     "asyncpg>=0.29.0",
+]
+
+# Optional: the LiteLLM universal adapter (jvagent/litellm_lm) and the
+# `transport: litellm` route of the first-party model actions (ADR-0045/0047).
+# Pinned to one minor: litellm releases near-daily and had a PyPI supply-chain
+# compromise in March 2026, so the fleet moves versions deliberately (Dependabot
+# proposes the bump; tests/action/model + scripts/live_smoke.py gate it). Keep
+# every declaration identical — tests/test_requirements_sync.py checks.
+litellm = [
+    "litellm>=1.100.0,<1.101",
 ]
 
 # Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).

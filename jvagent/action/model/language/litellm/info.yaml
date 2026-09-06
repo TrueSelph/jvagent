@@ -35,4 +35,4 @@ package:
     jvagent: ~0.0.1
     # Pip dependencies (installed automatically before action loading)
     pip:
-      - litellm>=1.82.0
+      - litellm>=1.100.0,<1.101

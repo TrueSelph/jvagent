@@ -159,6 +159,12 @@ Bedrock, Azure, Mistral, Groq, OpenRouter, Ollama, … — behind the same contr
 
 Install the extra: `pip install "jvagent[litellm]"`. The import is lazy — an
 install without it boots and the action raises a clear error on first use. The
+extra pins litellm to **one minor** (`>=X.Y.Z,<X.Y+1`, identical in
+`pyproject.toml`, `requirements-all.txt` and both action `info.yaml` files —
+enforced by `tests/test_requirements_sync.py`): litellm releases near-daily and
+had a PyPI supply-chain compromise in March 2026, so the fleet moves versions
+deliberately — Dependabot proposes the bump, `tests/action/model` and
+`scripts/live_smoke.py --provider litellm` gate it. The
 harness owns retries (`num_retries=0` is sent; `BaseModelAction` retries on the
 exception's `status_code`), streaming is assembled with
 `litellm.stream_chunk_builder`, and `provider: litellm` works in slot overrides.
@@ -210,6 +216,9 @@ verify between them.
    `bedrock/…`) plus the provider's key in the environment; capabilities and
    pricing follow from LiteLLM's metadata (ADR-0045), so `tool_protocol: auto`
    picks native tool calling where the model supports it.
+   Run step 2 as a **canary** first — one deployment on
+   `JVAGENT_MODEL_TRANSPORT=litellm`, the rest unchanged, compared over a few
+   days: [`.planning/runbooks/litellm-canary.md`](../.planning/runbooks/litellm-canary.md).
 4. **Turn on the resilience you want** once the new path is steady:
    `model_fallbacks` (same adapter, different id), `circuit_breaker_failures`,
    `max_turn_cost_usd` (ADR-0046). All default off except the breaker.

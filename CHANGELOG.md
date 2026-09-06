@@ -10,6 +10,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **`litellm` pinned to one minor (`litellm>=1.100.0,<1.101`) and a real `jvagent[litellm]`
+  extra.** The docs already told people to install `jvagent[litellm]`; the
+  extra did not exist (litellm sat only in the `test` extra and
+  `requirements-all.txt`), and every declaration was an open floor
+  (`>=1.82.0`) that admitted the versions compromised on PyPI in March 2026.
+  All four declarations (pyproject, requirements-all, both action `info.yaml`
+  files) now carry the same single-minor pin, guarded by
+  `tests/test_requirements_sync.py`; validated on litellm 1.100.0 with the
+  model/protocol suites and both live smokes. New runbook
+  `.planning/runbooks/litellm-canary.md`: run one deployment on
+  `JVAGENT_MODEL_TRANSPORT=litellm`, what to compare, roll forward/back.
+
 - **Parallel tool dispatch, opt-in (ADR-0048).** `max_concurrent_tools` on the
   Orchestrator (default `1`, unchanged behaviour) lets one tick dispatch the
   sibling tool calls a provider returned in the same response. Each sibling

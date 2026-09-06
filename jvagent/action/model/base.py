@@ -340,6 +340,24 @@ class BaseModelAction(Action, ABC):
         except Exception as e:
             logger.debug(f"Failed to emit observability: {e}")
 
+    def _telemetry_transport(self, provider: Optional[str] = None) -> str:
+        """The wire that carried a call, for the ``model_call`` event (ADR-0047).
+
+        ``litellm`` for the LiteLLM adapter itself and for any first-party action
+        whose effective transport is LiteLLM; ``httpx`` otherwise. Subclasses
+        that expose ``_effective_transport`` (language models) are asked; a model
+        action without a transport switch reports its own wire.
+        """
+        if str(provider or "").strip().lower() == "litellm":
+            return "litellm"
+        effective = getattr(self, "_effective_transport", None)
+        if callable(effective):
+            try:
+                return "litellm" if effective() == "litellm" else "httpx"
+            except Exception:  # pragma: no cover - defensive
+                return "httpx"
+        return "httpx"
+
     async def _emit_observability(
         self,
         interaction: Any,
@@ -444,6 +462,11 @@ class BaseModelAction(Action, ABC):
                 "duration": duration,
                 "estimated": usage_estimated,  # Flag to indicate estimated vs actual metrics
                 "called_by": action_name,  # Always include called_by with action name
+                # Which wire carried the call (ADR-0047): ``httpx`` (the action's
+                # own client) or ``litellm``. Transport delegation relabels the
+                # result as the action's own provider, so this is the only field a
+                # canary can read to confirm the switch took.
+                "transport": self._telemetry_transport(provider),
             }
 
             # Add system prompt (the actual prompt that was executed)
