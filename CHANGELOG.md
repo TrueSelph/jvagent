@@ -53,6 +53,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   now ratchets every step's size and asserts the steps touch exactly the
   declared state.
 
+- **Orchestrator tick extracted (audit follow-up S1).** The ~700-line tick
+  body of `_run_loop` is now typed steps on `TurnState`: `_tick` →
+  `_tick_final` / `_tick_tool` (`_guard_tool_call` → `_dispatch_tool` →
+  `_after_dispatch`), plus `_after_loop` and `_close_turn`; each returns a
+  `TickOutcome` (continue / break / return). Behaviour unchanged (the full
+  orchestrator suite is the net); `tests/action/orchestrator/test_turn_boundary.py`
+  now ratchets every step's size and asserts the steps touch exactly the
+  declared state.
+
 - **`POST /agents/{id}/interact` reports server faults as 500** (`interact_processing_error`, with `request_id`) instead of a 422 `ValidationError` (audit F3). Bad requests (`ValueError`) and typed API errors keep their statuses.
 - **Orchestrator repeat guard remembers a window (audit M7).** The guard now
   tracks the last `repeat_guard_window` (default 8) tool calls, so an A/B/A/B
@@ -107,6 +116,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   uvicorn lifespan hook on Lambda.
 
 ### Fixed
+
+- **The grounding guard no longer contradicts the session clock.** A reply
+  read straight from the SESSION CONTEXT block (ADR-0042, "authoritative for
+  this turn") was deflected as an invented year — twice per time/date question
+  before the model gave in and called the datetime tool, half the cost of the
+  turn (found running the example agent live). The session block is now part of
+  the grounding corpus (`_grounding_corpus`), and the block names the zone both
+  ways (`America/New_York, EDT`) so abbreviations are grounded too.
 
 - **Persisted text is no longer folded to ASCII by default.** jvspatial's
   `JVSPATIAL_TEXT_NORMALIZATION_ENABLED` defaults to `true`, which stripped

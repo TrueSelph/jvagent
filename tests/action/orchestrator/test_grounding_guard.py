@@ -294,3 +294,106 @@ async def test_reply_path_lets_a_grounded_answer_through(
         make_orchestrator, make_visitor, monkeypatch, decisions, history
     )
     assert "academic and practitioner" in (visitor.interaction.response or "")
+
+
+# --- session context is ground truth (live finding, 2026-09-06) --------------
+#
+# "What time is it right now?" → the model answered correctly from the SESSION
+# CONTEXT clock (ADR-0042, "authoritative for this turn") and the specifics
+# detector deflected it twice for an "invented" year before it called the
+# datetime tool. Half the cost of every time/date question, spent contradicting
+# ground truth the harness supplied. The session block is part of the corpus.
+
+
+def _session_block(year: int = 2026) -> str:
+    return (
+        "SESSION CONTEXT (authoritative for this turn):\n"
+        f"CURRENT DATE/TIME: Saturday, September 05, {year} 23:59:05 "
+        "(America/New_York, EDT)\n"
+        f"ISO 8601: {year}-09-05T23:59:05-04:00\n"
+    )
+
+
+def test_a_year_read_from_the_session_clock_is_not_invented():
+    from jvagent.action.orchestrator.loop_helpers import unsupported_specifics
+
+    reply = "The current time is 23:59 on September 5, 2026."
+    # Corpus without the session block: the year looks invented (the old bug).
+    assert unsupported_specifics(reply, "What time is it right now?") == "2026"
+    # With it: grounded.
+    corpus = _session_block() + "\nWhat time is it right now?"
+    assert unsupported_specifics(reply, corpus) == ""
+
+
+def test_grounding_corpus_carries_the_session_block():
+    ex = _orchestrator()
+    corpus = ex._grounding_corpus("what year is it?", [], [], _session_block())
+    assert "2026" in corpus and "America/New_York" in corpus
+    # Default stays backwards-compatible for callers that pass nothing.
+    assert "2026" not in ex._grounding_corpus("what year is it?", [], [])
+
+
+def test_zone_abbreviation_is_part_of_the_block():
+    """The block names the zone both ways (``America/New_York, EDT``) so a reply
+    that uses the abbreviation is grounded too."""
+    import asyncio
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from jvagent.action.orchestrator.session_context import render_session_context
+
+    class _App:
+        async def now(self):
+            return datetime(2026, 9, 5, 23, 59, 5, tzinfo=ZoneInfo("America/New_York"))
+
+    class _Visitor:
+        channel = "web"
+
+    block = asyncio.run(render_session_context(_Visitor(), app=_App()))
+    assert "(America/New_York, EDT)" in block
+
+    class _Utc:
+        async def now(self):
+            return datetime(2026, 9, 5, 23, 59, 5, tzinfo=timezone.utc)
+
+    # A zone whose abbreviation equals its name is not repeated.
+    assert "(UTC)" in asyncio.run(render_session_context(_Visitor(), app=_Utc()))
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_a_time_answer_from_the_clock_is_not_deflected_in_the_loop(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    """End to end: one tick, no guard, when the reply's year is the clock's."""
+    from datetime import datetime
+
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+    from jvagent.action.reply.reply_action import ReplyAction
+
+    year = datetime.now().year
+    seen = {}
+
+    async def _record(self, visitor, **kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_record_orchestrator_activation", _record
+    )
+    ex = make_orchestrator(
+        actions=[ReplyAction()],
+        decisions=[
+            {
+                "action": "tool",
+                "tool": "reply",
+                "args": {"text": f"Right now it is {year}, as the clock shows."},
+            }
+        ],
+    )
+    await ex.execute(make_visitor(utterance="What year is it right now?"))
+    assert seen["tick_count"] == 1
+    assert "(guard)" not in seen["tools_invoked"]

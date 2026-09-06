@@ -126,10 +126,15 @@ class OrchestratorLoopMixin:
         utterance: str,
         history: List[Dict[str, str]],
         observations: List[Dict[str, Any]],
+        session_context: str = "",
     ) -> str:
         """Everything the agent can legitimately answer from this turn: the user's
-        message, the conversation so far, and this turn's tool results."""
-        parts: List[str] = [utterance or ""]
+        message, the conversation so far, this turn's tool results — and the
+        SESSION CONTEXT block (ADR-0042), which the harness itself declares
+        authoritative. Without it a correct "it is 2026" read straight from the
+        clock was deflected as an invented year, twice per time question, live.
+        """
+        parts: List[str] = [session_context or "", utterance or ""]
         for message in history or []:
             parts.append(str(message.get("content", "")))
         for obs in observations or []:
@@ -1026,7 +1031,10 @@ class OrchestratorLoopMixin:
                 answer,
                 state.substantive_tool_calls,
                 self._grounding_corpus(
-                    state.utterance, state.history, state.observations
+                    state.utterance,
+                    state.history,
+                    state.observations,
+                    str(get_prompt_cache().get("session_context") or ""),
                 ),
                 visitor,
             )
@@ -1251,7 +1259,10 @@ class OrchestratorLoopMixin:
                 str((args or {}).get("text") or _text_candidate(args or {})),
                 state.substantive_tool_calls,
                 self._grounding_corpus(
-                    state.utterance, state.history, state.observations
+                    state.utterance,
+                    state.history,
+                    state.observations,
+                    str(get_prompt_cache().get("session_context") or ""),
                 ),
                 visitor,
             )
