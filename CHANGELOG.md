@@ -10,6 +10,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Prompt-cache telemetry and layout (ADR-0049).** Cached prompt tokens now
+  reach the `model_call` event (`cached_tokens` / Anthropic
+  `cache_read_input_tokens` and `cache_creation_input_tokens`, plus reasoning
+  tokens) and are aggregated on `Interaction.usage` as `cached_prompt_tokens`
+  / `cache_write_tokens`, so cache hits are measurable and the cost estimate
+  applies the provider's cache discount. The SESSION CONTEXT block (clock,
+  channel) moved from right after identity to the END of the Orchestrator
+  system prompt: measured live, the per-turn clock at character ~220 capped
+  the shared prefix below OpenAI's 1024-token cache minimum, so no turn ever
+  hit the cache across turns. Custom `system_prompt` templates keep their own
+  slot position; templates without the slot already appended the block last.
+
 - **`litellm` pinned to one minor (`litellm>=1.100.0,<1.101`) and a real `jvagent[litellm]`
   extra.** The docs already told people to install `jvagent[litellm]`; the
   extra did not exist (litellm sat only in the `test` extra and

@@ -44,7 +44,10 @@ async def test_render_session_context_omits_channel_when_empty():
 
 
 @pytest.mark.asyncio
-async def test_compose_places_session_context_after_identity():
+async def test_compose_places_session_context_last():
+    """ADR-0049: the per-turn block sits AFTER the stable sections so the
+    prompt-cache prefix is everything above it (it used to follow identity,
+    which capped the shared prefix at ~200 characters)."""
     ex = OrchestratorInteractAction()
     out = ex._compose_system_prompt(
         identity_section="You are Test, a bot.\n",
@@ -59,8 +62,9 @@ async def test_compose_places_session_context_after_identity():
         parameters_section="(none)",
     )
     assert "SESSION CONTEXT" in out
-    assert out.index("You are Test") < out.index("SESSION CONTEXT")
-    assert out.index("SESSION CONTEXT") < out.index("AVAILABLE TOOLS")
+    assert out.index("You are Test") < out.index("AVAILABLE TOOLS")
+    assert out.index("OPERATING RULES") < out.index("SESSION CONTEXT")
+    assert out.rstrip().endswith("2026-07-27T13:45:00+00:00")
 
 
 @pytest.mark.asyncio
@@ -90,3 +94,60 @@ async def test_prepare_turn_caches_session_context_not_on_skills(
     assert "2026" in captured.get("session", "")
     assert "CURRENT CHANNEL: web" in captured.get("session", "")
     assert not captured.get("skills", "").startswith("CURRENT CHANNEL")
+
+
+# --- persisted templates (ADR-0049) ----------------------------------------
+#
+# ``system_prompt`` is an attribute stored on the action node at bootstrap, so
+# moving the SESSION CONTEXT slot in code changed nothing on a running
+# deployment — the live prompt still carried the block after identity. A
+# persisted copy of any past built-in is "the default" and renders the current
+# layout; an operator's own template keeps whatever position it chose.
+
+
+def _block():
+    return (
+        "SESSION CONTEXT (authoritative for this turn):\n"
+        "CURRENT DATE/TIME: Monday, July 27, 2026 13:45:00 (UTC)\n"
+        "ISO 8601: 2026-07-27T13:45:00+00:00\n\n"
+    )
+
+
+def _compose_with(ex):
+    return ex._compose_system_prompt(
+        identity_section="You are Test, a bot.\n",
+        session_context_section=_block(),
+        tools_section="(none)",
+        skills_section="(none)",
+        capabilities_section="(none)",
+        parameters_section="(none)",
+    )
+
+
+def test_persisted_pre_0049_template_renders_the_current_layout():
+    from jvagent.action.orchestrator import prompts as P
+
+    ex = OrchestratorInteractAction()
+    ex.system_prompt = P.ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049
+    assert "{session_context_section}{protocol_section}" in ex.system_prompt
+    out = _compose_with(ex)
+    assert out.index("OPERATING RULES") < out.index("SESSION CONTEXT")
+    assert out.count("SESSION CONTEXT") == 1
+
+    # Through the store's fold too (arrows → ``?``, dashes → ``-``).
+    from jvspatial.utils.normalization import normalize_text_to_ascii
+
+    ex.system_prompt = normalize_text_to_ascii(P.ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049)
+    out = _compose_with(ex)
+    assert out.index("OPERATING RULES") < out.index("SESSION CONTEXT")
+
+
+def test_an_operator_template_keeps_its_own_slot_position():
+    ex = OrchestratorInteractAction()
+    ex.system_prompt = (
+        "{identity_section}{session_context_section}MY RULES.\n"
+        "{protocol_section}\nTOOLS:\n{tools_section}\n{parameters_section}\n"
+    )
+    out = _compose_with(ex)
+    assert out.index("SESSION CONTEXT") < out.index("MY RULES")
+    assert "TOOLS:" in out

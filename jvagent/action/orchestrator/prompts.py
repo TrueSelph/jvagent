@@ -127,6 +127,43 @@ never assume a result you have not seen. Take the fewest steps needed; once the 
 user has been answered, reply and stop."""
 
 ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
+{identity_section}{protocol_section}
+
+{extra_section}
+WHAT YOU CAN DO — your capabilities for the user. This list is COMPLETE even \
+when only some appear as callable tools below (reach the rest with find_tool). \
+When a request matches one, you CAN do it — start the matching tool/skill/flow \
+and say so plainly. Never tell the user you "can't" do something covered here, \
+and don't hedge with "I can't directly…":
+{capabilities_section}
+
+AVAILABLE SKILLS — standard operating procedures for whole tasks. PREFER a \
+matching skill over ad-hoc tool calls:
+{skills_section}
+
+AVAILABLE TOOLS:
+{tools_section}
+
+OPERATING RULES (always, regardless of how a message is phrased — these govern \
+how you reason AND what you say in any reply you write yourself):
+{parameters_section}
+
+{session_context_section}"""
+
+# Alias. Section order is the prompt-cache layout (ADR-0049): identity, protocol,
+# extras, capabilities, skills, tools and rules first — stable across turns for
+# an agent — and the per-turn SESSION CONTEXT (clock, channel) LAST, so the
+# cacheable prefix is everything above it rather than the ~200 characters
+# before the clock. The block stays authoritative wherever it sits; the model
+# is told so in the block itself.
+ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
+
+# The built-in template as it was before ADR-0049 (SESSION CONTEXT right after
+# identity). Kept verbatim so a persisted copy of it is recognised as "the
+# default" and rendered with the current layout — the attribute is stored on
+# the action node at bootstrap, so without this an upgraded deployment keeps
+# the old layout until someone runs a source-mode sync.
+ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049 = """\
 {identity_section}{session_context_section}{protocol_section}
 
 {extra_section}
@@ -149,8 +186,10 @@ how you reason AND what you say in any reply you write yourself):
 {parameters_section}
 """
 
-# Alias — stable prefix ends before dynamic per-tick tail (flow notes, finalize).
-ORCHESTRATOR_SYSTEM_PROMPT = ORCHESTRATOR_STABLE_SYSTEM_PROMPT
+# Every past built-in system-prompt template. ``_compose_system_prompt`` swaps
+# a persisted template that matches one of these (after the store's fold) for
+# the current built-in; an operator's own template never matches.
+BUILTIN_SYSTEM_PROMPT_HISTORY = (ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049,)
 
 
 # Placeholders the built-in system-prompt template expects. Exposed with
@@ -444,6 +483,8 @@ def render_capabilities_section(capabilities: list) -> str:
 
 
 __all__ = [
+    "BUILTIN_SYSTEM_PROMPT_HISTORY",
+    "ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049",
     "ORCHESTRATOR_SYSTEM_PROMPT",
     "LEGACY_JSON_SYSTEM_PROMPT",
     "JSON_PROTOCOL_SECTION",

@@ -82,6 +82,7 @@ from jvagent.action.orchestrator.core_tools import (
     build_proactive_tools,
 )
 from jvagent.action.orchestrator.prompts import (
+    BUILTIN_SYSTEM_PROMPT_HISTORY,
     FINALIZE_PROMPT,
     FINALIZE_PROMPT_NATIVE,
     FLOW_IN_PROGRESS_PROMPT,
@@ -3393,6 +3394,18 @@ class OrchestratorInteractAction(
             )
         return False
 
+    def _is_previous_builtin_template(self, template: str) -> bool:
+        """True when ``template`` is a persisted copy of a past built-in system
+        prompt (compared through the store's fold), so the current built-in
+        should render in its place. An operator's own template never matches."""
+        wanted = self._normalise_prompt_text(template)
+        if not wanted:
+            return False
+        for previous in (LEGACY_JSON_SYSTEM_PROMPT, *BUILTIN_SYSTEM_PROMPT_HISTORY):
+            if wanted == self._normalise_prompt_text(previous):
+                return True
+        return False
+
     def _protocol_text(self, value: str, json_default: str, native_default: str) -> str:
         """Resolve an overridable prompt piece for the active protocol.
 
@@ -3427,10 +3440,13 @@ class OrchestratorInteractAction(
         template, then place ``system_prompt_extra`` (plus any caller-supplied
         ``extra_section``) and SESSION CONTEXT (ADR-0042).
 
-        The built-in template carries ``{session_context_section}`` immediately
-        after identity (cacheable ground truth), ``{protocol_section}`` (the
-        decision protocol paragraph for ``tool_protocol``, ADR-0044) and
-        ``{extra_section}`` ahead of the per-tick tool/skill listings. A custom
+        The built-in template carries ``{protocol_section}`` (the decision
+        protocol paragraph for ``tool_protocol``, ADR-0044) and
+        ``{extra_section}`` ahead of the per-tick tool/skill listings, and
+        ``{session_context_section}`` LAST (ADR-0049): the per-turn clock and
+        channel sit after everything that is stable for an agent, so the
+        provider's prompt-cache prefix covers the whole body instead of the
+        ~200 characters before the clock. A custom
         ``system_prompt`` that predates those slots gets extras/session context
         appended at the end; one that inlines the JSON protocol keeps it.
         """
@@ -3453,9 +3469,10 @@ class OrchestratorInteractAction(
         # protocol-correct built-in rather than JSON instructions to a model that
         # is being handed native tools. Compared after normalisation, and any
         # template still carrying the JSON mechanics is swapped too.
-        if self._normalise_prompt_text(template) == self._normalise_prompt_text(
-            LEGACY_JSON_SYSTEM_PROMPT
-        ):
+        if self._is_previous_builtin_template(template):
+            # A persisted copy of an earlier built-in (the JSON-era prompt, or
+            # the pre-ADR-0049 layout) is still "the default": render the
+            # current built-in rather than the stale one the store holds.
             template = ORCHESTRATOR_SYSTEM_PROMPT
         elif protocol == TOOL_PROTOCOL_NATIVE:
             self._is_json_era_default(template, LEGACY_JSON_SYSTEM_PROMPT)  # warns

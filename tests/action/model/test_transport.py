@@ -222,3 +222,49 @@ async def test_model_call_telemetry_names_the_transport(monkeypatch):
         interaction, {"total_tokens": 2}, 0.1, result=_result("litellm")
     )
     assert interaction.observability_metrics[0]["data"]["transport"] == "litellm"
+
+
+@pytest.mark.asyncio
+async def test_cached_tokens_reach_the_model_call_event(monkeypatch):
+    """Live finding (2026-09-06): the adapter reported ``cached_tokens`` but the
+    ``model_call`` event carried only the three totals, so prompt-cache hits
+    were invisible and the cost estimate never applied the cache discount."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    monkeypatch.delenv("JVAGENT_MODEL_TRANSPORT", raising=False)
+    action = OpenAILanguageModelAction()
+    action.max_retries = 0
+
+    async def own_query(messages, tools=None, **kwargs):
+        return ModelActionResult(
+            response="ok",
+            usage={
+                "prompt_tokens": 4000,
+                "completion_tokens": 10,
+                "total_tokens": 4010,
+                "cached_tokens": 3072,
+            },
+            model="gpt-4.1",
+            provider="openai",
+            finish_reason="stop",
+        )
+
+    monkeypatch.setattr(action, "_query", own_query)
+    interaction = MagicMock()
+    interaction.observability_metrics = []
+    interaction.save = AsyncMock()
+    emitted = []
+
+    async def _emit(self, inter, usage, duration, result=None):
+        emitted.append(dict(usage))
+
+    monkeypatch.setattr(OpenAILanguageModelAction, "_emit_observability", _emit)
+    import jvagent.action.model.context as model_context
+
+    monkeypatch.setattr(model_context, "get_interaction", lambda: interaction)
+    result = await action.query_messages(
+        messages=[{"role": "user", "content": "hi"}], stream=False
+    )
+    await result.get_response()
+    assert emitted, "no observability emission — the test needs the real path"
+    assert emitted[-1].get("cached_tokens") == 3072, emitted[-1]
