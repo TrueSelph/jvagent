@@ -1,7 +1,10 @@
 version: 2
+# All updates open against `dev` — the integration branch (see CLAUDE.md §6);
+# `main` only receives promotion PRs.
 updates:
   - package-ecosystem: "pip"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -14,6 +17,7 @@ updates:
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     labels:
@@ -22,6 +26,7 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/jvchat"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

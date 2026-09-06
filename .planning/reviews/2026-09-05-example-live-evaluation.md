@@ -196,6 +196,8 @@ syncs (re-sync in source mode after upgrading).
 
 ## 4. Follow-ups raised
 
+> **Status 2026-09-06:** 1 done (#187); 2 done (#194, ADR-0049); 3 done (guard names in `orchestrator_activation.guards`); 4 done (ADR-0050: planning escalates on an open plan, `planning_heavy_first_tick` restores); 5 done (only still-queued actions are handed to the walker); 6 — no change needed: `Interaction.export()` already carries `observability_metrics` and `usage`; the admin users list is summary-only by design, read the interaction export for telemetry; 7 done (merge sync warns per action about kept values).
+
 | # | Item | Where |
 |---|---|---|
 | 1 | Default `JVSPATIAL_TEXT_NORMALIZATION_ENABLED=false` at boot + document | `jvagent/cli/server.py`, `docs/environment-keys-reference.md` |

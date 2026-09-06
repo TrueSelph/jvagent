@@ -178,6 +178,7 @@ class OrchestratorLoopMixin:
                 if violation:
                     return {
                         "tool": "(guard)",
+                        "guard": str(param.get("key") or "grounding"),
                         "args": {},
                         "observation": f"({violation})",
                     }
@@ -907,6 +908,7 @@ class OrchestratorLoopMixin:
         gear = self._select_gear(
             state.substantive_tool_calls,
             bool(state.activated) or state.active_skill_doc is not None,
+            plan_open=bool(state.plan_note),
         )
         if gear == "light":
             state.ticks_light += 1
@@ -1006,6 +1008,7 @@ class OrchestratorLoopMixin:
             state.observations.append(
                 {
                     "tool": "(guard)",
+                    "guard": "chain",
                     "args": {},
                     "observation": (
                         f"(The task is not finished — call "
@@ -1134,6 +1137,7 @@ class OrchestratorLoopMixin:
                 state.observations.append(
                     {
                         "tool": "(guard)",
+                        "guard": "chain",
                         "args": {},
                         "observation": (
                             f"({name} was not run: it repeats a call already "
@@ -1243,6 +1247,7 @@ class OrchestratorLoopMixin:
             state.observations.append(
                 {
                     "tool": "(guard)",
+                    "guard": "repeat",
                     "args": {},
                     "observation": (
                         f"(The task is not finished — call "
@@ -1332,6 +1337,7 @@ class OrchestratorLoopMixin:
             state.observations.append(
                 {
                     "tool": "(guard)",
+                    "guard": "repeat",
                     "args": {},
                     "observation": (
                         f"(You have already called {tool_name} "
@@ -1745,6 +1751,11 @@ class OrchestratorLoopMixin:
             continuation_mode=rec_continuation_mode,
             flow_owner=rec_flow_owner,
             tools_invoked=[o.get("tool") for o in state.observations],
+            guards=[
+                str(o.get("guard") or "unknown")
+                for o in state.observations
+                if o.get("tool") == "(guard)"
+            ],
             tick_count=state.ticks,
             ended_via=state.ended_via,
             activated=state.activated,

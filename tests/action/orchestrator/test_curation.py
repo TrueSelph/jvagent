@@ -79,3 +79,36 @@ async def test_curate_noops_without_curate_api(make_orchestrator, make_visitor):
     v = make_visitor(utterance="hi")
     v.curate_walk_path = None  # walker without a callable curate API
     await ex._curate_walk_path(v)  # must not raise
+
+
+async def test_only_still_queued_actions_are_handed_to_the_walker(
+    make_orchestrator, make_visitor, flow_stub_cls
+):
+    """The orchestrator itself is executing (not queued) and a lower-weight
+    always_execute IA has already run; handing them to ``curate_walk_path``
+    made the walker log a "caller-supplied action(s) were not in the queue"
+    line on every turn. Only what the walker still holds is passed."""
+
+    class IntroIA(flow_stub_cls):
+        always_execute = True
+        anchors = []
+
+        async def execute(self, visitor):
+            pass
+
+    class AuditIA(flow_stub_cls):
+        always_execute = True
+        anchors = []
+
+        async def execute(self, visitor):
+            pass
+
+    intro, audit = IntroIA(), AuditIA()
+    intro.id, audit.id = "n.IntroIA.1", "n.AuditIA.1"
+    ex = make_orchestrator(actions=[intro, audit])
+    v = make_visitor(utterance="hello")
+    v.get_queue = AsyncMock(return_value=[audit])  # intro already ran; ex is running
+    captured = {}
+    v.curate_walk_path = AsyncMock(side_effect=lambda keep: captured.update(keep=keep))
+    await ex._curate_walk_path(v)
+    assert [a.id for a in captured["keep"]] == ["n.AuditIA.1"]

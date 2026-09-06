@@ -28,21 +28,21 @@ openai>=1.0.0
 
 # Additional dependencies for email validation support
 # pydantic[email] provides email-validator for EmailStr type support
-pydantic[email]>=2.13.4
+pydantic[email]>=2.13.5
 
 # From jvagent/web_fetch
 beautifulsoup4
 markdownify
 
 # From jvagent/stt_action/deepgram and jvagent/tts_action/elevenlabs
-deepgram-sdk>=7.7.1
-elevenlabs>=2.65.0
+deepgram-sdk>=7.8.0
+elevenlabs>=2.66.0
 
 # From jvagent/whatsapp
 filetype>=1.2.0
 
 # From the jvagent/google/* actions and jvagent/pageindex_google_drive_sync_action
-google-api-python-client>=2.199.0
+google-api-python-client>=2.200.0
 google-auth-httplib2>=0.4.2
 google-auth-oauthlib>=1.4.1
 
