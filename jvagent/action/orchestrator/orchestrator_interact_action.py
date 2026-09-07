@@ -162,6 +162,16 @@ from jvagent.action.orchestrator.turn_cache import update_prompt_cache
 
 DEFAULT_ACTIVATION_BUDGET = 24
 
+# Completion ceiling for the heavy model when ``model_max_tokens`` is left at 0
+# (derive-from-capabilities, the default). A single fixed number cannot serve
+# both a 16k-output mainstream model and a reasoning model that spends tens of
+# thousands of tokens thinking before it emits its decision, so the ceiling
+# comes from the model's own advertised ``max_output_tokens`` — never more than
+# the provider accepts, and never more than HEAVY_MAX_TOKENS_CEILING (an
+# advertised 1M output ceiling is not a spending mandate).
+HEAVY_MAX_TOKENS_FALLBACK = 8192  # capabilities unknown
+HEAVY_MAX_TOKENS_CEILING = 32768
+
 # Cap files ingested as artifacts per turn — see uploads.py for ingestion logic.
 # A ``requires-actions`` spec is an Action class name with an optional inline
 # version constraint, PEP 508-style: the comparison operator is the delimiter
@@ -299,16 +309,32 @@ class OrchestratorInteractAction(
     model_action_type: str = attribute(default="OpenAILanguageModelAction")
     model_temperature: float = attribute(default=0.2)
     model_max_tokens: int = attribute(
-        default=4096,
+        default=0,
         description=(
             "Completion ceiling for the HEAVY reasoning model. The orchestrator "
             "is agentic by nature — each tick emits reasoning plus an action "
             "(often the substantive final answer), and thinking models spend "
             "tokens on reasoning that count against this budget — so it needs "
-            "more headroom than a single-shot responder (a 2048 ceiling "
-            "truncated long answers). The repeat-guard and activation_budget "
-            "still bound runaway loops."
+            "far more headroom than a single-shot responder. 0 (the default) "
+            "DERIVES the ceiling from the model's advertised max_output_tokens, "
+            "bounded by model_max_tokens_ceiling; a fixed default cannot serve "
+            "both a 16k-output mainstream model and a reasoning model, and one "
+            "set too low does not merely truncate the answer — three truncated "
+            "decisions in a row end the turn with no reply at all. Set a "
+            "non-zero value to pin the ceiling explicitly. The repeat-guard and "
+            "activation_budget still bound runaway loops."
         ),
+        ge=0,
+    )
+    model_max_tokens_ceiling: int = attribute(
+        default=HEAVY_MAX_TOKENS_CEILING,
+        description=(
+            "Upper bound applied when model_max_tokens is derived from the "
+            "model's advertised max_output_tokens. Keeps a model that "
+            "advertises a 1M output ceiling from turning one runaway tick into "
+            "a large bill. Ignored when model_max_tokens is set explicitly."
+        ),
+        ge=1,
     )
     tool_protocol: str = attribute(
         default=TOOL_PROTOCOL_AUTO,
@@ -3218,7 +3244,7 @@ class OrchestratorInteractAction(
             action,
             model_id,
             self.model_temperature,
-            self.model_max_tokens,
+            self._effective_heavy_max_tokens(action, model_id),
             True,
         )
 
@@ -3397,6 +3423,36 @@ class OrchestratorInteractAction(
         update_prompt_cache("protocol", protocol)
         update_prompt_cache("protocol_reason", reason)
         return protocol
+
+    def _effective_heavy_max_tokens(
+        self, model_action: Any, model_id: Optional[str]
+    ) -> int:
+        """The completion ceiling to send for the heavy model.
+
+        An explicit non-zero ``model_max_tokens`` always wins. At 0 (the
+        default) the ceiling is the model's own advertised
+        ``max_output_tokens``, capped by ``model_max_tokens_ceiling`` — so a
+        reasoning model gets the headroom its decisions need without asking a
+        16k-output model for more than the provider will accept. Unknown
+        capabilities fall back to HEAVY_MAX_TOKENS_FALLBACK rather than
+        guessing high.
+        """
+        configured = int(getattr(self, "model_max_tokens", 0) or 0)
+        if configured > 0:
+            return configured
+        ceiling = (
+            int(getattr(self, "model_max_tokens_ceiling", 0) or 0)
+            or HEAVY_MAX_TOKENS_CEILING
+        )
+        try:
+            caps = self._model_capabilities(model_action, model_id)
+            advertised = int(getattr(caps, "max_output_tokens", 0) or 0)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("orchestrator: max_output_tokens lookup failed: %s", exc)
+            advertised = 0
+        if advertised <= 0:
+            return HEAVY_MAX_TOKENS_FALLBACK
+        return min(advertised, ceiling)
 
     @staticmethod
     def _model_capabilities(
