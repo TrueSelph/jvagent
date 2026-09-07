@@ -177,3 +177,22 @@ def test_guards_exclude_catches_the_repeat_guard_and_prefix_matches():
     assert (
         evaluate_turn({"loop": {"guards_exclude": ["chain", "plan"]}}, observed) == []
     )
+
+
+def test_smoke_key_gate_follows_the_litellm_model_prefix():
+    """The nightly's Ollama Cloud job ran `--provider litellm --model
+    ollama_chat/glm-5.3:cloud`, and the script gated on the adapter's table
+    default (OPENAI_API_KEY): it printed "skipped" and exited 0, so the job was
+    green without running anything."""
+    from jvagent.testing.live_smoke import required_key_env
+
+    assert required_key_env("litellm", "ollama_chat/glm-5.3:cloud") == "OLLAMA_API_KEY"
+    assert required_key_env("litellm", "ollama/llama3.1") == "OLLAMA_API_KEY"
+    assert (
+        required_key_env("litellm", "anthropic/claude-sonnet-4-5")
+        == "ANTHROPIC_API_KEY"
+    )
+    assert required_key_env("litellm", "openai/gpt-4o-mini") == "OPENAI_API_KEY"
+    assert required_key_env("litellm", None) == "OPENAI_API_KEY"  # table default model
+    assert required_key_env("openai", "gpt-4o-mini") == "OPENAI_API_KEY"
+    assert required_key_env("ollama", "llama3.1") is None

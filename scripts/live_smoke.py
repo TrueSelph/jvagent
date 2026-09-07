@@ -19,7 +19,12 @@ import sys
 
 
 def main() -> int:
-    from jvagent.testing.live_smoke import PROVIDER_ACTIONS, run_smoke, summarise
+    from jvagent.testing.live_smoke import (
+        PROVIDER_ACTIONS,
+        required_key_env,
+        run_smoke,
+        summarise,
+    )
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", required=True, choices=sorted(PROVIDER_ACTIONS))
@@ -30,7 +35,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    key_env = PROVIDER_ACTIONS[args.provider][2]
+    key_env = required_key_env(args.provider, args.model)
     if key_env and not os.environ.get(key_env):
         print(json.dumps({"skipped": f"{key_env} not set"}))
         return 0

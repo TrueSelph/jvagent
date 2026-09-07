@@ -244,6 +244,39 @@ SMOKE_SCENARIOS: List[Dict[str, Any]] = [
 ]
 
 
+# LiteLLM model-id prefix → the environment variable that provider reads.
+_LITELLM_PREFIX_KEYS: Dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
+    "ollama_chat": "OLLAMA_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "together_ai": "TOGETHERAI_API_KEY",
+    "xai": "XAI_API_KEY",
+}
+
+
+def required_key_env(provider: str, model: Optional[str] = None) -> Optional[str]:
+    """The env var a smoke run needs, or ``None`` when none is required.
+
+    First-party providers declare theirs in ``PROVIDER_ACTIONS``. For the
+    ``litellm`` adapter the key depends on the model id's provider prefix
+    (``ollama_chat/glm-5.3:cloud`` → ``OLLAMA_API_KEY``); the table's default
+    (OpenAI) applies only to unprefixed or unknown prefixes. The nightly's
+    Ollama Cloud job was silently "skipped, OPENAI_API_KEY not set" before this.
+    """
+    default = PROVIDER_ACTIONS[provider][2]
+    if provider != "litellm":
+        return default
+    ident = str(model or PROVIDER_ACTIONS[provider][3] or "")
+    prefix = ident.split("/", 1)[0].lower() if "/" in ident else ""
+    return _LITELLM_PREFIX_KEYS.get(prefix, default)
+
+
 def build_model_action(provider: str, model: Optional[str] = None, **attrs: Any) -> Any:
     """Instantiate the provider's language-model action (in memory)."""
     import importlib
@@ -366,6 +399,7 @@ def summarise(results: List[Any]) -> Dict[str, Any]:
 
 __all__ = [
     "MULTISTEP_SCENARIO",
+    "required_key_env",
     "PROVIDER_ACTIONS",
     "SMOKE_SCENARIOS",
     "build_model_action",
