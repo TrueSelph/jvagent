@@ -279,6 +279,7 @@ Only bites with a reasoning-capable model; the `gpt-4o-mini` default ignores rea
 | `max_observations_in_prompt` | `12` | how many of this turn's tool results replay into the loop prompt (most recent first). Raise for long agentic turns whose later steps depend on early findings; `0` replays all (size caps still apply) |
 | `observation_max_chars` | `4000` | max characters of a **recent** tool result replayed into the loop prompt (middle-out elided, and marked). `0` disables |
 | `stale_observation_max_chars` | `600` | max characters of an **older** result (beyond `observation_full_recent`). Older results matter as "what happened", not as payload. `0` disables |
+| `thought_replay_max_chars` | `600` | max characters of the model's own reasoning replayed beside each step (the JSON contract's `thought`, or an excerpt of provider reasoning when the model wrote no prose); keeps a thinking model's thread between ticks (ADR-0052). `0` disables |
 | `observation_full_recent` | `3` | how many of the most recent results get `observation_max_chars` rather than the stale cap |
 | `observation_args_max_chars` | `400` | max characters of a tool call's **arguments** in the replay — a write-file call carries its whole payload there. `0` disables |
 

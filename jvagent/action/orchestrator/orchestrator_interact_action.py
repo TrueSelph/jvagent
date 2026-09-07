@@ -109,6 +109,7 @@ from jvagent.action.orchestrator.tools import (
     DEFAULT_OBSERVATION_FULL_RECENT,
     DEFAULT_OBSERVATION_MAX_CHARS,
     DEFAULT_STALE_OBSERVATION_MAX_CHARS,
+    DEFAULT_THOUGHT_MAX_CHARS,
     MAX_OBSERVATIONS_IN_PROMPT,
     SkillTool,
     decisions_from_native_result,
@@ -118,6 +119,7 @@ from jvagent.action.orchestrator.tools import (
     render_observations_section,
     render_tools_section,
     salvage_tool_call_text,
+    truncate_thought,
     wrap_action_tool,
 )
 from jvagent.action.orchestrator.turn_cache import (
@@ -561,6 +563,13 @@ class OrchestratorInteractAction(
         default=DEFAULT_OBSERVATION_FULL_RECENT,
         description="How many of the most recent tool results are replayed at "
         "observation_max_chars rather than stale_observation_max_chars.",
+    )
+    thought_replay_max_chars: int = attribute(
+        default=DEFAULT_THOUGHT_MAX_CHARS,
+        description="Max characters of the model's own reasoning replayed beside "
+        "each step — the JSON contract's `thought`, or an excerpt of provider "
+        "reasoning when the model wrote no prose. Keeps a thinking model's "
+        "thread between ticks (#203). 0 disables the replay.",
     )
     observation_args_max_chars: int = attribute(
         default=DEFAULT_OBSERVATION_ARGS_MAX_CHARS,
@@ -3340,6 +3349,13 @@ class OrchestratorInteractAction(
             name = (fn() if callable(fn) else "") or type(model_action).__name__
         return (str(name), str(model_id or ""))
 
+    def _reasoning_excerpt(self, result: Any) -> str:
+        """A bounded excerpt of the provider's reasoning for replay, or ""."""
+        return truncate_thought(
+            str(getattr(result, "thinking_content", None) or ""),
+            int(self.thought_replay_max_chars or 0),
+        )
+
     def _resolve_protocol(
         self,
         caps: ModelCapabilities,
@@ -4210,6 +4226,7 @@ class OrchestratorInteractAction(
             "full_recent": int(self.observation_full_recent),
             "args_max_chars": int(self.observation_args_max_chars),
             "max_observations": int(self.max_observations_in_prompt),
+            "thought_max_chars": int(self.thought_replay_max_chars),
         }
         user_template = self._protocol_text(
             self.user_prompt,
@@ -4469,6 +4486,13 @@ class OrchestratorInteractAction(
             )
             if not decisions:
                 return {"action": MODEL_TRUNCATED_ACTION} if truncated else None
+            if not decisions[0].get("_assistant_text"):
+                # No prose with the call: replay an excerpt of the provider's
+                # reasoning instead, so a thinking model keeps its thread
+                # (ADR-0052). Provider-agnostic — it rides as assistant content.
+                excerpt = self._reasoning_excerpt(result)
+                if excerpt:
+                    decisions[0]["_assistant_text"] = excerpt
             if len(decisions) > 1:
                 update_prompt_cache("pending_decisions", decisions[1:])
             return decisions[0]
@@ -4481,6 +4505,17 @@ class OrchestratorInteractAction(
         parsed = parse_json_object(raw) if raw else None
         if parsed is None and truncated:
             return {"action": MODEL_TRUNCATED_ACTION}
+        if isinstance(parsed, dict):
+            # Continuity (ADR-0052): the decision's own `thought`, or failing
+            # that an excerpt of the provider's reasoning, rides with the step so
+            # the next tick replays it beside the result.
+            thought = str(
+                parsed.get("thought") or parsed.get("reasoning") or ""
+            ).strip()
+            if not thought:
+                thought = self._reasoning_excerpt(result)
+            if thought:
+                parsed["_assistant_text"] = thought
         return parsed
 
 
