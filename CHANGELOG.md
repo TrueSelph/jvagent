@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases wait for the tests.** `0.1.8rc7` was tagged, published to TestPyPI
+  and built as an image while `Test jvagent` on the same commit was red (the
+  `jvchat` job's `npm ci` hung for 45 minutes on the runner). The version-bump
+  tag (`auto-tag.yaml`), the PyPI publish (`publish-pypi.yaml`, tag pushes) and
+  the Docker release on `main` (`release-docker.yaml`) now run
+  `scripts/ci/wait_for_workflow.sh` and proceed only once that commit's
+  `Test jvagent` run has succeeded. The `jvchat` job has a 20-minute job
+  timeout, an 8-minute install timeout and one `npm ci` retry.
+
 ### Added
 
 - **Nightly reproduction of the #203 failure.** `scripts/live_smoke.py` gains

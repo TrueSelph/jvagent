@@ -25,7 +25,8 @@ on:
       - "jvagent/version.py"
 
 permissions:
-  contents: read  # the PAT does the write; GITHUB_TOKEN needs nothing extra
+  contents: read  # the PAT does the write
+  actions: read   # to read the Test workflow's conclusion for this commit
 
 jobs:
   tag:
@@ -61,6 +62,14 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION (tag v$VERSION)"
+
+      # Release gate: no tag (and so no publish) while the tests for this
+      # commit are red or still running. 0.1.8rc7 shipped past a red run.
+      - name: Wait for "Test jvagent" on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/ci/wait_for_workflow.sh "Test jvagent" "${{ github.sha }}" 45
 
       - name: Create and push tag (skip if it already exists)
         env:
