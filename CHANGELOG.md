@@ -10,6 +10,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
+  JSON contract now asks for an optional `thought`, and each step's recorded
+  reasoning — that thought, or an excerpt of the provider's reasoning when the
+  model wrote no prose — is replayed beside the step's result on both
+  protocols (`THOUGHT:` line on the JSON contract; assistant content on
+  native), bounded by `thought_replay_max_chars` (default 600, `0` disables).
+  The first-repeat nudge quotes the earlier result inline instead of pointing
+  "above". A thinking model no longer re-derives its plan from tool I/O every
+  tick.
+
 - **Thinking models are no longer mis-harnessed by a guessed capability
   (issue #203, ADR-0051).** LiteLLM's Ollama provider infers
   `supports_function_calling` by searching the model's `/api/show` template
