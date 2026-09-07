@@ -60,7 +60,13 @@ class BaseModelAction(Action, ABC):
     api_endpoint: str = attribute(default="", description="API endpoint URL")
     model: str = attribute(default="", description="Model identifier")
     timeout: int = attribute(
-        default=120, description="Request timeout in seconds", ge=1
+        default=300,
+        description=(
+            "Request timeout in seconds. A reasoning model emits its thinking "
+            "before its answer, so a single completion routinely outruns the "
+            "60-120s that suffices for a chat-style responder."
+        ),
+        ge=1,
     )
 
     max_retries: int = attribute(
@@ -99,12 +105,17 @@ class BaseModelAction(Action, ABC):
         description="Randomize delay (0.5x–1.5x) to avoid thundering herd",
     )
     retry_total_deadline_seconds: float = attribute(
-        default=60.0,
+        default=900.0,
         description=(
             "Wall-clock ceiling for one logical call including all retries and "
             "backoff. A retry that would start after the deadline is not "
             "attempted; the last error propagates. 0 disables (unbounded — the "
-            "pre-ADR-0046 behaviour, worst case ~15 minutes with Retry-After)."
+            "pre-ADR-0046 behaviour, worst case ~15 minutes with Retry-After). "
+            "MUST exceed ``timeout``: the elapsed time counted against this "
+            "deadline includes the attempt that just failed, so a deadline at "
+            "or below one request timeout silently makes timeout-retries "
+            "impossible while leaving fast-failure retries working — set "
+            "``retry_on_timeout: false`` if that is what you actually want."
         ),
         ge=0.0,
     )
@@ -190,6 +201,31 @@ class BaseModelAction(Action, ABC):
             delay *= random.uniform(0.5, 1.5)
         return max(0.0, delay)
 
+    def _warn_if_deadline_below_timeout(self, deadline: float) -> None:
+        """Warn once when the retry deadline cannot outlive one request.
+
+        The deadline is measured from the start of the logical call, so an
+        attempt that just timed out has already spent ``timeout`` seconds
+        against it. A deadline at or below ``timeout`` therefore rejects every
+        post-timeout retry while still allowing retries after a fast failure —
+        a silent, half-disabled state. Surfacing it is cheap; the operator
+        either raises the deadline or sets ``retry_on_timeout: false``.
+        """
+        if getattr(self, "_deadline_coherence_warned", False):
+            return
+        request_timeout = float(getattr(self, "timeout", 0) or 0)
+        if deadline > 0 and request_timeout > 0 and deadline <= request_timeout:
+            self._deadline_coherence_warned = True
+            logger.warning(
+                "retry_total_deadline_seconds (%.0fs) is at or below timeout "
+                "(%.0fs): a request that times out can never be retried, since "
+                "the failed attempt alone exhausts the deadline. Raise the "
+                "deadline above the timeout, or set retry_on_timeout=false to "
+                "make the intent explicit.",
+                deadline,
+                request_timeout,
+            )
+
     async def _execute_with_retry(
         self,
         op_factory: Callable[[], Coroutine[Any, Any, T]],
@@ -203,6 +239,7 @@ class BaseModelAction(Action, ABC):
         max_attempts = self.max_retries + 1
         started = time.monotonic()
         deadline = float(getattr(self, "retry_total_deadline_seconds", 0.0) or 0.0)
+        self._warn_if_deadline_below_timeout(deadline)
         for attempt in range(max_attempts):
             try:
                 coro = op_factory()
