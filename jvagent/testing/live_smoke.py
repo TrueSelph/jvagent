@@ -14,6 +14,7 @@ key in the environment. It runs from ``scripts/live_smoke.py`` and the nightly
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
@@ -60,9 +61,134 @@ PROVIDER_ACTIONS: Dict[str, tuple] = {
     ),
 }
 
+# A three-step SOP over in-memory tools, sized so the schema result exceeds the
+# default stale-observation cap (2500 chars) — the shape that killed a reasoning
+# model on the JSON contract in issue #203: it re-derived its plan every tick,
+# re-issued the schema call, and the repeat guard ended the turn. The scenario
+# asserts the loop finishes with every step run once and no repeat guard.
+_SOP_SCHEMA = json.dumps(
+    {
+        "track": "Identity",
+        "version": 7,
+        "type_key": "role",
+        "fields": [
+            {
+                "name": f"field_{i:02d}",
+                "type": ["string", "integer", "boolean", "date"][i % 4],
+                "required": i % 3 == 0,
+                "description": (
+                    f"Field {i} of the Identity track; populated from the intake "
+                    "form and validated against the role taxonomy before write."
+                ),
+            }
+            for i in range(28)
+        ],
+    },
+    indent=2,
+)
+
+
+class _SopToolsAction:
+    """Three tools that only make sense in order: schema → transform → write."""
+
+    binds_tools_to_visitor = False
+    enabled = True
+
+    def __init__(self) -> None:
+        self.calls: List[str] = []
+
+    def get_class_name(self) -> str:
+        return "SopToolsAction"
+
+    async def get_tools(self) -> List[Any]:
+        from jvagent.tooling.tool import Tool
+        from jvagent.tooling.tool_result import ToolResult
+
+        async def get_schema(**kwargs: Any) -> Any:
+            self.calls.append("sop_get_track_schema")
+            return ToolResult(content=_SOP_SCHEMA)
+
+        async def transform(**kwargs: Any) -> Any:
+            self.calls.append("sop_transform_record")
+            if not kwargs.get("type_key"):
+                return ToolResult(
+                    content="(error: type_key is required — read it from the schema)"
+                )
+            return ToolResult(
+                content=json.dumps(
+                    {"record_id": "rec-001", "role": "member", "fields_mapped": 28}
+                )
+            )
+
+        async def write(**kwargs: Any) -> Any:
+            self.calls.append("sop_write_record")
+            if not kwargs.get("record"):
+                return ToolResult(content="(error: record is required)")
+            return ToolResult(content='{"written": true, "id": "rec-001"}')
+
+        return [
+            Tool(
+                name="sop_get_track_schema",
+                description=(
+                    "Step 1 of the onboarding SOP: fetch the schema of a track. "
+                    "Args: track_id (string)."
+                ),
+                execute=get_schema,
+            ),
+            Tool(
+                name="sop_transform_record",
+                description=(
+                    "Step 2: transform the sample intake record to a track schema. "
+                    "Args: type_key (string, from the schema's type_key), "
+                    "track_id (string)."
+                ),
+                execute=transform,
+            ),
+            Tool(
+                name="sop_write_record",
+                description=(
+                    "Step 3: write a transformed record. Args: record (object, the "
+                    "output of step 2)."
+                ),
+                execute=write,
+            ),
+        ]
+
+
+MULTISTEP_SCENARIO: Dict[str, Any] = {
+    "schema": "jvagent.use-case/v1",
+    "id": "live.multistep_sop",
+    "title": "runs a three-step SOP without losing its thread",
+    "given": {"channel": "web"},
+    "turns": [
+        {
+            "id": "sop",
+            "when": {
+                "user": (
+                    "Run the onboarding SOP for the Identity track: fetch the "
+                    "track schema, transform the sample intake record to it, "
+                    "write the result, then confirm what was written."
+                )
+            },
+            "then": {
+                "loop": {
+                    "must_reply": True,
+                    "tools_include": [
+                        "sop_get_track_schema",
+                        "sop_transform_record",
+                        "sop_write_record",
+                    ],
+                    "guards_exclude": ["repeat"],
+                    "max_ticks": 8,
+                }
+            },
+        }
+    ],
+}
+
 # The smallest scenario set that proves the loop end to end against a provider:
-# a plain reply, a real tool call followed by a reply, and the
-# "act, don't announce" rule.
+# a plain reply, a real tool call followed by a reply, the "act, don't announce"
+# rule, and the multi-step SOP above.
 SMOKE_SCENARIOS: List[Dict[str, Any]] = [
     {
         "schema": "jvagent.use-case/v1",
@@ -114,6 +240,7 @@ SMOKE_SCENARIOS: List[Dict[str, Any]] = [
             }
         ],
     },
+    MULTISTEP_SCENARIO,
 ]
 
 
@@ -156,13 +283,15 @@ def build_live_orchestrator(model_action: Any, **attrs: Any) -> Any:
                 return model_action
             if key == "ReplyAction":
                 return reply
+            if key == "SopToolsAction":
+                return sop_tools
             return None
 
         async def get_model_action(self, required: bool = False):  # type: ignore[override]
             return model_action
 
         async def _enabled_actions(self, _agent):  # type: ignore[override]
-            return [reply, model_action]
+            return [reply, model_action, sop_tools]
 
         async def _enabled_interact_actions(self, _agent):  # type: ignore[override]
             return []
@@ -177,6 +306,7 @@ def build_live_orchestrator(model_action: Any, **attrs: Any) -> Any:
             return None
 
     reply = ReplyAction()
+    sop_tools = _SopToolsAction()
     orchestrator = LiveOrchestrator()
     orchestrator.model_action_type = model_action.get_class_name()
     orchestrator.model = model_action.model
@@ -235,6 +365,7 @@ def summarise(results: List[Any]) -> Dict[str, Any]:
 
 
 __all__ = [
+    "MULTISTEP_SCENARIO",
     "PROVIDER_ACTIONS",
     "SMOKE_SCENARIOS",
     "build_model_action",

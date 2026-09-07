@@ -135,3 +135,45 @@ def test_a_real_turn_still_passes_its_negative_assertion():
         reply="Sure, here's the answer.", tools_invoked=["reply"], ended_via="reply"
     )
     assert evaluate_turn({"publish": {"not_matches": ["I can'?t"]}}, live) == []
+
+
+# --- issue #203: the multistep SOP vocabulary --------------------------------
+
+
+def test_tools_include_is_honoured_like_tools_called():
+    """The smoke scenarios were written with the CUCS spelling ``tools_include``;
+    the evaluator only knew ``tools_called``, so that assertion never ran."""
+    observed = _obs(reply="done", tools_invoked=["sop_get_track_schema", "reply"])
+    failures = evaluate_turn(
+        {"loop": {"tools_include": ["sop_get_track_schema", "sop_write_record"]}},
+        observed,
+    )
+    assert any("sop_write_record" in f for f in failures)
+    assert not any(
+        f.startswith("expected tool 'sop_get_track_schema'") for f in failures
+    )
+
+
+def test_max_ticks_bounds_the_turn():
+    observed = _obs(reply="done", tools_invoked=["reply"], tick_count=9)
+    assert any(
+        "9 ticks" in f for f in evaluate_turn({"loop": {"max_ticks": 7}}, observed)
+    )
+    assert evaluate_turn({"loop": {"max_ticks": 9}}, observed) == []
+
+
+def test_guards_exclude_catches_the_repeat_guard_and_prefix_matches():
+    observed = _obs(
+        reply="done",
+        tools_invoked=["a", "(guard)", "(guard)", "reply"],
+        guards=["repeat", "grounding:grounding.verified_claims"],
+    )
+    failures = evaluate_turn({"loop": {"guards_exclude": ["repeat"]}}, observed)
+    assert len(failures) == 1 and "guard 'repeat' fired 1x" in failures[0]
+    # A family name covers every parameterised guard under it.
+    failures = evaluate_turn({"loop": {"guards_exclude": ["grounding"]}}, observed)
+    assert len(failures) == 1 and "grounding" in failures[0]
+    # Nothing banned fired → clean.
+    assert (
+        evaluate_turn({"loop": {"guards_exclude": ["chain", "plan"]}}, observed) == []
+    )
