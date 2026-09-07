@@ -47,6 +47,11 @@ jobs:
             model: ollama_chat/glm-5.3:cloud
             key: OLLAMA_API_KEY
             conformance: false
+            # Ollama Cloud: without this LiteLLM talks to localhost:11434 (a
+            # developer box has the local daemon forwarding `:cloud` models; a
+            # runner does not).
+            api_base_env: OLLAMA_API_BASE
+            api_base: https://ollama.com
     env:
       PROVIDER_KEY: ${{ secrets[matrix.key] }}
     steps:
@@ -98,6 +103,7 @@ jobs:
         continue-on-error: true
         run: |
           export ${{ matrix.key }}="$PROVIDER_KEY"
+          if [ -n "${{ matrix.api_base_env }}" ]; then export ${{ matrix.api_base_env }}="${{ matrix.api_base }}"; fi
           python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}"
 
       - name: Live smoke — LiteLLM transport
@@ -106,6 +112,7 @@ jobs:
         continue-on-error: true
         run: |
           export ${{ matrix.key }}="$PROVIDER_KEY"
+          if [ -n "${{ matrix.api_base_env }}" ]; then export ${{ matrix.api_base_env }}="${{ matrix.api_base }}"; fi
           python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}" --transport litellm
 
       - name: Upload recorded fixtures
