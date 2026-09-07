@@ -20,10 +20,21 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      actions: read  # release gate on main
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      # Release gate on main: the image for a version bump waits for that
+      # commit's "Test jvagent" run. dev pushes are not gated — Test runs on
+      # pull requests and main only.
+      - name: Wait for "Test jvagent" on this commit (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/ci/wait_for_workflow.sh "Test jvagent" "${{ github.sha }}" 45
 
       - name: Extract version
         id: version

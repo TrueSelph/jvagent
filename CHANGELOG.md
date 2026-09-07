@@ -8,6 +8,28 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases wait for the tests.** `0.1.8rc7` was tagged, published to TestPyPI
+  and built as an image while `Test jvagent` on the same commit was red (the
+  `jvchat` job's `npm ci` hung for 45 minutes on the runner). The version-bump
+  tag (`auto-tag.yaml`), the PyPI publish (`publish-pypi.yaml`, tag pushes) and
+  the Docker release on `main` (`release-docker.yaml`) now run
+  `scripts/ci/wait_for_workflow.sh` and proceed only once that commit's
+  `Test jvagent` run has succeeded. The `jvchat` job has a 20-minute job
+  timeout, an 8-minute install timeout and one `npm ci` retry.
+
+### Added
+
+- **Nightly reproduction of the #203 failure.** `scripts/live_smoke.py` gains
+  `live.multistep_sop`: a three-step SOP over in-memory tools whose schema
+  result exceeds the default stale-observation cap, asserting every step runs
+  once, the turn finishes within 8 ticks and **no repeat guard fires**
+  (`guards_exclude`, new alongside `max_ticks`; `tools_include` is now
+  honoured). The nightly `live-providers` workflow runs it for every provider
+  and adds Ollama Cloud (`ollama_chat/glm-5.3:cloud` via the LiteLLM adapter,
+  `OLLAMA_API_KEY`), smoke only.
+
 ### Fixed
 
 - **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
