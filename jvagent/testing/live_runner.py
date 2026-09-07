@@ -48,6 +48,9 @@ class TurnObservation:
     turn_id: str
     utterance: str
     tools_invoked: List[str] = field(default_factory=list)
+    # Which guards fired, in order (`orchestrator_activation.guards`): the
+    # repeat guard here is the #203 failure signature.
+    guards: List[str] = field(default_factory=list)
     activated_skills: List[str] = field(default_factory=list)
     ended_via: str = ""
     tick_count: int = 0
@@ -270,6 +273,7 @@ class LiveScenarioRunner:
                 ]
                 observation.activated_skills = list(sink.get("activated") or [])
                 observation.ended_via = str(sink.get("ended_via") or "")
+                observation.guards = [str(g) for g in (sink.get("guards") or []) if g]
                 observation.tick_count = int(sink.get("tick_count") or 0)
                 observation.reply = (visitor.interaction.response or "").strip()
                 result.turns.append(observation)
@@ -329,7 +333,11 @@ def evaluate_turn(then: Dict[str, Any], observed: TurnObservation) -> List[str]:
     loop = then.get("loop") or {}
     called = observed.tools_invoked
 
-    for name in loop.get("tools_called") or []:
+    # ``tools_include`` is the CUCS spelling (ADR-0027); ``tools_called`` the
+    # older one. Both mean "each of these ran at least once".
+    for name in list(loop.get("tools_called") or []) + list(
+        loop.get("tools_include") or []
+    ):
         if name not in called:
             failures.append(f"expected tool {name!r} to be called; called={called}")
     for name in loop.get("tools_not_called") or []:
@@ -363,6 +371,24 @@ def evaluate_turn(then: Dict[str, Any], observed: TurnObservation) -> List[str]:
 
     if loop.get("must_reply") and not observed.reply:
         failures.append("turn produced no user-facing reply")
+
+    max_ticks = loop.get("max_ticks")
+    if max_ticks is not None and observed.tick_count > int(max_ticks):
+        failures.append(
+            f"turn took {observed.tick_count} ticks, expected at most {max_ticks}"
+        )
+
+    # A guard that must not fire — e.g. ``["repeat"]``: a model that re-issues
+    # a call it already made has lost its thread (issue #203). Guard names are
+    # those the activation event records (grounding:<param>, chain, repeat,
+    # plan); a prefix match lets ``grounding`` cover every parameter.
+    for banned in loop.get("guards_exclude") or []:
+        hits = [g for g in observed.guards if g == banned or g.startswith(f"{banned}:")]
+        if hits:
+            failures.append(
+                f"guard {banned!r} fired {len(hits)}x ({observed.guards}); the "
+                "model lost its thread"
+            )
 
     publish = then.get("publish") or {}
     for needle in publish.get("contains") or []:

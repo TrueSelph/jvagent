@@ -63,6 +63,13 @@ Configure trusted publishers before the first publish:
    git push origin v0.1.0rc1
    ```
 
+   **Release gate.** The tag, the PyPI publish and the Docker image on `main`
+   each wait for that commit's `Test jvagent` run to succeed
+   ([`scripts/ci/wait_for_workflow.sh`](scripts/ci/wait_for_workflow.sh)); a red
+   or hung run means nothing ships. If the run was a runner flake, re-run it
+   (`gh run rerun <id> --failed`) and then re-run the gated workflow. A manual
+   `workflow_dispatch` of the publish skips the gate (it is the retry path).
+
 5. The workflow builds the sdist + wheel, runs `twine check`, then:
    - **pre-release tag** (`rc`/`a`/`b`) → publishes to **TestPyPI**.
    - **final tag** → publishes to **PyPI**.

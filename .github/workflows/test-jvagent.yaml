@@ -61,6 +61,9 @@ jobs:
 
   jvchat:
     runs-on: ubuntu-latest
+    # A registry stall in `npm ci` once held this job for the 45-minute default
+    # and failed the run for a tree that had passed minutes earlier; bound it.
+    timeout-minutes: 20
     steps:
       - name: Check out code
         uses: actions/checkout@v7
@@ -74,7 +77,8 @@ jobs:
 
       - name: Install jvchat dependencies
         working-directory: jvchat
-        run: npm ci
+        timeout-minutes: 8
+        run: npm ci || (echo "::warning::npm ci failed once; retrying" && sleep 20 && npm ci)
 
       - name: Lint jvchat
         working-directory: jvchat

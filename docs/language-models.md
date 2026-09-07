@@ -264,6 +264,16 @@ not applied.
 
 ### Nightly live check
 
+The smoke set is: greeting, datetime tool → reply, act-don't-announce, and
+`live.multistep_sop` — a three-step SOP (schema → transform → write) over
+in-memory tools sized past the stale-observation cap, asserting every step ran
+once, at most 8 ticks, and no `repeat` guard (the issue #203 failure shape).
+Ollama Cloud runs it too (`ollama_chat/glm-5.3:cloud` through the LiteLLM
+adapter, `OLLAMA_API_KEY` **and `OLLAMA_API_BASE=https://ollama.com`** — without
+the base LiteLLM talks to `localhost:11434`, which on a developer box is the
+local daemon forwarding `:cloud` models and on a runner is nothing; smoke only —
+the adapter has no first-party conformance column).
+
 `.github/workflows/live-providers.yaml` (03:00 UTC, or manual dispatch) runs per
 provider whose key secret is set: record conformance fixtures from the real
 endpoint → replay the suite → `scripts/live_smoke.py` on the own wire →
