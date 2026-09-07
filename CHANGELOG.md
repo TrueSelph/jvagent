@@ -10,6 +10,43 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Defaults that permit long-running, deep-thinking models (#214).** Three
+  shipped defaults combined to end a reasoning model's turn before it could
+  answer, and the user-facing text ("I got stuck repeating a step") pointed at
+  the repeat guard, which never fired (`ended_via=no_decision_finalized`,
+  `guards=[]`, `ticks=9/30`).
+
+  - `model_max_tokens` defaulted to `4096` — a ceiling a reasoning model spends
+    on *reasoning* before it emits its decision. Overrunning it is not a
+    truncated answer: the loop scores `MODEL_TRUNCATED_ACTION`, and three in a
+    row end the turn via `no_decision` with no reply at all. The default is now
+    **`0` = derive from the model's advertised `max_output_tokens`**, bounded by
+    the new `model_max_tokens_ceiling` (32768). A fixed number cannot serve both
+    a 16k-output mainstream model and one that thinks for tens of thousands of
+    tokens; deriving never asks a provider for more than it accepts, and costs
+    nothing until used. An explicit non-zero value still wins. When capabilities
+    carry no `max_output_tokens` the ceiling falls back to 8192 and now **warns
+    once** — an unrecognised id (`glm-5.3` resolves to nothing, while
+    `ollama/glm-5.3:cloud` reports 1048576) otherwise reproduces the bug
+    silently.
+  - `retry_total_deadline_seconds` (60.0) sat **below** `timeout` (120). The
+    deadline is measured from the start of the logical call, so an attempt that
+    just timed out had already spent double the whole deadline and the retry was
+    always refused — timeout-retries were structurally impossible, while
+    fast-failure retries kept working, which is what made it invisible. Now 300s
+    timeout / 900s deadline, and a deadline at or below the timeout warns once
+    instead of half-disabling itself (`retry_on_timeout: false` remains the
+    explicit way to say "no timeout retries").
+  - `thought_replay_max_chars` 600 → 2000. Clipping the reasoning a model
+    carries between ticks makes it re-derive its plan, or re-run the tool — and
+    a re-run tool is what a repeat guard sees as a loop.
+
+  `stale_observation_max_chars` deliberately stays at 600: it is the dominant
+  term in a long turn's prompt growth and already sits at the edge of
+  `test_quadratic_growth_is_bounded_across_a_long_turn`, so an agent that reads
+  large structured results should raise it for itself rather than bill every
+  consumer.
+
 - **Releases wait for the tests.** `0.1.8rc7` was tagged, published to TestPyPI
   and built as an image while `Test jvagent` on the same commit was red (the
   `jvchat` job's `npm ci` hung for 45 minutes on the runner). The version-bump

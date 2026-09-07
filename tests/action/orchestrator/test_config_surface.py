@@ -7,6 +7,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from jvagent.action.orchestrator.core_tools import build_core_tools
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
@@ -256,7 +258,43 @@ async def test_reasoning_trace_emitted_when_enabled(monkeypatch):
 async def test_agentic_default_budget_and_tokens():
     ex = OrchestratorInteractAction()
     assert ex.activation_budget == 24  # room for multistep tool work
-    assert ex.model_max_tokens == 4096  # headroom for agentic reasoning + compose
+    # 0 = derive the completion ceiling from the model's own advertised
+    # max_output_tokens. A fixed default cannot serve both a 16k-output
+    # mainstream model and a reasoning model that spends tens of thousands of
+    # tokens thinking before it emits its decision.
+    assert ex.model_max_tokens == 0
+    assert ex.model_max_tokens_ceiling == 32768
+
+
+@pytest.mark.parametrize(
+    "advertised, expected",
+    [
+        (16_384, 16_384),  # mainstream model: ask for exactly what it allows
+        (1_048_576, 32_768),  # reasoning model: bounded by the ceiling
+        (4_096, 4_096),  # small model: never ask for more than it accepts
+        (0, 8_192),  # capabilities unknown: fall back, do not guess high
+    ],
+)
+async def test_heavy_max_tokens_is_derived_from_model_capabilities(
+    advertised, expected
+):
+    """The truncation that ends a turn: too low a ceiling cuts off the model's
+    decision, and three cut-off decisions in a row finish the turn with no
+    reply at all. The ceiling therefore follows the model, not a constant."""
+    ex = OrchestratorInteractAction()
+    ex._model_capabilities = staticmethod(  # type: ignore[assignment]
+        lambda _action, _model: SimpleNamespace(max_output_tokens=advertised)
+    )
+    assert ex._effective_heavy_max_tokens(None, "some-model") == expected
+
+
+async def test_explicit_heavy_max_tokens_overrides_the_derived_ceiling():
+    ex = OrchestratorInteractAction()
+    ex.model_max_tokens = 1234
+    ex._model_capabilities = staticmethod(  # type: ignore[assignment]
+        lambda _action, _model: SimpleNamespace(max_output_tokens=1_048_576)
+    )
+    assert ex._effective_heavy_max_tokens(None, "some-model") == 1234
 
 
 async def test_finalize_clause_added_to_prompt(monkeypatch):
@@ -1297,3 +1335,19 @@ def test_render_system_prompt_defaults_every_slot():
         "loop_protocol_extra",
         "extra_section",
     }
+
+
+async def test_unknown_model_capabilities_warn_before_falling_back(caplog):
+    """An unrecognised model id silently falling back to a low ceiling is how
+    the truncation failure hides — the turn ends with no reply at all, and
+    nothing in the logs points at the ceiling."""
+    ex = OrchestratorInteractAction()
+    ex._model_capabilities = staticmethod(  # type: ignore[assignment]
+        lambda _action, _model: SimpleNamespace(max_output_tokens=None)
+    )
+    with caplog.at_level("WARNING"):
+        assert ex._effective_heavy_max_tokens(None, "some-unlisted-model") == 8192
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(
+        "some-unlisted-model" in m and "max_output_tokens" in m for m in messages
+    ), messages

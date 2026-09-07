@@ -163,3 +163,62 @@ def test_timeouts_are_not_retried_when_the_operator_turns_it_off():
         status_code = 503
 
     assert action._is_retryable_exception(_SdkError()) is True
+
+
+@pytest.mark.asyncio
+async def test_deadline_at_or_below_timeout_is_warned_about(caplog):
+    """The shipped 60s deadline / 120s timeout pairing silently disabled every
+    timeout-retry: the attempt that just timed out has already spent longer
+    than the whole deadline, so the retry is always refused. Fast failures kept
+    retrying, which is what made it hard to see. Warn rather than fail quietly.
+    """
+    action = OpenAILanguageModelAction()
+    action.timeout = 120
+    action.retry_total_deadline_seconds = 60.0
+    action.max_retries = 1
+    action.retry_jitter = False
+
+    async def fake_query(*args, **kwargs):
+        raise _timeout()
+
+    with caplog.at_level("WARNING"):
+        with patch.object(
+            OpenAILanguageModelAction, "_query", AsyncMock(side_effect=fake_query)
+        ):
+            with patch(
+                "jvagent.action.model.base.asyncio.sleep", new_callable=AsyncMock
+            ):
+                with pytest.raises(httpx.ReadTimeout):
+                    await action.query_messages(
+                        messages=[{"role": "user", "content": "hi"}], stream=False
+                    )
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(
+        "retry_total_deadline_seconds" in m and "can never be retried" in m
+        for m in warnings
+    ), warnings
+
+
+@pytest.mark.asyncio
+async def test_coherent_deadline_and_timeout_are_not_warned_about(caplog):
+    """The new defaults (300s timeout, 900s deadline) must be silent."""
+    action = OpenAILanguageModelAction()
+    assert action.timeout == 300
+    assert action.retry_total_deadline_seconds == 900.0
+
+    async def fake_query(*args, **kwargs):
+        raise _timeout()
+
+    with caplog.at_level("WARNING"):
+        action.max_retries = 0
+        with patch.object(
+            OpenAILanguageModelAction, "_query", AsyncMock(side_effect=fake_query)
+        ):
+            with pytest.raises(httpx.ReadTimeout):
+                await action.query_messages(
+                    messages=[{"role": "user", "content": "hi"}], stream=False
+                )
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert not [m for m in warnings if "retry_total_deadline_seconds" in m], warnings

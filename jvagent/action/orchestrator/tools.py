@@ -161,10 +161,20 @@ MAX_OBSERVATIONS_IN_PROMPT = 12
 # "what happened", not the payload. Elision is middle-out and always marked, so
 # the model can see it was trimmed and re-run the tool if it truly needs the body.
 DEFAULT_OBSERVATION_MAX_CHARS = 4000
+# Deliberately small: replayed observations are the dominant term in a long
+# turn's prompt growth (see test_quadratic_growth_is_bounded_across_a_long_turn,
+# which this figure sits right at the edge of). An agent that reads large
+# structured results — schemas, query pages — should raise
+# ``stale_observation_max_chars`` for itself rather than move this default and
+# put the cost on every consumer.
 DEFAULT_STALE_OBSERVATION_MAX_CHARS = 600
 # Cap on the model's own reasoning replayed beside a step (``assistant_text``:
 # the JSON contract's ``thought``, or an excerpt of provider reasoning). 0 = off.
-DEFAULT_THOUGHT_MAX_CHARS = 600
+# A reasoning model's thought is the state it carries between ticks; clipping
+# it at 600 chars drops the plan it just made and it re-derives (or re-runs the
+# tool) on the next tick. Reasoning traces are cheap to replay relative to the
+# tokens spent regenerating them.
+DEFAULT_THOUGHT_MAX_CHARS = 2000
 DEFAULT_OBSERVATION_FULL_RECENT = 3
 DEFAULT_OBSERVATION_ARGS_MAX_CHARS = 400
 
