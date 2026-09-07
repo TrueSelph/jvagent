@@ -28,6 +28,7 @@ from jvagent.action.orchestrator.prompts import (
     render_capabilities_section,
     render_skills_section,
 )
+from jvagent.action.orchestrator.tools import elide_middle
 from jvagent.action.orchestrator.turn_cache import (
     get_prompt_cache,
     set_prompt_cache,
@@ -1202,6 +1203,24 @@ class OrchestratorLoopMixin:
                 return outcome
         return TickOutcome.CONTINUE_
 
+    @staticmethod
+    def _earlier_result_excerpt(state: TurnState, tool_name: str, args: Any) -> str:
+        """Up to 300 chars of what the same call returned earlier this turn.
+
+        Carried inline by the repeat nudge: a model that lost its thread
+        (reasoning discarded between ticks, #203) gets the fact it needs in the
+        same message rather than a pointer to "above".
+        """
+        prior = next(
+            (
+                str(o.get("observation") or "")
+                for o in reversed(state.observations)
+                if o.get("tool") == tool_name and str(o.get("args")) == str(args)
+            ),
+            "",
+        )
+        return elide_middle(prior, 300) if prior else ""
+
     async def _guard_tool_call(
         self,
         visitor: "InteractWalker",
@@ -1334,6 +1353,7 @@ class OrchestratorLoopMixin:
             return TickOutcome.stop("repeat_guard")
         if len(earlier) == 1 and not earlier[-1].errored:
             state.recent_calls.append(RecentCall(sig))
+            excerpt = self._earlier_result_excerpt(state, tool_name, args)
             state.observations.append(
                 {
                     "tool": "(guard)",
@@ -1341,8 +1361,13 @@ class OrchestratorLoopMixin:
                     "args": {},
                     "observation": (
                         f"(You have already called {tool_name} "
-                        "with this exact input; its result is "
-                        "above. Do NOT repeat the call — use a "
+                        "with this exact input"
+                        + (
+                            f"; it returned: {excerpt}"
+                            if excerpt
+                            else "; its result is above"
+                        )
+                        + ". Do NOT repeat the call — use a "
                         "different tool, change the arguments, "
                         'or finish with action "final".)'
                     ),

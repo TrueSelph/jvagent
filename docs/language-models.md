@@ -170,6 +170,16 @@ exception's `status_code`), streaming is assembled with
 `litellm.stream_chunk_builder`, and `provider: litellm` works in slot overrides.
 Reference the class as `LiteLLMLanguageModelAction` in `model_action_type`.
 
+**Ollama through LiteLLM.** An `ollama/<model>` id is sent to LiteLLM's
+`ollama_chat/` provider — the `/api/chat` route with native tool calling
+(Ollama ≥ 0.4). LiteLLM's `ollama/` provider is the `/api/generate` route: it
+emulates tool calling by parsing JSON out of the content, and a call the model
+phrases differently arrives as prose (issue #203). `litellm_ollama_route:
+generate` on the adapter opts out. Note LiteLLM *infers* `supports_function_calling`
+for Ollama models from the model template, which cloud models do not expose;
+jvagent treats that inferred `False` as unknown and probes native first,
+demoting to the JSON contract only if the provider refuses (ADR-0051).
+
 ### Transport switch (ADR-0047)
 
 Every first-party action can route its calls through the LiteLLM adapter

@@ -205,6 +205,14 @@ DECISION_SCHEMA = {
             "type": "string",
             "description": "Optional closing text when action=final.",
         },
+        "thought": {
+            "type": "string",
+            "description": (
+                "One or two sentences: what you now know and what this step is "
+                "for. Replayed to you with the step's result so you do not have "
+                "to re-derive it."
+            ),
+        },
     },
     "required": ["action"],
 }
