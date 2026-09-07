@@ -5,8 +5,10 @@ name: Live providers (nightly)
 #   1. re-record the conformance fixtures for the provider and replay the suite
 #      on the fresh recordings (a provider-side change becomes a failing
 #      recorded fixture, not a production incident);
-#   2. drive the real Orchestrator loop through the live smoke scenarios on the
-#      native tool protocol, on both transports (own wire, LiteLLM delegate).
+#   2. drive the real Orchestrator loop through the live smoke scenarios
+#      (greeting, tool → reply, act-don't-announce, and the three-step SOP from
+#      issue #203 asserting no repeat guard) on both transports (own wire,
+#      LiteLLM delegate).
 # A provider whose key secret is absent is skipped. Failures open (or comment
 # on) an issue instead of turning a PR red — nothing here gates merges.
 
@@ -38,6 +40,18 @@ jobs:
           - provider: openrouter
             model: openai/gpt-4o-mini
             key: OPENROUTER_API_KEY
+          # Ollama Cloud through the LiteLLM adapter: the reasoning model from
+          # issue #203, on the chat route. No first-party conformance column
+          # (the adapter IS the LiteLLM route), so only the smoke runs.
+          - provider: litellm
+            model: ollama_chat/glm-5.3:cloud
+            key: OLLAMA_API_KEY
+            conformance: false
+            # Ollama Cloud: without this LiteLLM talks to localhost:11434 (a
+            # developer box has the local daemon forwarding `:cloud` models; a
+            # runner does not).
+            api_base_env: OLLAMA_API_BASE
+            api_base: https://ollama.com
     env:
       PROVIDER_KEY: ${{ secrets[matrix.key] }}
     steps:
@@ -67,7 +81,7 @@ jobs:
           python -m pip install -e '.[test]'
 
       - name: Record conformance fixtures against the live endpoint
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.gate.outputs.skip == 'false' && matrix.conformance != false
         id: record
         continue-on-error: true
         env:
@@ -77,7 +91,7 @@ jobs:
           pytest tests/action/model/conformance -k "${{ matrix.provider }}-httpx" -q --tb=short
 
       - name: Replay the suite on the fresh recordings
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.gate.outputs.skip == 'false' && matrix.conformance != false
         id: replay
         continue-on-error: true
         run: |
@@ -89,18 +103,20 @@ jobs:
         continue-on-error: true
         run: |
           export ${{ matrix.key }}="$PROVIDER_KEY"
+          if [ -n "${{ matrix.api_base_env }}" ]; then export ${{ matrix.api_base_env }}="${{ matrix.api_base }}"; fi
           python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}"
 
       - name: Live smoke — LiteLLM transport
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.gate.outputs.skip == 'false' && matrix.provider != 'litellm'
         id: smoke_litellm
         continue-on-error: true
         run: |
           export ${{ matrix.key }}="$PROVIDER_KEY"
+          if [ -n "${{ matrix.api_base_env }}" ]; then export ${{ matrix.api_base_env }}="${{ matrix.api_base }}"; fi
           python scripts/live_smoke.py --provider ${{ matrix.provider }} --model "${{ matrix.model }}" --transport litellm
 
       - name: Upload recorded fixtures
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.gate.outputs.skip == 'false' && matrix.conformance != false
         uses: actions/upload-artifact@v4
         with:
           name: conformance-recordings-${{ matrix.provider }}

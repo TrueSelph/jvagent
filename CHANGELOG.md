@@ -8,6 +8,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Nightly reproduction of the #203 failure.** `scripts/live_smoke.py` gains
+  `live.multistep_sop`: a three-step SOP over in-memory tools whose schema
+  result exceeds the default stale-observation cap, asserting every step runs
+  once, the turn finishes within 8 ticks and **no repeat guard fires**
+  (`guards_exclude`, new alongside `max_ticks`; `tools_include` is now
+  honoured). The nightly `live-providers` workflow runs it for every provider
+  and adds Ollama Cloud (`ollama_chat/glm-5.3:cloud` via the LiteLLM adapter,
+  `OLLAMA_API_KEY`), smoke only.
+
 ### Fixed
 
 - **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
