@@ -113,3 +113,56 @@ def test_estimate_cost_uses_metadata_pricing_with_cache_discount():
     )
     # Ollama is free in upstream metadata.
     assert estimate_cost("llama3.1", "ollama", million) == 0.0
+
+
+# --- issue #203: an inferred False is unknown ------------------------------
+
+
+def _fake_litellm(monkeypatch, info, table):
+    monkeypatch.setattr(litellm, "get_model_info", lambda *a, **k: dict(info))
+    monkeypatch.setattr(litellm, "model_cost", dict(table))
+
+
+def test_inferred_supports_tools_false_is_dropped_to_unknown(monkeypatch):
+    """LiteLLM's Ollama provider answers ``supports_function_calling`` by
+    searching the model's /api/show template for the word "tools"; Ollama
+    Cloud models expose none. A False that is not in LiteLLM's table is a guess
+    and must not choose the protocol."""
+    _fake_litellm(
+        monkeypatch,
+        {"supports_function_calling": False, "max_input_tokens": 1_048_576},
+        table={},
+    )
+    caps = litellm_capabilities("ollama/glm-5.3:cloud", "litellm")
+    assert caps is not None
+    assert caps.supports_tools is None
+    assert caps.context_window == 1_048_576
+    assert caps.source == "litellm(-tools)"
+    resolved = resolve_capabilities("ollama/glm-5.3:cloud")
+    assert resolved.supports_tools is None
+
+
+def test_an_explicit_false_in_the_table_is_believed(monkeypatch):
+    _fake_litellm(
+        monkeypatch,
+        {"supports_function_calling": False, "max_input_tokens": 8192},
+        table={"ollama/some-embedding-ish-model": {}},
+    )
+    caps = litellm_capabilities("ollama/some-embedding-ish-model", "litellm")
+    assert caps and caps.supports_tools is False and caps.source == "litellm"
+
+
+def test_bare_id_in_the_table_also_counts_as_explicit(monkeypatch):
+    _fake_litellm(
+        monkeypatch,
+        {"supports_function_calling": False},
+        table={"text-embedding-3-small": {}},
+    )
+    caps = litellm_capabilities("openai/text-embedding-3-small", "litellm")
+    assert caps and caps.supports_tools is False
+
+
+def test_inferred_true_is_still_true(monkeypatch):
+    _fake_litellm(monkeypatch, {"supports_function_calling": True}, table={})
+    caps = litellm_capabilities("ollama/llama3.1:70b", "litellm")
+    assert caps and caps.supports_tools is True and caps.source == "litellm"

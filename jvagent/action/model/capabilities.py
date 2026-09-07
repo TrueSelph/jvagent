@@ -150,17 +150,32 @@ def litellm_capabilities(model: str, provider: str = "") -> Optional[ModelCapabi
         else:
             info = litellm.get_model_info(model, custom_llm_provider=custom)
         values: Dict[str, Any] = {}
+        explicit = _litellm_has_explicit_entry(litellm, model)
+        inferred_dropped = False
         for ours, theirs in _LITELLM_FIELD_MAP.items():
             raw = info.get(theirs) if isinstance(info, dict) else None
             if raw is None:
+                continue
+            if ours == "supports_tools" and raw is False and not explicit:
+                # LiteLLM's provider code can *infer* this for a model that is
+                # not in its table — the Ollama provider, for one, answers by
+                # searching the model's /api/show template for the word "tools",
+                # which Ollama Cloud models never expose. An inferred False put
+                # a tool-capable reasoning model on the degraded JSON contract
+                # (issue #203). A False the maintainers wrote into the table is
+                # believed; an inferred one is unknown, and the loop tries native
+                # first and demotes only on a real provider refusal.
+                inferred_dropped = True
                 continue
             values[ours] = (
                 int(raw)
                 if ours in ("context_window", "max_output_tokens")
                 else bool(raw)
             )
-        if values:
-            result = ModelCapabilities(**values, source="litellm")
+        if values or inferred_dropped:
+            result = ModelCapabilities(
+                **values, source="litellm(-tools)" if inferred_dropped else "litellm"
+            )
     except ImportError:
         result = None
     except Exception as exc:  # unmapped model, bad provider — not an error for us
@@ -170,6 +185,23 @@ def litellm_capabilities(model: str, provider: str = "") -> Optional[ModelCapabi
         result = None
     _litellm_cache[key] = result
     return result
+
+
+def _litellm_has_explicit_entry(litellm_module: Any, model: str) -> bool:
+    """True when ``model`` (or its bare id) is a row in LiteLLM's model table,
+    i.e. its capability flags were written by a maintainer rather than inferred
+    by provider code at lookup time."""
+    try:
+        table = getattr(litellm_module, "model_cost", None) or {}
+    except Exception:  # pragma: no cover - defensive
+        return False
+    ident = str(model or "").strip()
+    if not ident:
+        return False
+    candidates = {ident}
+    if "/" in ident:
+        candidates.add(ident.rsplit("/", 1)[-1])
+    return any(c in table for c in candidates)
 
 
 def clear_capability_cache() -> None:
