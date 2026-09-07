@@ -63,6 +63,15 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
             "failing the call."
         ),
     )
+    litellm_ollama_route: str = attribute(
+        default="chat",
+        description=(
+            "Which LiteLLM Ollama provider an `ollama/...` model id is sent to: "
+            "`chat` (default; the /api/chat route with native tool calling) or "
+            "`generate` (LiteLLM's `ollama/` provider, which emulates tools by "
+            "parsing JSON from the content and can deliver a tool call as prose)."
+        ),
+    )
     extra_params: Dict[str, Any] = attribute(
         default_factory=dict,
         description="Provider-specific parameters passed verbatim on every call.",
@@ -84,6 +93,22 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
 
     # -- request ----------------------------------------------------------------
 
+    def _route_model_id(self, model: Any) -> str:
+        """Provider-route corrections applied at call time.
+
+        ``ollama/<m>`` → ``ollama_chat/<m>`` unless ``litellm_ollama_route`` is
+        ``generate``: LiteLLM's ``ollama/`` provider is the /api/generate route
+        and emulates tool calling by parsing JSON out of the content, so a tool
+        call the model phrases differently is delivered as prose; ``ollama_chat/``
+        passes ``tools`` natively (issue #203). Model ids the operator wrote are
+        otherwise sent verbatim.
+        """
+        ident = str(model or "").strip()
+        route = str(getattr(self, "litellm_ollama_route", "chat") or "chat").lower()
+        if ident.startswith("ollama/") and route != "generate":
+            return "ollama_chat/" + ident[len("ollama/") :]
+        return ident
+
     def _build_kwargs(
         self,
         messages: List[Dict[str, Any]],
@@ -91,7 +116,7 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
         stream: bool,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        model = kwargs.get("model") or self.model
+        model = self._route_model_id(kwargs.get("model") or self.model)
         out: Dict[str, Any] = {
             "model": model,
             "messages": messages,

@@ -8,6 +8,37 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
+  JSON contract now asks for an optional `thought`, and each step's recorded
+  reasoning — that thought, or an excerpt of the provider's reasoning when the
+  model wrote no prose — is replayed beside the step's result on both
+  protocols (`THOUGHT:` line on the JSON contract; assistant content on
+  native), bounded by `thought_replay_max_chars` (default 600, `0` disables).
+  The first-repeat nudge quotes the earlier result inline instead of pointing
+  "above". A thinking model no longer re-derives its plan from tool I/O every
+  tick.
+
+- **Thinking models are no longer mis-harnessed by a guessed capability
+  (issue #203, ADR-0051).** LiteLLM's Ollama provider infers
+  `supports_function_calling` by searching the model's `/api/show` template
+  for the word "tools" — Ollama Cloud models expose none — so a tool-capable
+  reasoning model was put on the degraded JSON contract and died on the repeat
+  guard. An inferred `False` (model not in LiteLLM's table) is now *unknown*:
+  the loop tries native tool calling and **demotes the (action, model) pair to
+  the JSON contract only when the provider refuses the tools**, redoing the
+  tick. `auto` → `json` is logged at WARNING with the overrides, and the
+  activation event records `protocol_reason`.
+- **Ollama via LiteLLM uses the `ollama_chat/` provider** (native tools) instead
+  of `ollama/` (the generate route, which emulates tool calls by parsing JSON
+  out of the content and delivered a call the model phrased differently as
+  prose). `litellm_ollama_route: generate` opts out.
+- **Tool calls written as text are dispatched, not shown to the user.** Under
+  the native protocol, content shaped like `Tool Calls: [{name, arguments}]`
+  or a bare JSON array/object of calls is salvaged into real tool calls
+  (`salvaged_` ids in telemetry); prose and JSON decisions are untouched.
+
 ### Changed
 
 - **Merge-mode sync reports what it kept.** `jvagent <app> --update` (merge)

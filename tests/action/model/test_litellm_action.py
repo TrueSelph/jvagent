@@ -209,3 +209,23 @@ def test_no_key_anywhere_lets_litellm_resolve_the_provider_env_var():
     action = _action(api_key="")
     kw = action._build_kwargs([{"role": "user", "content": "hi"}], None, stream=False)
     assert "api_key" not in kw
+
+
+def test_ollama_ids_route_through_the_chat_provider():
+    """LiteLLM's ``ollama/`` provider is the generate route and emulates tool
+    calls by parsing JSON from the content — a call phrased differently is
+    delivered as prose (issue #203). ``ollama_chat/`` passes tools natively."""
+    action = LiteLLMLanguageModelAction()
+    kw = action._build_kwargs(
+        [{"role": "user", "content": "hi"}],
+        None,
+        stream=False,
+        model="ollama/glm-5.3:cloud",
+    )
+    assert kw["model"] == "ollama_chat/glm-5.3:cloud"
+    # Already-chat and non-ollama ids are sent verbatim.
+    assert action._route_model_id("ollama_chat/llama3.1") == "ollama_chat/llama3.1"
+    assert action._route_model_id("openai/gpt-4o-mini") == "openai/gpt-4o-mini"
+    # Opt-out for anyone who needs the generate API.
+    action.litellm_ollama_route = "generate"
+    assert action._route_model_id("ollama/glm-5.3:cloud") == "ollama/glm-5.3:cloud"

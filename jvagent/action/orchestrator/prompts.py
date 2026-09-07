@@ -50,9 +50,13 @@ description matches the user's intent.
 
 Each step, choose ONE:
 - Use a tool:
-  {{"action": "tool", "tool": "<exact name>", "args": {{...}}}}
+  {{"action": "tool", "tool": "<exact name>", "args": {{...}}, "thought": "<1-2 sentences>"}}
 - Finish the turn (you have already replied, or nothing more is needed):
   {{"action": "final", "answer": "<optional closing text>"}}
+
+``thought`` is optional but worth writing: one or two sentences on what you now \
+know and what this step is for. It is replayed to you next to the step's result, \
+so you never have to re-derive a plan you already made.
 
 LOOP PROTOCOL (How to choose each step) :
 - **Skills first.** If any AVAILABLE SKILL matches the user's task, activate it \
