@@ -117,6 +117,7 @@ from jvagent.action.orchestrator.tools import (
     render_observation_messages,
     render_observations_section,
     render_tools_section,
+    salvage_tool_call_text,
     wrap_action_tool,
 )
 from jvagent.action.orchestrator.turn_cache import (
@@ -2512,6 +2513,10 @@ class OrchestratorInteractAction(
         turn_cache = get_prompt_cache()
         if turn_cache.get("protocol"):
             data["tool_protocol"] = turn_cache["protocol"]
+        if turn_cache.get("protocol_reason"):
+            # configured:<p> | auto:native | auto:json:supports_tools=False(<source>)
+            # | demoted:json:<provider error> — why this turn spoke this protocol.
+            data["protocol_reason"] = turn_cache["protocol_reason"]
         if turn_cache.get("context_trims"):
             data["context_trims"] = int(turn_cache["context_trims"])
         if turn_cache.get("fallbacks_used"):
@@ -3309,20 +3314,72 @@ class OrchestratorInteractAction(
             TOOL_PROTOCOL_JSON if cached == TOOL_PROTOCOL_JSON else TOOL_PROTOCOL_NATIVE
         )
 
-    def _resolve_protocol(self, caps: ModelCapabilities) -> str:
-        """Pin the turn's protocol (ADR-0045): a model known NOT to support tool
-        calling gets the JSON-text contract; anything else — including unknown —
-        gets native. Cached on the turn so every prompt piece agrees."""
+    # (action class, model id) → short reason. A native call that the provider
+    # refused for lack of tool support demotes that pair to the JSON contract
+    # for the rest of the process (ADR-0051); cleared only by restart.
+    _protocol_demotions: ClassVar[Dict[Tuple[str, str], str]] = {}
+
+    _TOOLS_UNSUPPORTED_RE: ClassVar["re.Pattern[str]"] = re.compile(
+        r"(?:tool|function)s?[^\n]{0,80}?(?:not support|unsupported|not available"
+        r"|invalid|unknown parameter|unrecognized)"
+        r"|(?:not support|unsupported|does not support|unknown parameter|unrecognized"
+        r"|invalid parameter)[^\n]{0,40}?(?:tool|function)",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _looks_like_tools_unsupported(cls, error_text: str) -> bool:
+        """Does a provider error say the model/route cannot take ``tools``?"""
+        return bool(error_text) and bool(cls._TOOLS_UNSUPPORTED_RE.search(error_text))
+
+    @staticmethod
+    def _demotion_key(model_action: Any, model_id: Optional[str]) -> Tuple[str, str]:
+        name = ""
+        if model_action is not None:
+            fn = getattr(model_action, "get_class_name", None)
+            name = (fn() if callable(fn) else "") or type(model_action).__name__
+        return (str(name), str(model_id or ""))
+
+    def _resolve_protocol(
+        self,
+        caps: ModelCapabilities,
+        model_action: Any = None,
+        model_id: Optional[str] = None,
+    ) -> str:
+        """Pin the turn's protocol (ADR-0045/0051) and record WHY.
+
+        - a configured ``tool_protocol`` wins;
+        - an (action, model) pair demoted earlier this process → ``json``;
+        - a model *known* not to support tool calling → ``json`` (logged at
+          WARNING with the two overrides, so the downgrade is never silent);
+        - anything else, including unknown → ``native``. An inferred
+          ``supports_tools=False`` is unknown (see ``capabilities.py``): the
+          loop tries native and demotes only on a real provider refusal.
+
+        Cached on the turn (``protocol`` / ``protocol_reason``) so every prompt
+        piece agrees and the activation event can report the reason.
+        """
         value = str(self.tool_protocol or "").strip().lower()
+        key = self._demotion_key(model_action, model_id)
         if value in (TOOL_PROTOCOL_JSON, TOOL_PROTOCOL_NATIVE):
-            protocol = value
-        else:
-            protocol = (
-                TOOL_PROTOCOL_JSON
-                if caps.supports_tools is False
-                else TOOL_PROTOCOL_NATIVE
+            protocol, reason = value, f"configured:{value}"
+        elif key[1] and key in self._protocol_demotions:
+            protocol = TOOL_PROTOCOL_JSON
+            reason = f"demoted:json:{self._protocol_demotions[key]}"
+        elif caps.supports_tools is False:
+            protocol = TOOL_PROTOCOL_JSON
+            reason = f"auto:json:supports_tools=False({caps.source})"
+            logger.warning(
+                "orchestrator: tool_protocol auto → json for %s (%s). If the model "
+                "does tool-call, set `tool_protocol: native` or "
+                "`model_capabilities: {supports_tools: true}` on the orchestrator.",
+                key[1] or "the model",
+                reason,
             )
+        else:
+            protocol, reason = TOOL_PROTOCOL_NATIVE, "auto:native"
         update_prompt_cache("protocol", protocol)
+        update_prompt_cache("protocol_reason", reason)
         return protocol
 
     @staticmethod
@@ -4022,7 +4079,7 @@ class OrchestratorInteractAction(
         # provider accepts parallel_tool_calls, the output ceiling, and the
         # context window the pre-flight below fits the prompt into.
         caps = self._model_capabilities(model_action, model_id)
-        self._resolve_protocol(caps)
+        self._resolve_protocol(caps, model_action, model_id)
         if (
             caps.max_output_tokens
             and max_tokens
@@ -4318,6 +4375,41 @@ class OrchestratorInteractAction(
             model_action, model_id, gear, kwargs, primary_caps=caps
         )
         if result is None:
+            last_error = str(get_prompt_cache().get("last_model_error") or "")
+            demotion_key = self._demotion_key(model_action, model_id)
+            if (
+                native
+                and kwargs.get("tools")
+                and self._looks_like_tools_unsupported(last_error)
+                and demotion_key not in self._protocol_demotions
+            ):
+                # The provider refused the tools themselves (ADR-0051): this
+                # model/route cannot take native calls after all. Demote the pair
+                # to the JSON contract for the process and redo this tick on it —
+                # the model has not seen the failed request, so nothing is lost.
+                self._protocol_demotions[demotion_key] = last_error[:80]
+                logger.warning(
+                    "orchestrator: %s refused native tool calls (%s); demoting to "
+                    "the JSON contract for this process. Pin `tool_protocol: json` "
+                    "for this model to skip the probe.",
+                    demotion_key[1] or "the model",
+                    last_error[:160],
+                )
+                return await self._run_model(
+                    visitor,
+                    utterance,
+                    history,
+                    tools,
+                    observations,
+                    flow_note=flow_note,
+                    skills_section=skills_section,
+                    finalize=finalize,
+                    gear=gear,
+                    lean=lean,
+                    plan_note=plan_note,
+                    capabilities_section=capabilities_section,
+                    parameters_section=parameters_section,
+                )
             # A provider fault, not a model choice: every candidate failed (or
             # sat behind an open circuit). Surfaced as a typed decision so the
             # loop can retry once and then end the turn honestly
@@ -4356,8 +4448,21 @@ class OrchestratorInteractAction(
                         "the native protocol; treating it as a decision"
                     )
                     return parsed
+            tool_calls = response.tool_calls_openai()
+            if not tool_calls and raw:
+                salvaged = salvage_tool_call_text(raw)
+                if salvaged:
+                    # The model wrote its call as text (a generate-route
+                    # emulation, or a weaker model): run what it meant instead
+                    # of showing the user a struct (issue #203).
+                    logger.info(
+                        "orchestrator: salvaged %d tool call(s) written as text by %s",
+                        len(salvaged),
+                        model_id,
+                    )
+                    tool_calls, raw = salvaged, ""
             decisions = decisions_from_native_result(
-                response.tool_calls_openai(),
+                tool_calls,
                 raw,
                 alias_map=alias_map,
                 text_as_reply=(not finalize) and any(t.name == "reply" for t in tools),

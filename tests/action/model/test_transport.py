@@ -66,7 +66,8 @@ def test_model_ids_and_credentials_map_per_provider(monkeypatch):
 
     ollama = OllamaLanguageModelAction()
     ollama.api_endpoint = "http://box:11434/api"
-    assert ollama.litellm_model_id("llama3.1:8b") == "ollama/llama3.1:8b"
+    # ollama_chat/ = LiteLLM's /api/chat route with native tools (issue #203).
+    assert ollama.litellm_model_id("llama3.1:8b") == "ollama_chat/llama3.1:8b"
     assert ollama.litellm_call_config() == {
         "api_base": "http://box:11434",
         "api_key": "ol",

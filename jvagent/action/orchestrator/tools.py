@@ -221,6 +221,55 @@ def render_observations_section(
     return "\n".join(lines)
 
 
+_TOOL_CALL_LABEL_RE = re.compile(
+    r"^\s*(?:tool[ _-]?calls?|function[ _-]?calls?)\s*:\s*", re.IGNORECASE
+)
+
+
+def salvage_tool_call_text(raw: str) -> Optional[List[Dict[str, Any]]]:
+    """Tool calls a model wrote out as TEXT, in OpenAI wire shape — or ``None``.
+
+    Some routes (LiteLLM's ``ollama/`` generate provider, weaker models under
+    the native protocol) return the call the model meant to make as content:
+    ``Tool Calls: [{"name": ..., "arguments": {...}}]`` or a bare JSON array /
+    object of ``{name|function, arguments}`` entries. Delivered as a reply that
+    is an internal struct on the user's screen (issue #203). Only text that is
+    *entirely* such a structure (after an optional label) is salvaged; prose
+    that merely mentions JSON is left alone. Synthetic ids carry a
+    ``salvaged_`` prefix so telemetry shows the call was not provider-native.
+    """
+    text = strip_json_fences((raw or "").strip())
+    if not text:
+        return None
+    text = _TOOL_CALL_LABEL_RE.sub("", text, count=1).strip()
+    if not text or text[0] not in "[{":
+        return None
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return None
+    items = parsed if isinstance(parsed, list) else [parsed]
+    calls: List[Dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        fn = item.get("function") if isinstance(item.get("function"), dict) else {}
+        name = str(item.get("name") or fn.get("name") or "").strip()
+        if not name or name in ("tool", "final", "reply"):  # a decision, not a call
+            return None
+        args = item.get("arguments", fn.get("arguments", item.get("args", {})))
+        if not isinstance(args, str):
+            args = json.dumps(args if args is not None else {})
+        calls.append(
+            {
+                "id": str(item.get("id") or f"salvaged_{uuid.uuid4().hex[:12]}"),
+                "type": "function",
+                "function": {"name": name, "arguments": args},
+            }
+        )
+    return calls or None
+
+
 def parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
     r"""Parse the first JSON object out of a model response.
 
@@ -532,6 +581,7 @@ def decisions_from_native_result(
 
 
 __all__ = [
+    "salvage_tool_call_text",
     "SkillTool",
     "wrap_action_tool",
     "render_tools_section",

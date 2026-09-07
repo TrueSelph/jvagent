@@ -87,7 +87,11 @@ class OllamaLanguageModelAction(LanguageModelAction):
             translated.update(dict(cfg.reasoning_extra))
         return translated
 
-    litellm_provider_prefix = "ollama"
+    # LiteLLM's ``ollama_chat/`` provider is the /api/chat route with native tool
+    # calling (Ollama >= 0.4). ``ollama/`` is the /api/generate route, which
+    # emulates tools by parsing JSON out of the content — tool calls the model
+    # phrases differently come back as prose (issue #203).
+    litellm_provider_prefix = "ollama_chat"
 
     def litellm_call_config(self) -> Dict[str, Any]:
         """LiteLLM's ollama route needs the host root; bearer auth if configured."""
