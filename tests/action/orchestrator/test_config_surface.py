@@ -1335,3 +1335,19 @@ def test_render_system_prompt_defaults_every_slot():
         "loop_protocol_extra",
         "extra_section",
     }
+
+
+async def test_unknown_model_capabilities_warn_before_falling_back(caplog):
+    """An unrecognised model id silently falling back to a low ceiling is how
+    the truncation failure hides — the turn ends with no reply at all, and
+    nothing in the logs points at the ceiling."""
+    ex = OrchestratorInteractAction()
+    ex._model_capabilities = staticmethod(  # type: ignore[assignment]
+        lambda _action, _model: SimpleNamespace(max_output_tokens=None)
+    )
+    with caplog.at_level("WARNING"):
+        assert ex._effective_heavy_max_tokens(None, "some-unlisted-model") == 8192
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(
+        "some-unlisted-model" in m and "max_output_tokens" in m for m in messages
+    ), messages

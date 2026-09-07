@@ -3451,6 +3451,23 @@ class OrchestratorInteractAction(
             logger.debug("orchestrator: max_output_tokens lookup failed: %s", exc)
             advertised = 0
         if advertised <= 0:
+            # Silence here is how the truncation bug hides: an unrecognised
+            # model id (a short name where the provider-qualified one is known,
+            # say) falls back to a ceiling that a reasoning model overruns, and
+            # the turn dies three truncated decisions later with no reply. Say
+            # so once so the operator can pin model_max_tokens or fix the id.
+            if not getattr(self, "_max_tokens_fallback_warned", False):
+                self._max_tokens_fallback_warned = True
+                logger.warning(
+                    "orchestrator: no advertised max_output_tokens for model "
+                    "%r; using the %s-token fallback ceiling. A reasoning model "
+                    "may overrun it, which ends the turn with no reply rather "
+                    "than a truncated one. Set model_max_tokens explicitly, or "
+                    "use the provider-qualified model id so capabilities "
+                    "resolve.",
+                    model_id,
+                    HEAVY_MAX_TOKENS_FALLBACK,
+                )
             return HEAVY_MAX_TOKENS_FALLBACK
         return min(advertised, ceiling)
 
