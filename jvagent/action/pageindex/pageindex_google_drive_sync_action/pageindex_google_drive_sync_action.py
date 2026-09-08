@@ -41,6 +41,7 @@ from .drive_ingest_filter import (
     filter_drive_doc_queues_for_ingestible,
     is_drive_file_pageindex_ingestible,
     mark_drive_video_files_disabled,
+    prune_excluded_sub_folders,
 )
 from .google_drive_documents import GoogleDriveDocuments
 from .webhook_auth import get_or_create_system_user
@@ -175,6 +176,36 @@ def _filter_queue_for_disabled(
 def _filter_doc_queues_for_disabled(docs: Dict[str, Any], disabled: Set[str]) -> None:
     for key in ("added", "modified", "removed"):
         docs[key] = _filter_queue_for_disabled(list(docs.get(key) or []), disabled, key)
+
+
+def _collect_sub_folder_file_ids(
+    files: List[Dict[str, Any]], folder_ids: Set[str]
+) -> Set[str]:
+    """All non-folder file ids inside the subtrees rooted at ``folder_ids`` (recursive)."""
+    out: Set[str] = set()
+
+    def walk(items: List[Dict[str, Any]]) -> None:
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            nested = it.get("files")
+            if it.get("mimeType") == _FOLDER_MIME:
+                # Matched excluded folder (or a folder nested inside one):
+                # collect ids from its entire subtree.
+                if it.get("id") and str(it["id"]) in folder_ids:
+                    if nested:
+                        walk(nested)
+                elif nested:
+                    walk(nested)
+            else:
+                fid = it.get("id")
+                if fid:
+                    out.add(str(fid))
+                if nested:
+                    walk(nested)
+
+    walk(files)
+    return out
 
 
 def _sync_drive_node_status_from_queues(node: Any) -> None:
@@ -432,7 +463,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
     google_drive_folders: List[dict] = attribute(
         default_factory=list,
-        description="List of Google Drive folder configurations to monitor and ingest. Each folder config should include 'folder_id':str and optional 'metadata':dict to attach to ingested documents. ",
+        description="List of Google Drive folder configurations to monitor and ingest. Each folder config should include 'folder_id':str, optional 'exclude_sub_folders':list (sub folder ids or names whose files are not ingested) and optional 'metadata':dict to attach to ingested documents. ",
     )
 
     page_index_action: str = attribute(
@@ -979,6 +1010,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             )
             metadata = google_drive_folder.get("metadata", {})
 
+            excluded = google_drive_folder.get("exclude_sub_folders") or []
+            pruned_folder_ids = prune_excluded_sub_folders(files, excluded)
+            excluded_stale_ids: Set[str] = set(pruned_folder_ids)
+            if pruned_folder_ids:
+                logger.info(
+                    "Excluding %d sub folder(s) from folder_id=%s: %s",
+                    len(pruned_folder_ids),
+                    google_drive_folder_id,
+                    ", ".join(pruned_folder_ids),
+                )
+
             lock = await _get_folder_lock(str(self.id), google_drive_folder_id)
             async with lock:
                 google_drive_documents_node = await self.node(
@@ -989,6 +1031,21 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     old_files = google_drive_documents_node.files
                     _merge_disable_ingestion_from_old(old_files, files)
                     mark_drive_video_files_disabled(files)
+                    if pruned_folder_ids:
+                        # Exclusion list may have grown since the last sync:
+                        # drop queued entries for files inside now-excluded
+                        # subtrees using the previous listing.
+                        excluded_stale_ids |= _collect_sub_folder_file_ids(
+                            old_files, set(pruned_folder_ids)
+                        )
+                        _filter_doc_queues_for_disabled(
+                            google_drive_documents_node.ingesting_documents,
+                            excluded_stale_ids,
+                        )
+                        _filter_doc_queues_for_disabled(
+                            google_drive_documents_node.failed_documents,
+                            excluded_stale_ids,
+                        )
                     ingesting_documents = google_drive_action.compare_files(
                         old_files=old_files, new_files=files
                     )

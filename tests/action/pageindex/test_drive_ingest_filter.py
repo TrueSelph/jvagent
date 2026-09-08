@@ -5,6 +5,7 @@ from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_fi
     is_drive_file_pageindex_ingestible,
     is_drive_file_video,
     mark_drive_video_files_disabled,
+    prune_excluded_sub_folders,
 )
 
 
@@ -152,3 +153,95 @@ def test_mark_drive_video_files_disabled_skips_shortcut():
     mark_drive_video_files_disabled(files)
     assert "disable_ingestion" not in files[0]
     assert files[1].get("disable_ingestion") is True
+
+
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def _folder(fid: str, name: str, nested: list) -> dict:
+    return {
+        "id": fid,
+        "name": name,
+        "mimeType": _FOLDER_MIME,
+        "files": nested,
+    }
+
+
+def test_prune_excluded_sub_folders_by_id():
+    files = [
+        {"id": "1", "name": "a.pdf", "mimeType": "application/pdf"},
+        _folder(
+            "f1",
+            "Keep",
+            [
+                {"id": "2", "name": "b.pdf", "mimeType": "application/pdf"},
+                _folder(
+                    "f2",
+                    "SkipMe",
+                    [{"id": "3", "name": "c.pdf", "mimeType": "application/pdf"}],
+                ),
+            ],
+        ),
+        _folder(
+            "f3", "Drop", [{"id": "4", "name": "d.pdf", "mimeType": "application/pdf"}]
+        ),
+    ]
+    pruned = prune_excluded_sub_folders(files, ["f2", "f3"])
+    assert pruned == ["f2", "f3"]
+    assert files[1]["files"] == [
+        {"id": "2", "name": "b.pdf", "mimeType": "application/pdf"}
+    ]
+    assert len(files) == 2
+
+
+def test_prune_excluded_sub_folders_by_name():
+    files = [
+        _folder(
+            "f1",
+            "Archive",
+            [{"id": "2", "name": "old.pdf", "mimeType": "application/pdf"}],
+        ),
+        {"id": "3", "name": "new.pdf", "mimeType": "application/pdf"},
+    ]
+    pruned = prune_excluded_sub_folders(files, ["Archive"])
+    assert pruned == ["f1"]
+    assert len(files) == 1
+
+
+def test_prune_excluded_sub_folders_no_match():
+    files = [
+        _folder(
+            "f1", "Keep", [{"id": "2", "name": "b.pdf", "mimeType": "application/pdf"}]
+        ),
+    ]
+    pruned = prune_excluded_sub_folders(files, ["missing-id", "Nope"])
+    assert pruned == []
+    assert files[0]["files"][0]["id"] == "2"
+
+
+def test_prune_excluded_sub_folders_empty_or_none():
+    files = [_folder("f1", "Archive", [])]
+    assert prune_excluded_sub_folders(files, []) == []
+    assert prune_excluded_sub_folders(files, None) == []
+    assert files[0]["files"] == []
+
+
+def test_prune_excluded_sub_folders_strips_whitespace():
+    files = [_folder("f1", "Archive", [])]
+    pruned = prune_excluded_sub_folders(files, ["  f1  "])
+    assert pruned == ["f1"]
+    assert files == []
+
+
+def test_prune_excluded_sub_folders_name_trailing_space():
+    files = [_folder("f1", "Product Specification ", [])]
+    pruned = prune_excluded_sub_folders(files, ["Product Specification"])
+    assert pruned == ["f1"]
+    assert files == []
+
+
+def test_prune_excluded_sub_folders_does_not_touch_files():
+    files = [{"id": "1", "name": "Archive", "mimeType": "application/pdf"}]
+    pruned = prune_excluded_sub_folders(files, ["Archive"])
+    assert pruned == []
+    assert len(files) == 1

@@ -125,6 +125,45 @@ def is_drive_file_video(name: str, mime_type: str) -> bool:
     return ext in _VIDEO_EXTENSIONS
 
 
+def prune_excluded_sub_folders(
+    files: List[Dict[str, Any]], excluded: List[str]
+) -> List[str]:
+    """Remove excluded subfolders (and their subtrees) from a nested Drive ``files`` tree.
+
+    A folder is excluded when its ``id`` or ``name`` matches an entry in
+    ``excluded`` (string comparison, entries stripped of whitespace).  Matching
+    folders are dropped from their parent's ``files`` list in place, so their
+    contents never reach the ingest queues.  Returns the ids of pruned folders.
+    """
+    excluded_keys = {str(e).strip() for e in (excluded or []) if str(e).strip()}
+    if not excluded_keys:
+        return []
+
+    pruned_ids: List[str] = []
+
+    def walk(items: List[Dict[str, Any]]) -> None:
+        kept: List[Dict[str, Any]] = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            mt = str(it.get("mimeType") or "")
+            if mt == _FOLDER_MIME and (
+                str(it.get("id") or "") in excluded_keys
+                or str(it.get("name") or "").strip() in excluded_keys
+            ):
+                if it.get("id"):
+                    pruned_ids.append(str(it["id"]))
+                continue
+            nested = it.get("files")
+            if isinstance(nested, list):
+                walk(nested)
+            kept.append(it)
+        items[:] = kept
+
+    walk(files)
+    return pruned_ids
+
+
 def mark_drive_video_files_disabled(files: List[Dict[str, Any]]) -> None:
     """Set ``disable_ingestion=True`` on every video file in a nested Drive ``files`` tree.
 

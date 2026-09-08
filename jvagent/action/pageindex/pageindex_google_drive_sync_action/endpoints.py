@@ -147,7 +147,9 @@ async def ingest_google_documents_endpoint(
 
     - action_id: ID of the PageIndexGoogleDriveSyncAction
     - google_drive_folders: List of folder configs, e.g.
-      `[{"folder_id": "<id>", "metadata": {"key": "value"}}]`
+      `[{"folder_id": "<id>", "metadata": {"key": "value"}}]`. Each config may
+      also include `"exclude_sub_folders": ["<id or name>", ...]` to skip files
+      in those sub folders.
     - remove_deleted_documents: If True, removes documents no longer present in
     - retry_failed_documents: If True, retries failed documents
       Google Drive
