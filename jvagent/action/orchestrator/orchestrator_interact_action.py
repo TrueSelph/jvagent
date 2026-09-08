@@ -522,6 +522,17 @@ class OrchestratorInteractAction(
             "unbounded prior reply is billed on every step. 0 disables the cap."
         ),
     )
+    with_event: bool = attribute(
+        default=False,
+        description=(
+            "Include [EVENT] system messages from PRIOR interactions in loop "
+            "history. Events are log annotations (e.g. 'Report form was sent "
+            "to the user.'); enabling this lets the loop model know what the "
+            "agent did in earlier turns at the cost of resending those lines "
+            "on every tick. The current interaction's events are never "
+            "included — it is excluded from its own history."
+        ),
+    )
 
     # -- Observation replay budget. Every tick re-sends this turn's prior tool
     # results, so without caps the per-turn input cost grows quadratically in
@@ -807,7 +818,7 @@ class OrchestratorInteractAction(
         default_factory=dict,
         description="Per-channel loop-knob overrides, keyed by visitor.channel "
         "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
-        "activation_budget, max_duration_seconds, tool_call_timeout, "
+        "with_event, activation_budget, max_duration_seconds, tool_call_timeout, "
         "max_statement_length, first_emit_timeout_ms, ack_statements, "
         "pinned_tools (REPLACES the action-level pin list on that channel, so a "
         "channel-specific capability isn't pinned onto every other channel), "
@@ -4119,7 +4130,9 @@ class OrchestratorInteractAction(
                     ),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
-                    with_event=False,
+                    with_event=bool(
+                        self._channel_cfg(visitor, "with_event", self.with_event)
+                    ),
                     max_statement_length=(
                         int(self.history_statement_max_chars)
                         if int(self.history_statement_max_chars or 0) > 0

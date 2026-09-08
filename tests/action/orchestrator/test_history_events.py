@@ -10,9 +10,14 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 
 
 @pytest.mark.asyncio
-async def test_history_omits_events(make_visitor):
+async def test_history_omits_events_by_default_and_honors_with_event_knob(
+    make_visitor,
+):
+    """Loop history excludes [EVENT] lines unless the ``with_event`` knob is
+    enabled (opt-in via agent.yaml ``context:`` or channel_overrides)."""
     ex = OrchestratorInteractAction()
     ex.history_limit = 20
+    assert ex.with_event is False
 
     visitor = make_visitor()
     await ex._history(visitor)
@@ -21,6 +26,14 @@ async def test_history_omits_events(make_visitor):
     assert (
         visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
         is False
+    )
+
+    ex.with_event = True
+    visitor = make_visitor()
+    await ex._history(visitor)
+    assert (
+        visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
+        is True
     )
 
 
