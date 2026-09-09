@@ -60,21 +60,6 @@ function isPageIndexGoogleDriveSyncAction(a: Record<string, unknown>): boolean {
   );
 }
 
-function isGoogleDriveAction(a: Record<string, unknown>): boolean {
-  const entity = String(a.entity ?? "");
-  const archetype = String(a.archetype ?? "");
-  const action = String(a.action ?? "");
-  const label = String(
-    (a.context as { label?: string } | undefined)?.label ?? a.label ?? "",
-  );
-  return (
-    entity.includes("GoogleDriveAction") ||
-    archetype.includes("GoogleDriveAction") ||
-    action === "jvagent/google_drive_action" ||
-    label.includes("google_drive_action")
-  );
-}
-
 /** Bash/zsh-safe single-quoted literal for pasting into curl. */
 function shellSingleQuoted(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
@@ -92,18 +77,6 @@ function buildGoogleDriveSyncWebhookCurl(
     "  -H 'accept: application/json' \\",
     `  -H ${shellSingleQuoted("Content-Type: application/json")} \\`,
     "-d " + shellSingleQuoted(jsonPretty),
-  ].join("\n");
-}
-
-/** GET curl listing a Drive folder's contents (matches GoogleDriveAction list endpoint). */
-function buildGoogleDriveListFoldersCurl(
-  url: string,
-): string {
-  return [
-    "curl -X 'GET' \\",
-    `  ${shellSingleQuoted(url)} \\`,
-    "  -H 'accept: application/json' \\",
-    `  -H ${shellSingleQuoted("X-API-Key: YOUR_API_KEY")}`,
   ].join("\n");
 }
 
@@ -411,8 +384,6 @@ export function PageIndexDocumentsModal({
     string | null
   >(null);
   const [driveCurlCopied, setDriveCurlCopied] = useState(false);
-  const [driveListCurlDraft, setDriveListCurlDraft] = useState("");
-  const [driveListCurlCopied, setDriveListCurlCopied] = useState(false);
 
   const [chunksDocName, setChunksDocName] = useState("");
   const chunksDocPickerRef = useRef<HTMLDivElement>(null);
@@ -694,7 +665,6 @@ export function PageIndexDocumentsModal({
     setExportRootId("");
     setDriveWebhookCurlDraft("");
     setDriveWebhookCurlError(null);
-    setDriveListCurlDraft("");
   }, [agentId]);
 
   const refreshGoogleDriveList = useCallback(async () => {
@@ -726,18 +696,6 @@ export function PageIndexDocumentsModal({
     }
   }, [driveWebhookCurlDraft]);
 
-  const copyDriveListCurl = useCallback(async () => {
-    const text = driveListCurlDraft.trim();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setDriveListCurlCopied(true);
-      window.setTimeout(() => setDriveListCurlCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable */
-    }
-  }, [driveListCurlDraft]);
-
   useEffect(() => {
     if (activeTab !== "google-sync") return;
     let cancelled = false;
@@ -761,7 +719,6 @@ export function PageIndexDocumentsModal({
           setDriveFolders([]);
           setDriveSelectedFolderId("");
           setDriveWebhookCurlDraft("");
-          setDriveListCurlDraft("");
           setDriveLoading(false);
           return;
         }
@@ -786,28 +743,6 @@ export function PageIndexDocumentsModal({
         setDriveWebhookCurlDraft(
           buildGoogleDriveSyncWebhookCurl(urlForCurl, body),
         );
-        const foundDriveAction = arr.find((x: Record<string, unknown>) =>
-          isGoogleDriveAction(x),
-        ) as
-          | { id?: string; action?: string; entity?: string; archetype?: string }
-          | undefined;
-        const driveActionId = foundDriveAction?.id
-          ? String(foundDriveAction.id)
-          : null;
-        const mainFolderId = (
-          Array.isArray(fullAction?.google_drive_folders)
-            ? fullAction.google_drive_folders
-            : []
-        )[0]?.folder_id;
-        if (driveActionId && mainFolderId) {
-          const pathList = `/api/actions/${encodeURIComponent(driveActionId)}/list?folder_id=${encodeURIComponent(String(mainFolderId))}&with_link=true`;
-          const urlForListCurl = apiBase
-            ? `${apiBase}${pathList}`
-            : `https://YOUR-HOST${pathList}`;
-          setDriveListCurlDraft(buildGoogleDriveListFoldersCurl(urlForListCurl));
-        } else {
-          setDriveListCurlDraft("");
-        }
         const docRes = await apiClient.listGoogleDriveDocuments(aid);
         if (cancelled) return;
         setDriveFolders(docRes.documents);
@@ -1862,60 +1797,6 @@ export function PageIndexDocumentsModal({
                         {driveWebhookCurlError}
                       </p>
                     ) : null}
-                  </div>
-                )}
-
-                {!driveLoading && driveListCurlDraft && (
-                  <div
-                    className={`rounded-lg border p-4 space-y-3 ${
-                      dark
-                        ? "border-zinc-600 bg-zinc-800/40"
-                        : "border-zinc-200 bg-zinc-50"
-                    }`}
-                  >
-                    <div>
-                      <h3
-                        className={`text-sm font-semibold ${dark ? "text-zinc-200" : "text-zinc-800"}`}
-                      >
-                        List folders (curl)
-                      </h3>
-                      <p
-                        className={`mt-1 text-sm ${dark ? "text-zinc-400" : "text-zinc-600"}`}
-                      >
-                        Replace YOUR_API_KEY, then copy and run to list all
-                        folders/files in the main folder.
-                      </p>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className={labelClass}>curl</span>
-                        <button
-                          type="button"
-                          onClick={() => void copyDriveListCurl()}
-                          className={`text-xs px-2 py-1 rounded border ${
-                            dark
-                              ? "border-zinc-600 text-zinc-200 hover:bg-zinc-950/50"
-                              : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
-                          }`}
-                        >
-                          {driveListCurlCopied ? "Copied" : "Copy"}
-                        </button>
-                      </div>
-                      <textarea
-                        value={driveListCurlDraft}
-                        onChange={(e) =>
-                          setDriveListCurlDraft(e.target.value)
-                        }
-                        rows={6}
-                        spellCheck={false}
-                        autoComplete="off"
-                        className={`w-full text-xs font-mono p-3 rounded border min-h-[80px] ${
-                          dark
-                            ? "border-zinc-600 bg-zinc-900 text-zinc-200"
-                            : "border-zinc-200 bg-white text-zinc-900"
-                        }`}
-                      />
-                    </div>
                   </div>
                 )}
 
