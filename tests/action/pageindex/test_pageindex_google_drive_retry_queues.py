@@ -13,11 +13,16 @@ pytest.importorskip("googleapiclient")
 
 from jvspatial.exceptions import ValidationError
 
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
+    file_ids_under_excluded_folders,
+)
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
     DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
     _extract_and_prepend_queue_item,
+    _filter_doc_queues_for_disabled,
     _find_file_dict_in_tree,
+    _merge_configured_exclude_sub_folders,
     _prune_added_queue_skip_existing,
     _strip_file_id_from_doc_queues,
     _sync_drive_node_status_from_queues,
@@ -273,6 +278,196 @@ async def test_prioritize_rejects_skip_ingest_enabled() -> None:
     ) as mock_node:
         mock_node.return_value = node
         with pytest.raises(ValidationError, match="Skip ingest"):
+            await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+
+
+def test_merge_configured_exclude_sub_folders_copies_when_omitted() -> None:
+    requested = [{"folder_id": "folder-1", "metadata": {"access": "public"}}]
+    configured = [
+        {
+            "folder_id": "folder-1",
+            "exclude_sub_folders": ["skip-id", "Archive"],
+            "metadata": {"access": "private"},
+        }
+    ]
+    merged = _merge_configured_exclude_sub_folders(requested, configured)
+    assert merged[0]["exclude_sub_folders"] == ["skip-id", "Archive"]
+    assert merged[0]["metadata"] == {"access": "public"}
+
+
+def test_merge_configured_exclude_sub_folders_request_wins() -> None:
+    requested = [{"folder_id": "folder-1", "exclude_sub_folders": ["from-request"]}]
+    configured = [{"folder_id": "folder-1", "exclude_sub_folders": ["from-yaml"]}]
+    merged = _merge_configured_exclude_sub_folders(requested, configured)
+    assert merged[0]["exclude_sub_folders"] == ["from-request"]
+
+
+def test_excluded_stale_filter_keeps_root_retry_queue_item() -> None:
+    folder_mime = "application/vnd.google-apps.folder"
+    old_files = [
+        {"id": "keep", "name": "keep.pdf", "mimeType": "application/pdf"},
+        {
+            "id": "f3",
+            "name": "Drop",
+            "mimeType": folder_mime,
+            "files": [
+                {"id": "skip", "name": "skip.pdf", "mimeType": "application/pdf"},
+            ],
+        },
+    ]
+    stale = set(file_ids_under_excluded_folders(old_files, ["f3"]))
+    docs = {
+        "added": [],
+        "modified": [
+            {
+                "new": {
+                    "id": "keep",
+                    "name": "keep.pdf",
+                    "mimeType": "application/pdf",
+                },
+                "old": None,
+            }
+        ],
+        "removed": [],
+    }
+    _filter_doc_queues_for_disabled(docs, stale)
+    assert docs["modified"][0]["new"]["id"] == "keep"
+    assert stale == {"skip"}
+
+
+@pytest.mark.asyncio
+async def test_prioritize_refreshes_mime_from_drive() -> None:
+    f = {"id": "z1", "name": "Report", "mimeType": ""}
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[f],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    gdrive = SimpleNamespace(
+        get_file_metadata=AsyncMock(
+            return_value={"name": "Report", "mimeType": "application/pdf"}
+        )
+    )
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+        ) as mock_node,
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "get_action", new_callable=AsyncMock
+        ) as mock_get_action,
+    ):
+        mock_node.return_value = node
+        mock_get_action.return_value = gdrive
+        out = await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+    assert out["prioritized_in"] == "enqueued"
+    assert f["mimeType"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_prioritize_shortcut_to_google_doc() -> None:
+    f = {
+        "id": "z1",
+        "name": "TCS Updates",
+        "mimeType": "application/vnd.google-apps.shortcut",
+    }
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[f],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    gdrive = SimpleNamespace(
+        get_file_metadata=AsyncMock(
+            return_value={
+                "name": "TCS Updates",
+                "mimeType": "application/vnd.google-apps.shortcut",
+                "shortcutDetails": {
+                    "targetId": "doc1",
+                    "targetMimeType": "application/vnd.google-apps.document",
+                },
+            }
+        )
+    )
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+        ) as mock_node,
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "get_action", new_callable=AsyncMock
+        ) as mock_get_action,
+    ):
+        mock_node.return_value = node
+        mock_get_action.return_value = gdrive
+        out = await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+    assert out["prioritized_in"] == "enqueued"
+    assert f["shortcutDetails"]["targetMimeType"] == (
+        "application/vnd.google-apps.document"
+    )
+
+
+@pytest.mark.asyncio
+async def test_prioritize_unsupported_includes_name_and_mime() -> None:
+    f = {"id": "z1", "name": "Clip", "mimeType": "video/mp4"}
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[f],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    gdrive = SimpleNamespace(
+        get_file_metadata=AsyncMock(
+            return_value={"name": "Clip", "mimeType": "video/mp4"}
+        )
+    )
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+        ) as mock_node,
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "get_action", new_callable=AsyncMock
+        ) as mock_get_action,
+    ):
+        mock_node.return_value = node
+        mock_get_action.return_value = gdrive
+        with pytest.raises(ValidationError, match="File type is not supported") as exc:
+            await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
+    assert exc.value.details["name"] == "Clip"
+    assert exc.value.details["mimeType"] == "video/mp4"
+
+
+@pytest.mark.asyncio
+async def test_prioritize_rejects_file_in_excluded_subfolder() -> None:
+    f = {
+        "id": "z1",
+        "name": "old.pdf",
+        "mimeType": "application/pdf",
+    }
+    node = SimpleNamespace(
+        ingesting_documents={"added": [], "modified": [], "removed": []},
+        failed_documents={"added": [], "modified": [], "removed": []},
+        files=[
+            {
+                "id": "skip-folder",
+                "name": "Archive",
+                "mimeType": "application/vnd.google-apps.folder",
+                "files": [f],
+            }
+        ],
+        save=AsyncMock(return_value=None),
+    )
+    action = PageIndexGoogleDriveSyncAction(document_timeout=600)
+    action.google_drive_folders = [
+        {"folder_id": "folder-1", "exclude_sub_folders": ["skip-folder"]}
+    ]
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "node", new_callable=AsyncMock
+    ) as mock_node:
+        mock_node.return_value = node
+        with pytest.raises(ValidationError, match="excluded sub folder"):
             await action.prioritize_google_drive_file_for_ingest("folder-1", "z1")
 
 

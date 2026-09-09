@@ -76,6 +76,33 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **PageIndex Google Drive: extensionless PDFs/docs and `enable_all_chunks`.**
+  Drive files whose names have no suffix (a PDF named `"Q2 Report"`, a Word
+  doc named `"Memo"`) are typed from mime against the PageIndex allowlist, so
+  Retry no longer 422s them as unsupported; jvforge is given `Report.pdf`. REST
+  `POST /actions/{id}/ingest_google_documents` now accepts `enable_all_chunks`
+  (jvchat already sent it; extra fields are forbidden, so ingest 422'd before
+  the handler).
+
+- **PageIndex Google Drive: exclusions survive jvchat ingest.** REST/UI ingest
+  that sends only `{folder_id, metadata}` now inherits `exclude_sub_folders`
+  from the action config for that folder (request list still wins when present).
+  Retry refreshes `name`/`mimeType` from Drive when the cached row is not
+  ingestible, includes those fields in the 422, and refuses files that sit
+  under an excluded sub folder.
+
+- **PageIndex Google Drive: shortcuts to Docs/PDFs.** A row typed
+  `application/vnd.google-apps.shortcut` (e.g. `"TCS Updates"` with no suffix)
+  is ingested via `shortcutDetails.targetId` / `targetMimeType`. A shortcut to
+  a Google Doc or PDF is queued; a shortcut with no target or a video target
+  is still skipped. `get_media` downloads the target (one hop).
+
+- **PageIndex Google Drive: exclusions no longer wipe Retry.** Purging queues
+  for newly excluded sub folders only drops files **inside** those folders.
+  Root Docs/PDFs/shortcuts (TCS MATERIALS LIST, Retry, etc.) stay queued;
+  ingest no longer reports "No pending documents" after a successful Retry
+  just because other sub folders were excluded.
+
 - **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
   JSON contract now asks for an optional `thought`, and each step's recorded
   reasoning — that thought, or an excerpt of the provider's reasoning when the

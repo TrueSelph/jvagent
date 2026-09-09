@@ -21,6 +21,7 @@ from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
 )
 from jvagent.action.pageindex.documents import (
+    PAGEINDEX_UPLOAD_EXTENSIONS,
     _get_app_id_from_node,
     assimilate_document,
     delete_document,
@@ -38,7 +39,10 @@ from jvagent.env import get_jvagent_jvforge_base_url
 
 from ..jvforge_routing import resolve_effective_jvforge_base
 from .drive_ingest_filter import (
+    effective_drive_ingest_mime,
+    file_ids_under_excluded_folders,
     filter_drive_doc_queues_for_ingestible,
+    guess_pageindex_extension,
     is_drive_file_pageindex_ingestible,
     mark_drive_video_files_disabled,
     prune_excluded_sub_folders,
@@ -111,6 +115,36 @@ def _disabled_file_ids(files: List[Dict[str, Any]]) -> Set[str]:
     return out
 
 
+def _merge_configured_exclude_sub_folders(
+    requested: List[dict], configured: List[dict]
+) -> List[dict]:
+    """Copy yaml ``exclude_sub_folders`` onto request folders that omit it.
+
+    Request values win when they already list exclusions. Matching is by
+    ``folder_id`` (string).
+    """
+    cfg_by_id: Dict[str, dict] = {}
+    for c in configured or []:
+        if not isinstance(c, dict):
+            continue
+        fid = c.get("folder_id")
+        if fid:
+            cfg_by_id[str(fid)] = c
+    out: List[dict] = []
+    for f in requested or []:
+        if not isinstance(f, dict):
+            continue
+        merged = dict(f)
+        if not (merged.get("exclude_sub_folders") or []):
+            cfg = cfg_by_id.get(str(merged.get("folder_id") or ""))
+            if cfg:
+                excl = cfg.get("exclude_sub_folders") or []
+                if excl:
+                    merged["exclude_sub_folders"] = list(excl)
+        out.append(merged)
+    return out
+
+
 def _queue_item_file_id(item: Any, queue_key: str) -> str:
     if not isinstance(item, dict):
         return ""
@@ -176,36 +210,6 @@ def _filter_queue_for_disabled(
 def _filter_doc_queues_for_disabled(docs: Dict[str, Any], disabled: Set[str]) -> None:
     for key in ("added", "modified", "removed"):
         docs[key] = _filter_queue_for_disabled(list(docs.get(key) or []), disabled, key)
-
-
-def _collect_sub_folder_file_ids(
-    files: List[Dict[str, Any]], folder_ids: Set[str]
-) -> Set[str]:
-    """All non-folder file ids inside the subtrees rooted at ``folder_ids`` (recursive)."""
-    out: Set[str] = set()
-
-    def walk(items: List[Dict[str, Any]]) -> None:
-        for it in items:
-            if not isinstance(it, dict):
-                continue
-            nested = it.get("files")
-            if it.get("mimeType") == _FOLDER_MIME:
-                # Matched excluded folder (or a folder nested inside one):
-                # collect ids from its entire subtree.
-                if it.get("id") and str(it["id"]) in folder_ids:
-                    if nested:
-                        walk(nested)
-                elif nested:
-                    walk(nested)
-            else:
-                fid = it.get("id")
-                if fid:
-                    out.add(str(fid))
-                if nested:
-                    walk(nested)
-
-    walk(files)
-    return out
 
 
 def _sync_drive_node_status_from_queues(node: Any) -> None:
@@ -529,14 +533,20 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
         )
-        # Google Workspace native docs (Docs/Sheets/Slides/Drawings) are exported
-        # as PDF bytes by get_media but retain their extensionless Drive name
-        # (e.g. "Instructions to Zara"). jvforge validates the upload filename
-        # extension, so append ".pdf" for these so the bytes are accepted.
+        # jvforge validates the upload filename extension. Native Google Workspace
+        # docs are exported as PDF bytes with an extensionless Drive name
+        # (e.g. "Instructions to Zara"). Binary uploads often omit the suffix
+        # too ("Q2 Report" + application/pdf) — guess from mime in that case.
         is_google_apps = (mime_type or "").startswith("application/vnd.google-apps.")
         forge_filename = doc_name
-        if is_google_apps and not Path(doc_name).suffix.lower():
-            forge_filename = f"{doc_name}.pdf"
+        existing_ext = Path(doc_name).suffix.lower()
+        if existing_ext not in PAGEINDEX_UPLOAD_EXTENSIONS:
+            if is_google_apps:
+                forge_filename = f"{doc_name}.pdf"
+            else:
+                guessed = guess_pageindex_extension(doc_name, mime_type)
+                if guessed:
+                    forge_filename = f"{doc_name}{guessed}"
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
         if strategy == "flash" and not effective_forge:
             raise ValidationError(
@@ -657,6 +667,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         file_id = file_info.get("id", "")
         doc_url = file_info.get("url", "")
         mime_type = str(file_info.get("mimeType") or "")
+        shortcut_details = file_info.get("shortcutDetails")
+        if not isinstance(shortcut_details, dict):
+            shortcut_details = None
+        ingest_mime = (
+            effective_drive_ingest_mime(mime_type, shortcut_details) or mime_type
+        )
 
         google_drive_documents_node.active_document = doc_name
         google_drive_documents_node.status = "processing"
@@ -668,7 +684,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             cancel_event = threading.Event()
 
             if not is_drive_file_pageindex_ingestible(
-                doc_name, str(file_info.get("mimeType") or "")
+                doc_name, mime_type, shortcut_details
             ):
                 logger.info(
                     "Skipping unsupported Google Drive file for PageIndex: %s",
@@ -705,7 +721,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         doc_name=doc_name,
                         file_id=file_id,
                         doc_url=doc_url,
-                        mime_type=mime_type,
+                        mime_type=ingest_mime,
                         cfg=cfg,
                         cancel_event=cancel_event,
                     ),
@@ -908,6 +924,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         if not google_drive_folders:
             empty_result["message"] = "No folders to ingest"
             return empty_result
+        google_drive_folders = _merge_configured_exclude_sub_folders(
+            google_drive_folders, self.google_drive_folders
+        )
 
         agent = await self.get_agent()
         agent_id = str(agent.id)
@@ -1012,7 +1031,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
             excluded = google_drive_folder.get("exclude_sub_folders") or []
             pruned_folder_ids = prune_excluded_sub_folders(files, excluded)
-            excluded_stale_ids: Set[str] = set(pruned_folder_ids)
             if pruned_folder_ids:
                 logger.info(
                     "Excluding %d sub folder(s) from folder_id=%s: %s",
@@ -1034,9 +1052,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     if pruned_folder_ids:
                         # Exclusion list may have grown since the last sync:
                         # drop queued entries for files inside now-excluded
-                        # subtrees using the previous listing.
-                        excluded_stale_ids |= _collect_sub_folder_file_ids(
-                            old_files, set(pruned_folder_ids)
+                        # subtrees using the previous listing. Only those
+                        # subtrees — not every file in the tree.
+                        excluded_stale_ids = set(
+                            file_ids_under_excluded_folders(
+                                old_files, list(pruned_folder_ids)
+                            )
                         )
                         _filter_doc_queues_for_disabled(
                             google_drive_documents_node.ingesting_documents,
@@ -1549,13 +1570,32 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 details={"folder_id": folder_id},
             )
 
-        tree_file = _find_file_dict_in_tree(
-            list(google_drive_documents_node.files or []), file_id
-        )
+        tree_files = list(google_drive_documents_node.files or [])
+        tree_file = _find_file_dict_in_tree(tree_files, file_id)
         if tree_file and tree_file.get("disable_ingestion"):
             raise ValidationError(
                 message="Cannot prioritize a file with Skip ingest enabled",
                 details={"folder_id": folder_id, "file_id": file_id},
+            )
+
+        cfg_excl: List[str] = []
+        for cfg in self.google_drive_folders or []:
+            if isinstance(cfg, dict) and str(cfg.get("folder_id") or "") == str(
+                folder_id
+            ):
+                cfg_excl = list(cfg.get("exclude_sub_folders") or [])
+                break
+        if tree_file and str(file_id) in set(
+            file_ids_under_excluded_folders(tree_files, cfg_excl)
+        ):
+            raise ValidationError(
+                message="Cannot prioritize a file in an excluded sub folder",
+                details={
+                    "folder_id": folder_id,
+                    "file_id": file_id,
+                    "name": str(tree_file.get("name") or ""),
+                    "mimeType": str(tree_file.get("mimeType") or ""),
+                },
             )
 
         prioritized_in: Optional[str] = None
@@ -1573,13 +1613,47 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     message=f"File id not found under folder: {file_id}",
                     details={"folder_id": folder_id, "file_id": file_id},
                 )
-            if not is_drive_file_pageindex_ingestible(
-                str(tree_file.get("name") or ""),
-                str(tree_file.get("mimeType") or ""),
-            ):
+            name = str(tree_file.get("name") or "")
+            mime = str(tree_file.get("mimeType") or "")
+            shortcut_details = tree_file.get("shortcutDetails")
+            if not isinstance(shortcut_details, dict):
+                shortcut_details = None
+            if not is_drive_file_pageindex_ingestible(name, mime, shortcut_details):
+                google_drive_action = await self.get_action("GoogleDriveAction")
+                if google_drive_action:
+                    try:
+                        meta = await google_drive_action.get_file_metadata(
+                            str(file_id),
+                            fields="name, mimeType, shortcutDetails",
+                        )
+                    except Exception:
+                        meta = None
+                    if isinstance(meta, dict):
+                        if meta.get("name"):
+                            tree_file["name"] = meta["name"]
+                            name = str(meta["name"])
+                        if meta.get("mimeType"):
+                            tree_file["mimeType"] = meta["mimeType"]
+                            mime = str(meta["mimeType"])
+                        if meta.get("shortcutDetails"):
+                            tree_file["shortcutDetails"] = meta["shortcutDetails"]
+                            shortcut_details = (
+                                meta["shortcutDetails"]
+                                if isinstance(meta["shortcutDetails"], dict)
+                                else shortcut_details
+                            )
+            if not is_drive_file_pageindex_ingestible(name, mime, shortcut_details):
                 raise ValidationError(
                     message="File type is not supported for PageIndex ingestion",
-                    details={"folder_id": folder_id, "file_id": file_id},
+                    details={
+                        "folder_id": folder_id,
+                        "file_id": file_id,
+                        "name": name,
+                        "mimeType": mime,
+                        "targetMimeType": effective_drive_ingest_mime(
+                            mime, shortcut_details
+                        ),
+                    },
                 )
             mod = list(
                 google_drive_documents_node.ingesting_documents.get("modified") or []
