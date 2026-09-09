@@ -67,6 +67,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   and adds Ollama Cloud (`ollama_chat/glm-5.3:cloud` via the LiteLLM adapter,
   `OLLAMA_API_KEY`), smoke only.
 
+- **PageIndex Google Drive sync: exclude sub folders.** Each
+  `google_drive_folders` entry may set optional `exclude_sub_folders` (sub
+  folder id or exact name). Matching subtrees are pruned from the Drive
+  listing before ingest and never queued. Stale queue rows for those
+  folders are purged on the next sync; already-ingested documents are removed
+  only when `remove_deleted_documents` is on.
+
 ### Fixed
 
 - **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
