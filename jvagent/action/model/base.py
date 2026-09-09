@@ -476,7 +476,7 @@ class BaseModelAction(Action, ABC):
                             usage[extra_key] = int(value)
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
-            # Get model from result if available (actual model used), otherwise fall back to self.model
+            # Get model from result if available (actual/resolved model used), otherwise fall back to self.model
             # This ensures we report the actual model used (e.g., from ReplyAction override)
             # rather than the LanguageModelAction's default model
             model = ""
@@ -484,6 +484,12 @@ class BaseModelAction(Action, ABC):
                 model = result.model
             elif hasattr(self, "model") and self.model:
                 model = self.model
+
+            request_model = ""
+            if result and getattr(result, "request_model", None):
+                request_model = result.request_model
+            elif hasattr(self, "model") and self.model:
+                request_model = self.model
 
             # Get calling action name from result, fallback on context then model action
             action_name = None
@@ -528,6 +534,8 @@ class BaseModelAction(Action, ABC):
                 # canary can read to confirm the switch took.
                 "transport": self._telemetry_transport(provider),
             }
+            if request_model:
+                data["request_model"] = request_model
 
             # Add system prompt (the actual prompt that was executed)
             if system_prompt:
@@ -578,6 +586,10 @@ class BaseModelAction(Action, ABC):
                     data["finish_reason"] = result.finish_reason
                 if hasattr(result, "tool_calls") and result.tool_calls:
                     data["tool_calls"] = result.tool_calls
+                # Tool definitions for Debug Interactions retest (exact replay).
+                result_tools = getattr(result, "tools", None)
+                if result_tools:
+                    data["tools"] = result_tools
 
             # Build event and append directly to interaction
             event = {

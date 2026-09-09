@@ -414,7 +414,6 @@ export function ActionsModal({
                     <JsonViewer
                       data={parsedContextObj}
                       defaultCollapsedPaths={["metadata"]}
-                      defaultExpandDepth={2}
                       dark={dark}
                       maxHeight="min(520px, calc(88vh - 320px))"
                       className="min-h-0 flex-1 overflow-hidden flex flex-col"

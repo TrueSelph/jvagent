@@ -62,7 +62,6 @@ export function MessageDebugDialog({
               <JsonViewer
                 data={payload.parsed}
                 dark={jsonPanelDark}
-                defaultExpandDepth={2}
                 maxHeight="40vh"
               />
             ) : (
@@ -92,7 +91,6 @@ export function MessageDebugDialog({
               </h4>
               <JsonViewer
                 data={message.debugData}
-                defaultExpandDepth={2}
                 dark={jsonPanelDark}
                 maxHeight="60vh"
               />
