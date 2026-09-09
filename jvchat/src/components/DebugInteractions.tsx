@@ -22,6 +22,10 @@ import { JsonCodeEditor } from "./JsonCodeEditor";
 import { tryParseJsonDisplay } from "../utils/tryParseJsonDisplay";
 import { truncate } from "../utils/truncate";
 import { preserveScroll } from "../utils/preserveScroll";
+import {
+  toolCallsForMetric,
+  type DebugToolCall,
+} from "../lib/debugToolCalls";
 
 /** Code / text fields: black in dark theme, off-grey in light theme */
 function debugCodePanelClass(isDark: boolean) {
@@ -95,6 +99,84 @@ function ResponseJsonOrText({
       >
         {value}
       </pre>
+    </div>
+  );
+}
+
+function DebugToolCallCard({
+  tool,
+  isDark,
+}: {
+  tool: DebugToolCall;
+  isDark: boolean;
+}) {
+  const hasArgs = Object.keys(tool.args).length > 0;
+  const resultText =
+    tool.result === undefined
+      ? null
+      : typeof tool.result === "string"
+        ? tool.result
+        : JSON.stringify(tool.result, null, 2);
+  const parsedResult =
+    resultText !== null ? tryParseJsonDisplay(resultText) : null;
+  return (
+    <div
+      className={`rounded-lg border ${
+        isDark ? "bg-black border-zinc-700" : "bg-zinc-100 border-zinc-300"
+      }`}
+    >
+      <div
+        className={`px-4 py-2 text-sm border-b ${
+          isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-800"
+        }`}
+      >
+        Used tool: <b>{tool.toolName}</b>
+      </div>
+      {hasArgs && (
+        <div className="px-4 py-2">
+          <JsonViewer
+            data={tool.args}
+            dark={isDark}
+            defaultExpandDepth={2}
+            maxHeight="240px"
+          />
+        </div>
+      )}
+      {resultText !== null && (
+        <div
+          className={`px-4 py-2 border-t border-dashed ${
+            isDark ? "border-zinc-700" : "border-zinc-300"
+          }`}
+        >
+          <p
+            className={`font-semibold text-sm mb-1 ${
+              tool.isError
+                ? "text-red-500"
+                : isDark
+                  ? "text-zinc-200"
+                  : "text-zinc-800"
+            }`}
+          >
+            Result:
+          </p>
+          {parsedResult != null ? (
+            <JsonViewer
+              data={parsedResult}
+              dark={isDark}
+              defaultExpandDepth={2}
+              maxHeight="400px"
+            />
+          ) : (
+            <pre
+              className={`whitespace-pre-wrap font-mono text-xs ${
+                isDark ? "text-zinc-300" : "text-zinc-800"
+              }`}
+            >
+              {resultText}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -294,6 +376,7 @@ export function DebugInteractions({
           utterance,
           metrics,
           conversationHistory,
+          agentTrace: interactionData.agent_trace || [],
           user_id,
           conversation_id,
         };
@@ -443,6 +526,17 @@ export function DebugInteractions({
     if (!selectedUserId) return parentInteractions;
     return parentInteractions.filter((p) => p.user_id === selectedUserId);
   }, [parentInteractions, selectedUserId]);
+
+  const selectedMetricToolCalls = useMemo(() => {
+    if (selectedParentIndex == null || selectedMetricIndex == null) return [];
+    const parent = effectiveParents[selectedParentIndex];
+    if (!parent) return [];
+    return toolCallsForMetric(
+      parent.agentTrace,
+      parent.metrics,
+      selectedMetricIndex,
+    );
+  }, [effectiveParents, selectedParentIndex, selectedMetricIndex]);
 
   const refreshInteractionLogsPage1 = useCallback(async () => {
     const agentId = targetAgentIdRef.current ?? targetAgentId;
@@ -1260,6 +1354,24 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       />
                     </div>
                   )}
+                {selectedMetricToolCalls.length > 0 && (
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                    >
+                      Tool Calls
+                    </label>
+                    <div className="space-y-3">
+                      {selectedMetricToolCalls.map((tool) => (
+                        <DebugToolCallCard
+                          key={tool.segmentId}
+                          tool={tool}
+                          isDark={effectiveDarkMode}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Original Response */}
                 {selectedInteraction.data.response && (
                   <div>
