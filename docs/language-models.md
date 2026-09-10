@@ -102,7 +102,15 @@ the same finish reasons (a response carrying tool calls is `tool_calls` even
 when the provider labelled it `stop`); OpenAI `prompt_tokens_details.cached_tokens`
 and Anthropic `cache_read_input_tokens` both land in `usage.cached_read_tokens`;
 tool-call arguments are parsed to a dict with the raw string kept for the
-unparseable case. `ModelActionResult.to_response()` returns the same object, so
+unparseable case.
+
+The `model_call` observability event records both ids: `model` is what the
+provider answered with (`gpt-4.1-2025-04-14`), `request_model` is what the agent
+asked for (`openai/gpt-4.1`) and is the one that can be replayed or matched back
+to `agent.yaml`. Tool **names** ride on every event as `tool_names`; the full
+tool schemas are opt-in per action via `telemetry_tool_definitions`, because
+they are byte-identical on every tick of an agentic turn and would otherwise be
+persisted once per tick. `ModelActionResult.to_response()` returns the same object, so
 existing `query_messages()` callers can migrate one read at a time. The
 Orchestrator already consumes only the contract.
 

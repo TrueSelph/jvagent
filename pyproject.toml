@@ -84,6 +84,12 @@ test = [
     # instantiates PostgresDB and therefore needs the driver. Without it the
     # suite passes only on machines that happen to have asyncpg installed.
     "asyncpg>=0.29.0",
+    # The Google Drive / PageIndex sync tests open with importorskip on these,
+    # so without them the whole slice reports as skipped and CI is green on
+    # code nobody exercised. Same pins as requirements-all.txt.
+    "google-api-python-client>=2.200.0",
+    "google-auth-httplib2>=0.4.2",
+    "google-auth-oauthlib>=1.4.1",
 ]
 
 # Optional: the LiteLLM universal adapter (jvagent/litellm_lm) and the

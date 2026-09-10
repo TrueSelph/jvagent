@@ -20,6 +20,28 @@ from jvagent.action.base import Action
 
 logger = logging.getLogger(__name__)
 
+
+def _tool_definition_names(tools: Any) -> List[str]:
+    """Names of the tool definitions sent with a call, in order.
+
+    Accepts the OpenAI wire shape (``{"type": "function", "function": {...}}``)
+    and the flatter ``{"name": ...}`` shape some providers take. Anything
+    unrecognisable is skipped rather than guessed at — this feeds telemetry,
+    not a request.
+    """
+    names: List[str] = []
+    if not isinstance(tools, list):
+        return names
+    for entry in tools:
+        if not isinstance(entry, dict):
+            continue
+        fn = entry.get("function")
+        name = fn.get("name") if isinstance(fn, dict) else entry.get("name")
+        if isinstance(name, str) and name:
+            names.append(name)
+    return names
+
+
 T = TypeVar("T")
 
 
@@ -132,6 +154,17 @@ class BaseModelAction(Action, ABC):
     retry_on_status_codes: List[int] = attribute(
         default_factory=lambda: [408, 425, 429, 500, 502, 503, 504],
         description="HTTP status codes that trigger a retry when raised as HTTPStatusError",
+    )
+    telemetry_tool_definitions: bool = attribute(
+        default=False,
+        description=(
+            "Store the full tool/function definitions sent with each call on "
+            "the model_call observability event, so a debug UI can replay the "
+            "request exactly. Off by default: the schemas are identical on "
+            "every tick of a turn, so an agentic loop persists the same "
+            "kilobytes once per tick per interaction. Turn on per model action "
+            "while debugging. Tool NAMES are always recorded and cost nothing."
+        ),
     )
 
     def _retryable_status_codes(self) -> List[int]:
@@ -476,7 +509,7 @@ class BaseModelAction(Action, ABC):
                             usage[extra_key] = int(value)
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
-            # Get model from result if available (actual model used), otherwise fall back to self.model
+            # Get model from result if available (actual/resolved model used), otherwise fall back to self.model
             # This ensures we report the actual model used (e.g., from ReplyAction override)
             # rather than the LanguageModelAction's default model
             model = ""
@@ -484,6 +517,12 @@ class BaseModelAction(Action, ABC):
                 model = result.model
             elif hasattr(self, "model") and self.model:
                 model = self.model
+
+            request_model = ""
+            if result and getattr(result, "request_model", None):
+                request_model = result.request_model
+            elif hasattr(self, "model") and self.model:
+                request_model = self.model
 
             # Get calling action name from result, fallback on context then model action
             action_name = None
@@ -528,6 +567,8 @@ class BaseModelAction(Action, ABC):
                 # canary can read to confirm the switch took.
                 "transport": self._telemetry_transport(provider),
             }
+            if request_model:
+                data["request_model"] = request_model
 
             # Add system prompt (the actual prompt that was executed)
             if system_prompt:
@@ -578,6 +619,17 @@ class BaseModelAction(Action, ABC):
                     data["finish_reason"] = result.finish_reason
                 if hasattr(result, "tool_calls") and result.tool_calls:
                     data["tool_calls"] = result.tool_calls
+                # Which tools were on the surface is always worth knowing and
+                # costs a handful of bytes. The full JSON Schemas are what a
+                # debug UI needs to replay the request exactly, and they are
+                # byte-identical on every tick of a turn — persisting them per
+                # event multiplies the same payload by the tick count, so they
+                # are opt-in per model action.
+                result_tools = getattr(result, "tools", None)
+                if result_tools:
+                    data["tool_names"] = _tool_definition_names(result_tools)
+                    if self.telemetry_tool_definitions:
+                        data["tools"] = result_tools
 
             # Build event and append directly to interaction
             event = {

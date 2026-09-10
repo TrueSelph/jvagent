@@ -142,7 +142,8 @@ class GoogleDriveAction(GoogleAction):
 
         q = f"'{parent_id}' in parents and trashed = false"
         fields = (
-            "files(id, name, mimeType, createdTime, modifiedTime"
+            "files(id, name, mimeType, createdTime, modifiedTime, "
+            "shortcutDetails(targetId, targetMimeType)"
             + (", webViewLink" if with_link else "")
             + ")"
         )
@@ -234,12 +235,35 @@ class GoogleDriveAction(GoogleAction):
         # 1. Fetch metadata to determine if it's a Google Doc that needs exporting
         file_metadata = (
             service.files()
-            .get(fileId=file_id, fields="name, mimeType", supportsAllDrives=True)
+            .get(
+                fileId=file_id,
+                fields="name, mimeType, shortcutDetails",
+                supportsAllDrives=True,
+            )
             .execute()
         )
 
         mime_type = file_metadata.get("mimeType", "")
         file_name = file_metadata.get("name", "")
+
+        if mime_type == "application/vnd.google-apps.shortcut":
+            target_id = (file_metadata.get("shortcutDetails") or {}).get("targetId")
+            if not target_id:
+                raise ValueError(
+                    f"Shortcut '{file_name}' has no target and cannot be ingested"
+                )
+            file_metadata = (
+                service.files()
+                .get(fileId=target_id, fields="name, mimeType", supportsAllDrives=True)
+                .execute()
+            )
+            file_id = target_id
+            mime_type = file_metadata.get("mimeType", "")
+            file_name = file_metadata.get("name", "") or file_name
+            if mime_type == "application/vnd.google-apps.shortcut":
+                raise ValueError(
+                    f"Shortcut '{file_name}' points at another shortcut; not followed"
+                )
 
         # 2. Reject non-document Google Workspace types (video, audio, photo, etc.)
         if mime_type in self._GOOGLE_APPS_NON_DOCUMENT_MIMES:

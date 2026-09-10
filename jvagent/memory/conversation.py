@@ -16,6 +16,33 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _cap_event_entries(events: Any, max_event_length: Optional[int]) -> Any:
+    """Return ``events`` with each entry's text capped at ``max_event_length``.
+
+    Events are free-form log annotations with no length contract, so the
+    statement cap deliberately skips them. A caller that replays history into
+    every model call (the Orchestrator loop) sets ``max_event_length`` to bound
+    the per-tick cost. ``None`` or ``0`` leaves the events untouched, and the
+    original list is never mutated.
+    """
+    if not max_event_length or not isinstance(events, list):
+        return events
+    capped: List[Any] = []
+    for event in events:
+        if isinstance(event, dict):
+            content = event.get("content")
+            if isinstance(content, str) and len(content) > max_event_length:
+                trimmed = dict(event)
+                trimmed["content"] = content[:max_event_length] + "..."
+                capped.append(trimmed)
+                continue
+        elif isinstance(event, str) and len(event) > max_event_length:
+            capped.append(event[:max_event_length] + "...")
+            continue
+        capped.append(event)
+    return capped
+
+
 # Compound field names are model fields (``session_id``); jvspatial maps them to
 # ``context.<name>`` in MongoDB. A ``context.`` prefix on the model field becomes
 # ``context.context.*``.
@@ -758,6 +785,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_event: bool = False,
         with_posture: bool = False,
         max_statement_length: Optional[int] = None,
+        max_event_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Format interactions for language model consumption.
 
@@ -775,6 +803,11 @@ class Conversation(DeferredSaveMixin, Node):
                 If provided and content exceeds this length, it will be truncated with "..." appended.
                 Does not apply to interpretations or events. Default: None (no truncation).
                 If None, will attempt to use agent's max_statement_length from each interaction.
+            max_event_length: Optional maximum length for each ``[EVENT]`` line. Events are
+                free-form log annotations with no length contract, so a caller that replays
+                history on every model call (the Orchestrator loop) needs its own cap here;
+                ``max_statement_length`` deliberately does not apply to them.
+                Default: None (no truncation).
 
         Returns:
             List of dictionaries with 'role' and 'content' keys formatted for language models
@@ -862,7 +895,8 @@ class Conversation(DeferredSaveMixin, Node):
                     )
 
             # Add events as system messages (if present and requested)
-            # Note: events are not truncated
+            # Events ignore ``max_statement_length`` by contract; they honour the
+            # explicit ``max_event_length`` cap when the caller sets one.
             if with_event and interaction.events:
                 for event in interaction.events:
                     # Extract content from event dict structure
@@ -870,6 +904,9 @@ class Conversation(DeferredSaveMixin, Node):
                         event_str = event.get("content", str(event))
                     else:
                         event_str = str(event)
+                    event_str = str(event_str)
+                    if max_event_length and len(event_str) > max_event_length:
+                        event_str = event_str[:max_event_length] + "..."
                     history.append(
                         {
                             "role": "system",
@@ -890,6 +927,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_posture: bool = False,
         formatted: bool = True,
         max_statement_length: Optional[int] = None,
+        max_event_length: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Get interaction history with configurable element inclusion and formatting.
 
@@ -912,6 +950,10 @@ class Conversation(DeferredSaveMixin, Node):
             max_statement_length: Optional maximum length for utterance and response strings.
                 If provided and content exceeds this length, it will be truncated with "..." appended.
                 Does not apply to interpretations or events. Default: None (no truncation).
+            max_event_length: Optional maximum length for each event line, applied only when
+                ``with_event`` is on. Events carry no length contract, so a caller that
+                replays history on every model call must cap them explicitly.
+                Default: None (no truncation).
 
         Returns:
             If formatted=True: List of dictionaries with 'role' and 'content' keys
@@ -960,6 +1002,7 @@ class Conversation(DeferredSaveMixin, Node):
                 with_event=with_event,
                 with_posture=with_posture,
                 max_statement_length=max_statement_length,
+                max_event_length=max_event_length,
             )
         else:
             # Raw format with selected elements
@@ -995,8 +1038,11 @@ class Conversation(DeferredSaveMixin, Node):
                         entry["anchors"] = interaction.anchors
 
                 if with_event and interaction.events:
-                    # Note: events are not truncated
-                    entry["events"] = interaction.events
+                    # Events ignore ``max_statement_length`` by contract; they
+                    # honour ``max_event_length`` when the caller sets one.
+                    entry["events"] = _cap_event_entries(
+                        interaction.events, max_event_length
+                    )
 
                 if with_posture and getattr(interaction, "response_posture", None):
                     entry["response_posture"] = interaction.response_posture

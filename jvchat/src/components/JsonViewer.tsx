@@ -14,7 +14,7 @@ type JsonValue =
 
 interface JsonViewerProps {
   data: unknown;
-  /** Levels expanded on first render. Defaults to 2. */
+  /** Levels expanded on first render. Defaults to 64 (fully expanded, same as Expand all). */
   defaultExpandDepth?: number;
   /**
    * Dot-separated paths (e.g. `"metadata"` for a top-level key) whose object/array nodes start collapsed when expansion matches Reset (`forcedDepth <= defaultExpandDepth`). Expand all clears this gate so those paths open too.
@@ -526,9 +526,12 @@ function NodeActions({
   );
 }
 
+/** Depth used by Expand all; must exceed ``defaultExpandDepth`` so path-based collapse gates clear. */
+const EXPAND_ALL_DEPTH = 999;
+
 export function JsonViewer({
   data,
-  defaultExpandDepth = 2,
+  defaultExpandDepth = 64,
   defaultCollapsedPaths,
   dark = false,
   showToolbar = true,
@@ -572,7 +575,7 @@ export function JsonViewer({
   }, [rawText]);
 
   const expandAll = () => {
-    const depth = 64;
+    const depth = Math.max(EXPAND_ALL_DEPTH, defaultExpandDepth + 1);
     setInternalForcedDepth(depth);
     setExpandKey((k) => k + 1);
     onExpandDepthChange?.(depth);

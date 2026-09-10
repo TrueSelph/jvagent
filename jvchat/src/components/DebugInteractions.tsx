@@ -22,6 +22,10 @@ import { JsonCodeEditor } from "./JsonCodeEditor";
 import { tryParseJsonDisplay } from "../utils/tryParseJsonDisplay";
 import { truncate } from "../utils/truncate";
 import { preserveScroll } from "../utils/preserveScroll";
+import {
+  toolCallsForMetric,
+  type DebugToolCall,
+} from "../lib/debugToolCalls";
 
 /** Code / text fields: black in dark theme, off-grey in light theme */
 function debugCodePanelClass(isDark: boolean) {
@@ -77,7 +81,6 @@ function ResponseJsonOrText({
       <JsonViewer
         data={parsed}
         dark={isDark}
-        defaultExpandDepth={2}
         maxHeight={maxHeight}
       />
     );
@@ -95,6 +98,82 @@ function ResponseJsonOrText({
       >
         {value}
       </pre>
+    </div>
+  );
+}
+
+function DebugToolCallCard({
+  tool,
+  isDark,
+}: {
+  tool: DebugToolCall;
+  isDark: boolean;
+}) {
+  const hasArgs = Object.keys(tool.args).length > 0;
+  const resultText =
+    tool.result === undefined
+      ? null
+      : typeof tool.result === "string"
+        ? tool.result
+        : JSON.stringify(tool.result, null, 2);
+  const parsedResult =
+    resultText !== null ? tryParseJsonDisplay(resultText) : null;
+  return (
+    <div
+      className={`rounded-lg border ${
+        isDark ? "bg-black border-zinc-700" : "bg-zinc-100 border-zinc-300"
+      }`}
+    >
+      <div
+        className={`px-4 py-2 text-sm border-b ${
+          isDark ? "border-zinc-700 text-zinc-200" : "border-zinc-300 text-zinc-800"
+        }`}
+      >
+        Used tool: <b>{tool.toolName}</b>
+      </div>
+      {hasArgs && (
+        <div className="px-4 py-2">
+          <JsonViewer
+            data={tool.args}
+            dark={isDark}
+            maxHeight="240px"
+          />
+        </div>
+      )}
+      {resultText !== null && (
+        <div
+          className={`px-4 py-2 border-t border-dashed ${
+            isDark ? "border-zinc-700" : "border-zinc-300"
+          }`}
+        >
+          <p
+            className={`font-semibold text-sm mb-1 ${
+              tool.isError
+                ? "text-red-500"
+                : isDark
+                  ? "text-zinc-200"
+                  : "text-zinc-800"
+            }`}
+          >
+            Result:
+          </p>
+          {parsedResult != null ? (
+            <JsonViewer
+              data={parsedResult}
+              dark={isDark}
+              maxHeight="400px"
+            />
+          ) : (
+            <pre
+              className={`whitespace-pre-wrap font-mono text-xs ${
+                isDark ? "text-zinc-300" : "text-zinc-800"
+              }`}
+            >
+              {resultText}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -134,6 +213,8 @@ export function DebugInteractions({
   const [loadingMore, setLoadingMore] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  /** Editable model for retest: request_model, else LM action model, else metric model. */
+  const [replayModel, setReplayModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const { theme: appTheme } = useTheme();
@@ -182,16 +263,27 @@ export function DebugInteractions({
     if (!selectedInteraction) return;
     if (selectedInteraction.event_type !== "model_call") return;
     const metricProvider = selectedInteraction.data?.provider;
+    let nextAction: any = null;
     if (metricProvider && modelActions[metricProvider]) {
       setSelectedProvider(metricProvider);
-      setModelAction(modelActions[metricProvider]);
+      nextAction = modelActions[metricProvider];
+      setModelAction(nextAction);
     } else {
       const fallback = Object.keys(modelActions)[0] || "";
       if (fallback) {
         setSelectedProvider(fallback);
-        setModelAction(modelActions[fallback]);
+        nextAction = modelActions[fallback];
+        setModelAction(nextAction);
       }
     }
+    // Prefer request_model (agent-configured id, e.g. openai/gpt-4.1), never
+    // prefer the API-resolved snapshot (gpt-4.1-2025-04-14) when request_model exists.
+    setReplayModel(
+      selectedInteraction.data?.request_model ||
+        nextAction?.context?.model ||
+        selectedInteraction.data?.model ||
+        "",
+    );
   }, [selectedInteraction, modelActions]);
 
   const userRef = useRef<HTMLTextAreaElement>(null);
@@ -257,8 +349,12 @@ export function DebugInteractions({
             system_prompt: pd.system_prompt || "",
             response: pd.response || "",
             model: pd.model || "",
+            request_model: pd.request_model || "",
             provider: pd.provider || "",
             history: history,
+            tools: Array.isArray(pd.tools) ? pd.tools : [],
+            tool_calls: Array.isArray(pd.tool_calls) ? pd.tool_calls : [],
+            finish_reason: pd.finish_reason || "",
           },
         });
         setTestResult(null);
@@ -294,6 +390,7 @@ export function DebugInteractions({
           utterance,
           metrics,
           conversationHistory,
+          agentTrace: interactionData.agent_trace || [],
           user_id,
           conversation_id,
         };
@@ -374,16 +471,25 @@ export function DebugInteractions({
 
       const actionsData = await apiClient.getActions(targetAgent.id);
       const actions = actionsData.actions || [];
-      // Collect language-model actions for the supported providers only.
-      // Hardcoded to openai + ollama so non-LM actions that also carry a
-      // provider field (e.g. WhatsAppAction with provider "wwebjs") are
-      // excluded from the provider selector.
-      const ALLOWED_PROVIDERS = ["openai", "ollama"] as const;
+      // Collect language-model actions only. Require *LanguageModelAction so
+      // OpenAIEmbeddingModelAction (provider "openai") is not posted to /query.
+      // Provider allowlist still drops channel/other actions that happen to
+      // expose a provider field (e.g. WhatsAppAction "wwebjs").
+      const ALLOWED_PROVIDERS = [
+        "openai",
+        "ollama",
+        "litellm",
+        "anthropic",
+        "openrouter",
+        "groq",
+      ] as const;
       const lmActions: Record<string, any> = {};
       for (const a of actions) {
         const provider = a.context?.provider;
+        const entity = String(a.entity || "");
         if (
           provider &&
+          entity.endsWith("LanguageModelAction") &&
           (ALLOWED_PROVIDERS as readonly string[]).includes(provider)
         ) {
           lmActions[provider] = a;
@@ -391,7 +497,7 @@ export function DebugInteractions({
       }
       setModelActions(lmActions);
 
-      // Default to the openai action if present, otherwise the first LM action.
+      // Prefer OpenAI LM when present; otherwise first LM (often litellm).
       const defaultProvider =
         lmActions["openai"] ? "openai" : Object.keys(lmActions)[0] || "";
       setSelectedProvider(defaultProvider);
@@ -443,6 +549,17 @@ export function DebugInteractions({
     if (!selectedUserId) return parentInteractions;
     return parentInteractions.filter((p) => p.user_id === selectedUserId);
   }, [parentInteractions, selectedUserId]);
+
+  const selectedMetricToolCalls = useMemo(() => {
+    if (selectedParentIndex == null || selectedMetricIndex == null) return [];
+    const parent = effectiveParents[selectedParentIndex];
+    if (!parent) return [];
+    return toolCallsForMetric(
+      parent.agentTrace,
+      parent.metrics,
+      selectedMetricIndex,
+    );
+  }, [effectiveParents, selectedParentIndex, selectedMetricIndex]);
 
   const refreshInteractionLogsPage1 = useCallback(async () => {
     const agentId = targetAgentIdRef.current ?? targetAgentId;
@@ -600,7 +717,58 @@ export function DebugInteractions({
   }, [improveResult, loading]);
 
   const handleTest = async () => {
-    if (!selectedInteraction || !modelAction) return;
+    if (!selectedInteraction) return;
+
+    const actionId = modelActions[selectedProvider]?.id || modelAction?.id;
+    if (!actionId || !modelAction) {
+      preserveScroll(() =>
+        setTestResult({
+          success: false,
+          error:
+            "Cannot retest: no LanguageModelAction for the selected provider.",
+        }),
+      );
+      return;
+    }
+
+    const prompt = (selectedInteraction.data.user_prompt || "").trim();
+    if (!prompt) {
+      preserveScroll(() =>
+        setTestResult({
+          success: false,
+          error: "Cannot retest: user prompt is empty.",
+        }),
+      );
+      return;
+    }
+
+    const tools = selectedInteraction.data.tools || [];
+    const originalToolCalls = selectedInteraction.data.tool_calls || [];
+    const finishReason = selectedInteraction.data.finish_reason || "";
+    const needsTools =
+      originalToolCalls.length > 0 || finishReason === "tool_calls";
+    if (needsTools && (!Array.isArray(tools) || tools.length === 0)) {
+      preserveScroll(() =>
+        setTestResult({
+          success: false,
+          error:
+            "Cannot retest: tool definitions were not recorded on this model_call. They are opt-in because the same schemas are re-sent on every tick — set telemetry_tool_definitions: true on the model action, then retest a fresh turn.",
+        }),
+      );
+      return;
+    }
+
+    const modelToSend = (replayModel || "").trim();
+    if (!modelToSend) {
+      preserveScroll(() =>
+        setTestResult({
+          success: false,
+          error:
+            "Cannot retest: model is empty. Set a model id (e.g. openai/gpt-4.1).",
+        }),
+      );
+      return;
+    }
 
     preserveScroll(() => {
       setTesting(true);
@@ -608,15 +776,17 @@ export function DebugInteractions({
     });
 
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         prompt: selectedInteraction.data.user_prompt,
         system: selectedInteraction.data.system_prompt,
-        model: selectedInteraction.data.model,
+        model: modelToSend,
         provider: selectedProvider || undefined,
         history: selectedInteraction.data.history || [],
       };
+      if (Array.isArray(tools) && tools.length > 0) {
+        payload.tools = tools;
+      }
 
-      const actionId = modelActions[selectedProvider]?.id || modelAction?.id;
       const data = await apiClient.queryAction(actionId, payload);
       preserveScroll(() =>
         setTestResult({
@@ -1255,11 +1425,28 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       <JsonViewer
                         data={selectedInteraction.raw_data}
                         dark={effectiveDarkMode}
-                        defaultExpandDepth={3}
                         maxHeight="min(55vh, 520px)"
                       />
                     </div>
                   )}
+                {selectedMetricToolCalls.length > 0 && (
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                    >
+                      Tool Calls
+                    </label>
+                    <div className="space-y-3">
+                      {selectedMetricToolCalls.map((tool) => (
+                        <DebugToolCallCard
+                          key={tool.segmentId}
+                          tool={tool}
+                          isDark={effectiveDarkMode}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Original Response */}
                 {selectedInteraction.data.response && (
                   <div>
@@ -1361,7 +1548,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     </div>
                   </div>
                 )}
-                {/* Model — model_call only. */}
+                {/* Model — one editable field for retest (request_model preferred). */}
                 {selectedInteraction.event_type === "model_call" && (
                   <div>
                     <div className="flex items-end gap-3">
@@ -1373,16 +1560,9 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         </label>
                         <input
                           type="text"
-                          value={selectedInteraction.data.model}
-                          onChange={(e) =>
-                            setSelectedInteraction({
-                              ...selectedInteraction,
-                              data: {
-                                ...selectedInteraction.data,
-                                model: e.target.value,
-                              },
-                            })
-                          }
+                          value={replayModel}
+                          onChange={(e) => setReplayModel(e.target.value)}
+                          placeholder="e.g. openai/gpt-4.1"
                           className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                         />
                       </div>
@@ -1398,6 +1578,13 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                             const p = e.target.value;
                             setSelectedProvider(p);
                             setModelAction(modelActions[p] || null);
+                            if (!selectedInteraction.data?.request_model) {
+                              setReplayModel(
+                                modelActions[p]?.context?.model ||
+                                  selectedInteraction.data?.model ||
+                                  "",
+                              );
+                            }
                           }}
                           className={`w-full p-2 rounded text-sm font-mono ${debugCodePanelClass(effectiveDarkMode)}`}
                         >
@@ -1416,20 +1603,34 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     </div>
                   </div>
                 )}
-                {/* Test Button — only meaningful for model_call events
-                    (helm_shift, etc. carry no prompts). */}
+                {/* Re-run model call — LM /query with tools; does not execute tools. */}
                 {selectedInteraction.event_type === "model_call" && (
-                  <div className="flex justify-end">
+                  <div className="flex flex-col items-end gap-1">
                     <button
                       onClick={handleTest}
                       disabled={testing || !modelAction}
+                      title={
+                        !modelAction
+                          ? "No LanguageModelAction for the selected provider"
+                          : "Calls the LM with saved prompts and tool schemas. Proposed tool_calls are returned; tools are not executed."
+                      }
                       className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {testing ? "Testing..." : "🧪 Run Test"}
+                      {testing ? "Re-running..." : "Re-run model call"}
                     </button>
+                    <span
+                      className={`text-xs ${effectiveDarkMode ? "text-zinc-500" : "text-zinc-500"}`}
+                    >
+                      LM only — tools proposed, not executed
+                    </span>
+                    {!modelAction && (
+                      <span className="text-xs text-red-500">
+                        No LanguageModelAction for this provider
+                      </span>
+                    )}
                   </div>
                 )}
-                {/* Test Result */}
+                {/* Test Result — show tool_calls when present; else response text. */}
                 {testResult && (
                   <div>
                     <label className="block text-sm font-medium mb-2">
@@ -1444,7 +1645,20 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     >
                       {testResult.success ? (
                         (() => {
-                          const tr = testResult.response ?? "";
+                          const toolCalls = testResult.data?.tool_calls ?? [];
+                          if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                            return (
+                              <JsonViewer
+                                data={toolCalls}
+                                dark={effectiveDarkMode}
+                                maxHeight="min(55vh, 520px)"
+                              />
+                            );
+                          }
+                          const tr =
+                            testResult.data?.response ??
+                            testResult.response ??
+                            "";
                           const tp = tryParseJsonDisplay(tr);
                           if (tp != null) {
                             return (
@@ -1463,7 +1677,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                                   : "text-green-800"
                               }`}
                             >
-                              {tr}
+                              {tr || "(empty response, no tool_calls)"}
                             </pre>
                           );
                         })()
@@ -1492,6 +1706,19 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     />
                   </div>
                 )}
+                {Array.isArray(selectedInteraction.data.tool_calls) &&
+                  selectedInteraction.data.tool_calls.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Original tool_calls
+                      </label>
+                      <JsonViewer
+                        data={selectedInteraction.data.tool_calls}
+                        dark={effectiveDarkMode}
+                        maxHeight="min(40vh, 360px)"
+                      />
+                    </div>
+                  )}
               </div>
             </div>
           )}

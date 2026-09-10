@@ -29,6 +29,24 @@ const MERGE_QUEUE_MAX = 20;
 const MERGE_TEXT_JOIN = "\n\n---\n\n";
 
 const GOOGLE_DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
+const GOOGLE_DRIVE_VIDEO_MIME = "application/vnd.google-apps.video";
+const GOOGLE_DRIVE_VIDEO_EXTS = [
+  ".mp4",
+  ".avi",
+  ".mov",
+  ".mkv",
+  ".wmv",
+  ".flv",
+  ".webm",
+  ".m4v",
+];
+
+function isDriveFileVideo(file: GoogleDriveFileEntry): boolean {
+  const mt = (file.mimeType || "").trim();
+  if (mt === GOOGLE_DRIVE_VIDEO_MIME || mt.startsWith("video/")) return true;
+  const name = (file.name || "").toLowerCase();
+  return GOOGLE_DRIVE_VIDEO_EXTS.some((ext) => name.endsWith(ext));
+}
 
 const GOOGLE_DRIVE_DOCUMENT_STATUSES = [
   "pending",
@@ -384,6 +402,9 @@ export function PageIndexDocumentsModal({
     string | null
   >(null);
   const [driveCurlCopied, setDriveCurlCopied] = useState(false);
+  const [driveConfiguredFolders, setDriveConfiguredFolders] = useState<
+    { folder_id?: string; exclude_sub_folders?: string[] }[]
+  >([]);
 
   const [chunksDocName, setChunksDocName] = useState("");
   const chunksDocPickerRef = useRef<HTMLDivElement>(null);
@@ -665,6 +686,7 @@ export function PageIndexDocumentsModal({
     setExportRootId("");
     setDriveWebhookCurlDraft("");
     setDriveWebhookCurlError(null);
+    setDriveConfiguredFolders([]);
   }, [agentId]);
 
   const refreshGoogleDriveList = useCallback(async () => {
@@ -719,11 +741,21 @@ export function PageIndexDocumentsModal({
           setDriveFolders([]);
           setDriveSelectedFolderId("");
           setDriveWebhookCurlDraft("");
+          setDriveConfiguredFolders([]);
           setDriveLoading(false);
           return;
         }
         const fullAction = await apiClient.getAction(aid);
         if (cancelled) return;
+        const configuredFolders = Array.isArray(fullAction?.google_drive_folders)
+          ? fullAction.google_drive_folders
+          : [];
+        setDriveConfiguredFolders(
+          configuredFolders as {
+            folder_id?: string;
+            exclude_sub_folders?: string[];
+          }[],
+        );
         const webhookUrl =
           fullAction &&
           typeof fullAction.webhook_url === "string" &&
@@ -1354,11 +1386,18 @@ export function PageIndexDocumentsModal({
     if (!selectedDriveFolder) {
       throw new Error("No Google Drive folder selected");
     }
+    const configured = driveConfiguredFolders.find(
+      (f) => String(f.folder_id ?? "") === String(selectedDriveFolder.folder_id),
+    );
+    const exclude = (configured?.exclude_sub_folders ?? []).filter(
+      (x) => typeof x === "string" && x.trim(),
+    );
     return {
       google_drive_folders: [
         {
           folder_id: selectedDriveFolder.folder_id,
           metadata: selectedDriveFolder.metadata ?? {},
+          ...(exclude.length ? { exclude_sub_folders: exclude } : {}),
         },
       ],
       retry_failed_documents: retryFailed,
@@ -2330,6 +2369,7 @@ export function PageIndexDocumentsModal({
                                       }
                                       disabled={
                                         !!f.disable_ingestion ||
+                                        isDriveFileVideo(f) ||
                                         driveRetrying ||
                                         driveDeleting ||
                                         driveTogglingFileId === f.id ||

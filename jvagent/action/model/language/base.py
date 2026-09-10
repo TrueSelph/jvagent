@@ -172,6 +172,8 @@ class ModelActionResult:
         thinking_content: Optional[str] = None,
         thinking_tokens: Optional[int] = None,
         thinking_queue: Optional[asyncio.Queue] = None,
+        request_model: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ):
         """Initialize a model action result.
 
@@ -179,7 +181,7 @@ class ModelActionResult:
             response: Complete response text (for sync queries)
             stream: Async generator for streaming responses
             usage: Token usage dict with prompt_tokens, completion_tokens, total_tokens
-            model: Model identifier
+            model: Model identifier (provider-resolved when available)
             provider: Provider name
             finish_reason: Reason for completion
             tool_calls: Function/tool calls made (if any)
@@ -192,6 +194,8 @@ class ModelActionResult:
             thinking_tokens: Number of tokens used for extended thinking
             thinking_queue: Optional shared asyncio.Queue for live thinking/reasoning
                 deltas (str chunks); ``_THINKING_END`` ends the stream.
+            request_model: Model id sent to the provider (e.g. openai/gpt-4.1)
+            tools: Tool/function definitions passed into this call (for replay)
         """
         self.response = response
         self.stream = stream
@@ -206,6 +210,8 @@ class ModelActionResult:
         self.calling_action_name = calling_action_name
         self.thinking_content = thinking_content
         self.thinking_tokens = thinking_tokens
+        self.request_model = request_model
+        self.tools = tools
 
         self._thinking_queue: Optional[asyncio.Queue] = thinking_queue
         self._thinking_closed: bool = False
@@ -341,9 +347,11 @@ class ModelActionResult:
             "response": self.response,
             "metrics": self.metrics,
             "model": self.model,
+            "request_model": self.request_model,
             "provider": self.provider,
             "finish_reason": self.finish_reason,
             "tool_calls": self.tool_calls,
+            "tools": self.tools,
             "is_streaming": self.is_streaming,
         }
 
@@ -885,6 +893,10 @@ class LanguageModelAction(BaseModelAction, ABC):
         result.prompt = prompt_for_observability
         result.system = system
         result.history = history
+        # request_model = what we asked for; result.model may be provider-resolved
+        # (e.g. LiteLLM/OpenAI returns gpt-4.1-2025-04-14 for openai/gpt-4.1).
+        result.request_model = kwargs.get("model") or getattr(self, "model", None) or ""
+        result.tools = tools
 
         # Store calling_action_name in result for observability
         if calling_action_name:
