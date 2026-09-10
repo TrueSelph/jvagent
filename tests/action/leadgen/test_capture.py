@@ -243,3 +243,66 @@ async def test_capture_result_includes_merged_fields():
     assert second["fields"]["interested_products"] == products
     assert second["fields"]["name"] == "Tharick Jairam"
     assert second["fields"]["email"] == "tharick@example.com"
+
+
+@pytest.mark.asyncio
+async def test_deduplicated_capture_still_returns_the_record():
+    """An identical capture inside the dedupe window must answer with the same
+    snapshot as any other capture.
+
+    The orchestrator's repeat guard nudges a repeated tool call once before it
+    ends the turn, so the first repeat does reach the dedupe exit — and a bare
+    ``{"status": "deduplicated"}`` leaves a post-capture gate blinder than the
+    ``fields_saved``-only payload this snapshot was added to replace.
+    """
+    action = LeadGenAction()
+    spec = LeadGenSpec(
+        name="quote_leads",
+        fields=[
+            FieldDef(key="name", required=True, validator="person_name"),
+            FieldDef(key="interested_products", required=False),
+        ],
+        gap_fill=GapFillDef(priority=["name"]),
+        sync=SyncDef(mode="manual"),
+    )
+    action._registry._specs[spec.name] = spec
+
+    record = _FakeLeadRecord(required_fields=["name"])
+    user = SimpleNamespace(user_id="u1", name=None)
+    interaction = SimpleNamespace(channel="default")
+    visitor = SimpleNamespace(interaction=interaction)
+
+    with (
+        patch(
+            "jvagent.action.leadgen.engine.get_user_and_interaction",
+            return_value=(user, interaction),
+        ),
+        patch(
+            "jvagent.action.leadgen.engine.LeadRecord.get_or_create_for_user",
+            return_value=record,
+        ),
+        patch("jvagent.action.leadgen.engine._LAST_CAPTURE", {}),
+    ):
+        await handle_capture(
+            action, skill="quote_leads", visitor=visitor, interested_products="mesh"
+        )
+        written = json.loads(
+            await handle_capture(
+                action, skill="quote_leads", visitor=visitor, name="Ann"
+            )
+        )
+        repeated = json.loads(
+            await handle_capture(
+                action, skill="quote_leads", visitor=visitor, name="Ann"
+            )
+        )
+
+    assert repeated["status"] == "deduplicated"
+    assert repeated["fields_saved"] == []
+    # Every exit from handle_capture answers with the same keys, so a caller
+    # never has to branch on which one it got.
+    assert set(repeated) == set(written)
+    assert repeated["fields"] == written["fields"]
+    assert repeated["fields"]["interested_products"] == "mesh"
+    assert repeated["missing_fields"] == []
+    assert repeated["next_ask"] is None

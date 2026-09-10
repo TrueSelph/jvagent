@@ -216,6 +216,26 @@ async def maybe_auto_sync(
     return {"status": "sync-complete" if any_success else "no-op", "results": results}
 
 
+def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
+    """The record snapshot every capture result carries, whatever its status.
+
+    Same keys and the same ``_`` filter as :func:`handle_retrieve`, so a caller
+    reads one set of keys no matter which tool produced the payload — and no
+    matter whether this particular call wrote anything. Built here rather than
+    inline so the two exits from ``handle_capture`` cannot drift apart, which
+    is the whole point of returning the merged record.
+    """
+    profile_data = record.get_yaml() or {}
+    missing = record.get_missing_fields()
+    return {
+        "fields": {k: v for k, v in profile_data.items() if not str(k).startswith("_")},
+        "missing_fields": missing,
+        "field_reference": fields_reference(spec),
+        "gap_fill_priority": spec.gap_fill.priority,
+        "next_ask": next_ask(spec, missing),
+    }
+
+
 async def handle_capture(
     action: "LeadGenAction",
     fields: Optional[Dict[str, Any]] = None,
@@ -240,7 +260,21 @@ async def handle_capture(
     dedup_key = (user.user_id, json.dumps(raw_fields, sort_keys=True, default=str))
     now = time.time()
     if now - _LAST_CAPTURE.get(dedup_key, 0) < _CAPTURE_DEDUP_TTL:
-        return json.dumps({"status": "deduplicated"})
+        # A repeated identical call still has to answer with the record. The
+        # repeat guard nudges an identical tool call once before ending the
+        # turn, so the first repeat does reach here, and a bare
+        # {"status": "deduplicated"} tells a post-capture gate nothing at all —
+        # the same blindness the merged snapshot exists to fix, one exit over.
+        record = await LeadRecord.get_or_create_for_user(
+            user, required_fields=spec.get_required_fields() or None
+        )
+        return json.dumps(
+            {
+                "status": "deduplicated",
+                "fields_saved": [],
+                **capture_state(record, spec),
+            }
+        )
     _LAST_CAPTURE[dedup_key] = now
 
     channel = getattr(interaction, "channel", "default") or "default"
@@ -284,14 +318,10 @@ async def handle_capture(
     validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
     changed = await record.update_yaml(validated)
 
-    missing_now = record.get_missing_fields()
     result: Dict[str, Any] = {
         "status": "updated" if changed else "no-op",
         "fields_saved": list(validated.keys()) if changed else [],
-        "missing_fields": missing_now,
-        "field_reference": fields_reference(spec),
-        "gap_fill_priority": spec.gap_fill.priority,
-        "next_ask": next_ask(spec, missing_now),
+        **capture_state(record, spec),
     }
 
     if changed:
@@ -306,11 +336,6 @@ async def handle_capture(
         )
 
     profile_data = record.get_yaml() or {}
-    # Full merged LeadRecord so callers (e.g. post-capture gates) see prior
-    # keys as well as this-turn fields_saved — not only what was just written.
-    result["fields"] = {
-        k: v for k, v in profile_data.items() if not str(k).startswith("_")
-    }
     if changed and spec.sync.mode != "manual":
         sync_result = await maybe_auto_sync(
             action, spec, record, profile_data, user.user_id
