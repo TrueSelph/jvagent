@@ -437,8 +437,9 @@ class OrchestratorInteractAction(
     max_statement_length: Optional[int] = attribute(
         default=None,
         description="Soft cap (characters) on the reply, applied as a prompt "
-        "instruction; None disables. Does not truncate loop history "
-        "(history is always untruncated; interaction [EVENT] lines are omitted).",
+        "instruction; None disables. Does not truncate loop history — that is "
+        "history_statement_max_chars, which also caps [EVENT] lines when "
+        "with_event is on.",
     )
     # -- Resilience policy (ADR-0046): fallback chain, breaker, budgets ---------
     model_fallbacks: List[Dict[str, Any]] = attribute(
@@ -518,8 +519,21 @@ class OrchestratorInteractAction(
         default=4000,
         description=(
             "Per-statement cap (characters) on each prior utterance/response "
-            "replayed as loop history — every tick resends the history, so an "
+            "replayed as loop history, and on each [EVENT] line when "
+            "with_event is on — every tick resends the history, so an "
             "unbounded prior reply is billed on every step. 0 disables the cap."
+        ),
+    )
+    with_event: bool = attribute(
+        default=False,
+        description=(
+            "Include [EVENT] system messages from PRIOR interactions in loop "
+            "history. Events are log annotations (e.g. 'Report form was sent "
+            "to the user.'); enabling this lets the loop model know what the "
+            "agent did in earlier turns at the cost of resending those lines "
+            "on every tick; history_statement_max_chars caps each line. The "
+            "current interaction's events are never included — it is excluded "
+            "from its own history."
         ),
     )
 
@@ -807,7 +821,7 @@ class OrchestratorInteractAction(
         default_factory=dict,
         description="Per-channel loop-knob overrides, keyed by visitor.channel "
         "(e.g. whatsapp_call). Supported keys per channel: history_limit, "
-        "activation_budget, max_duration_seconds, tool_call_timeout, "
+        "with_event, activation_budget, max_duration_seconds, tool_call_timeout, "
         "max_statement_length, first_emit_timeout_ms, ack_statements, "
         "pinned_tools (REPLACES the action-level pin list on that channel, so a "
         "channel-specific capability isn't pinned onto every other channel), "
@@ -4119,8 +4133,18 @@ class OrchestratorInteractAction(
                     ),
                     excluded=getattr(interaction, "id", None),
                     formatted=True,
-                    with_event=False,
+                    with_event=bool(
+                        self._channel_cfg(visitor, "with_event", self.with_event)
+                    ),
                     max_statement_length=(
+                        int(self.history_statement_max_chars)
+                        if int(self.history_statement_max_chars or 0) > 0
+                        else None
+                    ),
+                    # Events carry no length contract of their own, and every
+                    # tick re-sends the whole history, so an uncapped [EVENT]
+                    # line is billed on every step of every turn.
+                    max_event_length=(
                         int(self.history_statement_max_chars)
                         if int(self.history_statement_max_chars or 0) > 0
                         else None

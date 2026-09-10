@@ -8,6 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in `[EVENT]` lines in loop history (ADR-0053).** The Orchestrator's
+  `with_event` attribute (default `false`, resolvable per channel via
+  `channel_overrides`) feeds `[EVENT]` annotations from PRIOR interactions into
+  the loop prompt, so an agent whose actions have side effects the user can see
+  ("Report form was sent to the user") stops re-offering work an earlier turn
+  already completed. The current interaction is still excluded from its own
+  history. ADR-0041 had removed this knob (`include_history_events`) on the
+  grounds that no deployment needed it; the cost objection it raised is
+  answered rather than waived — `history_statement_max_chars` now caps each
+  event line as well, so an unbounded annotation can no longer be billed on
+  every tick. Off by default, the rendered prompt is unchanged byte for byte.
+  `Conversation.get_interaction_history` gains `max_event_length` for this;
+  `max_statement_length` still does not apply to events, so no existing caller
+  changes.
+
 ### Changed
 
 - **Defaults that permit long-running, deep-thinking models (#214).** Three

@@ -85,6 +85,12 @@ actions:
       # Prior turns fed into the loop prompt (working context). The rolling
       # memory window is the agent's `interaction_limit` above.
       history_limit: 10
+      # Interaction [EVENT] lines (log annotations about what the agent did out
+      # of band) are kept OUT of loop history by default — they are re-sent on
+      # every tick. Turn on for an agent whose actions have side effects the
+      # user can see, so the loop stops re-offering completed work (ADR-0053);
+      # each line is then capped by history_statement_max_chars.
+      with_event: false
       # Deterministic turn-lock: an active flow's IA owns each turn until it
       # clears its task. Set false for model-mediated (interruptible) continuation.
       lock_active_flow: true
