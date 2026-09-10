@@ -306,6 +306,11 @@ async def handle_capture(
         )
 
     profile_data = record.get_yaml() or {}
+    # Full merged LeadRecord so callers (e.g. post-capture gates) see prior
+    # keys as well as this-turn fields_saved — not only what was just written.
+    result["fields"] = {
+        k: v for k, v in profile_data.items() if not str(k).startswith("_")
+    }
     if changed and spec.sync.mode != "manual":
         sync_result = await maybe_auto_sync(
             action, spec, record, profile_data, user.user_id
