@@ -114,6 +114,17 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **`leadgen__capture` returns full merged `fields`.** Capture results
+  previously exposed only this-turn `fields_saved`, so callers (post-capture
+  gates) treated earlier optionals like `interested_products` as missing and
+  re-asked. Every exit from `handle_capture` now carries the full LeadRecord
+  snapshot, same shape and same `_` filter as `leadgen__retrieve` — including
+  the dedupe exit, which answered a repeated identical call with a bare
+  `{"status": "deduplicated"}` and told a gate nothing at all. The repeat guard
+  nudges a repeated tool call once before ending the turn, so that exit is
+  reached in exactly the case this fix is about. Sequential-capture and
+  repeated-capture regressions in `test_capture.py`.
+
 - **PageIndex Google Drive: extensionless PDFs/docs and `enable_all_chunks`.**
   Drive files whose names carry no usable extension (a PDF named `"Q2 Report"`,
   a Word doc named `"Memo"`, `"Q2 Report v1.2"` whose `.2` names no type) are
