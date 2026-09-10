@@ -1,5 +1,7 @@
 """Tests for Google Drive PageIndex ingest filtering."""
 
+import pytest
+
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
     file_ids_under_excluded_folders,
     filter_drive_doc_queues_for_ingestible,
@@ -48,6 +50,32 @@ def test_extensionless_video_not_ingestible():
 def test_octet_stream_without_suffix_not_ingestible():
     assert not is_drive_file_pageindex_ingestible("unknown", "application/octet-stream")
     assert guess_pageindex_extension("unknown", "application/octet-stream") == ""
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["notes.py", "data.csv", "page.html", "config.json", "sheet.xml"],
+)
+def test_a_recognised_suffix_off_the_allowlist_beats_the_drive_mime(name):
+    """Drive reports ``text/plain`` for a great many files that are plainly not
+    documents. The mime fallback exists for names with no usable extension, so a
+    name that already declares a known type is the answer — otherwise a source
+    file would ingest, and reach jvforge as ``notes.py.txt``."""
+    assert guess_pageindex_extension(name, "text/plain") == ""
+    assert not is_drive_file_pageindex_ingestible(name, "text/plain")
+
+
+def test_a_version_suffix_is_not_an_extension():
+    """``"Q2 Report v1.2"`` has a ``.2`` suffix that names no type at all, so the
+    Drive mime still decides — this is the case the fallback is for."""
+    assert guess_pageindex_extension("Q2 Report v1.2", "application/pdf") == ".pdf"
+    assert is_drive_file_pageindex_ingestible("Q2 Report v1.2", "application/pdf")
+
+
+def test_allowlisted_suffix_is_returned_as_is_not_rewritten_from_mime():
+    """A name that already carries an allowlisted extension keeps it, even when
+    the Drive mime would map somewhere else."""
+    assert guess_pageindex_extension("scan.png", "application/pdf") == ".png"
 
 
 def test_google_doc_native_ingestible():

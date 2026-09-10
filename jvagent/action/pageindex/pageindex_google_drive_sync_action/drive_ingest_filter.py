@@ -88,17 +88,30 @@ _NON_INGESTIBLE_EXTENSIONS = frozenset(
 def guess_pageindex_extension(name: str, mime_type: str) -> str:
     """Return a PageIndex upload extension from filename suffix or Drive mime.
 
+    The filename wins whenever it carries a **recognisable** extension: a
+    suffix on the allowlist is returned as-is, and a suffix that names some
+    other known file type is authoritative the other way — ``notes.py`` is not
+    an ingestible document just because Drive reports it as ``text/plain``, and
+    uploading it as ``notes.py.txt`` would be worse than skipping it.
+
+    The Drive mime is consulted only when the name carries no usable extension
+    (``"Q2 Report"``, ``"Q2 Report v1.2"``, ``"Instructions to Zara"``), which
+    is the case this fallback exists for: Drive stores plenty of PDFs and
+    Office documents with no suffix at all.
+
     Empty string when the type cannot be mapped onto ``PAGEINDEX_UPLOAD_EXTENSIONS``.
     """
     ext = Path(name or "").suffix.lower()
     if ext in PAGEINDEX_UPLOAD_EXTENSIONS:
         return ext
+    if ext and mimetypes.guess_type(f"x{ext}")[0]:
+        # A suffix that names a known type and is not on the allowlist is a
+        # deliberate "no", not a gap to be filled from the Drive mime.
+        return ""
     mt = (mime_type or "").strip().split(";", 1)[0].strip().lower()
     if not mt:
         return ""
-    if mt in ("text/markdown", "text/x-markdown"):
-        guessed = ".md"
-    elif mt in _MIME_TO_PAGEINDEX_EXT:
+    if mt in _MIME_TO_PAGEINDEX_EXT:
         guessed = _MIME_TO_PAGEINDEX_EXT[mt]
     else:
         guessed = (mimetypes.guess_extension(mt) or "").lower()

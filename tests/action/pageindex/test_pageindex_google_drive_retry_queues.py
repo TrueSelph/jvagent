@@ -935,3 +935,152 @@ async def test_remove_deleted_false_keeps_added_before_removed_same_name() -> No
     assert delete_calls == []
     assert out["documents_ingested"]["added"] == ["manual.pdf"]
     assert node.ingesting_documents["removed"] == [removed_file]
+
+
+# ---------------------------------------------------------------------------
+# Excluding a sub folder must not look like deleting its files.
+# ---------------------------------------------------------------------------
+
+_FOLDER = "application/vnd.google-apps.folder"
+
+
+def _tree_with_archive() -> list:
+    """Root holding one kept PDF and an ``Archive`` sub folder with one PDF."""
+    # ``disable_ingestion`` is set on both sides so an unrelated "modified" row
+    # (the sync stamps the flag onto the new tree) does not muddy the queues
+    # these tests assert on.
+    return [
+        {
+            "id": "keep1",
+            "name": "Handbook.pdf",
+            "mimeType": "application/pdf",
+            "disable_ingestion": False,
+        },
+        {
+            "id": "arch",
+            "name": "Archive",
+            "mimeType": _FOLDER,
+            "files": [
+                {
+                    "id": "old1",
+                    "name": "Old.pdf",
+                    "mimeType": "application/pdf",
+                    "disable_ingestion": False,
+                },
+            ],
+        },
+    ]
+
+
+async def _run_sync_phase(
+    *, exclude: list, remove_deleted_documents: bool, queued_ids: list
+):
+    """Drive ``_phase_sync_google_drive_folders`` over a tree that is about to
+    lose its ``Archive`` sub folder, with ``queued_ids`` already sitting in the
+    ingest queue from the sync before the exclusion was configured."""
+    from jvagent.action.google.google_drive_action.google_drive_action import (
+        GoogleDriveAction,
+    )
+
+    node = SimpleNamespace(
+        files=_tree_with_archive(),
+        folder_name="Docs",
+        metadata={},
+        ingesting_documents={
+            "added": [{"id": fid, "name": f"{fid}.pdf"} for fid in queued_ids],
+            "modified": [],
+            "removed": [],
+        },
+        failed_documents={"added": [], "modified": [], "removed": []},
+        active_document="",
+        status="pending",
+        save=AsyncMock(),
+    )
+
+    action = PageIndexGoogleDriveSyncAction()
+    action.google_drive_folders = [
+        {"folder_id": "root", "exclude_sub_folders": exclude}
+    ]
+
+    drive = SimpleNamespace(
+        # The listing still contains Archive; pruning is the harness's job.
+        list_files=AsyncMock(return_value=_tree_with_archive()),
+        get_file_metadata=AsyncMock(return_value={"name": "Docs"}),
+        compare_files=lambda old_files, new_files: GoogleDriveAction.compare_files(
+            None, old_files, new_files
+        ),
+    )
+
+    with (
+        patch.object(
+            PageIndexGoogleDriveSyncAction, "node", AsyncMock(return_value=node)
+        ),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action._prune_added_queue_skip_existing",
+            AsyncMock(),
+        ),
+    ):
+        await action._phase_sync_google_drive_folders(
+            [{"folder_id": "root", "exclude_sub_folders": exclude}],
+            drive,
+            "collection",
+            True,
+            remove_deleted_documents=remove_deleted_documents,
+        )
+    return node
+
+
+@pytest.mark.asyncio
+async def test_excluding_a_sub_folder_does_not_queue_its_files_as_removals() -> None:
+    """The pruned subtree is absent from the new listing, so ``compare_files``
+    reads it as a deletion. ``removed`` only ever drains under
+    ``remove_deleted_documents``, so merging those rows would leave the folder
+    stuck at status ``pending`` forever — and would undo, in the same pass, the
+    stale-queue purge that runs just before it."""
+    node = await _run_sync_phase(
+        exclude=["Archive"],
+        remove_deleted_documents=False,
+        queued_ids=["old1", "keep1"],
+    )
+
+    ing = node.ingesting_documents
+    assert [d["id"] for d in ing["removed"]] == []
+    # The stale queue entry for the excluded file is gone...
+    assert "old1" not in [d.get("id") for d in ing["added"]]
+    # ...and the file outside the excluded subtree is untouched.
+    assert "keep1" in [d.get("id") for d in ing["added"]]
+    # The excluded subtree is not persisted on the node either.
+    assert [f["id"] for f in node.files] == ["keep1"]
+
+
+@pytest.mark.asyncio
+async def test_excluding_the_last_queued_work_leaves_the_folder_completed() -> None:
+    """With only excluded work queued, the folder finishes rather than sitting
+    at ``pending`` behind removals that never run."""
+    node = await _run_sync_phase(
+        exclude=["Archive"], remove_deleted_documents=False, queued_ids=["old1"]
+    )
+    _sync_drive_node_status_from_queues(node)
+    assert node.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_exclusion_still_removes_from_the_index_when_asked() -> None:
+    """``remove_deleted_documents`` is an explicit request for vanished
+    documents to leave the index; an exclusion then rides the normal removal
+    path instead of being dropped."""
+    node = await _run_sync_phase(
+        exclude=["Archive"], remove_deleted_documents=True, queued_ids=[]
+    )
+    assert [d["id"] for d in node.ingesting_documents["removed"]] == ["old1"]
+
+
+@pytest.mark.asyncio
+async def test_no_exclusions_leaves_deletion_detection_alone() -> None:
+    """A folder with no exclusions must behave exactly as before."""
+    node = await _run_sync_phase(
+        exclude=[], remove_deleted_documents=False, queued_ids=["old1"]
+    )
+    assert "old1" in [d.get("id") for d in node.ingesting_documents["added"]]
+    assert [f["id"] for f in node.files] == ["keep1", "arch"]

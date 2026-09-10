@@ -752,7 +752,7 @@ export function DebugInteractions({
         setTestResult({
           success: false,
           error:
-            "Cannot retest: tool definitions were not recorded on this model_call. Redeploy the agent so new interactions persist tools, then retest a fresh turn.",
+            "Cannot retest: tool definitions were not recorded on this model_call. They are opt-in because the same schemas are re-sent on every tick — set telemetry_tool_definitions: true on the model action, then retest a fresh turn.",
         }),
       );
       return;

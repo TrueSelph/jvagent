@@ -467,7 +467,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
     google_drive_folders: List[dict] = attribute(
         default_factory=list,
-        description="List of Google Drive folder configurations to monitor and ingest. Each folder config should include 'folder_id':str, optional 'exclude_sub_folders':list (sub folder ids or names whose files are not ingested) and optional 'metadata':dict to attach to ingested documents. ",
+        description="List of Google Drive folder configurations to monitor and ingest. Each folder config should include 'folder_id':str, optional 'exclude_sub_folders':list (sub folder ids, or exact names — a name matches every folder called that at any depth, so prefer the id) whose files are not ingested, and optional 'metadata':dict to attach to ingested documents. ",
     )
 
     page_index_action: str = attribute(
@@ -957,8 +957,14 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         google_drive_action: Any,
         collection_name: str,
         skip_existing_documents: bool,
+        remove_deleted_documents: bool = False,
     ) -> None:
-        """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes."""
+        """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes.
+
+        ``remove_deleted_documents`` is needed here, not just during ingest,
+        because pruning an excluded subtree makes its files look deleted to
+        ``compare_files`` — see the exclusion block below.
+        """
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
             drive_id = google_drive_folder.get("drive_id")
@@ -1049,6 +1055,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     old_files = google_drive_documents_node.files
                     _merge_disable_ingestion_from_old(old_files, files)
                     mark_drive_video_files_disabled(files)
+                    excluded_stale_ids: Set[str] = set()
                     if pruned_folder_ids:
                         # Exclusion list may have grown since the last sync:
                         # drop queued entries for files inside now-excluded
@@ -1071,6 +1078,20 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         old_files=old_files, new_files=files
                     )
                     filter_drive_doc_queues_for_ingestible(ingesting_documents)
+                    if excluded_stale_ids and not remove_deleted_documents:
+                        # ``files`` is already pruned, so every file in a
+                        # newly excluded subtree is absent from the new tree
+                        # and compare_files reports it as a deletion. Merging
+                        # those rows would undo the purge above in the same
+                        # pass, and ``removed`` only ever drains under
+                        # ``remove_deleted_documents`` — leaving the folder
+                        # stuck at status "pending" forever. Excluding is not
+                        # deleting: drop them unless the caller did ask for
+                        # vanished documents to leave the index, in which case
+                        # the removals run and the queue drains normally.
+                        _filter_doc_queues_for_disabled(
+                            ingesting_documents, excluded_stale_ids
+                        )
                     google_drive_documents_node.files = files
                     google_drive_documents_node.folder_name = folder_name
                     google_drive_documents_node.metadata = metadata
@@ -1443,6 +1464,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             google_drive_action,
             collection_name,
             skip_existing_documents,
+            remove_deleted_documents=remove_deleted_documents,
         )
 
         busy = await self._check_active_google_drive_document(

@@ -174,7 +174,9 @@ google_drive_folders:
       - "Archive"                      # or exact sub folder name
 ```
 
-If a sub folder is excluded after its files were already queued, those queue entries are purged on the next sync. Previously ingested documents are removed from the index only when `remove_deleted_documents` is enabled.
+**Prefer the folder id.** A name matches *any* folder called that, at any depth, in any branch of the tree — one `Archive` entry drops every folder named `Archive` under the root, not just the one you were looking at. The id matches exactly one folder.
+
+If a sub folder is excluded after its files were already queued, those queue entries are purged on the next sync. Excluding is not deleting: those files are dropped from the ingest queues rather than being recorded as deletions, so the folder does not sit at status `pending` waiting for removals that never run. Previously ingested documents leave the index only when `remove_deleted_documents` is enabled, in which case the exclusion is processed as a removal batch on the next sync.
 
 ## Best Practices
 
