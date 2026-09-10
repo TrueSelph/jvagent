@@ -437,8 +437,9 @@ class OrchestratorInteractAction(
     max_statement_length: Optional[int] = attribute(
         default=None,
         description="Soft cap (characters) on the reply, applied as a prompt "
-        "instruction; None disables. Does not truncate loop history "
-        "(history is always untruncated; interaction [EVENT] lines are omitted).",
+        "instruction; None disables. Does not truncate loop history — that is "
+        "history_statement_max_chars, which also caps [EVENT] lines when "
+        "with_event is on.",
     )
     # -- Resilience policy (ADR-0046): fallback chain, breaker, budgets ---------
     model_fallbacks: List[Dict[str, Any]] = attribute(
@@ -518,7 +519,8 @@ class OrchestratorInteractAction(
         default=4000,
         description=(
             "Per-statement cap (characters) on each prior utterance/response "
-            "replayed as loop history — every tick resends the history, so an "
+            "replayed as loop history, and on each [EVENT] line when "
+            "with_event is on — every tick resends the history, so an "
             "unbounded prior reply is billed on every step. 0 disables the cap."
         ),
     )
@@ -529,8 +531,9 @@ class OrchestratorInteractAction(
             "history. Events are log annotations (e.g. 'Report form was sent "
             "to the user.'); enabling this lets the loop model know what the "
             "agent did in earlier turns at the cost of resending those lines "
-            "on every tick. The current interaction's events are never "
-            "included — it is excluded from its own history."
+            "on every tick; history_statement_max_chars caps each line. The "
+            "current interaction's events are never included — it is excluded "
+            "from its own history."
         ),
     )
 
@@ -4134,6 +4137,14 @@ class OrchestratorInteractAction(
                         self._channel_cfg(visitor, "with_event", self.with_event)
                     ),
                     max_statement_length=(
+                        int(self.history_statement_max_chars)
+                        if int(self.history_statement_max_chars or 0) > 0
+                        else None
+                    ),
+                    # Events carry no length contract of their own, and every
+                    # tick re-sends the whole history, so an uncapped [EVENT]
+                    # line is billed on every step of every turn.
+                    max_event_length=(
                         int(self.history_statement_max_chars)
                         if int(self.history_statement_max_chars or 0) > 0
                         else None
