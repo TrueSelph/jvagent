@@ -23,7 +23,7 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
 
 | Attribute              | Description                                                     | Required |
 | ---------------------- | --------------------------------------------------------------- | -------- |
-| `google_drive_folders` | List of folder configs with `folder_id` and optional `metadata` | No       |
+| `google_drive_folders` | List of folder configs with `folder_id`, optional `exclude_sub_folders` (sub folder ids or names to skip) and optional `metadata` | No       |
 | `client_secrets_json`  | OAuth2 Client Secrets JSON (inherited from GoogleDriveAction)   | Yes      |
 | `default_parent_id`    | Default parent folder ID (inherited from GoogleDriveAction)     | No       |
 
@@ -39,6 +39,9 @@ Automatically sync and ingest documents from Google Drive folders into PageIndex
   context:
     google_drive_folders:
       - folder_id: "123"
+        exclude_sub_folders:
+          - "1AbCdEfGhIjKlMnOpQrStUvWxYz"  # sub folder id
+          - "Archive"                      # or exact sub folder name
         metadata:
           access: "public"
       - folder_id: "1234"
@@ -158,6 +161,22 @@ google_drive_folders:
 ```
 
 Metadata is queryable in PageIndex for filtering and context enrichment.
+
+## Excluding Sub Folders
+
+Add `exclude_sub_folders` to a folder config to skip files in specific sub folders (by id or exact name). Excluded subtrees are pruned from the Drive listing before ingestion and never queued:
+
+```yaml
+google_drive_folders:
+  - folder_id: "1syTF0gsEjsl7DhjxrnPuTdmwwNDoh8dj"
+    exclude_sub_folders:
+      - "1AbCdEfGhIjKlMnOpQrStUvWxYz"  # sub folder id
+      - "Archive"                      # or exact sub folder name
+```
+
+**Prefer the folder id.** A name matches *any* folder called that, at any depth, in any branch of the tree — one `Archive` entry drops every folder named `Archive` under the root, not just the one you were looking at. The id matches exactly one folder.
+
+If a sub folder is excluded after its files were already queued, those queue entries are purged on the next sync. Excluding is not deleting: those files are dropped from the ingest queues rather than being recorded as deletions, so the folder does not sit at status `pending` waiting for removals that never run. Previously ingested documents leave the index only when `remove_deleted_documents` is enabled, in which case the exclusion is processed as a removal batch on the next sync.
 
 ## Best Practices
 

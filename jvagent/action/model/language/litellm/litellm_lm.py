@@ -261,6 +261,9 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
         message = getattr(choice, "message", None)
         content = getattr(message, "content", None) if message is not None else None
         usage = self._usage_from(getattr(response, "usage", None))
+        # ``model`` is the provider-resolved id (e.g. gpt-4.1-2025-04-14).
+        # LanguageModelAction.query_messages sets ``request_model`` to what we
+        # asked for (e.g. openai/gpt-4.1) for observability / Debug retest.
         return ModelActionResult(
             response=content if isinstance(content, str) else "",
             usage=usage,

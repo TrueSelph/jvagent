@@ -84,7 +84,75 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   and adds Ollama Cloud (`ollama_chat/glm-5.3:cloud` via the LiteLLM adapter,
   `OLLAMA_API_KEY`), smoke only.
 
+- **PageIndex Google Drive sync: exclude sub folders.** Each
+  `google_drive_folders` entry may set optional `exclude_sub_folders` (sub
+  folder id or exact name — a **name matches every folder called that at any
+  depth**, so prefer the id). Matching subtrees are pruned from the Drive
+  listing before ingest and never queued. Stale queue rows for those folders
+  are purged on the next sync. Excluding is not deleting: because the pruned
+  subtree is absent from the new listing, change detection would otherwise
+  read every file in it as a deletion, and the `removed` queue only drains
+  under `remove_deleted_documents` — so those rows are dropped rather than
+  merged, and the folder does not sit at status `pending` behind removals that
+  never run. With `remove_deleted_documents` on, the exclusion rides the normal
+  removal path and the documents do leave the index.
+
+- **`telemetry_tool_definitions` on model actions.** Off by default. When on,
+  the full tool/function definitions sent with a call are stored on the
+  `model_call` observability event so a debug UI can replay the request
+  exactly. They are byte-identical on every tick of an agentic turn, so
+  persisting them per event multiplies the same payload by the tick count —
+  roughly 260 bytes per tool per tick, which a 15-tool agent turns into tens of
+  kilobytes per interaction. The tool **names** (`tool_names`) are recorded
+  unconditionally and cost almost nothing.
+
+- **`request_model` on the `model_call` event.** `model` is the id the provider
+  answered with (`gpt-4.1-2025-04-14`); `request_model` is the id the agent
+  asked for (`openai/gpt-4.1`). Only the latter can be replayed or matched back
+  to `agent.yaml`, and the resolved snapshot was previously the only one
+  recorded. jvchat's Debug Interactions retest prefers it.
+
 ### Fixed
+
+- **PageIndex Google Drive: extensionless PDFs/docs and `enable_all_chunks`.**
+  Drive files whose names carry no usable extension (a PDF named `"Q2 Report"`,
+  a Word doc named `"Memo"`, `"Q2 Report v1.2"` whose `.2` names no type) are
+  typed from mime against the PageIndex allowlist, so Retry no longer 422s them
+  as unsupported; jvforge is given `Report.pdf`. A name that **does** declare a
+  known type wins over the Drive mime: Drive reports `text/plain` for plenty of
+  files that are not documents, and `notes.py` must not ingest as
+  `notes.py.txt`. REST `POST /actions/{id}/ingest_google_documents` now accepts
+  `enable_all_chunks` (jvchat already sent it; extra fields are forbidden, so
+  ingest 422'd before the handler).
+
+- **PageIndex Google Drive: exclusions survive jvchat ingest.** REST/UI ingest
+  that sends only `{folder_id, metadata}` now inherits `exclude_sub_folders`
+  from the action config for that folder (request list still wins when present).
+  Retry refreshes `name`/`mimeType` from Drive when the cached row is not
+  ingestible, includes those fields in the 422, and refuses files that sit
+  under an excluded sub folder.
+
+- **PageIndex Google Drive: shortcuts to Docs/PDFs.** A row typed
+  `application/vnd.google-apps.shortcut` (e.g. `"TCS Updates"` with no suffix)
+  is ingested via `shortcutDetails.targetId` / `targetMimeType`. A shortcut to
+  a Google Doc or PDF is queued; a shortcut with no target or a video target
+  is still skipped. `get_media` downloads the target (one hop).
+
+- **PageIndex Google Drive: exclusions no longer wipe Retry.** Purging queues
+  for newly excluded sub folders only drops files **inside** those folders.
+  Root Docs/PDFs/shortcuts (TCS MATERIALS LIST, Retry, etc.) stay queued;
+  ingest no longer reports "No pending documents" after a successful Retry
+  just because other sub folders were excluded. The purge is also no longer
+  undone in the same pass: change detection runs against the already-pruned
+  tree, so it reported every excluded file as a deletion and merged those rows
+  straight back into the queue it had just been cleared from.
+
+- **Google Drive sync tests actually run in CI.** Both Drive test modules open
+  with `importorskip("google")`, and the `test` extra carried no Google client,
+  so the whole slice reported as skipped and CI was green on code nobody had
+  exercised. `google-api-python-client`, `google-auth-httplib2` and
+  `google-auth-oauthlib` join `[project.optional-dependencies] test` at the
+  same pins `requirements-all.txt` uses.
 
 - **Reasoning continuity between ticks (issue #203 defect 2, ADR-0052).** The
   JSON contract now asks for an optional `thought`, and each step's recorded

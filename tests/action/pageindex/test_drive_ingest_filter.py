@@ -1,10 +1,15 @@
 """Tests for Google Drive PageIndex ingest filtering."""
 
+import pytest
+
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
+    file_ids_under_excluded_folders,
     filter_drive_doc_queues_for_ingestible,
+    guess_pageindex_extension,
     is_drive_file_pageindex_ingestible,
     is_drive_file_video,
     mark_drive_video_files_disabled,
+    prune_excluded_sub_folders,
 )
 
 
@@ -18,6 +23,61 @@ def test_pdf_ingestible():
     assert is_drive_file_pageindex_ingestible("report.pdf", "application/pdf")
 
 
+def test_extensionless_pdf_ingestible_from_mime():
+    assert is_drive_file_pageindex_ingestible("Report", "application/pdf")
+    assert guess_pageindex_extension("Report", "application/pdf") == ".pdf"
+
+
+def test_extensionless_word_ingestible_from_mime():
+    assert is_drive_file_pageindex_ingestible(
+        "Memo",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    assert (
+        guess_pageindex_extension(
+            "Memo",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        == ".docx"
+    )
+
+
+def test_extensionless_video_not_ingestible():
+    assert not is_drive_file_pageindex_ingestible("Clip", "video/mp4")
+    assert guess_pageindex_extension("Clip", "video/mp4") == ""
+
+
+def test_octet_stream_without_suffix_not_ingestible():
+    assert not is_drive_file_pageindex_ingestible("unknown", "application/octet-stream")
+    assert guess_pageindex_extension("unknown", "application/octet-stream") == ""
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["notes.py", "data.csv", "page.html", "config.json", "sheet.xml"],
+)
+def test_a_recognised_suffix_off_the_allowlist_beats_the_drive_mime(name):
+    """Drive reports ``text/plain`` for a great many files that are plainly not
+    documents. The mime fallback exists for names with no usable extension, so a
+    name that already declares a known type is the answer — otherwise a source
+    file would ingest, and reach jvforge as ``notes.py.txt``."""
+    assert guess_pageindex_extension(name, "text/plain") == ""
+    assert not is_drive_file_pageindex_ingestible(name, "text/plain")
+
+
+def test_a_version_suffix_is_not_an_extension():
+    """``"Q2 Report v1.2"`` has a ``.2`` suffix that names no type at all, so the
+    Drive mime still decides — this is the case the fallback is for."""
+    assert guess_pageindex_extension("Q2 Report v1.2", "application/pdf") == ".pdf"
+    assert is_drive_file_pageindex_ingestible("Q2 Report v1.2", "application/pdf")
+
+
+def test_allowlisted_suffix_is_returned_as_is_not_rewritten_from_mime():
+    """A name that already carries an allowlisted extension keeps it, even when
+    the Drive mime would map somewhere else."""
+    assert guess_pageindex_extension("scan.png", "application/pdf") == ".png"
+
+
 def test_google_doc_native_ingestible():
     assert is_drive_file_pageindex_ingestible(
         "My Doc",
@@ -25,10 +85,34 @@ def test_google_doc_native_ingestible():
     )
 
 
-def test_shortcut_skipped():
+def test_shortcut_without_target_skipped():
     assert not is_drive_file_pageindex_ingestible(
         "Link to file",
         "application/vnd.google-apps.shortcut",
+    )
+
+
+def test_shortcut_to_google_doc_ingestible():
+    assert is_drive_file_pageindex_ingestible(
+        "TCS Updates",
+        "application/vnd.google-apps.shortcut",
+        {"targetId": "doc1", "targetMimeType": "application/vnd.google-apps.document"},
+    )
+
+
+def test_shortcut_to_pdf_ingestible():
+    assert is_drive_file_pageindex_ingestible(
+        "TCS Updates",
+        "application/vnd.google-apps.shortcut",
+        {"targetId": "pdf1", "targetMimeType": "application/pdf"},
+    )
+
+
+def test_shortcut_to_video_not_ingestible():
+    assert not is_drive_file_pageindex_ingestible(
+        "Clip",
+        "application/vnd.google-apps.shortcut",
+        {"targetId": "vid1", "targetMimeType": "video/mp4"},
     )
 
 
@@ -44,6 +128,32 @@ def test_filter_queues_drops_exe():
     filter_drive_doc_queues_for_ingestible(docs)
     assert len(docs["added"]) == 1
     assert docs["added"][0]["name"] == "a.pdf"
+
+
+def test_filter_queues_keeps_shortcut_to_google_doc():
+    docs = {
+        "added": [
+            {
+                "id": "1",
+                "name": "TCS Updates",
+                "mimeType": "application/vnd.google-apps.shortcut",
+                "shortcutDetails": {
+                    "targetId": "doc1",
+                    "targetMimeType": "application/vnd.google-apps.document",
+                },
+            },
+            {
+                "id": "2",
+                "name": "Link",
+                "mimeType": "application/vnd.google-apps.shortcut",
+            },
+        ],
+        "modified": [],
+        "removed": [],
+    }
+    filter_drive_doc_queues_for_ingestible(docs)
+    assert len(docs["added"]) == 1
+    assert docs["added"][0]["id"] == "1"
 
 
 def test_filter_modified_uses_new_dict():
@@ -152,3 +262,127 @@ def test_mark_drive_video_files_disabled_skips_shortcut():
     mark_drive_video_files_disabled(files)
     assert "disable_ingestion" not in files[0]
     assert files[1].get("disable_ingestion") is True
+
+
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+def _folder(fid: str, name: str, nested: list) -> dict:
+    return {
+        "id": fid,
+        "name": name,
+        "mimeType": _FOLDER_MIME,
+        "files": nested,
+    }
+
+
+def test_prune_excluded_sub_folders_by_id():
+    files = [
+        {"id": "1", "name": "a.pdf", "mimeType": "application/pdf"},
+        _folder(
+            "f1",
+            "Keep",
+            [
+                {"id": "2", "name": "b.pdf", "mimeType": "application/pdf"},
+                _folder(
+                    "f2",
+                    "SkipMe",
+                    [{"id": "3", "name": "c.pdf", "mimeType": "application/pdf"}],
+                ),
+            ],
+        ),
+        _folder(
+            "f3", "Drop", [{"id": "4", "name": "d.pdf", "mimeType": "application/pdf"}]
+        ),
+    ]
+    pruned = prune_excluded_sub_folders(files, ["f2", "f3"])
+    assert pruned == ["f2", "f3"]
+    assert files[1]["files"] == [
+        {"id": "2", "name": "b.pdf", "mimeType": "application/pdf"}
+    ]
+    assert len(files) == 2
+
+
+def test_prune_excluded_sub_folders_by_name():
+    files = [
+        _folder(
+            "f1",
+            "Archive",
+            [{"id": "2", "name": "old.pdf", "mimeType": "application/pdf"}],
+        ),
+        {"id": "3", "name": "new.pdf", "mimeType": "application/pdf"},
+    ]
+    pruned = prune_excluded_sub_folders(files, ["Archive"])
+    assert pruned == ["f1"]
+    assert len(files) == 1
+
+
+def test_prune_excluded_sub_folders_no_match():
+    files = [
+        _folder(
+            "f1", "Keep", [{"id": "2", "name": "b.pdf", "mimeType": "application/pdf"}]
+        ),
+    ]
+    pruned = prune_excluded_sub_folders(files, ["missing-id", "Nope"])
+    assert pruned == []
+    assert files[0]["files"][0]["id"] == "2"
+
+
+def test_prune_excluded_sub_folders_empty_or_none():
+    files = [_folder("f1", "Archive", [])]
+    assert prune_excluded_sub_folders(files, []) == []
+    assert prune_excluded_sub_folders(files, None) == []
+    assert files[0]["files"] == []
+
+
+def test_prune_excluded_sub_folders_strips_whitespace():
+    files = [_folder("f1", "Archive", [])]
+    pruned = prune_excluded_sub_folders(files, ["  f1  "])
+    assert pruned == ["f1"]
+    assert files == []
+
+
+def test_prune_excluded_sub_folders_name_trailing_space():
+    files = [_folder("f1", "Product Specification ", [])]
+    pruned = prune_excluded_sub_folders(files, ["Product Specification"])
+    assert pruned == ["f1"]
+    assert files == []
+
+
+def test_prune_excluded_sub_folders_does_not_touch_files():
+    files = [{"id": "1", "name": "Archive", "mimeType": "application/pdf"}]
+    pruned = prune_excluded_sub_folders(files, ["Archive"])
+    assert pruned == []
+    assert len(files) == 1
+
+
+def test_file_ids_under_excluded_folders_by_id_and_name():
+    files = [
+        {"id": "keep", "name": "keep.pdf", "mimeType": "application/pdf"},
+        _folder(
+            "f1",
+            "Archive",
+            [{"id": "skip-me", "name": "old.pdf", "mimeType": "application/pdf"}],
+        ),
+        _folder(
+            "f2",
+            "Keep",
+            [{"id": "ok", "name": "new.pdf", "mimeType": "application/pdf"}],
+        ),
+    ]
+    assert file_ids_under_excluded_folders(files, ["f1"]) == ["skip-me"]
+    assert file_ids_under_excluded_folders(files, ["Archive"]) == ["skip-me"]
+    assert file_ids_under_excluded_folders(files, []) == []
+    assert file_ids_under_excluded_folders(files, ["Keep"]) == ["ok"]
+
+
+def test_file_ids_under_excluded_folders_does_not_include_root_files():
+    files = [
+        {"id": "keep", "name": "keep.pdf", "mimeType": "application/pdf"},
+        _folder(
+            "f3",
+            "Drop",
+            [{"id": "skip", "name": "skip.pdf", "mimeType": "application/pdf"}],
+        ),
+    ]
+    assert file_ids_under_excluded_folders(files, ["f3"]) == ["skip"]

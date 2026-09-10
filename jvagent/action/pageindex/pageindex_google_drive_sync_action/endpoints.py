@@ -139,6 +139,14 @@ async def ingest_google_documents_endpoint(
         default=None,
         description="Whether to generate a document description via LLM. Defaults to true.",
     ),
+    enable_all_chunks: bool = Field(
+        default=False,
+        examples=[False],
+        description=(
+            "When True, keep heading-like stubs and structural nodes as separate "
+            "enabled chunks (forwarded to jvforge)."
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Recursively extract and ingest PDF documents from Google Drive folders.
 
@@ -147,7 +155,9 @@ async def ingest_google_documents_endpoint(
 
     - action_id: ID of the PageIndexGoogleDriveSyncAction
     - google_drive_folders: List of folder configs, e.g.
-      `[{"folder_id": "<id>", "metadata": {"key": "value"}}]`
+      `[{"folder_id": "<id>", "metadata": {"key": "value"}}]`. Each config may
+      also include `"exclude_sub_folders": ["<id or name>", ...]` to skip files
+      in those sub folders.
     - remove_deleted_documents: If True, removes documents no longer present in
     - retry_failed_documents: If True, retries failed documents
       Google Drive
@@ -188,6 +198,7 @@ async def ingest_google_documents_endpoint(
             chunking_strategy=chunking_strategy,
             doc_description=doc_description,
             add_doc_description=add_doc_description,
+            enable_all_chunks=enable_all_chunks,
         )
 
         response = result.get("message") or "No pending documents to ingest"

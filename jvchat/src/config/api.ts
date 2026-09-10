@@ -1452,7 +1452,11 @@ class ApiClient {
   async ingestGoogleDocuments(
     actionId: string,
     body: {
-      google_drive_folders?: { folder_id: string; metadata?: Record<string, unknown> }[]
+      google_drive_folders?: {
+        folder_id: string
+        metadata?: Record<string, unknown>
+        exclude_sub_folders?: string[]
+      }[]
       remove_deleted_documents?: boolean
       retry_failed_documents?: boolean
       convert_to_markdown?: boolean
