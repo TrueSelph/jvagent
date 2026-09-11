@@ -913,14 +913,26 @@ def _is_question(sentence: str) -> bool:
 
 
 def _detect_peel_closers(text: str) -> str:
-    """Scrub detector for ``voice.closers``."""
+    """Scrub detector for ``voice.closers``.
+
+    Trailing closer sentences are dropped. When a closer is glued to earlier
+    lines that have no ``.!?`` (report fields, list items), only the closer
+    lines are peeled so the body stays.
+    """
     kept = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
-    while (
-        len(kept) > 1
-        and kept[-1].strip()
-        and _is_closer(kept[-1])
-        and not _is_question(kept[-1])
-    ):
+    while len(kept) > 1 and kept[-1].strip() and not _is_question(kept[-1]):
+        last = kept[-1]
+        if not _is_closer(last):
+            break
+        lines = last.splitlines(keepends=True)
+        while lines and (
+            not lines[-1].strip()
+            or (_is_closer(lines[-1]) and not _is_question(lines[-1]))
+        ):
+            lines.pop()
+        if lines:
+            kept[-1] = "".join(lines)
+            break
         kept.pop()
     return "".join(kept)
 
