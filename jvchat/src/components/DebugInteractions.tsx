@@ -23,6 +23,8 @@ import { tryParseJsonDisplay } from "../utils/tryParseJsonDisplay";
 import { truncate } from "../utils/truncate";
 import { preserveScroll } from "../utils/preserveScroll";
 import {
+  observationReplayForMetric,
+  resolveRetestTools,
   toolCallsForMetric,
   type DebugToolCall,
 } from "../lib/debugToolCalls";
@@ -32,6 +34,23 @@ function debugCodePanelClass(isDark: boolean) {
   return isDark
     ? "bg-black border border-zinc-700 text-zinc-200 placeholder-zinc-500"
     : "bg-zinc-100 border border-zinc-300 text-zinc-900 placeholder-zinc-600";
+}
+
+function parseJsonArray(
+  text: string,
+  label: string,
+): { ok: true; value: unknown[] } | { ok: false; error: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { ok: true, value: [] };
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) {
+      return { ok: false, error: `Cannot retest: ${label} must be an array.` };
+    }
+    return { ok: true, value: parsed };
+  } catch {
+    return { ok: false, error: `Cannot retest: ${label} is not valid JSON.` };
+  }
 }
 
 /**
@@ -220,6 +239,11 @@ export function DebugInteractions({
   const { theme: appTheme } = useTheme();
   const [historyText, setHistoryText] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  /** Editable this-turn tool replay (assistant + tool messages after the user). */
+  const [replayText, setReplayText] = useState("[]");
+  /** Editable tool definitions sent on retest. */
+  const [toolsText, setToolsText] = useState("[]");
+  const replaySyncKeyRef = useRef("");
   const [improveInstruction, setImproveInstruction] = useState("");
   const [improveModel, setImproveModel] = useState("gpt-4o");
   const [improving, setImproving] = useState(false);
@@ -353,6 +377,7 @@ export function DebugInteractions({
             provider: pd.provider || "",
             history: history,
             tools: Array.isArray(pd.tools) ? pd.tools : [],
+            tool_names: Array.isArray(pd.tool_names) ? pd.tool_names : [],
             tool_calls: Array.isArray(pd.tool_calls) ? pd.tool_calls : [],
             finish_reason: pd.finish_reason || "",
           },
@@ -561,6 +586,35 @@ export function DebugInteractions({
     );
   }, [effectiveParents, selectedParentIndex, selectedMetricIndex]);
 
+  const retestTools = useMemo(() => {
+    if (!selectedInteraction) {
+      return { tools: [] as unknown[], source: "none" as const };
+    }
+    const parent =
+      selectedParentIndex != null
+        ? effectiveParents[selectedParentIndex]
+        : null;
+    return resolveRetestTools({
+      tools: selectedInteraction.data?.tools,
+      toolNames: selectedInteraction.data?.tool_names,
+      toolCalls: selectedInteraction.data?.tool_calls,
+      siblingMetrics: parent?.metrics,
+    });
+  }, [selectedInteraction, selectedParentIndex, effectiveParents]);
+
+  const defaultReplay = useMemo(() => {
+    const parent =
+      selectedParentIndex != null
+        ? effectiveParents[selectedParentIndex]
+        : null;
+    if (!parent || selectedMetricIndex == null) return [];
+    return observationReplayForMetric(
+      parent.agentTrace,
+      parent.metrics,
+      selectedMetricIndex,
+    );
+  }, [effectiveParents, selectedParentIndex, selectedMetricIndex]);
+
   const refreshInteractionLogsPage1 = useCallback(async () => {
     const agentId = targetAgentIdRef.current ?? targetAgentId;
     if (!agentId) return;
@@ -700,6 +754,20 @@ export function DebugInteractions({
     }
   }, [selectedInteraction]);
 
+  const replaySyncKey = `${selectedInteraction?.id ?? ""}:${selectedMetricIndex ?? ""}`;
+  useEffect(() => {
+    if (replaySyncKey === replaySyncKeyRef.current) return;
+    replaySyncKeyRef.current = replaySyncKey;
+    setReplayText(
+      defaultReplay.length > 0 ? JSON.stringify(defaultReplay, null, 2) : "[]",
+    );
+    setToolsText(
+      Array.isArray(retestTools.tools) && retestTools.tools.length > 0
+        ? JSON.stringify(retestTools.tools, null, 2)
+        : "[]",
+    );
+  }, [replaySyncKey, defaultReplay, retestTools]);
+
   useLayoutEffect(() => {
     adjustHeight(userRef.current);
   }, [selectedInteraction?.data.user_prompt, loading]);
@@ -742,21 +810,29 @@ export function DebugInteractions({
       return;
     }
 
-    const tools = selectedInteraction.data.tools || [];
     const originalToolCalls = selectedInteraction.data.tool_calls || [];
     const finishReason = selectedInteraction.data.finish_reason || "";
     const needsTools =
       originalToolCalls.length > 0 || finishReason === "tool_calls";
-    if (needsTools && (!Array.isArray(tools) || tools.length === 0)) {
+
+    const parsedTools = parseJsonArray(toolsText, "Tools (JSON)");
+    if (!parsedTools.ok) {
+      preserveScroll(() =>
+        setTestResult({ success: false, error: parsedTools.error }),
+      );
+      return;
+    }
+    if (needsTools && parsedTools.value.length === 0) {
       preserveScroll(() =>
         setTestResult({
           success: false,
           error:
-            "Cannot retest: tool definitions were not recorded on this model_call. They are opt-in because the same schemas are re-sent on every tick — set telemetry_tool_definitions: true on the model action, then retest a fresh turn.",
+            "Cannot retest: tool definitions were not recorded on this model_call and no tool names are available to reconstruct them.",
         }),
       );
       return;
     }
+    const tools = parsedTools.value;
 
     const modelToSend = (replayModel || "").trim();
     if (!modelToSend) {
@@ -770,21 +846,60 @@ export function DebugInteractions({
       return;
     }
 
+    const parsedHistory = parseJsonArray(historyText, "History (JSON)");
+    if (!parsedHistory.ok) {
+      preserveScroll(() =>
+        setTestResult({ success: false, error: parsedHistory.error }),
+      );
+      return;
+    }
+    const history = parsedHistory.value;
+
+    const parsedReplay = parseJsonArray(replayText, "This-turn tool replay (JSON)");
+    if (!parsedReplay.ok) {
+      preserveScroll(() =>
+        setTestResult({ success: false, error: parsedReplay.error }),
+      );
+      return;
+    }
+    const replay = parsedReplay.value;
+
     preserveScroll(() => {
       setTesting(true);
       setTestResult(null);
     });
 
+    const includeTools = tools.length > 0 && (needsTools || retestTools.source === "recorded");
+
     try {
       const payload: Record<string, unknown> = {
-        prompt: selectedInteraction.data.user_prompt,
-        system: selectedInteraction.data.system_prompt,
         model: modelToSend,
         provider: selectedProvider || undefined,
-        history: selectedInteraction.data.history || [],
       };
-      if (Array.isArray(tools) && tools.length > 0) {
-        payload.tools = tools;
+      if (replay.length > 0 || includeTools) {
+        const messages: Record<string, unknown>[] = [];
+        const system = selectedInteraction.data.system_prompt;
+        if (system) {
+          messages.push({ role: "system", content: system });
+        }
+        if (history.length > 0) {
+          messages.push(...(history as Record<string, unknown>[]));
+        }
+        messages.push({
+          role: "user",
+          content: selectedInteraction.data.user_prompt,
+        });
+        messages.push(...(replay as Record<string, unknown>[]));
+        payload.messages = messages;
+        payload.tool_choice = "auto";
+        payload.parallel_tool_calls = false;
+        if (includeTools) {
+          payload.tools = tools;
+        }
+      } else {
+        payload.prompt = selectedInteraction.data.user_prompt;
+        payload.system = selectedInteraction.data.system_prompt;
+        payload.history = history;
       }
 
       const data = await apiClient.queryAction(actionId, payload);
@@ -1548,6 +1663,50 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     </div>
                   </div>
                 )}
+                {selectedInteraction.event_type === "model_call" && (
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                    >
+                      This-turn tool replay (JSON)
+                    </label>
+                    <p
+                      className={`text-xs mb-2 ${effectiveDarkMode ? "text-zinc-500" : "text-zinc-500"}`}
+                    >
+                      Earlier ticks of this turn, sent after the user prompt.
+                      Empty on the first tick. Edit before Re-run.
+                    </p>
+                    <JsonCodeEditor
+                      value={replayText}
+                      onChange={setReplayText}
+                      dark={effectiveDarkMode}
+                      height="min(280px, 36vh)"
+                      className="rounded-md"
+                    />
+                  </div>
+                )}
+                {selectedInteraction.event_type === "model_call" && (
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-2 ${effectiveDarkMode ? "text-zinc-300" : ""}`}
+                    >
+                      Tools (JSON)
+                    </label>
+                    <p
+                      className={`text-xs mb-2 ${effectiveDarkMode ? "text-zinc-500" : "text-zinc-500"}`}
+                    >
+                      Tool definitions sent with Re-run. Stubs have names
+                      only when schemas were not recorded.
+                    </p>
+                    <JsonCodeEditor
+                      value={toolsText}
+                      onChange={setToolsText}
+                      dark={effectiveDarkMode}
+                      height="min(280px, 36vh)"
+                      className="rounded-md"
+                    />
+                  </div>
+                )}
                 {/* Model — one editable field for retest (request_model preferred). */}
                 {selectedInteraction.event_type === "model_call" && (
                   <div>
@@ -1623,6 +1782,22 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     >
                       LM only — tools proposed, not executed
                     </span>
+                    {retestTools.source === "stub" &&
+                      ((selectedInteraction.data.tool_calls || []).length >
+                        0 ||
+                        selectedInteraction.data.finish_reason ===
+                          "tool_calls") && (
+                        <span
+                          className={`text-xs text-right max-w-xs ${
+                            effectiveDarkMode
+                              ? "text-amber-400"
+                              : "text-amber-700"
+                          }`}
+                        >
+                          Schemas were not recorded on this turn, so argument
+                          fidelity may drift.
+                        </span>
+                      )}
                     {!modelAction && (
                       <span className="text-xs text-red-500">
                         No LanguageModelAction for this provider

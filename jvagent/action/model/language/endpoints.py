@@ -69,11 +69,14 @@ logger = logging.getLogger(__name__)
 )
 async def query_model_action(
     action_id: str,
-    prompt: Any,  # Can be string or list of content parts
+    prompt: Any = None,  # Can be string or list of content parts
     stream: bool = False,
     system: Optional[str] = None,
     history: Optional[List[Dict[str, Any]]] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
+    messages: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None,
+    parallel_tool_calls: Optional[bool] = None,
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
@@ -115,6 +118,11 @@ async def query_model_action(
     - system: Optional system message to guide model behavior
     - history: Optional conversation history (can include multimodal)
     - tools: Optional list of tool/function definitions for function calling
+    - messages: Optional full chat array. When set, calls ``query_messages``
+      instead of rebuilding from prompt/system/history (needed so this-turn
+      tool results can sit after the user message).
+    - tool_choice: Optional tool-choice override (e.g. ``"auto"``)
+    - parallel_tool_calls: Optional parallel-tool-calls override
     - model: Optional model override (uses action's default model if not provided)
     - temperature: Optional temperature override (0.0-2.0)
     - max_tokens: Optional max tokens override
@@ -216,16 +224,32 @@ async def query_model_action(
         kwargs["max_tokens"] = max_tokens
     if top_p is not None:
         kwargs["top_p"] = top_p
+    if tool_choice is not None:
+        kwargs["tool_choice"] = tool_choice
+    if parallel_tool_calls is not None:
+        kwargs["parallel_tool_calls"] = parallel_tool_calls
 
-    # Execute query
-    result = await action.query(
-        prompt=prompt,
-        stream=stream,
-        system=system,
-        history=history,
-        tools=tools,
-        **kwargs,
-    )
+    if messages:
+        result = await action.query_messages(
+            messages=messages,
+            stream=stream,
+            tools=tools,
+            **kwargs,
+        )
+    else:
+        if prompt is None:
+            raise InvalidInputError(
+                message="Either 'prompt' or 'messages' is required",
+                details={"action_id": action_id},
+            )
+        result = await action.query(
+            prompt=prompt,
+            stream=stream,
+            system=system,
+            history=history,
+            tools=tools,
+            **kwargs,
+        )
 
     # Handle streaming response
     if stream:
