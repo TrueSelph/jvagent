@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   enrichToolCallArgs,
+  observationReplayForMetric,
   pairAgentTraceToolCalls,
+  resolveRetestTools,
   toolCallsForMetric,
 } from "./debugToolCalls";
 
@@ -197,5 +199,209 @@ describe("toolCallsForMetric", () => {
     ];
     expect(toolCallsForMetric(twoTrace, twoMetrics, 0)[0].result).toBe("first");
     expect(toolCallsForMetric(twoTrace, twoMetrics, 1)[0].result).toBe("second");
+  });
+});
+
+describe("observationReplayForMetric", () => {
+  const lookupCall = {
+    id: "call_lookup_1",
+    type: "function",
+    function: {
+      name: "lookup_report__get_issue",
+      arguments: '{"reference_number":"R381235"}',
+    },
+  };
+  const replyCall = {
+    id: "call_reply_1",
+    type: "function",
+    function: {
+      name: "reply",
+      arguments: '{"text":"Here are the details for report R381235"}',
+    },
+  };
+  const trace = [
+    {
+      thought_type: "tool_call",
+      segment_id: "seg-lookup",
+      content: "lookup_report__get_issue",
+    },
+    {
+      thought_type: "tool_result",
+      segment_id: "seg-lookup",
+      content: "Title: damaged road. Status: open.",
+    },
+    {
+      thought_type: "tool_call",
+      segment_id: "seg-reply",
+      content: "reply",
+    },
+    {
+      thought_type: "tool_result",
+      segment_id: "seg-reply",
+      content: "ok",
+    },
+  ];
+  const metrics = [
+    { event_type: "model_call", data: { tool_calls: [lookupCall] } },
+    { event_type: "model_call", data: { tool_calls: [replyCall] } },
+  ];
+
+  it("returns empty for the first tick", () => {
+    expect(observationReplayForMetric(trace, metrics, 0)).toEqual([]);
+  });
+
+  it("replays earlier lookup when retesting the reply tick", () => {
+    expect(observationReplayForMetric(trace, metrics, 1)).toEqual([
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [lookupCall],
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_lookup_1",
+        name: "lookup_report__get_issue",
+        content: "Title: damaged road. Status: open.",
+      },
+    ]);
+  });
+
+  it("omits the selected tick's own tool_calls", () => {
+    const replay = observationReplayForMetric(trace, metrics, 1);
+    expect(JSON.stringify(replay)).not.toContain("call_reply_1");
+    expect(JSON.stringify(replay)).not.toContain('"name":"reply"');
+  });
+});
+
+describe("resolveRetestTools", () => {
+  const recordedTools = [
+    {
+      type: "function",
+      function: {
+        name: "reply",
+        description: "Send a reply",
+        parameters: { type: "object", properties: { text: { type: "string" } } },
+      },
+    },
+  ];
+  const siblingTools = [
+    {
+      type: "function",
+      function: {
+        name: "reply",
+        description: "Sibling schema",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "update_plan",
+        description: "Update the plan",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+  ];
+
+  it("uses recorded tools when present", () => {
+    expect(
+      resolveRetestTools({
+        tools: recordedTools,
+        toolNames: ["reply", "update_plan"],
+        siblingMetrics: [
+          {
+            event_type: "model_call",
+            data: {
+              tools: siblingTools,
+              tool_names: ["reply", "update_plan"],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ tools: recordedTools, source: "recorded" });
+  });
+
+  it("inherits sibling tools whose tool_names match", () => {
+    expect(
+      resolveRetestTools({
+        tools: [],
+        toolNames: ["reply", "update_plan"],
+        siblingMetrics: [
+          { event_type: "helm_shift", data: { tools: recordedTools } },
+          {
+            event_type: "model_call",
+            data: {
+              tools: siblingTools,
+              tool_names: ["reply", "update_plan"],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ tools: siblingTools, source: "sibling" });
+  });
+
+  it("stubs from tool_names when no schemas exist", () => {
+    expect(
+      resolveRetestTools({
+        tools: [],
+        toolNames: ["reply", "update_plan"],
+        siblingMetrics: [{ event_type: "model_call", data: {} }],
+      }),
+    ).toEqual({
+      source: "stub",
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "reply",
+            description: "",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "update_plan",
+            description: "",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ],
+    });
+  });
+
+  it("stubs from tool_calls names when tool_names is missing", () => {
+    expect(
+      resolveRetestTools({
+        tools: [],
+        toolCalls: [
+          { function: { name: "pageindex__search", arguments: "{}" } },
+          { function: { name: "pageindex__search", arguments: "{}" } },
+        ],
+      }),
+    ).toEqual({
+      source: "stub",
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "pageindex__search",
+            description: "",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ],
+    });
+  });
+
+  it("returns none when tools were used and nothing can be sent", () => {
+    expect(
+      resolveRetestTools({
+        tools: [],
+        toolNames: [],
+        toolCalls: [],
+        siblingMetrics: [{ event_type: "model_call", data: {} }],
+      }),
+    ).toEqual({ tools: [], source: "none" });
   });
 });

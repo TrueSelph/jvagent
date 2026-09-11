@@ -185,3 +185,198 @@ export function toolCallsForMetric(
   }
   return assigned;
 }
+
+export type ObservationReplayMessage = {
+  role: "assistant" | "tool";
+  content: string;
+  tool_calls?: unknown[];
+  tool_call_id?: string;
+  name?: string;
+};
+
+function rawToolCallsOnMetric(metric: unknown): unknown[] {
+  const data = metricPayload(metric);
+  if (!data) return [];
+  return Array.isArray(data.tool_calls) ? data.tool_calls : [];
+}
+
+function toolCallId(call: unknown, fallback: string): string {
+  const rec = asRecord(call);
+  if (typeof rec?.id === "string" && rec.id) return rec.id;
+  return fallback;
+}
+
+function toolCallName(call: unknown, fallback = ""): string {
+  const rec = asRecord(call);
+  const fn = rec ? asRecord(rec.function) : null;
+  return String(fn?.name ?? rec?.name ?? fallback);
+}
+
+function resultContent(result: unknown): string {
+  if (result === undefined || result === null) return "";
+  if (typeof result === "string") return result;
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return String(result);
+  }
+}
+
+/**
+ * Native-protocol observation replay for retesting a later tick.
+ *
+ * Earlier model_call tool_calls (index < metricIndex) become assistant
+ * + tool messages after the user prompt. The selected tick's own calls
+ * are the output to reproduce, so they are omitted.
+ */
+export function observationReplayForMetric(
+  agentTrace: unknown,
+  metrics: unknown,
+  metricIndex: number,
+): ObservationReplayMessage[] {
+  if (!Array.isArray(metrics) || metricIndex <= 0) return [];
+  const messages: ObservationReplayMessage[] = [];
+  const limit = Math.min(metricIndex, metrics.length);
+  for (let i = 0; i < limit; i++) {
+    const rawCalls = rawToolCallsOnMetric(metrics[i]);
+    if (rawCalls.length === 0) continue;
+    const paired = toolCallsForMetric(agentTrace, metrics, i);
+    messages.push({
+      role: "assistant",
+      content: "",
+      tool_calls: rawCalls,
+    });
+    rawCalls.forEach((call, idx) => {
+      const fallbackId = `metric-${i}-${idx}`;
+      const pairedCall = paired[idx];
+      const name = toolCallName(call, pairedCall?.toolName || "");
+      const msg: ObservationReplayMessage = {
+        role: "tool",
+        tool_call_id: toolCallId(call, fallbackId),
+        content: resultContent(pairedCall?.result),
+      };
+      if (name) msg.name = name;
+      messages.push(msg);
+    });
+  }
+  return messages;
+}
+
+export type RetestToolSource = "recorded" | "sibling" | "stub" | "none";
+
+export type RetestToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: { type: "object"; properties: Record<string, unknown> };
+  };
+};
+
+export type ResolveRetestToolsResult = {
+  tools: unknown[];
+  source: RetestToolSource;
+};
+
+export type ResolveRetestToolsArgs = {
+  tools?: unknown;
+  toolNames?: unknown;
+  toolCalls?: unknown;
+  siblingMetrics?: unknown;
+};
+
+function stringNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((n): n is string => typeof n === "string" && n.length > 0);
+}
+
+function nonEmptyTools(value: unknown): unknown[] | null {
+  return Array.isArray(value) && value.length > 0 ? value : null;
+}
+
+function namesEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((name, i) => name === b[i]);
+}
+
+function metricPayload(metric: unknown): Record<string, unknown> | null {
+  const rec = asRecord(metric);
+  if (!rec) return null;
+  return asRecord(rec.data) || rec;
+}
+
+function isModelCallMetric(metric: unknown): boolean {
+  const rec = asRecord(metric);
+  if (!rec) return false;
+  const eventType = rec.event_type;
+  return eventType === "model_call" || eventType == null || eventType === "";
+}
+
+function stubToolsFromNames(names: string[]): RetestToolDefinition[] {
+  return names.map((name) => ({
+    type: "function" as const,
+    function: {
+      name,
+      description: "",
+      parameters: { type: "object" as const, properties: {} },
+    },
+  }));
+}
+
+function namesFromToolCalls(toolCalls: unknown): string[] {
+  const calls = collectMetricToolCalls([{ data: { tool_calls: toolCalls } }]);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const call of calls) {
+    if (seen.has(call.name)) continue;
+    seen.add(call.name);
+    names.push(call.name);
+  }
+  return names;
+}
+
+/**
+ * Tools to send on Debug Interactions retest.
+ *
+ * Full schemas are opt-in on the model action, so most historical
+ * model_call events only have names. Prefer recorded defs, then a
+ * sibling tick of the same surface, then name-only stubs.
+ */
+export function resolveRetestTools(
+  args: ResolveRetestToolsArgs,
+): ResolveRetestToolsResult {
+  const recorded = nonEmptyTools(args.tools);
+  if (recorded) {
+    return { tools: recorded, source: "recorded" };
+  }
+
+  const names = stringNames(args.toolNames);
+  const metrics = Array.isArray(args.siblingMetrics) ? args.siblingMetrics : [];
+  let firstNonEmpty: unknown[] | null = null;
+
+  for (const metric of metrics) {
+    if (!isModelCallMetric(metric)) continue;
+    const data = metricPayload(metric);
+    if (!data) continue;
+    const siblingTools = nonEmptyTools(data.tools);
+    if (!siblingTools) continue;
+    if (names.length === 0) {
+      return { tools: siblingTools, source: "sibling" };
+    }
+    const siblingNames = stringNames(data.tool_names);
+    if (siblingNames.length > 0 && namesEqual(names, siblingNames)) {
+      return { tools: siblingTools, source: "sibling" };
+    }
+    if (!firstNonEmpty) firstNonEmpty = siblingTools;
+  }
+
+  const stubNames =
+    names.length > 0 ? names : namesFromToolCalls(args.toolCalls);
+  if (stubNames.length > 0) {
+    return { tools: stubToolsFromNames(stubNames), source: "stub" };
+  }
+  if (firstNonEmpty) {
+    return { tools: firstNonEmpty, source: "sibling" };
+  }
+  return { tools: [], source: "none" };
+}
