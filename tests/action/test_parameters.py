@@ -202,6 +202,26 @@ def test_vet_egress_still_strips_declarative_let_me_know_closers():
     assert vet_egress(d) == d
 
 
+def test_vet_egress_peels_closer_without_eating_report_fields():
+    """Title ellipsis + Description period must not glue Location/Status to a closer."""
+    text = (
+        "Here are the details for report R381235:\n\n"
+        "- Title: A section of the road is severely damaged and need...\n"
+        "- Description: The sidewalk needs to be repaired.\n"
+        "- Location: 37 Market Street, Berbice\n"
+        "- Status: open\n"
+        "- Priority: medium\n\n"
+        "Would you like to give feedback "
+        "on this report?"
+    )
+    out = vet_egress(text)
+    assert "Location: 37 Market Street, Berbice" in out
+    assert "Status: open" in out
+    assert "Priority: medium" in out
+    assert "need..." in out
+    assert "let me know" not in out.lower()
+
+
 def test_vet_egress_preserves_newlines_between_list_items():
     # Markdown list items live on their own lines. The scrub must NOT weld
     # consecutive sentences into one run (regression: "city center.Jan Thiel").
