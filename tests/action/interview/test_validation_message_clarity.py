@@ -11,7 +11,13 @@ import pytest
 from jvagent.action.interview.interview_action import InterviewAction
 from jvagent.action.interview.session import InterviewSession
 from jvagent.action.interview.spec import (
+    FieldDef,
+    InterviewSpec,
     load_interview_spec_from_skill,
+)
+from jvagent.action.reply.reply_action import (
+    DIRECTIVE_GUIDANCE_MARKER,
+    user_facing_directive,
 )
 from tests.action.interview.conftest import SIGNUP_INTERVIEW_SKILL_DIR
 
@@ -178,3 +184,62 @@ async def test_signup_phone_too_short_returns_length_reask(signup_action):
     assert result["ok"] is False
     assert "10-digit" in (result.get("response_directive") or "").lower()
     assert "phone_number" not in session.fields
+    assert "phone_number" not in (result.get("response_directive") or "")
+
+
+@pytest.mark.asyncio
+async def test_partial_success_names_failed_text_field():
+    spec = InterviewSpec(
+        name="mini_onboarding",
+        fields=[
+            FieldDef(
+                key="name",
+                prompt="What is your full legal name?",
+                validator="name",
+            ),
+            FieldDef(
+                key="unit",
+                prompt="What is your unit?",
+                hint="The GDF unit you currently serve with.",
+                validator="text",
+                validator_args={"min_length": 2},
+            ),
+        ],
+    )
+    action = InterviewAction()
+    action._registry._specs[spec.name] = spec
+    session = InterviewSession(interview_type="mini_onboarding")
+    action._get_session_and_contract = AsyncMock(return_value=(session, spec))
+    action._save_session = AsyncMock()
+    visitor = SimpleNamespace(utterance="Michael Anderson, unit 8")
+
+    result = json.loads(
+        await action._handle_set_fields(
+            fields={"name": "Michael Anderson", "unit": "8"},
+            visitor=visitor,
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "partial_success"
+    assert session.get_value("name") == "Michael Anderson"
+    assert "unit" not in session.fields
+
+    directive = result["response_directive"]
+    raw = user_facing_directive(directive)
+    prefix = "Tell the user or ask the user:"
+    user = (
+        raw[len(prefix) :].strip().lower()
+        if raw.lower().startswith(prefix.lower())
+        else raw.lower()
+    )
+    assert "saved the other details" in user
+    assert "what is your unit?" in user
+    assert "at least 2 characters" in user
+    assert "i still need a valid unit" not in user
+    assert "ask:" not in user
+    assert "\n\n" in raw
+
+    _, guidance = directive.split(DIRECTIVE_GUIDANCE_MARKER, 1)
+    assert "gdf unit" not in user
+    assert "gdf unit" in guidance.lower()
