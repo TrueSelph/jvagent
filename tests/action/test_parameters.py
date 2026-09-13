@@ -211,8 +211,7 @@ def test_vet_egress_peels_closer_without_eating_report_fields():
         "- Location: 37 Market Street, Berbice\n"
         "- Status: open\n"
         "- Priority: medium\n\n"
-        "Would you like to give feedback "
-        "on this report?"
+        "Let me know if you need anything else."
     )
     out = vet_egress(text)
     assert "Location: 37 Market Street, Berbice" in out
@@ -220,6 +219,28 @@ def test_vet_egress_peels_closer_without_eating_report_fields():
     assert "Priority: medium" in out
     assert "need..." in out
     assert "let me know" not in out.lower()
+
+
+def test_vet_egress_peels_same_line_closer_suffix():
+    text = (
+        "- Location: 37 Market Street, Berbice Status: open "
+        "Let me know if you need anything else."
+    )
+    out = vet_egress(text)
+    assert "Location: 37 Market Street, Berbice" in out
+    assert "Status: open" in out
+    assert "let me know" not in out.lower()
+
+
+def test_vet_egress_keeps_body_line_that_mentions_let_me_know():
+    text = (
+        "Here is the note.\n"
+        "Note: please let me know if the address looks wrong.\n"
+        "Let me know if you need anything else."
+    )
+    out = vet_egress(text)
+    assert "please let me know if the address looks wrong" in out.lower()
+    assert "let me know if you need anything else" not in out.lower()
 
 
 def test_vet_egress_preserves_newlines_between_list_items():
