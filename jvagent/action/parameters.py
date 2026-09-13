@@ -733,15 +733,20 @@ _CLOSER_PATTERNS = [
         r"further (assistance|help)|need (anything|any help)|more help)\b",
         re.I,
     ),
-    # Kept despite the "Could you let me know if you need a quote?" false
-    # positive that prompted the question guard: `_is_question` handles that
-    # case precisely, and dropping this pattern would also stop peeling
-    # declarative sign-offs like "Let me know if that works." A specific ask
-    # ("let me know your email address") has an object and does not match.
-    re.compile(r"\blet me know if\b", re.I),
-    re.compile(r"\b(i'?m |i am )?(always |more than )?happy to (help|assist)\b", re.I),
+    # Invitation-shaped only. Bare ``let me know if`` also matches body asks
+    # ("please let me know if the address looks wrong") — require a soft
+    # offer object. `_is_question` still guards "Could you let me know if…?".
     re.compile(
-        r"\b(just )?let me know\b[^.!?]*\b(if|whenever|should|questions?|"
+        r"\blet me know if\b\s+"
+        r"(?:you\b|that\b|this\b|there(?:'s| is)\b|anything\b|"
+        r"i\b|we\b)",
+        re.I,
+    ),
+    re.compile(r"\b(i'?m |i am )?(always |more than )?happy to (help|assist)\b", re.I),
+    # ``if`` is handled by the invitation-shaped pattern above — including it
+    # here would re-match body asks like "let me know if the address…".
+    re.compile(
+        r"\b(just )?let me know\b[^.!?]*\b(whenever|should|questions?|"
         r"anything|need anything|further)\b",
         re.I,
     ),
@@ -912,15 +917,89 @@ def _is_question(sentence: str) -> bool:
     return s.endswith("?") or s.endswith("?!")
 
 
+def _line_is_peelable_closer(line: str) -> bool:
+    """True when a line is (almost) only a closer sign-off.
+
+    Body lines that merely *contain* a closer phrase mid-line
+    (``Note: please let me know if…``) are left alone.
+    """
+    s = line.strip()
+    if not s or _is_question(s) or not _is_closer(s):
+        return False
+    for pattern in _CLOSER_PATTERNS:
+        match = pattern.search(s)
+        if not match:
+            continue
+        prefix = s[: match.start()].strip(" \t-•*")
+        if not prefix:
+            return True
+    return False
+
+
+def _peel_closer_suffix(line: str) -> Optional[str]:
+    """Split a trailing closer off a same-line body; ``None`` if no peel."""
+    newline = ""
+    body = line
+    if line.endswith("\r\n"):
+        newline = "\r\n"
+        body = line[:-2]
+    elif line.endswith("\n"):
+        newline = "\n"
+        body = line[:-1]
+    stripped = body.rstrip()
+    trailing_ws = body[len(stripped) :]
+    if _is_question(stripped) or not _is_closer(stripped):
+        return None
+    # Prefer the leftmost closer match that still leaves a non-closer body —
+    # otherwise a nested ``if you need…`` match peels too late and leaves
+    # ``Let me know`` behind.
+    best_start: Optional[int] = None
+    for pattern in _CLOSER_PATTERNS:
+        for match in pattern.finditer(stripped):
+            prefix = stripped[: match.start()].rstrip()
+            if not prefix or _is_closer(prefix):
+                continue
+            if best_start is None or match.start() < best_start:
+                best_start = match.start()
+    if best_start is None:
+        return None
+    return stripped[:best_start].rstrip() + trailing_ws + newline
+
+
 def _detect_peel_closers(text: str) -> str:
-    """Scrub detector for ``voice.closers``."""
+    """Scrub detector for ``voice.closers``.
+
+    Trailing closer sentences are dropped. When a closer is glued to earlier
+    lines that have no ``.!?`` (report fields, list items), only the closer
+    lines are peeled so the body stays. Same-line glue
+    (``Location: … Let me know if…``) peels the closer suffix only.
+    """
     kept = [m.group(0) for m in _SENTENCE_RE.finditer(text)]
-    while (
-        len(kept) > 1
-        and kept[-1].strip()
-        and _is_closer(kept[-1])
-        and not _is_question(kept[-1])
-    ):
+    while kept and kept[-1].strip() and not _is_question(kept[-1]):
+        last = kept[-1]
+        if not _is_closer(last):
+            break
+        lines = last.splitlines(keepends=True)
+        while lines:
+            candidate = lines[-1]
+            if not candidate.strip():
+                lines.pop()
+                continue
+            if _is_question(candidate):
+                break
+            if _line_is_peelable_closer(candidate):
+                lines.pop()
+                continue
+            peeled = _peel_closer_suffix(candidate)
+            if peeled is not None:
+                lines[-1] = peeled
+            break
+        if lines:
+            kept[-1] = "".join(lines)
+            break
+        # Peeling would blank the only remaining blob — keep the closer.
+        if len(kept) == 1:
+            break
         kept.pop()
     return "".join(kept)
 
