@@ -242,7 +242,13 @@ describe("observationReplayForMetric", () => {
     },
   ];
   const metrics = [
-    { event_type: "model_call", data: { tool_calls: [lookupCall] } },
+    {
+      event_type: "model_call",
+      data: {
+        response: "Looking up that report…",
+        tool_calls: [lookupCall],
+      },
+    },
     { event_type: "model_call", data: { tool_calls: [replyCall] } },
   ];
 
@@ -254,7 +260,7 @@ describe("observationReplayForMetric", () => {
     expect(observationReplayForMetric(trace, metrics, 1)).toEqual([
       {
         role: "assistant",
-        content: "",
+        content: "Looking up that report…",
         tool_calls: [lookupCall],
       },
       {
@@ -386,6 +392,38 @@ describe("resolveRetestTools", () => {
           type: "function",
           function: {
             name: "pageindex__search",
+            description: "",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ],
+    });
+  });
+
+  it("does not inherit sibling schemas when tool_names is empty", () => {
+    // Prefer stubs from this tick's tool_calls over a sibling's full surface.
+    expect(
+      resolveRetestTools({
+        tools: [],
+        toolNames: [],
+        toolCalls: [{ function: { name: "reply", arguments: "{}" } }],
+        siblingMetrics: [
+          {
+            event_type: "model_call",
+            data: {
+              tools: siblingTools,
+              tool_names: ["reply", "update_plan"],
+            },
+          },
+        ],
+      }),
+    ).toEqual({
+      source: "stub",
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "reply",
             description: "",
             parameters: { type: "object", properties: {} },
           },

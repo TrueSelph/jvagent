@@ -222,12 +222,32 @@ function resultContent(result: unknown): string {
   }
 }
 
+function assistantContentFromRawMetric(metric: unknown): string {
+  const rec = asRecord(metric);
+  if (!rec) return "";
+  const data = asRecord(rec.data) || rec;
+  for (const key of [
+    "response",
+    "assistant_text",
+    "assistant_content",
+    "content",
+  ]) {
+    const value = data[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return "";
+}
+
 /**
  * Native-protocol observation replay for retesting a later tick.
  *
  * Earlier model_call tool_calls (index < metricIndex) become assistant
  * + tool messages after the user prompt. The selected tick's own calls
  * are the output to reproduce, so they are omitted.
+ *
+ * Best-effort from persisted metrics — does not reconstruct full prod
+ * wire (harness notes, caps, aliases). Assistant text comes from the
+ * metric ``response`` / ``assistant_text`` when present.
  */
 export function observationReplayForMetric(
   agentTrace: unknown,
@@ -243,7 +263,7 @@ export function observationReplayForMetric(
     const paired = toolCallsForMetric(agentTrace, metrics, i);
     messages.push({
       role: "assistant",
-      content: "",
+      content: assistantContentFromRawMetric(metrics[i]),
       tool_calls: rawCalls,
     });
     rawCalls.forEach((call, idx) => {
@@ -360,11 +380,10 @@ export function resolveRetestTools(
     if (!data) continue;
     const siblingTools = nonEmptyTools(data.tools);
     if (!siblingTools) continue;
-    if (names.length === 0) {
-      return { tools: siblingTools, source: "sibling" };
-    }
+    // Only inherit sibling schemas when this tick's tool_names match —
+    // never when names are empty (would offer the wrong tool surface).
     const siblingNames = stringNames(data.tool_names);
-    if (siblingNames.length > 0 && namesEqual(names, siblingNames)) {
+    if (names.length > 0 && siblingNames.length > 0 && namesEqual(names, siblingNames)) {
       return { tools: siblingTools, source: "sibling" };
     }
     if (!firstNonEmpty) firstNonEmpty = siblingTools;
@@ -375,6 +394,7 @@ export function resolveRetestTools(
   if (stubNames.length > 0) {
     return { tools: stubToolsFromNames(stubNames), source: "stub" };
   }
+  // Last resort: only when this tick has no names and no tool_calls to stub.
   if (firstNonEmpty) {
     return { tools: firstNonEmpty, source: "sibling" };
   }

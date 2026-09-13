@@ -754,7 +754,21 @@ export function DebugInteractions({
     }
   }, [selectedInteraction]);
 
-  const replaySyncKey = `${selectedInteraction?.id ?? ""}:${selectedMetricIndex ?? ""}`;
+  const replaySyncKey = [
+    selectedInteraction?.id ?? "",
+    selectedMetricIndex ?? "",
+    defaultReplay.length,
+    retestTools.source,
+    Array.isArray(retestTools.tools) ? retestTools.tools.length : 0,
+    // Fingerprint payload size so a log refresh with same id:index still resets.
+    (() => {
+      try {
+        return `${JSON.stringify(defaultReplay).length}:${JSON.stringify(retestTools.tools).length}`;
+      } catch {
+        return "0";
+      }
+    })(),
+  ].join(":");
   useEffect(() => {
     if (replaySyncKey === replaySyncKeyRef.current) return;
     replaySyncKeyRef.current = replaySyncKey;
