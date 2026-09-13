@@ -162,6 +162,50 @@ def test_batch_failure_directive_passthrough_call_directive():
     assert "I still need" not in directive
 
 
+def test_batch_failure_directive_call_with_stored_any_notes_saved():
+    directive = batch_failure_directive(
+        [
+            {
+                "error_code": "VALIDATION_FAILED",
+                "field": "otp_code",
+                "error": "OTP was not sent for this session.",
+                "response_directive": 'Call interview__skip_field(field="otp_code").',
+                "prompt": "Please enter the verification code.",
+            }
+        ],
+        stored_any=True,
+    )
+    user, guidance = directive.split(DIRECTIVE_GUIDANCE_MARKER, 1)
+    assert "saved the other details" in _message(user).lower()
+    assert "then call interview__skip_field" in guidance.lower()
+
+
+def test_batch_failure_directive_complete_reask_not_prompt_prefixed():
+    """Say-crafted OTP re-asks ending in '?' must not get the field prompt prepended."""
+    from jvagent.action.interview.hooks import user_directive_then_tool
+
+    say = user_directive_then_tool(
+        "That code looks incorrect. Should I resend the code to you?",
+        "interview__set_fields",
+    )
+    directive = batch_failure_directive(
+        [
+            {
+                "error_code": "VALIDATION_FAILED",
+                "field": "otp_code",
+                "response_directive": say,
+                "prompt": "Please enter the verification code sent to your email.",
+                "error": "incorrect",
+            }
+        ]
+    )
+    user, guidance = directive.split(DIRECTIVE_GUIDANCE_MARKER, 1)
+    message = _message(user)
+    assert message.startswith("That code looks incorrect.")
+    assert "please enter the verification code" not in message.lower()
+    assert "then call interview__set_fields" in guidance.lower()
+
+
 def test_compose_directives_merges_user_parts_and_chains_calls():
     queue = [
         {

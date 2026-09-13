@@ -37,13 +37,29 @@ def _reason_from_failure(failure: Dict[str, Any]) -> str:
 
 
 def _extra_hint_from_directive(directive: str) -> str:
-    """Author hint after the default paraphrase rules, if the directive has one."""
+    """Author hint after the default paraphrase rules, if the directive has one.
+
+    Preserves a same-line trailing ``Then call …`` instruction (as produced by
+    ``user_directive_then_tool``), which is not newline-separated from the
+    default paraphrase sentence.
+    """
     raw = str(directive or "")
     if DIRECTIVE_GUIDANCE_MARKER not in raw:
         return ""
-    guidance = raw.split(DIRECTIVE_GUIDANCE_MARKER, 1)[1]
+    guidance = raw.split(DIRECTIVE_GUIDANCE_MARKER, 1)[1].strip()
+    then_call = ""
+    lower = guidance.lower()
+    idx = lower.find("then call ")
+    if idx >= 0:
+        then_call = guidance[idx:].strip()
+        guidance = guidance[:idx].rstrip()
     _, _, extra = guidance.partition("\n")
-    return extra.strip()
+    extra = extra.strip()
+    if extra and then_call:
+        if extra.lower().startswith("then call "):
+            return then_call
+        return f"{extra}\n{then_call}"
+    return then_call or extra
 
 
 def _join_directive_parts(parts: List[str]) -> str:
@@ -66,16 +82,28 @@ def _already_contains(haystack: str, needle: str) -> bool:
     return bool(n) and n.lower() in (haystack or "").lower()
 
 
+def _reason_is_complete_reask(reason: str) -> bool:
+    """True when ``reason`` is already a full user-facing question (e.g. OTP).
+
+    Period-terminated short validator fragments ("at least 2 characters.") are
+    not complete re-asks — those still need the field prompt prepended.
+    """
+    text = (reason or "").strip()
+    return bool(text) and text.endswith("?")
+
+
 def _single_field_question(prompt: str, reason: str, label: str) -> str:
     """Ask the field, then the reason — no extra 'I still need a valid X' line."""
-    if prompt and reason and _already_contains(reason, prompt):
+    if reason and (
+        _already_contains(reason, prompt)
+        or _reason_is_complete_reask(reason)
+        or (not prompt and _already_contains(reason, label))
+    ):
         return reason
     if prompt and reason:
         return _join_directive_parts([prompt, reason])
     if prompt:
         return prompt
-    if reason and _already_contains(reason, label):
-        return reason
     if reason:
         return _join_directive_parts([f"Please re-enter your {label}.", reason])
     return f"Please re-enter your {label}."
@@ -98,7 +126,20 @@ def batch_failure_directive(
     )
     original = str(first.get("response_directive") or "").strip()
     if original.lower().startswith("call "):
-        return original
+        if not stored_any:
+            return original
+        # Keep the Call chain, but surface that sibling fields were saved.
+        then = original[0].lower() + original[1:]
+        if then.endswith("."):
+            then_call = f"Then {then}"
+        else:
+            then_call = f"Then {then}."
+        return (
+            "Tell the user or ask the user: I've saved the other details."
+            f"{DIRECTIVE_GUIDANCE_MARKER}"
+            "You may paraphrase slightly but keep the same intent. "
+            f"{then_call}"
+        )
     reason = _reason_from_failure(first)
     prompt = str(first.get("prompt") or "").strip()
     hint = _extra_hint_from_directive(original) or str(first.get("hint") or "").strip()
@@ -106,6 +147,8 @@ def batch_failure_directive(
     if len(names) == 1:
         question = _single_field_question(prompt, reason, names[0])
     elif names:
+        # Multi-field: list every failed field; detail from the first failure only
+        # (one re-ask thread for the model — intentional).
         question = _join_directive_parts(
             [f"I still need valid values for: {', '.join(names)}.", reason]
         )
