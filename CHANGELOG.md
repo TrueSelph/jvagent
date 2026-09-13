@@ -488,6 +488,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc11] - 2026-09-13
+
+### Changed
+
+- **Require `jvspatial==0.0.18`.** Picks up hub-node derive-mode adjacency,
+  neighbour SQL pushdown (`nodes` / `count_nodes` / `nodes_page`), and GIN
+  opt-out. Hosts (Integral and others) must move their jvspatial pin in
+  lockstep — 0.0.17 no longer satisfies the dependency.
+
 ## [0.1.8rc1] - 2026-08-18
 
 ### Added
