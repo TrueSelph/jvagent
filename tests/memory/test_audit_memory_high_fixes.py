@@ -128,9 +128,13 @@ async def test_get_or_create_artifacts_serializes_under_lock(test_db):
             return await conv._get_or_create_artifacts()
 
         branches = await asyncio.gather(_create(), _create(), _create())
-        assert len({id(b) for b in branches}) == 1
+        # Same entity id — not the same Python object. Concurrent waiters each
+        # hydrate via ``nodes()`` after the lock serializes create, so ``id(b)``
+        # can differ while the registry remains singular.
+        assert len({b.id for b in branches}) == 1
         out = await conv.nodes(node=Artifacts, direction="out")
         assert len(out) == 1
+        assert out[0].id == branches[0].id
     finally:
         await conv.delete(cascade=True)
 
