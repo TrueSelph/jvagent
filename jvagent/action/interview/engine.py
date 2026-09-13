@@ -774,6 +774,8 @@ async def handle_set_fields(
                 "validator": check.get("validator"),
                 "response_directive": check.get("response_directive")
                 or validation_guidance_directive(err, question_text=fdef.prompt),
+                "prompt": fdef.prompt or "",
+                "hint": fdef.hint or "",
             }
             failures.append(failure)
             append_directive_event(
@@ -1074,7 +1076,9 @@ async def handle_set_fields(
         first_failure = failures[0]
         payload["status"] = batch_failure_status(failures, stored_any=stored_any)
         # One clean directive from the failure set; per-field errors are in results[].
-        payload["response_directive"] = batch_failure_directive(failures)
+        payload["response_directive"] = batch_failure_directive(
+            failures, stored_any=stored_any
+        )
         system_message = compose_system_message(
             system_queue,
             fallback=str(first_failure.get("system_message") or "").strip(),

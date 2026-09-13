@@ -10,7 +10,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .hooks import user_directive
+from jvagent.action.reply.reply_action import (
+    DIRECTIVE_GUIDANCE_MARKER,
+    user_facing_directive,
+)
+
+from .hooks import append_hint, user_directive, user_followup_directive
 
 
 def batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) -> str:
@@ -23,36 +28,137 @@ def batch_failure_status(failures: List[Dict[str, Any]], *, stored_any: bool) ->
     return "error"
 
 
-def batch_failure_directive(failures: List[Dict[str, Any]]) -> str:
+def _reason_from_failure(failure: Dict[str, Any]) -> str:
+    direct = str(failure.get("response_directive") or "").strip()
+    if direct and not direct.lower().startswith("call "):
+        return _normalize_user_directive_text(user_facing_directive(direct))
+    raw = str(failure.get("error") or "").strip()
+    return _normalize_user_directive_text(user_facing_directive(raw))
+
+
+def _extra_hint_from_directive(directive: str) -> str:
+    """Author hint after the default paraphrase rules, if the directive has one.
+
+    Preserves a same-line trailing ``Then call …`` instruction (as produced by
+    ``user_directive_then_tool``), which is not newline-separated from the
+    default paraphrase sentence.
+    """
+    raw = str(directive or "")
+    if DIRECTIVE_GUIDANCE_MARKER not in raw:
+        return ""
+    guidance = raw.split(DIRECTIVE_GUIDANCE_MARKER, 1)[1].strip()
+    then_call = ""
+    lower = guidance.lower()
+    idx = lower.find("then call ")
+    if idx >= 0:
+        then_call = guidance[idx:].strip()
+        guidance = guidance[:idx].rstrip()
+    _, _, extra = guidance.partition("\n")
+    extra = extra.strip()
+    if extra and then_call:
+        if extra.lower().startswith("then call "):
+            return then_call
+        return f"{extra}\n{then_call}"
+    return then_call or extra
+
+
+def _join_directive_parts(parts: List[str]) -> str:
+    message = ""
+    for part in parts:
+        text = str(part or "").strip()
+        if not text:
+            continue
+        if not message:
+            message = text
+            continue
+        if message[-1] not in ".!?":
+            message += "."
+        message += f" {text}"
+    return message
+
+
+def _already_contains(haystack: str, needle: str) -> bool:
+    n = (needle or "").strip().rstrip(".!?")
+    return bool(n) and n.lower() in (haystack or "").lower()
+
+
+def _reason_is_complete_reask(reason: str) -> bool:
+    """True when ``reason`` is already a full user-facing question (e.g. OTP).
+
+    Period-terminated short validator fragments ("at least 2 characters.") are
+    not complete re-asks — those still need the field prompt prepended.
+    """
+    text = (reason or "").strip()
+    return bool(text) and text.endswith("?")
+
+
+def _single_field_question(prompt: str, reason: str, label: str) -> str:
+    """Ask the field, then the reason — no extra 'I still need a valid X' line."""
+    if reason and (
+        _already_contains(reason, prompt)
+        or _reason_is_complete_reask(reason)
+        or (not prompt and _already_contains(reason, label))
+    ):
+        return reason
+    if prompt and reason:
+        return _join_directive_parts([prompt, reason])
+    if prompt:
+        return prompt
+    if reason:
+        return _join_directive_parts([f"Please re-enter your {label}.", reason])
+    return f"Please re-enter your {label}."
+
+
+def batch_failure_directive(
+    failures: List[Dict[str, Any]], *, stored_any: bool = False
+) -> str:
     if not failures:
         return user_directive("Please share the missing information for this process.")
-    if len(failures) == 1:
-        direct = str(failures[0].get("response_directive") or "").strip()
-        if direct:
-            return direct
     names = [
         str(f.get("field") or "").strip().replace("_", " ")
         for f in failures
         if f.get("error_code") == "VALIDATION_FAILED"
         and str(f.get("field") or "").strip()
     ]
-    fields_text = ", ".join(name for name in names if name)
-    user_error = next(
-        (
-            str(f.get("error") or "").strip()
-            for f in failures
-            if f.get("error_code") == "VALIDATION_FAILED"
-            and str(f.get("error") or "").strip()
-        ),
-        "",
+    first = next(
+        (f for f in failures if f.get("error_code") == "VALIDATION_FAILED"),
+        failures[0],
     )
-    if fields_text:
-        message = f"I still need valid values for: {fields_text}."
+    original = str(first.get("response_directive") or "").strip()
+    if original.lower().startswith("call "):
+        if not stored_any:
+            return original
+        # Keep the Call chain, but surface that sibling fields were saved.
+        then = original[0].lower() + original[1:]
+        if then.endswith("."):
+            then_call = f"Then {then}"
+        else:
+            then_call = f"Then {then}."
+        return (
+            "Tell the user or ask the user: I've saved the other details."
+            f"{DIRECTIVE_GUIDANCE_MARKER}"
+            "You may paraphrase slightly but keep the same intent. "
+            f"{then_call}"
+        )
+    reason = _reason_from_failure(first)
+    prompt = str(first.get("prompt") or "").strip()
+    hint = _extra_hint_from_directive(original) or str(first.get("hint") or "").strip()
+
+    if len(names) == 1:
+        question = _single_field_question(prompt, reason, names[0])
+    elif names:
+        # Multi-field: list every failed field; detail from the first failure only
+        # (one re-ask thread for the model — intentional).
+        question = _join_directive_parts(
+            [f"I still need valid values for: {', '.join(names)}.", reason]
+        )
     else:
-        message = "I still need a bit more information to continue."
-    if user_error:
-        message = f"{message} {user_error}"
-    return user_directive(message)
+        question = reason or "I still need a bit more information to continue."
+
+    if stored_any:
+        directive = user_followup_directive("I've saved the other details.", question)
+        return append_hint(directive, hint) if hint else directive
+    return user_directive(question, hint=hint)
 
 
 def append_directive_event(
