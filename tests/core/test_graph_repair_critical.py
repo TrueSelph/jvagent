@@ -1,4 +1,4 @@
-"""Graph repair cursor serialization and per-node edge sync (C3/C4)."""
+"""Graph repair cursor serialization and removed sync-phase resume."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ import pytest
 from jvagent.core import graph_repair_job
 from jvagent.core.repair_phases.types import (
     PH_ORPHANS_INTERACTION,
+    PH_ORPHANS_LIST_NODES,
     PH_ORPHANS_REATTACH,
     PH_SYNC_APPLY,
+    PH_SYNC_PREPARE,
     RepairLimits,
 )
 
@@ -97,73 +99,51 @@ async def test_reattach_ctx_released_when_repair_state_restarts():
 
 
 @pytest.mark.asyncio
-async def test_sync_apply_queries_expected_edges_per_node():
-    node_a = "n.Node.a"
-    node_b = "n.Node.b"
-    edge_a1 = "e.edge.a1"
-    edge_b1 = "e.edge.b1"
-    run_id = "run-sync"
-
-    page_nodes = [
-        {"id": node_a, "edges": []},
-        {"id": node_b, "edges": []},
-    ]
-    prefix_calls = []
-
-    async def _scratch_page(_db, _rid, kind, after_key, limit):
-        if kind == "valid_edge":
-            if after_key is None:
-                return [{"key": edge_a1}]
-            return [{"key": edge_b1}]
-        return []
-
-    async def _scratch_page_key_prefix(_db, _rid, kind, key_prefix, after_key, limit):
-        prefix_calls.append(key_prefix)
-        if key_prefix == f"{node_a}|":
-            return [{"key": f"{node_a}|{edge_a1}"}]
-        if key_prefix == f"{node_b}|":
-            return [{"key": f"{node_b}|{edge_b1}"}]
-        return []
-
-    node_objs = {
-        node_a: SimpleNamespace(id=node_a, edge_ids=[]),
-        node_b: SimpleNamespace(id=node_b, edge_ids=[]),
-    }
-    for n in node_objs.values():
-        n.save = AsyncMock()
-
-    context = SimpleNamespace(database=object())
-
-    async def _deserialize(_cls, data):
-        return node_objs[data["id"]]
-
-    context._deserialize_entity = AsyncMock(side_effect=_deserialize)
-
+@pytest.mark.parametrize(
+    "legacy_phase", [PH_SYNC_PREPARE, PH_SYNC_APPLY, "sync_prepare", "sync_apply"]
+)
+async def test_legacy_sync_phase_advances_to_orphans(legacy_phase):
+    """In-flight repairs stuck on removed sync phases skip to orphans."""
+    run_id = "run-skip-sync"
     state = {
-        "dry_run": False,
-        "phase": PH_SYNC_APPLY,
-        "cursor": {"last_node_id": "", "run_id": run_id},
-        "result": {"node_edge_ids_synced": 0},
+        "dry_run": True,
+        "phase": legacy_phase,
+        "cursor": {"last_edge_id": "e.old", "run_id": run_id},
+        "result": graph_repair_job._new_result_counters(),
+        "run_id": run_id,
+        "stall_count": 0,
     }
-    limits = RepairLimits(batch_size=10, max_seconds=5)
+    limits = RepairLimits(batch_size=10, max_seconds=1)
 
     with (
         patch.object(
-            graph_repair_job, "_find_nodes_page", new=AsyncMock(return_value=page_nodes)
-        ),
-        patch(
-            "jvagent.core.repair_scratch.scratch_page",
-            new=AsyncMock(side_effect=_scratch_page),
-        ),
-        patch(
-            "jvagent.core.repair_scratch.scratch_page_key_prefix",
-            new=AsyncMock(side_effect=_scratch_page_key_prefix),
-        ),
+            graph_repair_job,
+            "_tick_orphans_list_nodes",
+            new=AsyncMock(return_value=True),
+        ) as orphans_tick,
+        patch.object(graph_repair_job, "_repair_checkpoint", new=AsyncMock()),
     ):
-        await graph_repair_job._tick_sync_apply(context, state, limits)
+        await graph_repair_job.run_repair_session(state, limits)
 
-    assert f"{node_a}|" in prefix_calls
-    assert f"{node_b}|" in prefix_calls
-    assert node_objs[node_a].edge_ids == [edge_a1]
-    assert node_objs[node_b].edge_ids == [edge_b1]
-    assert state["result"]["node_edge_ids_synced"] == 2
+    orphans_tick.assert_awaited_once()
+    # Mocked tick does not advance; phase must have left the removed sync step.
+    assert state["phase"] == PH_ORPHANS_LIST_NODES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_phase", [PH_SYNC_PREPARE, PH_SYNC_APPLY])
+async def test_state_from_dict_skips_legacy_sync_phase(legacy_phase):
+    payload = {
+        "v": graph_repair_job.STATE_VERSION,
+        "phase": legacy_phase,
+        "cursor": {"last_edge_id": "e.old", "run_id": "run-load"},
+        "result": graph_repair_job._new_result_counters(),
+        "dry_run": False,
+        "run_id": "run-load",
+        "stall_count": 0,
+    }
+    state = graph_repair_job.state_from_dict(
+        payload, dry_run=False, recent_minutes=None
+    )
+    assert state["phase"] == PH_ORPHANS_LIST_NODES
+    assert state["cursor"].get("run_id") == "run-load"

@@ -619,7 +619,6 @@ export function GraphViewer({ onClose, isEmbedded = false }: GraphViewerProps) {
       ['dead_edges_removed', 'dead edge(s) removed'],
       ['orphaned_nodes_reattached', 'orphan(s) reattached'],
       ['orphaned_nodes_deleted', 'orphan(s) deleted'],
-      ['node_edge_ids_synced', 'node(s) edge_ids synced'],
       ['duplicate_edges_removed', 'duplicate edge(s) removed'],
       ['interactions_pruned', 'interaction(s) pruned (rolling limit)'],
     ]
