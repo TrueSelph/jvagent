@@ -68,7 +68,6 @@ class TestGraphRepair:
         assert "dead_edges_removed" in result
         assert "orphaned_nodes_reattached" in result
         assert "orphaned_nodes_deleted" in result
-        assert "node_edge_ids_synced" in result
         assert "duplicate_edges_removed" in result
         assert "interactions_pruned" in result
         assert "message" in result

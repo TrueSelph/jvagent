@@ -488,6 +488,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc12] - 2026-09-14
+
+### Changed
+
+- **jvspatial 0.0.19** — derive-only node adjacency. Graph repair no longer
+  runs `PH_SYNC_PREPARE` / `PH_SYNC_APPLY` (those phases skip to orphans on
+  mid-upgrade resume). Dup-apply and `RepairState.finish` no longer mutate
+  `Node.edge_ids`. Response field `node_edge_ids_synced` dropped from the
+  graph-repair endpoint and GraphViewer summary. Pin `jvspatial==0.0.19`.
+
 ## [0.1.8rc11] - 2026-09-13
 
 ### Changed

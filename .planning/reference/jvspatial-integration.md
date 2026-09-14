@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.17`.
+- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.19`.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
@@ -25,7 +25,7 @@ Object  ── persistence-capable Pydantic-style base
 ```
 
 - `Object` (`jvspatial/core/entities/object.py:19`) — base persistence-capable class with id, entity type, graph context. All entity types inherit. Pydantic-aware.
-- `Node` (`jvspatial/core/entities/node.py:34`) — graph node. Holds `edge_ids: List[str]`, optional `visitor`, `@on_visit` hook registration. Subclass for graph entities.
+- `Node` (`jvspatial/core/entities/node.py:34`) — graph node. Adjacency is derive-only (no persisted `edge_ids`); optional `visitor`, `@on_visit` hook registration. Subclass for graph entities. Graph repair must not rewrite node adjacency lists (jvspatial ≥0.0.19 removed sync phases).
 - `Edge` (`jvspatial/core/entities/edge.py:29`) — relationship. Has `source`/`target` Node IDs. Directional or bidirectional.
 - `Walker` (`jvspatial/core/entities/walker.py:83`) — traversal agent. Visit queue + trail. Built-in protection: `max_steps=10000`, `max_visits_per_node=100`, `max_execution_time=300s`, `max_queue_size=1000`.
 - `Root` (`jvspatial/core/entities/root.py:11`) — singleton; id fixed at `"n.Root.root"`. Created once.
@@ -171,7 +171,7 @@ Things jvagent **owns**:
 
 ## 5. Version policy
 
-- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.17`.
+- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.19`.
 - When jvspatial introduces breaking changes (e.g., walker API rename, persistence shape change), bump the pin and update this section.
 - When adding a new dependency on a jvspatial feature, document the symbol + version it was introduced in. Helps downstream consumers know the floor.
 - Rationale: [`adr/0006-jvspatial-dependency.md`](../adr/0006-jvspatial-dependency.md).

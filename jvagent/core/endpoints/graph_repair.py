@@ -46,9 +46,6 @@ from jvagent.core.graph_repair import repair_agent_graph
             "orphaned_nodes_deleted": ResponseField(
                 field_type=int, description="Orphan nodes deleted"
             ),
-            "node_edge_ids_synced": ResponseField(
-                field_type=int, description="Nodes with edge_ids synced"
-            ),
             "duplicate_edges_removed": ResponseField(
                 field_type=int, description="Duplicate edges removed"
             ),
@@ -188,7 +185,7 @@ async def graph_repair_state() -> Dict[str, Any]:
     db = get_default_context().database
     scratch_rows = 0
     if rs.run_id:
-        for kind in ("all_node_id", "bfs_seen", "node_edge", "valid_edge", "edge_pair"):
+        for kind in ("all_node_id", "bfs_seen", "edge_pair"):
             scratch_rows += await scratch_count(db, rs.run_id, kind)
 
     return {
