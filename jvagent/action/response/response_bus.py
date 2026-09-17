@@ -443,6 +443,47 @@ class ResponseBus:
             if not (stream and not streaming_complete):
                 content = scrub_text(content, _egress_parameters(interaction))
 
+        # ``Interaction.emitted`` is the framework's single-egress latch
+        # (ADR-0025). A live user stream may continue after its first chunk set
+        # the latch, but every separate non-transient user publish is rejected
+        # here at the delivery choke point. Consumers should never need to
+        # compare reply text or repair duplicate bubbles.
+        active_user_stream = bool(
+            stream and interaction_id and interaction_id in self._adhoc_accumulation
+        )
+        has_emitted = getattr(interaction, "has_emitted", None)
+        already_emitted = False
+        if callable(has_emitted):
+            try:
+                already_emitted = has_emitted() is True
+            except Exception:
+                already_emitted = False
+        if (
+            message_category == "user"
+            and not transient
+            and interaction is not None
+            and content
+            and already_emitted
+            and not active_user_stream
+        ):
+            logger.debug(
+                "response bus: suppressed second user egress for interaction %s",
+                interaction_id or getattr(interaction, "id", ""),
+            )
+            return ResponseMessage(
+                session_id=session_id,
+                user_id=user_id or "",
+                interaction_id=interaction_id or "",
+                content="",
+                channel=channel,
+                message_type="adhoc",
+                metadata=metadata or {},
+                timestamp=now,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
+            )
+
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
             message = ResponseMessage(
@@ -621,6 +662,14 @@ class ResponseBus:
                         thought_type=thought_type,
                         segment_id=message_segment_id,
                     )
+                # The first byte delivered owns this turn's user egress.
+                if (
+                    message_category == "user"
+                    and not transient
+                    and interaction is not None
+                    and hasattr(interaction, "mark_emitted")
+                ):
+                    interaction.mark_emitted()
                 # Emit chunk to subscribers only
                 chunk_message = ResponseMessage(
                     id=acc.message_id,
@@ -646,6 +695,13 @@ class ResponseBus:
             # a real chunk — a client that renders progressively from chunks
             # would otherwise never show the last sentence.
             if governed and content:
+                if (
+                    message_category == "user"
+                    and not transient
+                    and interaction is not None
+                    and hasattr(interaction, "mark_emitted")
+                ):
+                    interaction.mark_emitted()
                 tail_meta = dict(metadata or {})
                 tail_meta["sequence"] = len(acc.chunks)
                 tail_message = ResponseMessage(

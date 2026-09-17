@@ -27,6 +27,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **ResponseBus now enforces the single-egress latch.** The first delivered
+  non-transient user stream chunk marks its `Interaction` as emitted, active
+  chunks may finish that same stream, and any later independent user publish
+  for the turn is suppressed at the framework delivery boundary. This fixes
+  duplicate assistant bubbles without requiring consumers to compare or
+  normalize response text.
+
 - **Defaults that permit long-running, deep-thinking models (#214).** Three
   shipped defaults combined to end a reasoning model's turn before it could
   answer, and the user-facing text ("I got stuck repeating a step") pointed at
