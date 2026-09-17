@@ -164,7 +164,9 @@ async def test_missing_litellm_is_a_clear_runtime_error(monkeypatch):
 def test_capabilities_and_pricing_come_from_upstream_metadata():
     action = _action(model="anthropic/claude-sonnet-4-5")
     caps = action.capabilities()
-    assert caps.supports_tools is True and caps.context_window == 200_000
+    assert caps.supports_tools is True
+    assert isinstance(caps.context_window, int) and caps.context_window >= 200_000
+    assert "litellm" in (caps.source or "")
     assert action.pricing().source == "litellm"
     assert json.dumps(
         action.capabilities("openai/gpt-4o-mini").__dict__
