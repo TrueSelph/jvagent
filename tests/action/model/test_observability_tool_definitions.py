@@ -1,11 +1,10 @@
-"""Tool definitions on the ``model_call`` event are opt-in; names are not.
+"""Tool definitions on the ``model_call`` event: first unique surface, then names.
 
 The full JSON Schemas are what a debug UI needs to replay a request exactly,
-but they are byte-identical on every tick of an agentic turn, so writing them
-into each event persists the same payload once per tick per interaction.
-``telemetry_tool_definitions`` gates them; the tool names ride along always
-because they cost a handful of bytes and answer most "what was on the surface?"
-questions on their own.
+but they are byte-identical on every tick of an agentic turn. The first
+``model_call`` of a unique ``tool_names`` set stores them; later ticks of the
+same surface keep names only. ``telemetry_tool_definitions`` still stores
+schemas on every tick. Tool names ride along always.
 """
 
 from __future__ import annotations
@@ -46,9 +45,20 @@ TOOLS = [
     },
 ]
 
+OTHER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
 
-def _result():
-    return SimpleNamespace(
+
+def _result(**overrides):
+    data = dict(
         system="s",
         prompt="p",
         history=[],
@@ -62,38 +72,88 @@ def _result():
         finish_reason="stop",
         tool_calls=None,
         tools=TOOLS,
+        temperature=None,
+        max_tokens=None,
+        tool_choice=None,
+        parallel_tool_calls=None,
         _usage_estimated=False,
     )
+    data.update(overrides)
+    return SimpleNamespace(**data)
 
 
-async def _emit(action):
-    interaction = MagicMock()
-    interaction.observability_metrics = []
-    interaction.save = AsyncMock()
+async def _emit(action, interaction=None, result=None):
+    if interaction is None:
+        interaction = MagicMock()
+        interaction.observability_metrics = []
+        interaction.save = AsyncMock()
     await action._emit_observability(
-        interaction, {"total_tokens": 2}, 0.1, result=_result()
+        interaction, {"total_tokens": 2}, 0.1, result=result or _result()
     )
-    return interaction.observability_metrics[0]["data"]
+    return interaction
 
 
-async def test_definitions_are_omitted_by_default_but_names_are_kept():
-    data = await _emit(_Stub())
-    assert "tools" not in data
-    assert data["tool_names"] == ["reply", "update_plan"]
+async def test_first_tick_stores_tools_and_later_same_surface_keeps_names_only():
+    action = _Stub()
+    interaction = await _emit(action)
+    first = interaction.observability_metrics[0]["data"]
+    assert first["tools"] == TOOLS
+    assert first["tool_names"] == ["reply", "update_plan"]
+
+    await _emit(action, interaction=interaction)
+    second = interaction.observability_metrics[1]["data"]
+    assert "tools" not in second
+    assert second["tool_names"] == ["reply", "update_plan"]
 
 
-async def test_definitions_are_stored_when_the_knob_is_on():
+async def test_a_new_tool_surface_stores_tools_again():
+    action = _Stub()
+    interaction = await _emit(action)
+    await _emit(action, interaction=interaction, result=_result(tools=OTHER_TOOLS))
+    third_surface = interaction.observability_metrics[1]["data"]
+    assert third_surface["tools"] == OTHER_TOOLS
+    assert third_surface["tool_names"] == ["search"]
+
+
+async def test_definitions_are_stored_on_every_tick_when_the_knob_is_on():
     action = _Stub()
     action.telemetry_tool_definitions = True
-    data = await _emit(action)
-    assert data["tools"] == TOOLS
-    assert data["tool_names"] == ["reply", "update_plan"]
+    interaction = await _emit(action)
+    await _emit(action, interaction=interaction)
+    assert interaction.observability_metrics[0]["data"]["tools"] == TOOLS
+    assert interaction.observability_metrics[1]["data"]["tools"] == TOOLS
+
+
+async def test_generation_params_are_recorded_when_present():
+    data = (
+        await _emit(
+            _Stub(),
+            result=_result(
+                temperature=0.2,
+                max_tokens=1024,
+                tool_choice="auto",
+                parallel_tool_calls=False,
+            ),
+        )
+    ).observability_metrics[0]["data"]
+    assert data["temperature"] == 0.2
+    assert data["max_tokens"] == 1024
+    assert data["tool_choice"] == "auto"
+    assert data["parallel_tool_calls"] is False
+
+
+async def test_generation_params_are_omitted_when_unset():
+    data = (await _emit(_Stub())).observability_metrics[0]["data"]
+    assert "temperature" not in data
+    assert "max_tokens" not in data
+    assert "tool_choice" not in data
+    assert "parallel_tool_calls" not in data
 
 
 async def test_request_model_is_recorded_beside_the_resolved_model():
     """``model`` is what the provider answered with; ``request_model`` is what
     the agent asked for, and only the latter can be replayed."""
-    data = await _emit(_Stub())
+    data = (await _emit(_Stub())).observability_metrics[0]["data"]
     assert data["model"] == "gpt-4.1-2025-04-14"
     assert data["request_model"] == "openai/gpt-4.1"
 
