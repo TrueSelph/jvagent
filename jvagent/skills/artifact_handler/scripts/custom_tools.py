@@ -990,6 +990,7 @@ async def ingest_document(ctx) -> Dict[str, Any]:
             "notified": False,
             "job_id": job_id or None,
             "status": "queued",
+            "file_url": url_arg,
         }
         if pending_q:
             entry["pending_question"] = pending_q
@@ -1000,6 +1001,7 @@ async def ingest_document(ctx) -> Dict[str, Any]:
                 "doc_name": doc_name,
                 "status": "queued",
                 "submitted_at": now,
+                "file_url": url_arg,
             }
             if pending_q:
                 pending_entry["pending_question"] = pending_q

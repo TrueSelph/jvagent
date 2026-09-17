@@ -634,6 +634,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                         "notified": False,
                         "job_id": job_id or None,
                         "status": "queued",
+                        "file_url": ingest_url,
                     }
                     if pq:
                         entry["pending_question"] = pq
@@ -643,6 +644,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                             "doc_name": doc_name,
                             "status": "queued",
                             "submitted_at": now,
+                            "file_url": ingest_url,
                         }
                         if pq:
                             pending_entry["pending_question"] = pq
@@ -1023,11 +1025,13 @@ class ArtifactHandlerInteractAction(InteractAction):
         agent_id: str,
         pending_question: Optional[str] = None,
         filename: Optional[str] = None,
+        file_url: Optional[str] = None,
     ) -> None:
         if not job_id:
             return
         question = (pending_question or "").strip() or None
         display_name = (filename or "").strip() or None
+        saved_url = (file_url or "").strip() or None
         index = dict(self.jvforge_job_index or {})
         index[job_id] = {
             "job_id": job_id,
@@ -1041,6 +1045,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             "submitted_at": _utc_iso(),
             "notified": False,
             "pending_question": question,
+            "file_url": saved_url or "",
         }
         self.jvforge_job_index = index
         try:
@@ -1198,6 +1203,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 agent_id=agent_id,
                 pending_question=pending_question,
                 filename=filename,
+                file_url=file_url,
             )
         return result
 

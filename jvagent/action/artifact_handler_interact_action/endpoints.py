@@ -18,7 +18,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -183,26 +183,158 @@ def _friendly_file_phrase(display_doc: str) -> str:
     return f"your {kind} '{name}'"
 
 
-def _format_search_excerpts(results: Any) -> str:
-    """Turn PageIndex search results into plain text for the LLM prompt."""
-    if not results:
+_READY_DOC_TEXT_MAX_CHARS = 12000
+
+
+def _format_content_parts(rows: Any) -> str:
+    """Turn PageIndex rows or chunks into plain text for the LLM prompt."""
+    if not rows:
         return ""
-    if isinstance(results, dict):
-        results = results.get("results") or results.get("documents") or []
-    if not isinstance(results, list):
-        return str(results)
+    if isinstance(rows, dict):
+        rows = rows.get("results") or rows.get("documents") or rows.get("chunks") or []
+    if not isinstance(rows, list):
+        return str(rows)
     parts: List[str] = []
-    for r in results:
+    for r in rows:
         if not isinstance(r, dict):
             parts.append(str(r))
             continue
-        content = r.get("content") or r.get("text") or r.get("title") or ""
+        content = str(
+            r.get("content")
+            or r.get("text")
+            or r.get("summary")
+            or r.get("title")
+            or ""
+        ).strip()
         title = str(r.get("title") or "").strip()
-        if title and content:
+        if title and content and title != content:
             parts.append(f"- [{title}] {content}")
         elif content:
             parts.append(f"- {content}")
     return "\n".join(parts)
+
+
+def _format_search_excerpts(results: Any) -> str:
+    """Turn PageIndex search results into plain text for the LLM prompt."""
+    return _format_content_parts(results)
+
+
+def _useful_source_text(text: str) -> bool:
+    """True when text can ground an answer (not empty / placeholder)."""
+    s = (text or "").strip()
+    if not s:
+        return False
+    lowered = s.lower()
+    if lowered in ("(no excerpts retrieved)", "(search failed)"):
+        return False
+    return True
+
+
+def _truncate_ready_text(text: str, max_chars: int = _READY_DOC_TEXT_MAX_CHARS) -> str:
+    """Cap document text so a large PDF cannot blow the notify prompt."""
+    s = (text or "").strip()
+    if max_chars <= 0 or len(s) <= max_chars:
+        return s
+    cut = s[:max_chars]
+    nl = cut.rfind("\n")
+    if nl >= max_chars // 2:
+        cut = cut[:nl]
+    return cut.rstrip() + "\n…"
+
+
+def _empty_content_ready_message(display_doc: str, pending_question: str) -> str:
+    """Ready notice when PageIndex has no readable body for the pending question."""
+    type_word = _file_type_word(display_doc)
+    if _should_quote_filename(display_doc):
+        phrase = _friendly_file_phrase(display_doc)
+        lead = f"{phrase[0].upper()}{phrase[1:]} is ready"
+    else:
+        lead = f"Your {type_word} is ready"
+    question = (pending_question or "").strip()
+    if question:
+        return f"{lead}. You asked: {question}. " "I couldn't read any content from it."
+    return f"{lead}. I couldn't read any content from it."
+
+
+def _pageindex_collection(agent: Any, page_index: Any = None) -> str:
+    """Collection name for the ready document (typically agent id)."""
+    if page_index is not None:
+        try:
+            collection = str(page_index.resolve_collection() or "").strip()
+            if collection:
+                return collection
+        except Exception:
+            collection = str(getattr(page_index, "agent_id", "") or "").strip()
+            if collection:
+                return collection
+    return str(getattr(agent, "id", "") or "").strip()
+
+
+async def _load_document_content(
+    agent: Any,
+    internal_doc_name: str,
+    page_index: Any = None,
+) -> Tuple[str, bool]:
+    """Load PageIndex chunk text for a known doc_name.
+
+    Returns ``(text, loaded)``. ``loaded`` is True when the chunk list call
+    succeeded (even if the body is empty).
+    """
+    name = (internal_doc_name or "").strip()
+    if not name:
+        return "", False
+    try:
+        from jvagent.action.pageindex.documents import list_document_chunks
+    except Exception:
+        return "", False
+    collection = _pageindex_collection(agent, page_index)
+    if not collection:
+        return "", False
+    try:
+        out = await list_document_chunks(name, collection, per_page=0)
+    except Exception:
+        return "", False
+    text = _truncate_ready_text(_format_content_parts(out))
+    return text, True
+
+
+async def _search_document_content(
+    page_index: Any,
+    query: str,
+    internal_doc_name: str,
+) -> Tuple[str, bool]:
+    """Scoped PageIndex search; supplement when chunk load is empty."""
+    if page_index is None or not (internal_doc_name or "").strip():
+        return "", False
+    q = (query or "").strip() or internal_doc_name
+    try:
+        results = await page_index.search(
+            query=q,
+            doc_name=internal_doc_name,
+            access_control=False,
+        )
+    except Exception:
+        return "", False
+    text = _truncate_ready_text(_format_search_excerpts(results))
+    return text, True
+
+
+async def _ready_document_text(
+    agent: Any,
+    page_index: Any,
+    internal_doc_name: str,
+    query: str,
+) -> Tuple[str, bool]:
+    """Document body for a ready-notify answer: chunks first, search if empty."""
+    text, loaded = await _load_document_content(agent, internal_doc_name, page_index)
+    if _useful_source_text(text):
+        return text, True
+    search_text, searched = await _search_document_content(
+        page_index, query, internal_doc_name
+    )
+    if _useful_source_text(search_text):
+        return search_text, True
+    return "", loaded or searched
 
 
 async def _doc_description_lookup(
@@ -729,31 +861,36 @@ async def _generate_ready_message(
     utterance: str,
     doc_description: Optional[str] = None,
 ) -> Optional[str]:
-    """One PageIndex search + one call_model for a single notification message.
+    """One ready notification: load the ingested document + call_model.
 
     When the user had a pending question, the reply must: (1) say ready,
-    (2) remind them of the question, (3) answer from excerpts. Returns
+    (2) remind them of the question, (3) answer from PageIndex document
+    content (chunks first; search only if chunks are empty). Returns
     generated text, or None on failure.
     """
-    page_index = await agent.get_action_by_type("PageIndexAction")
-    if page_index is None:
-        return None
-
-    try:
-        results = await page_index.search(
-            query=utterance,
-            doc_name=internal_doc_name,
-            access_control=False,
-        )
-    except Exception:
-        return None
-
-    excerpts = _format_search_excerpts(results)
-    if not excerpts.strip():
-        excerpts = "(no excerpts retrieved)"
-
     kind = _file_kind_label(display_doc)
+    has_question = bool((utterance or "").strip())
     type_word = _file_type_word(display_doc)
+
+    page_index = None
+    try:
+        page_index = await agent.get_action_by_type("PageIndexAction")
+    except Exception:
+        page_index = None
+
+    source_text = ""
+    if has_question:
+        if not (internal_doc_name or "").strip():
+            return None
+        source_text, reached_pageindex = await _ready_document_text(
+            agent, page_index, internal_doc_name, utterance
+        )
+        if not _useful_source_text(source_text):
+            if reached_pageindex:
+                return _empty_content_ready_message(display_doc, utterance)
+            return None
+    elif page_index is None:
+        return None
 
     name_guidance = (
         f"The filename is '{display_doc}'. Refer to the document using "
@@ -763,7 +900,6 @@ async def _generate_ready_message(
         f"use the type word only and do not quote the filename."
     )
 
-    has_question = bool((utterance or "").strip())
     system_parts = [
         "You write a single concise reply. Follow these rules exactly:",
         f"- Briefly state that the {kind} is ready (e.g. 'Your {type_word} is ready'). {name_guidance} Never call it a 'file'.",
@@ -773,10 +909,12 @@ async def _generate_ready_message(
             [
                 "- Then remind the user of their pending question by quoting or "
                 "briefly paraphrasing it (e.g. 'You asked about …').",
-                "- Then answer that question using only the provided excerpts. "
+                "- Then answer that question using the provided document content. "
                 "Keep the answer short — one or two sentences.",
                 "- Structure the message in that exact order: (1) ready notice, "
                 "(2) remind them of their question, (3) the answer.",
+                "- Never invent facts. Do not mention excerpts, search, or "
+                "processing internals.",
             ]
         )
     else:
@@ -784,12 +922,8 @@ async def _generate_ready_message(
             "- The user did NOT ask a content question. Just say the document "
             "is ready and invite them to ask. Do not invent an answer."
         )
-    system_parts.extend(
-        [
-            "- Never invent facts. If the excerpts do not contain the answer, say so simply.",
-            "- No greetings, no corporate closers, no filler.",
-        ]
-    )
+        system_parts.append("- Never invent facts.")
+    system_parts.append("- No greetings, no corporate closers, no filler.")
     if doc_description:
         system_parts.append(
             f"- The document description is: {doc_description}. You may briefly reference this."
@@ -806,7 +940,7 @@ async def _generate_ready_message(
     if has_question:
         user_parts.append(f"\nUser pending question: {utterance}")
         user_parts.append(
-            f"\nSearch excerpts for doc_name={internal_doc_name!r}:\n{excerpts}"
+            f"\nDocument content for doc_name={internal_doc_name!r}:\n{source_text}"
         )
         user_parts.append(
             "\nWrite one short message: ready → remind question → answer."
@@ -836,43 +970,73 @@ async def _generate_ready_message_multi(
 ) -> Optional[str]:
     """Generate a consolidated ready message for multiple documents.
 
-    Searches each doc that has a pending_question, then builds a single
-    call_model prompt covering all docs. Falls back to None on failure.
+    Loads each ready doc's PageIndex chunks (search only if chunks are
+    empty). Falls back to None on failure.
     """
     if not ready_entries:
         return None
 
     display_docs: List[str] = []
     doc_kinds: List[str] = []
-    search_parts: List[str] = []
+    content_parts: List[str] = []
     questions: List[str] = []
+    any_content = False
+    any_reached = False
 
-    page_index = await agent.get_action_by_type("PageIndexAction")
+    page_index = None
+    try:
+        page_index = await agent.get_action_by_type("PageIndexAction")
+    except Exception:
+        page_index = None
 
     for entry in ready_entries:
         internal = str(entry.get("internal_doc_name") or "").strip()
         display = str(entry.get("display_doc") or "").strip() or "your document"
         pq = str(entry.get("pending_question") or "").strip()
+        kind = _file_kind_label(display)
 
         display_docs.append(display)
-        doc_kinds.append(_file_kind_label(display))
+        doc_kinds.append(kind)
 
-        if page_index is not None and pq and internal:
-            try:
-                results = await page_index.search(
-                    query=pq,
-                    doc_name=internal,
-                    access_control=False,
-                )
-                excerpts = _format_search_excerpts(results)
-                if not excerpts.strip():
-                    excerpts = "(no excerpts retrieved)"
-            except Exception:
-                excerpts = "(search failed)"
-            search_parts.append(f"doc_name={internal!r} ({display}):\n{excerpts}")
-            questions.append(f"- About {display}: {pq}")
+        if not pq:
+            continue
+
+        questions.append(f"- About {display}: {pq}")
+        source_text = ""
+        reached = False
+        if internal:
+            source_text, reached = await _ready_document_text(
+                agent, page_index, internal, pq
+            )
+            any_reached = any_reached or reached
+        if _useful_source_text(source_text):
+            any_content = True
+            content_parts.append(f"doc_name={internal!r} ({display}):\n{source_text}")
 
     if not display_docs:
+        return None
+
+    if questions and not any_content:
+        if any_reached and len(display_docs) == 1:
+            return _empty_content_ready_message(
+                display_docs[0],
+                str(ready_entries[0].get("pending_question") or "").strip(),
+            )
+        if any_reached:
+            asked = "; ".join(
+                str(e.get("pending_question") or "").strip()
+                for e in ready_entries
+                if str(e.get("pending_question") or "").strip()
+            )
+            type_words = [f"your {_file_type_word(d)}" for d in display_docs]
+            if len(type_words) == 2:
+                joined = f"{type_words[0]} and {type_words[1]}"
+            else:
+                joined = ", ".join(type_words[:-1]) + f", and {type_words[-1]}"
+            lead = f"{joined[0].upper()}{joined[1:]} are ready"
+            if asked:
+                return f"{lead}. You asked: {asked}. I couldn't read any content from them."
+            return f"{lead}. I couldn't read any content from them."
         return None
 
     kinds_label = (
@@ -912,17 +1076,22 @@ async def _generate_ready_message_multi(
             [
                 "- Then remind the user of each pending question by quoting or "
                 "briefly paraphrasing it (e.g. 'You asked about …').",
-                "- Then answer each pending question using only the provided "
-                "excerpts. A few short sentences is fine.",
+                "- Then answer each pending question using the provided document "
+                "content. A few short sentences is fine.",
                 "- Structure the message in that exact order: (1) ready notice, "
                 "(2) remind them of their question(s), (3) the answer(s).",
             ]
         )
+        facts_rule = (
+            "- Never invent facts. Do not mention excerpts, search, or "
+            "processing internals."
+        )
     else:
         system_parts.append(
             "- No pending questions. Just the ready notice and invite them to ask. "
-            "Do not invent answers from excerpts."
+            "Do not invent answers from document content."
         )
+        facts_rule = "- Never invent facts."
     if doc_descriptions:
         desc_items = [
             f"{d}: {desc}"
@@ -935,7 +1104,7 @@ async def _generate_ready_message_multi(
                 + "; ".join(desc_items)
                 + ". Briefly reference these when announcing readiness."
             )
-    system_parts.append("- Never invent facts.")
+    system_parts.append(facts_rule)
     system_parts.append("- No greetings, no corporate or support-bot closers.")
     system_prompt = "\n".join(system_parts)
 
@@ -955,9 +1124,10 @@ async def _generate_ready_message_multi(
         user_parts.append("")
         user_parts.append("Pending questions:")
         user_parts.extend(questions)
-        user_parts.append("")
-        user_parts.append("Search excerpts:")
-        user_parts.extend(search_parts)
+        if content_parts:
+            user_parts.append("")
+            user_parts.append("Document content:")
+            user_parts.extend(content_parts)
         user_parts.append("")
         user_parts.append("Write one message: ready → remind question(s) → answer(s).")
     else:
