@@ -21,7 +21,9 @@ def _agent(page_index=None, agent_id="agent-1"):
 
 
 def _page_index(*, search_results=None, collection="agent-1"):
-    search = AsyncMock(return_value=search_results if search_results is not None else [])
+    search = AsyncMock(
+        return_value=search_results if search_results is not None else []
+    )
     return SimpleNamespace(
         resolve_collection=lambda: collection,
         search=search,
