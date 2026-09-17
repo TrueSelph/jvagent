@@ -22,6 +22,7 @@ allowed-tools:
   - artifact_handler__delete_document
   - artifact_handler__check_ingest_status
   - artifact_handler__check_pending_attachments
+  - pageindex__search
 tags:
   - vault
   - ingest
@@ -40,14 +41,15 @@ tags:
   Do **not** use `check_pending_attachments` to answer ready/finished questions.
 - **"Is it ready/done/finished?"** → always `check_ingest_status` with **no
   arguments** (never pass `doc_name` or `url`; never use
-  `check_pending_attachments`). If `ready` and a job has `pending_question`
-  (or the conversation deferred a content question), call `pageindex__search`
-  with `query` = that question and `doc_name` = `jobs[].doc_name` for the
-  matching ready doc, then write one reply: (1) ready, (2) remind the
-  question, (3) answer. If `ready` without a deferred question, tell the user
-  warmly and invite questions. If `queued`, say you're still processing and
-  will follow up. **Do not** call `ingest_document` again for a URL that is
-  already queued or ready.
+  `check_pending_attachments`). If `ready` and a job has `pending_question`,
+  deliver the tool's `Tell the user:` ready → remind → answer directive; do
+  not stop after acknowledging ready. If the tool instead asks you to search,
+  call `pageindex__search` with `query` = that question and `doc_name` =
+  `jobs[].doc_name` for the matching ready doc, then write one reply: (1)
+  ready, (2) remind the question, (3) answer. If `ready` without a deferred
+  question, tell the user warmly and invite questions. If `queued`, say
+  you're still processing and will follow up. **Do not** call
+  `ingest_document` again for a URL that is already queued or ready.
 - **"List my documents"** → `list_my_documents`.
 - **"Delete/remove/clean up"** → `delete_document` on explicit yes (expired
   docs are surfaced automatically by other vault tools).
@@ -80,14 +82,16 @@ tags:
    `pageindex__search` with `query` (the user's question) and `doc_name` when
    known. If unknown, follow faq document-selection rules (description match
    before clarifying which file).
-3. **When `check_ingest_status` returns `ready` with a `pending_question`, write
-   one reply in this order:** (1) say the document/image is ready, (2) remind
-   them of their pending question (quote/paraphrase), (3) give the answer from
-   `pageindex__search` scoped to that job's `doc_name`. That `doc_name` becomes
-   the Active document for follow-ups. If ready with no pending question but
-   the conversation deferred a content question, search with the matching
-   `jobs[].doc_name` and answer. If ready with nothing deferred, just say it's
-   ready and invite questions.
+3. **When `check_ingest_status` returns `ready` with a `pending_question`,
+   deliver the generated reply in this order:** (1) say the document/image is
+   ready, (2) remind them of their pending question (quote/paraphrase), (3)
+   give the answer. Prefer the tool's `Tell the user:` directive when present.
+   If the tool asks you to search instead, call `pageindex__search` scoped to
+   that job's `doc_name` and then write that same three-part reply. That
+   `doc_name` becomes the Active document for follow-ups. If ready with no
+   pending question but the conversation deferred a content question, search
+   with the matching `jobs[].doc_name` and answer. If ready with nothing
+   deferred, just say it's ready and invite questions.
 4. **Never claim a doc is searchable before `check_ingest_status` confirms
    ready.** Queued ≠ searchable.
 5. **Never delete without an explicit yes.**

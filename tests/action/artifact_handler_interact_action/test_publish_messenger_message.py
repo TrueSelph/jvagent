@@ -11,11 +11,18 @@ from jvagent.action.artifact_handler_interact_action import endpoints as ep
 
 
 class _FakeInteraction:
+    def __init__(self):
+        self.events = []
+
     def add_parameter(self, *_a, **_k):
         return None
 
     def set_response(self, *_a, **_k):
         return None
+
+    def add_event(self, event, action_name):
+        self.events.append({"action_name": action_name, "content": event})
+        return True
 
     async def save(self):
         return self
