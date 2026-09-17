@@ -49,6 +49,22 @@ async def test_after_loop_skips_model_unavailable_when_emitted_latched(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_egress_skips_when_response_set_without_emitted_latch(monkeypatch):
+    """``_egress`` must honor ``interaction.response`` — not only ``emitted``."""
+    ex = OrchestratorInteractAction()
+    interaction = Interaction(utterance="hi")
+    interaction.set_response("I'm having trouble reaching my language model right now.")
+    assert interaction.has_emitted() is False
+    visitor = MagicMock()
+    visitor.interaction = interaction
+    send_reply = AsyncMock()
+    monkeypatch.setattr(ex, "_send_reply", send_reply)
+
+    await ex._egress(visitor)
+    send_reply.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_commit_pending_adhoc_skips_when_response_already_set():
     bus = ResponseBus()
     interaction = Interaction(session_id="s1", user_id="u1", utterance="hi")

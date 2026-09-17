@@ -61,11 +61,11 @@ class OrchestratorEgressMixin:
         double-sends.
         """
         interaction = getattr(visitor, "interaction", None)
-        if interaction is None or interaction.has_emitted():
+        if interaction is None or self._turn_delivered(interaction):
             return
         # Gather any directives a rails IA queued this turn (no model text to add).
         await self._send_reply(visitor)
-        if not interaction.has_emitted():
+        if not self._turn_delivered(interaction):
             await self._send_reply(visitor, self.clarify_text)
 
     async def _send_reply(
@@ -126,7 +126,7 @@ class OrchestratorEgressMixin:
                 gathered = await gather(visitor)
                 if gathered:
                     return
-                if interaction is not None and interaction.has_emitted():
+                if interaction is not None and self._turn_delivered(interaction):
                     return
             except Exception as exc:
                 logger.warning("orchestrator: responder.gather failed: %s", exc)

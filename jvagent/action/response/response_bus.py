@@ -771,6 +771,8 @@ class ResponseBus:
         # second adhoc id carrying the same prose).
         current = (getattr(interaction, "response", "") or "") if interaction else ""
         if full_content and current.strip() and full_content.strip() in current:
+            if interaction and hasattr(interaction, "mark_emitted"):
+                interaction.mark_emitted()
             self._adhoc_accumulation.pop(interaction_id, None)
             return
         now = await self._get_now()
