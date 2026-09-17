@@ -1688,7 +1688,7 @@ class OrchestratorLoopMixin:
         # tasks now; if one blocks on input it owns the egress. Inert until a
         # runner is registered, so skill-only turns are unaffected.
         interaction = getattr(visitor, "interaction", None)
-        emitted = bool(getattr(interaction, "response", "") if interaction else "")
+        emitted = self._turn_delivered(interaction)
         _stamp_observations(state.observations, state.last_obs_len, state.last_dec_meta)
         if state.ended_via == "model_error":
             # The model is unreachable: no finalize call (it would fail the same
@@ -1714,7 +1714,7 @@ class OrchestratorLoopMixin:
                 await self._send_reply(visitor, drain_directive, compose=True)
                 state.ended_via = f"{state.ended_via}_drained"
                 return
-            emitted = bool(getattr(interaction, "response", "") if interaction else "")
+            emitted = self._turn_delivered(interaction)
 
         # Budget/time ran out mid-task. Rather than dropping to the generic
         # clarify fallback (which discards the work and misreports the cause),

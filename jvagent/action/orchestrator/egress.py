@@ -13,6 +13,26 @@ logger = logging.getLogger(__name__)
 
 class OrchestratorEgressMixin:
     @staticmethod
+    def _turn_delivered(interaction: Any) -> bool:
+        """True once user-facing content was delivered this turn.
+
+        ``interaction.response`` alone is insufficient: streaming can latch
+        ``emitted`` before ``response`` is flushed, and ``commit_pending_adhoc``
+        can set ``response`` without latching. Both signals must be checked so
+        ``_after_loop`` and ``_egress`` never double-send.
+        """
+        if interaction is None:
+            return False
+        has_emitted = getattr(interaction, "has_emitted", None)
+        if callable(has_emitted):
+            try:
+                if has_emitted():
+                    return True
+            except Exception:
+                pass
+        return bool((getattr(interaction, "response", "") or "").strip())
+
+    @staticmethod
     def _ia_emitted(interaction: Any) -> bool:
         """True if a dispatched IA produced user-facing output this turn.
 

@@ -764,6 +764,15 @@ class ResponseBus:
             self._adhoc_accumulation.pop(interaction_id, None)
             return
         full_content = "".join(acc.chunks)
+        # Streaming publish() already flushed this turn to subscribers and
+        # interaction.response; commit_pending is a safety net for abandoned
+        # accumulators. Re-appending or re-emitting the same settled text
+        # duplicates bubbles downstream (integral message-boundary splits on a
+        # second adhoc id carrying the same prose).
+        current = (getattr(interaction, "response", "") or "") if interaction else ""
+        if full_content and current.strip() and full_content.strip() in current:
+            self._adhoc_accumulation.pop(interaction_id, None)
+            return
         now = await self._get_now()
         message = ResponseMessage(
             session_id=acc.session_id,
@@ -783,6 +792,8 @@ class ResponseBus:
                 if self._can_send_to_adapter(adapter, message, relay_to_adapters=False):
                     await self._send_to_adapter(adapter, message)
             if full_content and interaction:
+                if hasattr(interaction, "mark_emitted"):
+                    interaction.mark_emitted()
                 await self._append_to_interaction_response_impl(
                     interaction=interaction,
                     message_type="adhoc",
