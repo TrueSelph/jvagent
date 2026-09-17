@@ -34,6 +34,7 @@ import {
   buildReplaySnapshot,
   formatCopyPrompt,
   formatImproveSystemPrompt,
+  normalizeLiteLLMModelId,
   parseImportFile,
   unwrapQueryActionResponse,
   type DebugExportSelection,
@@ -1019,7 +1020,7 @@ export function DebugInteractions({
       const improvePayload = {
         prompt: formatCopyPrompt(built.snapshot, improveInstruction),
         system: formatImproveSystemPrompt(),
-        model: improveModel,
+        model: normalizeLiteLLMModelId(improveModel),
         provider: improveProvider || undefined,
         history: [],
       };

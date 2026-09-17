@@ -118,6 +118,17 @@ function pretty(value: unknown): string {
   }
 }
 
+/**
+ * LiteLLM matches the provider prefix before the first `/` case-sensitively
+ * (`openai`, not `Openai` / `OpenAI`). Lowercase only that first segment.
+ */
+export function normalizeLiteLLMModelId(model: string): string {
+  const ident = model.trim();
+  const slash = ident.indexOf("/");
+  if (slash <= 0) return ident;
+  return ident.slice(0, slash).toLowerCase() + ident.slice(slash);
+}
+
 /** Orchestrator-shaped /query body: messages + tools when present. */
 export function buildQueryPayload(
   snapshot: ReplaySnapshot,
@@ -135,7 +146,7 @@ export function buildQueryPayload(
   }
 
   const payload: Record<string, unknown> = {
-    model: snapshot.model,
+    model: normalizeLiteLLMModelId(snapshot.model),
     messages,
   };
   if (snapshot.provider) {

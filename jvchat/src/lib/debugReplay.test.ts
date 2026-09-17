@@ -6,6 +6,7 @@ import {
   buildReplaySnapshot,
   EXPORT_VERSION,
   formatCopyPrompt,
+  normalizeLiteLLMModelId,
   parseImportFile,
   parseJsonArray,
   unwrapQueryActionResponse,
@@ -163,6 +164,29 @@ describe("buildQueryPayload", () => {
     const payload = buildQueryPayload(snapshot());
     expect(payload.temperature).toBe(0.2);
     expect(payload.max_tokens).toBe(1024);
+  });
+
+  it("lowercases a wrong-cased LiteLLM provider prefix", () => {
+    const built = buildReplaySnapshot({
+      user: "hi",
+      system: "",
+      historyText: "[]",
+      replayText: "[]",
+      toolsText: "[]",
+      model: "Openai/gpt-4.1",
+      provider: "litellm",
+    });
+    if (!built.ok) throw new Error(built.error);
+    expect(buildQueryPayload(built.snapshot).model).toBe("openai/gpt-4.1");
+  });
+
+  it("leaves already-correct and bare model ids unchanged", () => {
+    expect(normalizeLiteLLMModelId("openai/gpt-4.1")).toBe("openai/gpt-4.1");
+    expect(normalizeLiteLLMModelId("OpenAI/gpt-4.1")).toBe("openai/gpt-4.1");
+    expect(normalizeLiteLLMModelId("gpt-4.1")).toBe("gpt-4.1");
+    expect(
+      normalizeLiteLLMModelId("OpenRouter/anthropic/claude-sonnet-4-5"),
+    ).toBe("openrouter/anthropic/claude-sonnet-4-5");
   });
 });
 
