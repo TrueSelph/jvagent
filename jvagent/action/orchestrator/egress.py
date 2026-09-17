@@ -30,7 +30,8 @@ class OrchestratorEgressMixin:
                     return True
             except Exception:
                 pass
-        return bool((getattr(interaction, "response", "") or "").strip())
+        response = getattr(interaction, "response", "") or ""
+        return isinstance(response, str) and bool(response.strip())
 
     @staticmethod
     def _ia_emitted(interaction: Any) -> bool:
