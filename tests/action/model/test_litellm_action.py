@@ -172,7 +172,7 @@ def test_capabilities_and_pricing_come_from_upstream_metadata():
     caps = action.capabilities()
     assert caps.supports_tools is True
     assert caps.context_window == upstream.context_window
-    assert "litellm" in caps.source
+    assert "litellm" in (caps.source or "")
     assert action.pricing().source == "litellm"
     assert json.dumps(
         action.capabilities("openai/gpt-4o-mini").__dict__
