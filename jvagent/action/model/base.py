@@ -42,6 +42,37 @@ def _tool_definition_names(tools: Any) -> List[str]:
     return names
 
 
+def _tool_names_fingerprint(names: Any) -> tuple:
+    if not isinstance(names, list):
+        return ()
+    return tuple(n for n in names if isinstance(n, str) and n)
+
+
+def _first_tick_for_tool_surface(interaction: Any, tool_names: List[str]) -> bool:
+    """True when this interaction has not yet stored ``tools`` for this name set.
+
+    Debug replay needs the schemas once per tool surface. Later ticks of the
+    same names keep ``tool_names`` only so an agentic turn does not multiply
+    the same kilobytes by the tick count.
+    """
+    names = _tool_names_fingerprint(tool_names)
+    if not names:
+        return False
+    events = getattr(interaction, "observability_metrics", None) or []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("event_type")
+        if event_type not in ("model_call", None, ""):
+            continue
+        ev_data = event.get("data")
+        if not isinstance(ev_data, dict) or "tools" not in ev_data:
+            continue
+        if _tool_names_fingerprint(ev_data.get("tool_names")) == names:
+            return False
+    return True
+
+
 T = TypeVar("T")
 
 
@@ -158,12 +189,12 @@ class BaseModelAction(Action, ABC):
     telemetry_tool_definitions: bool = attribute(
         default=False,
         description=(
-            "Store the full tool/function definitions sent with each call on "
-            "the model_call observability event, so a debug UI can replay the "
-            "request exactly. Off by default: the schemas are identical on "
-            "every tick of a turn, so an agentic loop persists the same "
-            "kilobytes once per tick per interaction. Turn on per model action "
-            "while debugging. Tool NAMES are always recorded and cost nothing."
+            "Store the full tool/function definitions on every model_call "
+            "observability event. Off by default: the first tick of each unique "
+            "tool_names surface still records the schemas so a debug UI can "
+            "replay the request; later ticks of the same surface keep names "
+            "only. Turn this on per model action to persist schemas on every "
+            "tick. Tool NAMES are always recorded and cost nothing."
         ),
     )
 
@@ -628,8 +659,25 @@ class BaseModelAction(Action, ABC):
                 result_tools = getattr(result, "tools", None)
                 if result_tools:
                     data["tool_names"] = _tool_definition_names(result_tools)
-                    if self.telemetry_tool_definitions:
+                    if self.telemetry_tool_definitions or _first_tick_for_tool_surface(
+                        interaction, data["tool_names"]
+                    ):
                         data["tools"] = result_tools
+
+                temperature = getattr(result, "temperature", None)
+                if isinstance(temperature, (int, float)) and not isinstance(
+                    temperature, bool
+                ):
+                    data["temperature"] = temperature
+                max_tokens = getattr(result, "max_tokens", None)
+                if isinstance(max_tokens, int) and not isinstance(max_tokens, bool):
+                    data["max_tokens"] = max_tokens
+                tool_choice = getattr(result, "tool_choice", None)
+                if isinstance(tool_choice, (str, dict)):
+                    data["tool_choice"] = tool_choice
+                parallel = getattr(result, "parallel_tool_calls", None)
+                if isinstance(parallel, bool):
+                    data["parallel_tool_calls"] = parallel
 
             # Build event and append directly to interaction
             event = {

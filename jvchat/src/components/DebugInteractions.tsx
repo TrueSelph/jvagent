@@ -28,29 +28,24 @@ import {
   toolCallsForMetric,
   type DebugToolCall,
 } from "../lib/debugToolCalls";
+import {
+  buildExportV2,
+  buildQueryPayload,
+  buildReplaySnapshot,
+  formatCopyPrompt,
+  formatImproveSystemPrompt,
+  normalizeLiteLLMModelId,
+  parseImportFile,
+  unwrapQueryActionResponse,
+  type DebugExportSelection,
+  type ReplaySnapshot,
+} from "../lib/debugReplay";
 
 /** Code / text fields: black in dark theme, off-grey in light theme */
 function debugCodePanelClass(isDark: boolean) {
   return isDark
     ? "bg-black border border-zinc-700 text-zinc-200 placeholder-zinc-500"
     : "bg-zinc-100 border border-zinc-300 text-zinc-900 placeholder-zinc-600";
-}
-
-function parseJsonArray(
-  text: string,
-  label: string,
-): { ok: true; value: unknown[] } | { ok: false; error: string } {
-  const trimmed = text.trim();
-  if (!trimmed) return { ok: true, value: [] };
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (!Array.isArray(parsed)) {
-      return { ok: false, error: `Cannot retest: ${label} must be an array.` };
-    }
-    return { ok: true, value: parsed };
-  } catch {
-    return { ok: false, error: `Cannot retest: ${label} is not valid JSON.` };
-  }
 }
 
 /**
@@ -244,6 +239,8 @@ export function DebugInteractions({
   /** Editable tool definitions sent on retest. */
   const [toolsText, setToolsText] = useState("[]");
   const replaySyncKeyRef = useRef("");
+  const pendingImportSelectionRef = useRef<DebugExportSelection | null>(null);
+  const skipEditorSyncRef = useRef(false);
   const [improveInstruction, setImproveInstruction] = useState("");
   const [improveModel, setImproveModel] = useState("gpt-4o");
   const [improving, setImproving] = useState(false);
@@ -284,6 +281,7 @@ export function DebugInteractions({
   // → data.provider). Falls back to the first available provider if the
   // recorded one isn't installed on this agent.
   useEffect(() => {
+    if (skipEditorSyncRef.current) return;
     if (!selectedInteraction) return;
     if (selectedInteraction.event_type !== "model_call") return;
     const metricProvider = selectedInteraction.data?.provider;
@@ -357,9 +355,12 @@ export function DebugInteractions({
         const pd = metric.data || {};
         // Get history from metric data or parent's conversation history
         const history = pd.history || parent.conversationHistory || [];
+        const metricKey = `${parent.id}:${metricIdx}:${metric.timestamp ?? ""}`;
 
         setSelectedInteraction({
-          id: metric.id,
+          id: metric.id || metricKey,
+          parentId: parent.id,
+          metricIndex: metricIdx,
           // ADR-0009 / observability: every metric carries event_type +
           // data. Surface both so the inspector can render type-specific
           // payloads (helm_shift, model_call, etc.) rather than treating
@@ -380,6 +381,15 @@ export function DebugInteractions({
             tool_names: Array.isArray(pd.tool_names) ? pd.tool_names : [],
             tool_calls: Array.isArray(pd.tool_calls) ? pd.tool_calls : [],
             finish_reason: pd.finish_reason || "",
+            called_by: pd.called_by || "",
+            usage: pd.usage || null,
+            temperature: typeof pd.temperature === "number" ? pd.temperature : undefined,
+            max_tokens: typeof pd.max_tokens === "number" ? pd.max_tokens : undefined,
+            tool_choice: pd.tool_choice,
+            parallel_tool_calls:
+              typeof pd.parallel_tool_calls === "boolean"
+                ? pd.parallel_tool_calls
+                : undefined,
           },
         });
         setTestResult(null);
@@ -703,15 +713,18 @@ export function DebugInteractions({
     }
     const currentParent =
       selectedParentIndex != null ? effectiveParents[selectedParentIndex] : null;
-    const metricId = selectedInteraction?.id;
-    const parentWithMetric = metricId
-      ? effectiveParents.find((p) =>
-          p.metrics?.some((m: any) => m.id === metricId),
-        )
+    const parentId = selectedInteraction?.parentId;
+    const storedMetricIdx = selectedInteraction?.metricIndex;
+    const parentWithMetric = parentId
+      ? effectiveParents.find((p) => p.id === parentId)
       : null;
     const metricIdx =
-      parentWithMetric?.metrics?.findIndex((m: any) => m.id === metricId) ?? -1;
-    if (parentWithMetric && metricIdx >= 0) {
+      typeof storedMetricIdx === "number" ? storedMetricIdx : -1;
+    if (
+      parentWithMetric &&
+      metricIdx >= 0 &&
+      metricIdx < (parentWithMetric.metrics?.length || 0)
+    ) {
       const newParentIdx = effectiveParents.indexOf(parentWithMetric);
       if (newParentIdx !== selectedParentIndex || selectedMetricIndex !== metricIdx) {
         selectInteraction(newParentIdx, metricIdx, effectiveParents);
@@ -733,6 +746,10 @@ export function DebugInteractions({
   }, [selectedUserId, pageSize, refreshInteractionLogsPage1]);
 
   useEffect(() => {
+    if (skipEditorSyncRef.current) {
+      setShowHistory(true);
+      return;
+    }
     const historyData = selectedInteraction?.data?.history;
     const hasHistory = Array.isArray(historyData);
 
@@ -770,6 +787,7 @@ export function DebugInteractions({
     })(),
   ].join(":");
   useEffect(() => {
+    if (skipEditorSyncRef.current) return;
     if (replaySyncKey === replaySyncKeyRef.current) return;
     replaySyncKeyRef.current = replaySyncKey;
     setReplayText(
@@ -798,6 +816,103 @@ export function DebugInteractions({
     adjustHeight(improveResultRef.current);
   }, [improveResult, loading]);
 
+  useEffect(() => {
+    const sel = pendingImportSelectionRef.current;
+    if (sel && selectedInteraction) {
+      pendingImportSelectionRef.current = null;
+      replaySyncKeyRef.current = replaySyncKey;
+      let parsedHistory = Array.isArray(selectedInteraction.data?.history)
+        ? selectedInteraction.data.history
+        : [];
+      try {
+        const parsed = sel.historyText.trim()
+          ? JSON.parse(sel.historyText)
+          : [];
+        if (Array.isArray(parsed)) parsedHistory = parsed;
+      } catch {
+        // Keep metric history when the exported editor JSON is invalid.
+      }
+      setHistoryText(sel.historyText);
+      setReplayText(sel.replayText);
+      setToolsText(sel.toolsText);
+      if (sel.replayModel) setReplayModel(sel.replayModel);
+      if (sel.provider && modelActions[sel.provider]) {
+        setSelectedProvider(sel.provider);
+        setModelAction(modelActions[sel.provider]);
+      }
+      setTestResult(sel.testResult ?? null);
+      setSelectedInteraction((si: any) =>
+        si
+          ? {
+              ...si,
+              data: {
+                ...si.data,
+                user_prompt: sel.user_prompt,
+                system_prompt: sel.system_prompt,
+                history: parsedHistory,
+              },
+            }
+          : si,
+      );
+      return;
+    }
+    if (skipEditorSyncRef.current) {
+      skipEditorSyncRef.current = false;
+    }
+  }, [selectedInteraction, replaySyncKey, modelActions]);
+
+  const liveSnapshot = useCallback(():
+    | { ok: true; snapshot: ReplaySnapshot }
+    | { ok: false; error: string } => {
+    if (!selectedInteraction) {
+      return { ok: false, error: "Cannot retest: no interaction selected." };
+    }
+    return buildReplaySnapshot({
+      user: selectedInteraction.data.user_prompt || "",
+      system: selectedInteraction.data.system_prompt || "",
+      historyText,
+      replayText,
+      toolsText,
+      model: (replayModel || "").trim(),
+      provider: selectedProvider || "",
+      response: selectedInteraction.data.response || "",
+      toolCalls: selectedInteraction.data.tool_calls,
+      finishReason: selectedInteraction.data.finish_reason || "",
+      calledBy: selectedInteraction.data.called_by,
+      usage: selectedInteraction.data.usage,
+      toolSource: retestTools.source,
+      temperature: selectedInteraction.data.temperature,
+      maxTokens: selectedInteraction.data.max_tokens,
+      toolChoice: selectedInteraction.data.tool_choice,
+      parallelToolCalls: selectedInteraction.data.parallel_tool_calls,
+    });
+  }, [
+    selectedInteraction,
+    historyText,
+    replayText,
+    toolsText,
+    replayModel,
+    selectedProvider,
+    retestTools.source,
+  ]);
+
+  const copyLivePrompt = async (withImprove: boolean) => {
+    const built = liveSnapshot();
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    const text = formatCopyPrompt(
+      built.snapshot,
+      withImprove ? improveInstruction : undefined,
+    );
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      setError("Could not copy to clipboard.");
+    }
+  };
+
   const handleTest = async () => {
     if (!selectedInteraction) return;
 
@@ -813,8 +928,16 @@ export function DebugInteractions({
       return;
     }
 
-    const prompt = (selectedInteraction.data.user_prompt || "").trim();
-    if (!prompt) {
+    const built = liveSnapshot();
+    if (!built.ok) {
+      preserveScroll(() =>
+        setTestResult({ success: false, error: built.error }),
+      );
+      return;
+    }
+    const snapshot = built.snapshot;
+
+    if (!(snapshot.user || "").trim()) {
       preserveScroll(() =>
         setTestResult({
           success: false,
@@ -828,15 +951,7 @@ export function DebugInteractions({
     const finishReason = selectedInteraction.data.finish_reason || "";
     const needsTools =
       originalToolCalls.length > 0 || finishReason === "tool_calls";
-
-    const parsedTools = parseJsonArray(toolsText, "Tools (JSON)");
-    if (!parsedTools.ok) {
-      preserveScroll(() =>
-        setTestResult({ success: false, error: parsedTools.error }),
-      );
-      return;
-    }
-    if (needsTools && parsedTools.value.length === 0) {
+    if (needsTools && snapshot.tools.length === 0) {
       preserveScroll(() =>
         setTestResult({
           success: false,
@@ -846,10 +961,8 @@ export function DebugInteractions({
       );
       return;
     }
-    const tools = parsedTools.value;
 
-    const modelToSend = (replayModel || "").trim();
-    if (!modelToSend) {
+    if (!snapshot.model) {
       preserveScroll(() =>
         setTestResult({
           success: false,
@@ -860,68 +973,21 @@ export function DebugInteractions({
       return;
     }
 
-    const parsedHistory = parseJsonArray(historyText, "History (JSON)");
-    if (!parsedHistory.ok) {
-      preserveScroll(() =>
-        setTestResult({ success: false, error: parsedHistory.error }),
-      );
-      return;
-    }
-    const history = parsedHistory.value;
-
-    const parsedReplay = parseJsonArray(replayText, "This-turn tool replay (JSON)");
-    if (!parsedReplay.ok) {
-      preserveScroll(() =>
-        setTestResult({ success: false, error: parsedReplay.error }),
-      );
-      return;
-    }
-    const replay = parsedReplay.value;
-
     preserveScroll(() => {
       setTesting(true);
       setTestResult(null);
     });
 
-    const includeTools = tools.length > 0 && (needsTools || retestTools.source === "recorded");
-
     try {
-      const payload: Record<string, unknown> = {
-        model: modelToSend,
-        provider: selectedProvider || undefined,
-      };
-      if (replay.length > 0 || includeTools) {
-        const messages: Record<string, unknown>[] = [];
-        const system = selectedInteraction.data.system_prompt;
-        if (system) {
-          messages.push({ role: "system", content: system });
-        }
-        if (history.length > 0) {
-          messages.push(...(history as Record<string, unknown>[]));
-        }
-        messages.push({
-          role: "user",
-          content: selectedInteraction.data.user_prompt,
-        });
-        messages.push(...(replay as Record<string, unknown>[]));
-        payload.messages = messages;
-        payload.tool_choice = "auto";
-        payload.parallel_tool_calls = false;
-        if (includeTools) {
-          payload.tools = tools;
-        }
-      } else {
-        payload.prompt = selectedInteraction.data.user_prompt;
-        payload.system = selectedInteraction.data.system_prompt;
-        payload.history = history;
-      }
-
-      const data = await apiClient.queryAction(actionId, payload);
+      const payload = buildQueryPayload(snapshot);
+      const data = unwrapQueryActionResponse(
+        await apiClient.queryAction(actionId, payload),
+      );
       preserveScroll(() =>
         setTestResult({
           success: true,
           response: data.response,
-          data: data,
+          data,
         }),
       );
     } catch (error: any) {
@@ -939,6 +1005,12 @@ export function DebugInteractions({
   const handleImprovePrompt = async () => {
     if (!selectedInteraction || !modelAction || !improveInstruction) return;
 
+    const built = liveSnapshot();
+    if (!built.ok) {
+      preserveScroll(() => setImproveResult(`Error: ${built.error}`));
+      return;
+    }
+
     preserveScroll(() => {
       setImproving(true);
       setImproveResult("");
@@ -946,35 +1018,21 @@ export function DebugInteractions({
 
     try {
       const improvePayload = {
-        prompt: `Given the following context, improve the prompts based on the instruction.
-
-User Prompt:
-${selectedInteraction.data.user_prompt}
-
-System Prompt:
-${selectedInteraction.data.system_prompt}
-
-Conversation History:
-${JSON.stringify(selectedInteraction.data.history || [], null, 2)}
-
-RESULT:
-${selectedInteraction.data.response}
-
-Improvement Instruction:
-${improveInstruction}
-
-Provide improvement instruction on how to improve the prompt. Return a raw markdown.`,
-        system:
-          "You are a prompt engineering expert. Analyze the given prompts and improve them based on the instruction.",
-        model: improveModel,
+        prompt: formatCopyPrompt(built.snapshot, improveInstruction),
+        system: formatImproveSystemPrompt(),
+        model: normalizeLiteLLMModelId(improveModel),
         provider: improveProvider || undefined,
         history: [],
       };
 
       const improveActionId =
         modelActions[improveProvider]?.id || modelAction?.id;
-      const data = await apiClient.queryAction(improveActionId, improvePayload);
-      preserveScroll(() => setImproveResult(data.response || ""));
+      const data = unwrapQueryActionResponse(
+        await apiClient.queryAction(improveActionId, improvePayload),
+      );
+      preserveScroll(() =>
+        setImproveResult(typeof data.response === "string" ? data.response : ""),
+      );
     } catch (error: any) {
       preserveScroll(() => setImproveResult(`Error: ${error.message}`));
     } finally {
@@ -1046,16 +1104,25 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
   const handleExport = () => {
     if (parentInteractions.length === 0) return;
 
-    const dataToExport = {
-      parentInteractions: parentInteractions,
-      pagination: pagination,
-      selectedParentIndex: selectedParentIndex,
-      selectedMetricIndex: selectedMetricIndex,
-      metadata: {
-        exportedAt: new Date().toISOString(),
-        agentId: targetAgentId,
-      },
-    };
+    const dataToExport = buildExportV2({
+      parentInteractions,
+      pagination,
+      selectedParentIndex,
+      selectedMetricIndex,
+      selection: selectedInteraction
+        ? {
+            user_prompt: selectedInteraction.data?.user_prompt || "",
+            system_prompt: selectedInteraction.data?.system_prompt || "",
+            historyText,
+            replayText,
+            toolsText,
+            replayModel,
+            provider: selectedProvider,
+            testResult,
+          }
+        : null,
+      agentId: targetAgentId,
+    });
 
     const blob = new Blob([JSON.stringify(dataToExport, null, 2)], {
       type: "application/json",
@@ -1078,45 +1145,39 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
+        const imported = parseImportFile(JSON.parse(content));
 
-        // Check if it's the new format (full list) or legacy format (single interaction)
-        if (
-          parsed.parentInteractions &&
-          Array.isArray(parsed.parentInteractions)
-        ) {
+        if (imported.kind === "invalid") {
+          setError(imported.error);
+          e.target.value = "";
+          return;
+        }
+
+        if (imported.kind === "v2" || imported.kind === "v1") {
+          if (imported.kind === "v2" && imported.selection) {
+            skipEditorSyncRef.current = true;
+            pendingImportSelectionRef.current = imported.selection;
+          }
           preserveScroll(() => {
-            setParentInteractions(parsed.parentInteractions);
-            setPagination(parsed.pagination || null);
-
-            const pIdx =
-              typeof parsed.selectedParentIndex === "number"
-                ? parsed.selectedParentIndex
-                : 0;
-            const mIdx =
-              typeof parsed.selectedMetricIndex === "number"
-                ? parsed.selectedMetricIndex
-                : 0;
-
-            if (parsed.parentInteractions.length > 0) {
-              selectInteraction(pIdx, mIdx, parsed.parentInteractions);
+            setParentInteractions(imported.parentInteractions);
+            setPagination((imported.pagination as typeof pagination) || null);
+            if (imported.parentInteractions.length > 0) {
+              selectInteraction(
+                imported.selectedParentIndex,
+                imported.selectedMetricIndex,
+                imported.parentInteractions,
+              );
             }
           });
         } else {
-          // Legacy format or single interaction export
-          const interactionData = parsed.interaction || parsed;
-          const testResultData = parsed.testResult || null;
-
-          if (interactionData?.data) {
-            preserveScroll(() => {
+          preserveScroll(() => {
+            if (parentInteractions.length === 0) {
               setSelectedParentIndex(null);
               setSelectedMetricIndex(null);
-              setSelectedInteraction(interactionData);
-              setTestResult(testResultData);
-            });
-          } else {
-            setError("Invalid import file format");
-          }
+            }
+            setSelectedInteraction(imported.interaction);
+            setTestResult(imported.testResult);
+          });
         }
       } catch (err) {
         console.error("Import failed", err);
@@ -1186,7 +1247,7 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
       </button>
       <button
         onClick={handleExport}
-        disabled={!selectedInteraction}
+        disabled={parentInteractions.length === 0}
         className={
           isEmbedded
             ? `px-3 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${effectiveDarkMode ? "text-zinc-300 bg-zinc-700 hover:bg-zinc-600" : "text-zinc-700 bg-zinc-100 hover:bg-zinc-200"}`
@@ -1576,18 +1637,6 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     </div>
                   </div>
                 )}
-                {/* Original Response */}
-                {selectedInteraction.data.response && (
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Original Response
-                    </label>
-                    <ResponseJsonOrText
-                      value={selectedInteraction.data.response}
-                      isDark={effectiveDarkMode}
-                    />
-                  </div>
-                )}
                 {/* Prompt/history/model surfaces only apply to
                     model_call entries. helm_shift events carry no
                     prompts; hiding the placeholders avoids the empty
@@ -1774,33 +1823,59 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                         </select>
                       </div>
                     </div>
+                    {(selectedInteraction.data.finish_reason ||
+                      selectedInteraction.data.called_by ||
+                      selectedInteraction.data.usage) && (
+                      <p
+                        className={`text-xs mt-2 ${effectiveDarkMode ? "text-zinc-500" : "text-zinc-500"}`}
+                      >
+                        {[
+                          selectedInteraction.data.finish_reason
+                            ? `finish_reason: ${selectedInteraction.data.finish_reason}`
+                            : null,
+                          selectedInteraction.data.called_by
+                            ? `called_by: ${selectedInteraction.data.called_by}`
+                            : null,
+                          selectedInteraction.data.usage?.total_tokens != null
+                            ? `tokens: ${selectedInteraction.data.usage.total_tokens}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
                   </div>
                 )}
                 {/* Re-run model call — LM /query with tools; does not execute tools. */}
                 {selectedInteraction.event_type === "model_call" && (
                   <div className="flex flex-col items-end gap-1">
-                    <button
-                      onClick={handleTest}
-                      disabled={testing || !modelAction}
-                      title={
-                        !modelAction
-                          ? "No LanguageModelAction for the selected provider"
-                          : "Calls the LM with saved prompts and tool schemas. Proposed tool_calls are returned; tools are not executed."
-                      }
-                      className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {testing ? "Re-running..." : "Re-run model call"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void copyLivePrompt(false)}
+                        className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Copy the full request and expected result"
+                      >
+                        Copy Prompt
+                      </button>
+                      <button
+                        onClick={handleTest}
+                        disabled={testing || !modelAction}
+                        title={
+                          !modelAction
+                            ? "No LanguageModelAction for the selected provider"
+                            : "Calls the LM with saved prompts and tool schemas. Proposed tool_calls are returned; tools are not executed."
+                        }
+                        className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {testing ? "Re-running..." : "Re-run model call"}
+                      </button>
+                    </div>
                     <span
                       className={`text-xs ${effectiveDarkMode ? "text-zinc-500" : "text-zinc-500"}`}
                     >
                       LM only — tools proposed, not executed
                     </span>
-                    {retestTools.source === "stub" &&
-                      ((selectedInteraction.data.tool_calls || []).length >
-                        0 ||
-                        selectedInteraction.data.finish_reason ===
-                          "tool_calls") && (
+                    {retestTools.source === "stub" && (
                         <span
                           className={`text-xs text-right max-w-xs ${
                             effectiveDarkMode
@@ -1819,14 +1894,14 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                     )}
                   </div>
                 )}
-                {/* Test Result — show tool_calls when present; else response text. */}
+                {/* Test Result — show response and tool_calls when present. */}
                 {testResult && (
                   <div>
                     <label className="block text-sm font-medium mb-2">
                       Test Result
                     </label>
                     <div
-                      className={`rounded-lg border p-4 text-sm ${
+                      className={`rounded-lg border p-4 text-sm space-y-3 ${
                         effectiveDarkMode
                           ? "bg-black border-zinc-700"
                           : "bg-zinc-100 border-zinc-300"
@@ -1835,39 +1910,79 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                       {testResult.success ? (
                         (() => {
                           const toolCalls = testResult.data?.tool_calls ?? [];
-                          if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-                            return (
-                              <JsonViewer
-                                data={toolCalls}
-                                dark={effectiveDarkMode}
-                                maxHeight="min(55vh, 520px)"
-                              />
-                            );
-                          }
                           const tr =
                             testResult.data?.response ??
                             testResult.response ??
                             "";
-                          const tp = tryParseJsonDisplay(tr);
-                          if (tp != null) {
+                          const hasTools =
+                            Array.isArray(toolCalls) && toolCalls.length > 0;
+                          const tp =
+                            typeof tr === "string" && tr
+                              ? tryParseJsonDisplay(tr)
+                              : null;
+                          if (!hasTools && !tr) {
                             return (
-                              <JsonViewer
-                                data={tp}
-                                dark={effectiveDarkMode}
-                                maxHeight="min(55vh, 520px)"
-                              />
+                              <pre
+                                className={`whitespace-pre-wrap font-mono text-xs ${
+                                  effectiveDarkMode
+                                    ? "text-green-400"
+                                    : "text-green-800"
+                                }`}
+                              >
+                                (empty response, no tool_calls)
+                              </pre>
                             );
                           }
                           return (
-                            <pre
-                              className={`whitespace-pre-wrap font-mono text-xs ${
-                                effectiveDarkMode
-                                  ? "text-green-400"
-                                  : "text-green-800"
-                              }`}
-                            >
-                              {tr || "(empty response, no tool_calls)"}
-                            </pre>
+                            <>
+                              {hasTools && (
+                                <div>
+                                  <p
+                                    className={`font-semibold text-sm mb-1 ${
+                                      effectiveDarkMode
+                                        ? "text-zinc-200"
+                                        : "text-zinc-800"
+                                    }`}
+                                  >
+                                    tool_calls
+                                  </p>
+                                  <JsonViewer
+                                    data={toolCalls}
+                                    dark={effectiveDarkMode}
+                                    maxHeight="min(55vh, 520px)"
+                                  />
+                                </div>
+                              )}
+                              {!!tr &&
+                                (tp != null ? (
+                                  <div>
+                                    <p
+                                      className={`font-semibold text-sm mb-1 ${
+                                        effectiveDarkMode
+                                          ? "text-zinc-200"
+                                          : "text-zinc-800"
+                                      }`}
+                                    >
+                                      response
+                                    </p>
+                                    <JsonViewer
+                                      data={tp}
+                                      dark={effectiveDarkMode}
+                                      maxHeight="min(55vh, 520px)"
+                                    />
+                                  </div>
+                                ) : (
+                                  <pre
+                                    className={`whitespace-pre-wrap font-mono text-xs ${
+                                      effectiveDarkMode
+                                        ? "text-green-400"
+                                        : "text-green-800"
+                                    }`}
+                                  >
+                                    {tr}
+                                  </pre>
+                                ))}
+                            </>
                           );
                         })()
                       ) : (
@@ -1972,30 +2087,10 @@ Provide improvement instruction on how to improve the prompt. Return a raw markd
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
-                    onClick={() => {
-                      const promptToCopy = `Given the following context, improve the prompts based on the instruction.
-
-User Prompt:
-${selectedInteraction.data.user_prompt}
-
-System Prompt:
-${selectedInteraction.data.system_prompt}
-
-Conversation History:
-${JSON.stringify(selectedInteraction.data.history || [], null, 2)}
-
-RESULT:
-${selectedInteraction.data.response}
-
-Improvement Instruction:
-${improveInstruction}
-
-Provide improvement instruction on how to improve the prompt. Return a raw markdown.`;
-                      navigator.clipboard.writeText(promptToCopy);
-                    }}
+                    onClick={() => void copyLivePrompt(true)}
                     className="px-6 py-2 bg-zinc-600 text-white rounded-lg font-medium hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    📋 Copy Prompt
+                    Copy Prompt
                   </button>
                   <button
                     onClick={handleImprovePrompt}

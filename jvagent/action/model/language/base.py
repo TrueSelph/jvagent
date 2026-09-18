@@ -212,6 +212,10 @@ class ModelActionResult:
         self.thinking_tokens = thinking_tokens
         self.request_model = request_model
         self.tools = tools
+        self.temperature = None
+        self.max_tokens = None
+        self.tool_choice = None
+        self.parallel_tool_calls = None
 
         self._thinking_queue: Optional[asyncio.Queue] = thinking_queue
         self._thinking_closed: bool = False
@@ -897,6 +901,10 @@ class LanguageModelAction(BaseModelAction, ABC):
         # (e.g. LiteLLM/OpenAI returns gpt-4.1-2025-04-14 for openai/gpt-4.1).
         result.request_model = kwargs.get("model") or getattr(self, "model", None) or ""
         result.tools = tools
+        result.temperature = kwargs.get("temperature")
+        result.max_tokens = kwargs.get("max_tokens")
+        result.tool_choice = kwargs.get("tool_choice")
+        result.parallel_tool_calls = kwargs.get("parallel_tool_calls")
 
         # Store calling_action_name in result for observability
         if calling_action_name:
