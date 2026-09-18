@@ -40,6 +40,7 @@ async def stream_messages(
     interaction_id: Optional[str] = None,
     keepalive_seconds: Optional[float] = None,
     max_replay: Optional[int] = None,
+    cursor: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream messages from response bus for a session.
 
@@ -87,6 +88,28 @@ async def stream_messages(
     await response_bus.subscribe(session_id, message_callback, receive_chunks=True)
 
     try:
+        # Durable outbox replay (HP-06) when a cursor is supplied. Live bus
+        # backlog still covers in-process overlap; message ids remain the
+        # dedup key (test_streaming_dedup).
+        if cursor:
+            try:
+                from jvagent.harness.runtime import get_runtime
+
+                for env in get_runtime().replay_from(session_id, cursor):
+                    yield format_sse_chunk(
+                        {
+                            "session_id": env.session_id,
+                            "sequence": env.sequence,
+                            "cursor": env.cursor,
+                            "message_id": env.message_id,
+                            "correlation_id": env.correlation_id,
+                            "snapshot_id": env.snapshot_id,
+                            "kind": env.kind,
+                        }
+                    )
+            except Exception as exc:
+                logger.debug("outbox cursor replay skipped: %s", exc)
+
         # Send any existing messages first, recording their ids for dedup.
         replayed_ids: set = set()
         existing_messages = await response_bus.get_messages(session_id)

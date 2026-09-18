@@ -180,6 +180,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "asyncio: mark test as an asyncio test",
+    "harness_conformance: host-neutral harness contract suite (HP-00)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pydantic.*",

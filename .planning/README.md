@@ -10,7 +10,13 @@ records it links into. User-facing onboarding lives in the root
 
 ```
 .planning/
-  PROJECT.md        big-picture overview
+  PROJECT.md        big-picture overview + current milestone
+  REQUIREMENTS.md   v2.0 Harness Excellence requirements (REQ-IDs)
+  ROADMAP.md        GSD phases 1–5 (HP-00 … HP-12)
+  STATE.md          living execution position
+  MILESTONES.md     v1 shipped / v2.0 in progress
+  config.json       GSD workflow config
+  phases/           one PLAN.md per HP
   SPEC.md           normative semantics (invariants, contracts)
   PATTERNS.md       deployment patterns (Rails vs. Orchestrator)
   architecture.md   diagrams (boot, interact, executive, pruning)
@@ -19,7 +25,7 @@ records it links into. User-facing onboarding lives in the root
   runbooks/         step-by-step operator/dev procedures
   adr/              architecture decision records (immutable once accepted)
   specs/            design specs for feature work (agent-authored)
-  plans/            task-by-task implementation plans (agent-authored)
+  plans/            historical task-by-task plans (pre-GSD)
   archive/          superseded / shipped-and-historical docs
 ```
 
@@ -34,6 +40,7 @@ by slug (e.g. `specs/<date>-foo-design.md` ↔ `plans/<date>-foo.md`).
 | You want to… | Read |
 |---|---|
 | Get the big picture | [`PROJECT.md`](PROJECT.md) |
+| Execute v2.0 Harness Excellence | [`ROADMAP.md`](ROADMAP.md) · [`REQUIREMENTS.md`](REQUIREMENTS.md) · [`../docs/HARNESS_EXCELLENCE_PLAN.md`](../docs/HARNESS_EXCELLENCE_PLAN.md) |
 | Look up normative semantics | [`SPEC.md`](SPEC.md) |
 | Choose a deployment pattern | [`PATTERNS.md`](PATTERNS.md) |
 | See diagrams | [`architecture.md`](architecture.md) |
@@ -85,6 +92,7 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0018](adr/0018-lean-tool-surfacing.md) | Lean tool surfacing (threshold-auto progressive tool disclosure) | Accepted |
 | [0026](adr/0026-task-driven-turn-lock.md) | Task-driven turn-lock (work-stack orchestration) | Accepted |
 | [0027](adr/0027-conversation-use-case-spec.md) | Conversation Use Case Specification (CUCS) | Accepted |
+| [0054](adr/0054-harness-contracts.md) | Host-neutral harness contracts (NativeCaller, TurnRun, snapshot, provider) | Accepted |
 
 ## specs/ — design specs
 

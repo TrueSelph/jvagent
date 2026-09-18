@@ -9,6 +9,8 @@
 ```
 tests/
 ├── conftest.py              # session-level fixtures
+├── harness/                 # ADR-0054 contracts + HarnessRuntime (HP-02…12)
+├── conformance/             # host-neutral harness suite (marker: harness_conformance)
 ├── action/                  # per-action unit tests
 │   ├── orchestrator/     # Orchestrator loop
 │   ├── interact/            # walker bootstrap + visit semantics

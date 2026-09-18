@@ -25,6 +25,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 |---|---|
 | **Navigate the design docs** | [`.planning/README.md`](.planning/README.md) (folder index) |
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
+| **v2.0 Harness Excellence** | [`.planning/ROADMAP.md`](.planning/ROADMAP.md) · [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md) · [`docs/HARNESS_EXCELLENCE_PLAN.md`](docs/HARNESS_EXCELLENCE_PLAN.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
 | **Choose a deployment pattern** (Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
@@ -222,7 +223,9 @@ pytest tests/                  # or the affected slice(s) at minimum
 
 ## 9. Roadmap and in-flight work
 
-- Orchestrator design + roadmap: [`.planning/adr/0012-skill-executive-architecture.md`](.planning/adr/0012-skill-executive-architecture.md), [`.planning/archive/EXECUTIVE-ROADMAP.md`](.planning/archive/EXECUTIVE-ROADMAP.md).
+- **v2.0 Harness Excellence** (active): [`.planning/ROADMAP.md`](.planning/ROADMAP.md), [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md), [`docs/HARNESS_EXCELLENCE_PLAN.md`](docs/HARNESS_EXCELLENCE_PLAN.md).
+- Orchestrator design: [`.planning/adr/0012-skill-executive-architecture.md`](.planning/adr/0012-skill-executive-architecture.md).
+- v1 history: [`.planning/archive/EXECUTIVE-ROADMAP.md`](.planning/archive/EXECUTIVE-ROADMAP.md).
 - ADRs: [`.planning/adr/`](.planning/adr/).
 
 ---

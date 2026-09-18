@@ -10,6 +10,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`.
+
+- **Harness baseline audit (HP-01).** Process-local bus, caches, breakers, and locks inventoried in `.planning/phases/01-contracts-and-baseline/PROCESS-LOCAL-STATE.md` with characterization tests. No replacements.
+
+- **Harness contract freeze (ADR-0054, HP-00).** `jvagent.harness.contracts` defines `NativeCaller`, TurnRun transitions, `ToolSurfaceSnapshot`, invocation/event envelopes, and `HostCapabilityProvider`. Host-domain fields and model-supplied authority keys are rejected. Conformance suite at `tests/conformance/` (`harness_conformance` marker).
+
 - **Opt-in `[EVENT]` lines in loop history (ADR-0053).** The Orchestrator's
   `with_event` attribute (default `false`, resolvable per channel via
   `channel_overrides`) feeds `[EVENT]` annotations from PRIOR interactions into

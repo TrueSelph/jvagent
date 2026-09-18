@@ -140,6 +140,10 @@ class CircuitBreaker:
     def reset(self) -> None:
         self._states.clear()
 
+    def bind_shared_backend(self, states: Dict[str, Any]) -> None:
+        """Optional shared breaker map (HP-07). Default remains process-local."""
+        self._states = states
+
 
 # Process-wide default breaker; the Orchestrator configures threshold/cooldown
 # on it from agent.yaml at each turn (cheap, idempotent).

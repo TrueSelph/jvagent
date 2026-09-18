@@ -88,19 +88,72 @@ def wrap_action_tool(
     )
 
     async def _run(args: Dict[str, Any], _tool: Any = tool) -> str:
+        from jvagent.harness.contracts import (
+            HarnessContractError,
+            IdempotencyClass,
+            reject_model_authority_fields,
+        )
+
+        call_args = dict(args or {})
+        reject_model_authority_fields(call_args)
         if effective_access_label is not None and not await is_tool_allowed(
             agent, label=effective_access_label, user_id=user_id, channel=channel
         ):
             return "(access denied)"
-        call_kwargs = dict(args or {})
+        call_kwargs = dict(call_args)
         if visitor is not None:
             call_kwargs["visitor"] = visitor
+        record = None
+        runtime = None
+        correlation_id = ""
+        try:
+            from jvagent.action.orchestrator.turn_cache import get_turn_cache
+            from jvagent.harness.runtime import get_runtime
+
+            turn = get_turn_cache() or {}
+            snap = turn.get("snapshot")
+            correlation_id = str(turn.get("correlation_id") or "")
+            if snap is not None and correlation_id:
+                runtime = get_runtime()
+                klass = getattr(_tool, "idempotency_class", None)
+                if not isinstance(klass, IdempotencyClass):
+                    klass = None
+                record, cached = runtime.begin_invocation(
+                    correlation_id=correlation_id,
+                    snapshot_id=snap.snapshot_id,
+                    tool_name=name,
+                    payload=call_args,
+                    idempotency_class=klass,
+                )
+                if cached is not None:
+                    return cached
+        except HarnessContractError as exc:
+            return f"(tool error: {exc})"
+        except Exception as exc:
+            logger.debug("wrap_action_tool: ledger skip: %s", exc)
+            record = None
+            runtime = None
         try:
             result = await _tool.call(**call_kwargs)
         except Exception as exc:
             logger.warning("wrap_action_tool: tool %r raised: %s", name, exc)
+            if runtime is not None and record is not None:
+                runtime.finish_invocation(
+                    correlation_id=correlation_id,
+                    record=record,
+                    result=f"(tool error: {exc})",
+                    ok=False,
+                )
             return f"(tool error: {exc})"
-        return (getattr(result, "content", "") or "") if result is not None else ""
+        content = (getattr(result, "content", "") or "") if result is not None else ""
+        if runtime is not None and record is not None:
+            runtime.finish_invocation(
+                correlation_id=correlation_id,
+                record=record,
+                result=content,
+                ok=True,
+            )
+        return content
 
     schema = getattr(tool, "parameters_schema", None)
     return SkillTool(

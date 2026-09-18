@@ -116,6 +116,20 @@ async def interact(
             details={"utterance": utterance},
         )
 
+    if data:
+        from jvagent.harness.contracts import (
+            HarnessContractError,
+            reject_host_domain_fields,
+        )
+
+        try:
+            reject_host_domain_fields(data)
+        except HarnessContractError as exc:
+            raise ValidationError(
+                message=str(exc),
+                details={"reason": "host_domain_forbidden"},
+            ) from exc
+
     # Imports kept lazy so `import jvagent.embed` stays cheap and works even
     # in environments that haven't called `bootstrap()` yet.
     from jvspatial import flush_deferred_entities

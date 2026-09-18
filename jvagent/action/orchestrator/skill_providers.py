@@ -1,10 +1,9 @@
-"""Host-provided SOP skills for embedded deployments (ADR-0012 extension).
+"""Host-provided SOP skills for embedded deployments (ADR-0012 / HP-08).
 
-Hosts (e.g. Integral) register sync callables that return additional
-:class:`~jvagent.action.orchestrator.skills.SkillDoc` entries at runtime.
-These merge into :func:`~jvagent.action.orchestrator.skills.discover_skill_docs`
-after filesystem resolution. Filesystem / app-local skills win on name
-collision so a host overlay cannot shadow the agent's base skill set.
+Legacy process-global callables remain as a shim. New hosts should register
+tools/skills on :class:`~jvagent.harness.runtime.HarnessRuntime` (per
+``session_id``) and serve them through ``ToolSurfaceSnapshot``. The Orchestrator
+must not import host services.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ _providers: List[HostSkillProvider] = []
 
 
 def register_host_skill_provider(fn: HostSkillProvider) -> None:
-    """Register a host skill provider. Safe to call multiple times."""
+    """Register a legacy host skill provider. Prefer HostCapabilityProvider."""
     if fn not in _providers:
         _providers.append(fn)
 
@@ -33,9 +32,11 @@ def clear_host_skill_providers() -> None:
 
 
 def collect_host_skill_docs(agent: Any) -> List[SkillDoc]:
-    """Invoke every registered provider; best-effort per provider."""
-    if not _providers:
-        return []
+    """Invoke every registered provider; best-effort per provider.
+
+    Snapshot-scoped host skills (HP-08) are merged from the admitted
+    ToolSurfaceSnapshot when a turn cache is bound.
+    """
     docs: List[SkillDoc] = []
     for provider in _providers:
         try:
@@ -48,6 +49,25 @@ def collect_host_skill_docs(agent: Any) -> List[SkillDoc]:
                 provider,
                 exc,
             )
+    try:
+        from jvagent.action.orchestrator.turn_cache import get_turn_cache
+
+        turn = get_turn_cache() or {}
+        snap = turn.get("snapshot")
+        if snap is not None:
+            existing = {d.name for d in docs}
+            for key in getattr(snap, "host_skill_keys", ()) or ():
+                if key and key not in existing:
+                    docs.append(
+                        SkillDoc(
+                            name=key,
+                            description=f"Host skill {key}",
+                            body="",
+                            source="host",
+                        )
+                    )
+    except Exception as exc:
+        logger.debug("orchestrator.skill_providers: snapshot merge failed: %s", exc)
     return docs
 
 
