@@ -10,7 +10,9 @@ serializes it: one worker builds, the rest wait then read the finished graph
 Backends are the SAME ones the conversation turn-lock uses (one Redis/DynamoDB
 config per deployment). Without either configured this falls back to an
 in-process lock, which only serializes within a single worker — cross-process
-protection genuinely requires Redis/DynamoDB.
+protection genuinely requires Redis/DynamoDB. Session/turn ownership leases live
+on :class:`jvagent.harness.runtime.HarnessRuntime` (HP-07); this module is the
+bootstrap/identity mutex, not a silent stand-in for distributed session ownership.
 """
 
 from __future__ import annotations

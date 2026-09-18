@@ -1,0 +1,27 @@
+schema: jvagent.use-case/v1
+id: harness.tool.selection
+title: Host tool is selected from the admitted snapshot, not a live host import
+priority: P0
+tags: [harness, tool-selection]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: lookup
+    when:
+      user: "Look up the host record"
+    harness:
+      decisions:
+        - action: tool
+          tool: host_lookup
+          args:
+            q: x
+        - action: final
+          answer: "found"
+    then:
+      loop:
+        tools_called:
+          - host_lookup
+      tools_surface:
+        includes:
+          - host_lookup

@@ -1,0 +1,24 @@
+schema: jvagent.use-case/v1
+id: harness.safety.untrusted
+title: Untrusted script skill refuses without an approved isolation backend
+priority: P0
+tags: [harness, safety]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: refuse
+    when:
+      user: "Run this untrusted script skill"
+    harness:
+      decisions:
+        - action: tool
+          tool: activate_skill
+          args:
+            digest: digest-untrusted
+            trust_tier: untrusted
+        - action: final
+          answer: "refused"
+    then:
+      context:
+        isolation_refused: true

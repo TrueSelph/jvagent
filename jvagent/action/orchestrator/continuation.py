@@ -16,7 +16,7 @@ loads and advances its own active session.
 from __future__ import annotations
 
 import logging
-from typing import Any, FrozenSet, Optional, Set
+from typing import Any, FrozenSet, Mapping, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -495,6 +495,34 @@ async def cancel_orphan_flow_tasks(
     return cancelled
 
 
+def completed_tool_observation(
+    tool_name: str, args: Optional[Mapping[str, Any]] = None
+) -> Optional[str]:
+    """Cached IDEMPOTENT result for ``(tool_name, args)`` on the live TurnRun.
+
+    Used on loop resume so a completed invocation is not dispatched again.
+    Returns ``None`` when there is no ledger hit (undeclared / non-idempotent
+    tools re-execute).
+    """
+    try:
+        from jvagent.action.orchestrator.turn_cache import get_turn_cache
+        from jvagent.harness.runtime import get_runtime
+    except Exception:
+        return None
+    turn = get_turn_cache() or {}
+    corr = str(turn.get("correlation_id") or "")
+    if not corr:
+        return None
+    try:
+        return get_runtime().peek_completed_result(
+            correlation_id=corr,
+            tool_name=tool_name,
+            payload=dict(args or {}),
+        )
+    except Exception:
+        return None
+
+
 __all__ = [
     "active_flow_owner",
     "active_flow_note",
@@ -511,4 +539,5 @@ __all__ = [
     "task_lock_progress_count",
     "task_lock_title",
     "SOFT_ABANDON_ASK_STRIKE",
+    "completed_tool_observation",
 ]

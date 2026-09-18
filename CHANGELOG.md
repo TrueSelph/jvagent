@@ -10,6 +10,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.
+
+- **Harness baseline audit (HP-01).** Process-local bus, caches, breakers, and locks inventoried in `.planning/phases/01-contracts-and-baseline/PROCESS-LOCAL-STATE.md` with characterization tests. No replacements.
+
+- **Harness contract freeze (ADR-0054, HP-00).** `jvagent.harness.contracts` defines `NativeCaller`, TurnRun transitions, `ToolSurfaceSnapshot`, invocation/event envelopes, and `HostCapabilityProvider`. Host-domain fields and model-supplied authority keys are rejected. Conformance suite at `tests/conformance/` (`harness_conformance` marker).
+
 - **Opt-in `[EVENT]` lines in loop history (ADR-0053).** The Orchestrator's
   `with_event` attribute (default `false`, resolvable per channel via
   `channel_overrides`) feeds `[EVENT]` annotations from PRIOR interactions into
@@ -26,6 +32,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   changes.
 
 ### Changed
+
+- **ResponseBus now enforces the single-egress latch.** The first delivered
+  non-transient user stream chunk marks its `Interaction` as emitted, active
+  chunks may finish that same stream, and any later independent user publish
+  for the turn is suppressed at the framework delivery boundary. This fixes
+  duplicate assistant bubbles without requiring consumers to compare or
+  normalize response text.
 
 - **Defaults that permit long-running, deep-thinking models (#214).** Three
   shipped defaults combined to end a reasoning model's turn before it could
@@ -72,6 +85,22 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `scripts/ci/wait_for_workflow.sh` and proceed only once that commit's
   `Test jvagent` run has succeeded. The `jvchat` job has a 20-minute job
   timeout, an 8-minute install timeout and one `npm ci` retry.
+
+### Fixed
+
+- **Atomic per-interaction egress claim across ResponseBus instances.** A
+  process-wide `InteractionEgressRecord` (keyed by `interaction_id`) is the
+  single durable latch for user delivery and `message_type=final`. Rematerialized
+  `Interaction` objects and a second bus instance can no longer emit a second
+  Hello. Fresh session → Hello → exactly one persisted response and one
+  delivered final (`test_atomic_final_emission.py`).
+
+- **One assistant identity per streamed turn.** Non-stream `publish()` while a
+  user accumulator is open is suppressed (it minted a new Object id, which
+  Integral splits into a second bubble). `finalize_interaction` no longer
+  emits a second `message_type=final` under a fresh id when the stream already
+  finalized. `commit_pending_adhoc` reuses `acc.message_id`. jvchat merges a
+  same-id adhoc flush into the in-flight stream row.
 
 ### Added
 

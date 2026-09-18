@@ -16,6 +16,7 @@ from typing import Annotated, Optional
 
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_executor import get_tool_visitor
 
@@ -71,7 +72,10 @@ class FileInterfaceAction(Action):
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="file_interface__write_file")
+    @tool(
+        name="file_interface__write_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_write_file(
         self,
         path: Annotated[str, "Relative path (e.g. output/notes.md)."],
@@ -96,7 +100,10 @@ class FileInterfaceAction(Action):
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="file_interface__write_binary_file")
+    @tool(
+        name="file_interface__write_binary_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_write_binary_file(
         self,
         path: Annotated[str, "Relative path (e.g. output/report.pdf)."],
@@ -138,7 +145,10 @@ class FileInterfaceAction(Action):
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="file_interface__create_directory")
+    @tool(
+        name="file_interface__create_directory",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_directory(
         self,
         path: Annotated[str, "Relative directory path."],
@@ -154,7 +164,10 @@ class FileInterfaceAction(Action):
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="file_interface__delete_file")
+    @tool(
+        name="file_interface__delete_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_file(
         self,
         path: Annotated[str, "Relative file path."],

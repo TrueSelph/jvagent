@@ -20,6 +20,21 @@ def _clear_jvspatial_load_env_cache():
 
 
 @pytest.fixture(autouse=True)
+def _clear_interaction_egress():
+    """Process-wide egress claims must not leak across tests.
+
+    ``InteractionEgressRecord`` is keyed by interaction_id. Many unit tests
+    reuse placeholders like ``i1``, so a claimed Hello in one file would
+    suppress user publish in another.
+    """
+    from jvagent.action.response.response_bus import clear_interaction_egress
+
+    clear_interaction_egress()
+    yield
+    clear_interaction_egress()
+
+
+@pytest.fixture(autouse=True)
 def _ensure_default_graph_context(tmp_path_factory, monkeypatch):
     """Bind a per-test default GraphContext for any test that touches jvspatial.
 

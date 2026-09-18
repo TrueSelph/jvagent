@@ -8,9 +8,11 @@ import pytest
 
 from jvagent.scaffold.skill_resolve import (
     apply_skill_selector,
+    parse_skill_bundle,
     resolve_agent_skills,
     resolve_builtin_skills,
     resolve_merged_skill_bundles,
+    skill_digest,
 )
 
 
@@ -27,6 +29,21 @@ def test_resolve_builtin_skills_contains_catalog_entries() -> None:
     assert "outlook_calendar" in skills
     assert "onedrive" in skills
     assert "excel" in skills
+
+
+def test_skill_digest_is_stable_for_skill_md(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "hashed"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: hashed\ndescription: d\n---\nbody\n"
+    )
+    first = skill_digest(skill_dir)
+    second = skill_digest(skill_dir)
+    assert first == second
+    assert len(first) == 16
+    bundle = parse_skill_bundle(skill_dir, source="app")
+    assert bundle is not None
+    assert bundle["digest"] == first
 
 
 def test_resolve_agent_skills_reads_app_local_bundle(tmp_path: Path) -> None:

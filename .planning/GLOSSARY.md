@@ -70,6 +70,18 @@ Former Rails-pattern router (weight `-200`). Removed in favor of `OrchestratorIn
 ### `InteractWalker`
 jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent/action/interact/interact_walker.py:47+`. Bootstraps `User` / `Conversation` / `Interaction` and visits each top-level `InteractAction` in `weight` order.
 
+### `NativeCaller`
+Admission identity `(agent_id, user_id, session_id)`. Host scopes map to `session_id` outside jvagent. Source: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py). See ADR-0054.
+
+### `HarnessRuntime`
+Store-backed harness runtime: snapshots, TurnRun journal, invocation ledger, outbox, session leases, traces, skill staging. Share a `HarnessStore` for two-worker tests. Source: [`jvagent/harness/runtime.py`](../jvagent/harness/runtime.py).
+
+### `ToolSurfaceSnapshot`
+Immutable per-turn tool/skill surface keyed by `snapshot_id` + NativeCaller. Revoked/expired snapshots cannot dispatch. Source: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py).
+
+### `TurnRun`
+Log-shaped execution journal (not a conversation Node). States: accepted → running → waiting_tool | waiting_approval → terminal / recovery_required. Source: [`jvagent/harness/runtime.py`](../jvagent/harness/runtime.py).
+
 ### `LanguageModelAction`
 Subclass of `BaseModelAction` for LLM providers. Source: `jvagent/action/model/language/base.py:345`. Concrete subclasses: Anthropic, OpenAI, OpenRouter, Ollama.
 

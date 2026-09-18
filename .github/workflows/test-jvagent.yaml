@@ -59,6 +59,54 @@ jobs:
           pip install pre-commit
           pre-commit run --all-files
 
+  harness-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[test]'
+      - name: Conformance lane
+        run: pytest tests/conformance tests/harness -m harness_conformance -q --tb=short
+
+  harness-two-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[test]'
+      - name: Two-worker / crash-recovery lane
+        run: pytest tests/conformance/test_leases.py tests/conformance/test_invocation_recovery.py -q --tb=short
+
+  harness-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[test]'
+      - name: Skill isolation lane
+        run: pytest tests/ -m harness_isolation -q --tb=short
+
+  harness-load:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[test]'
+      - name: Load lane
+        run: pytest tests/ -m harness_load -q --tb=short
+
   jvchat:
     runs-on: ubuntu-latest
     # A registry stall in `npm ci` once held this job for the 45-minute default

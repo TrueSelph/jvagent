@@ -1,0 +1,25 @@
+schema: jvagent.use-case/v1
+id: harness.skill.activation
+title: Trusted skill activates from digest under the current snapshot
+priority: P0
+tags: [harness, skill-activation]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: activate
+    when:
+      user: "Use the host skill"
+    harness:
+      decisions:
+        - action: tool
+          tool: activate_skill
+          args:
+            digest: digest-host
+            trust_tier: trusted
+        - action: final
+          answer: "activated"
+    then:
+      loop:
+        tools_called:
+          - activate_skill

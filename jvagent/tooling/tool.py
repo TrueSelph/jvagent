@@ -28,6 +28,7 @@ class Tool:
     access_label: Optional[str] = None
     terminal: Optional[bool] = None
     binds_visitor: Optional[bool] = None
+    idempotency_class: Optional[Any] = None
 
     def __post_init__(self) -> None:
         if not self.parameters_schema:

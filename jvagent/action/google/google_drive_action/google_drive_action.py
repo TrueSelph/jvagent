@@ -5,6 +5,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Optional
 from googleapiclient.http import MediaIoBaseDownload
 from jvspatial.env import env
 
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
@@ -423,7 +424,10 @@ class GoogleDriveAction(GoogleAction):
         )
         return json.dumps(results, indent=2)
 
-    @tool(name="google_drive__upload_file")
+    @tool(
+        name="google_drive__upload_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_upload_file(
         self,
         name: Annotated[str, "Name for the uploaded file."],
@@ -494,7 +498,10 @@ class GoogleDriveAction(GoogleAction):
             indent=2,
         )
 
-    @tool(name="google_drive__share_file")
+    @tool(
+        name="google_drive__share_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_share_file(
         self,
         file_id: Annotated[str, "The ID of the file to share."],
@@ -527,7 +534,10 @@ class GoogleDriveAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_drive__delete_file")
+    @tool(
+        name="google_drive__delete_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_file(
         self,
         file_id: Annotated[str, "The ID of the file to delete."],
