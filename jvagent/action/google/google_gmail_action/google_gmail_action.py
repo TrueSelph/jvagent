@@ -7,6 +7,7 @@ from jvagent.action.email_action.canonical_send_builder import (
     standalone_mailbox_effective_sender_name,
 )
 from jvagent.action.email_action.modules.gmail import GmailEmailProvider
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
@@ -90,7 +91,10 @@ class GoogleGmailAction(GoogleAction):
             .execute()
         )
 
-    @tool(name="gmail__send_email")
+    @tool(
+        name="gmail__send_email",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_send_email(
         self,
         to: Annotated[str, "Recipient email address."],

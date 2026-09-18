@@ -106,12 +106,14 @@ def wrap_action_tool(
         record = None
         runtime = None
         correlation_id = ""
+        interaction = None
         try:
             from jvagent.action.orchestrator.turn_cache import get_turn_cache
             from jvagent.harness.runtime import get_runtime
 
             turn = get_turn_cache() or {}
             snap = turn.get("snapshot")
+            interaction = turn.get("interaction")
             correlation_id = str(turn.get("correlation_id") or "")
             if snap is not None and correlation_id:
                 runtime = get_runtime()
@@ -144,6 +146,8 @@ def wrap_action_tool(
                     result=f"(tool error: {exc})",
                     ok=False,
                 )
+                if interaction is not None:
+                    runtime.persist_to_interaction(interaction, correlation_id)
             return f"(tool error: {exc})"
         content = (getattr(result, "content", "") or "") if result is not None else ""
         if runtime is not None and record is not None:
@@ -153,6 +157,8 @@ def wrap_action_tool(
                 result=content,
                 ok=True,
             )
+            if interaction is not None:
+                runtime.persist_to_interaction(interaction, correlation_id)
         return content
 
     schema = getattr(tool, "parameters_schema", None)

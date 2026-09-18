@@ -1443,7 +1443,10 @@ class OrchestratorLoopMixin:
             )
             tool_t0 = time.perf_counter()
             try:
-                if tool_call_timeout > 0:
+                cached = continuation.completed_tool_observation(tool_name, args)
+                if cached is not None:
+                    obs = cached
+                elif tool_call_timeout > 0:
                     obs = await asyncio.wait_for(
                         tool.run(args), timeout=tool_call_timeout
                     )

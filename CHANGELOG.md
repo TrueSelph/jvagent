@@ -10,7 +10,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
-- **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`.
+- **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery.
 
 - **Harness baseline audit (HP-01).** Process-local bus, caches, breakers, and locks inventoried in `.planning/phases/01-contracts-and-baseline/PROCESS-LOCAL-STATE.md` with characterization tests. No replacements.
 

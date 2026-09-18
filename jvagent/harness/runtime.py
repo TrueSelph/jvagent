@@ -11,7 +11,7 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -27,6 +27,7 @@ from jvagent.harness.contracts import (
     ToolSurfaceSnapshot,
     TurnRunState,
     assert_turn_run_transition,
+    native_caller_from_mapping,
     reject_host_domain_fields,
     reject_model_authority_fields,
 )
@@ -37,6 +38,7 @@ DEFAULT_LEASE_TTL_S = 30.0
 MAX_EVENTS_PER_SESSION = 10_000
 MAX_OBSERVATION_CHARS = 8_000
 APPROVED_ISOLATION_BACKENDS = frozenset({"gvisor", "firecracker", "nsjail"})
+CHECKPOINT_KIND = "harness.turn_run"
 
 _runtime_guard = threading.Lock()
 _runtime: Optional["HarnessRuntime"] = None
@@ -338,6 +340,173 @@ class HarnessRuntime:
     ) -> List[Dict[str, Any]]:
         journal = self._require_run(correlation_id)
         return journal.entries[offset : offset + limit]
+
+    def peek_completed_result(
+        self,
+        *,
+        correlation_id: str,
+        tool_name: str,
+        payload: Mapping[str, Any],
+    ) -> Optional[str]:
+        """Cached IDEMPOTENT result for this (tool, args). Does not bump attempt."""
+        digest = _input_digest(tool_name, payload)
+        ledger_key = f"{correlation_id}:{tool_name}:{digest}"
+        with self.store.lock:
+            existing = self.store.invocations.get(ledger_key)
+            if existing is None:
+                return None
+            if existing.idempotency_class is not IdempotencyClass.IDEMPOTENT:
+                return None
+            return self.store.invocation_results.get(existing.invocation_id)
+
+    def correlation_for_session(self, session_id: str) -> Optional[str]:
+        if not session_id:
+            return None
+        held = self.store.leases.get(session_id)
+        if held:
+            corr = str(held.get("correlation_id") or "")
+            if corr:
+                return corr
+        with self.store.lock:
+            for corr, journal in self.store.runs.items():
+                if journal.caller.session_id == session_id and (
+                    journal.state not in TURN_RUN_TERMINAL
+                ):
+                    return corr
+        return None
+
+    def export_checkpoint(self, correlation_id: str) -> Dict[str, Any]:
+        journal = self._require_run(correlation_id)
+        snap = self.store.snapshots.get(journal.snapshot_id)
+        with self.store.lock:
+            prefix = f"{correlation_id}:"
+            invocations: List[Dict[str, Any]] = []
+            for key, rec in self.store.invocations.items():
+                if not key.startswith(prefix):
+                    continue
+                rec_map = asdict(rec)
+                klass = rec.idempotency_class
+                rec_map["idempotency_class"] = klass.value if klass else None
+                invocations.append(
+                    {
+                        "ledger_key": key,
+                        "record": rec_map,
+                        "result": self.store.invocation_results.get(rec.invocation_id),
+                    }
+                )
+            outbox = [
+                asdict(e) for e in self.store.outbox.get(journal.caller.session_id, [])
+            ]
+        snap_map: Optional[Dict[str, Any]] = None
+        if snap is not None:
+            snap_map = asdict(snap)
+            snap_map["caller"] = snap.caller.to_mapping()
+        return {
+            "correlation_id": journal.correlation_id,
+            "state": journal.state.value,
+            "snapshot_id": journal.snapshot_id,
+            "interaction_id": journal.interaction_id,
+            "seq": journal.seq,
+            "completed_invocation_ids": list(journal.completed_invocation_ids),
+            "observation_refs": list(journal.observation_refs),
+            "plan_phase": journal.plan_phase,
+            "reason": journal.reason,
+            "entries": list(journal.entries),
+            "invocations": invocations,
+            "outbox": outbox,
+            "caller": journal.caller.to_mapping(),
+            "snapshot": snap_map,
+            "worker_id": journal.worker_id,
+        }
+
+    def import_checkpoint(self, payload: Mapping[str, Any]) -> TurnRunJournal:
+        caller = native_caller_from_mapping(payload["caller"])
+        journal = TurnRunJournal(
+            correlation_id=str(payload["correlation_id"]),
+            caller=caller,
+            state=TurnRunState(str(payload["state"])),
+            snapshot_id=str(payload.get("snapshot_id") or ""),
+            interaction_id=str(payload.get("interaction_id") or ""),
+            seq=int(payload.get("seq") or 0),
+            worker_id=str(payload.get("worker_id") or self.worker_id),
+            entries=list(payload.get("entries") or []),
+            completed_invocation_ids=list(
+                payload.get("completed_invocation_ids") or []
+            ),
+            observation_refs=list(payload.get("observation_refs") or []),
+            plan_phase=str(payload.get("plan_phase") or ""),
+            reason=str(payload.get("reason") or ""),
+        )
+        snap_raw = payload.get("snapshot")
+        snap: Optional[ToolSurfaceSnapshot] = None
+        if isinstance(snap_raw, dict) and snap_raw.get("snapshot_id"):
+            snap = ToolSurfaceSnapshot(
+                snapshot_id=str(snap_raw["snapshot_id"]),
+                caller=native_caller_from_mapping(snap_raw["caller"]),
+                native_tool_names=tuple(snap_raw.get("native_tool_names") or ()),
+                native_skill_keys=tuple(snap_raw.get("native_skill_keys") or ()),
+                host_tool_names=tuple(snap_raw.get("host_tool_names") or ()),
+                host_skill_keys=tuple(snap_raw.get("host_skill_keys") or ()),
+                created_at=str(snap_raw.get("created_at") or ""),
+                expires_at=str(snap_raw.get("expires_at") or ""),
+                revoked=bool(snap_raw.get("revoked")),
+            )
+        with self.store.lock:
+            self.store.runs[journal.correlation_id] = journal
+            if journal.interaction_id:
+                self.store.runs_by_interaction[journal.interaction_id] = (
+                    journal.correlation_id
+                )
+            if snap is not None:
+                self.store.snapshots[snap.snapshot_id] = snap
+            for item in payload.get("invocations") or []:
+                rec_map = dict(item.get("record") or {})
+                klass_raw = rec_map.get("idempotency_class")
+                rec = InvocationRecord(
+                    invocation_id=str(rec_map["invocation_id"]),
+                    snapshot_id=str(rec_map.get("snapshot_id") or ""),
+                    tool_name=str(rec_map.get("tool_name") or ""),
+                    input_digest=str(rec_map.get("input_digest") or ""),
+                    idempotency_class=(
+                        IdempotencyClass(klass_raw) if klass_raw else None
+                    ),
+                    attempt=int(rec_map.get("attempt") or 1),
+                    outcome=rec_map.get("outcome"),
+                )
+                key = str(item.get("ledger_key") or "")
+                if key:
+                    self.store.invocations[key] = rec
+                result = item.get("result")
+                if result is not None:
+                    self.store.invocation_results[rec.invocation_id] = str(result)
+            envelopes = [EventEnvelope(**raw) for raw in (payload.get("outbox") or [])]
+            if envelopes:
+                self.store.outbox[caller.session_id] = envelopes
+        return journal
+
+    def persist_to_interaction(self, interaction: Any, correlation_id: str) -> None:
+        if interaction is None or not correlation_id:
+            return
+        if self.get_run(correlation_id) is None:
+            return
+        payload = self.export_checkpoint(correlation_id)
+        metrics = [
+            m
+            for m in list(getattr(interaction, "observability_metrics", None) or [])
+            if not (isinstance(m, dict) and m.get("kind") == CHECKPOINT_KIND)
+        ]
+        metrics.append({"kind": CHECKPOINT_KIND, "payload": payload})
+        interaction.observability_metrics = metrics
+
+    def checkpoint_from_interaction(self, interaction: Any) -> Optional[Dict[str, Any]]:
+        if interaction is None:
+            return None
+        for metric in getattr(interaction, "observability_metrics", None) or []:
+            if isinstance(metric, dict) and metric.get("kind") == CHECKPOINT_KIND:
+                payload = metric.get("payload")
+                if isinstance(payload, dict):
+                    return payload
+        return None
 
     # -- invocation ledger (HP-05) ----------------------------------------
 
@@ -727,6 +896,7 @@ def set_runtime(runtime: HarnessRuntime) -> None:
 
 __all__ = [
     "APPROVED_ISOLATION_BACKENDS",
+    "CHECKPOINT_KIND",
     "AdmissionRefused",
     "HarnessRuntime",
     "HarnessStore",

@@ -47,15 +47,48 @@ def cancel_interact(
     session_id: Optional[str] = None,
     thread_id: Optional[str] = None,
 ) -> bool:
-    """Cancel an in-flight :func:`interact_stream` walker task, if any."""
+    """Cancel an in-flight :func:`interact_stream` walker task, if any.
+
+    Task handle cancel is the delivery interrupt. TurnRun is the source of
+    truth: the matching session journal is marked ``recovery_required``.
+    """
+    cancelled = False
     for key in (thread_id, session_id):
         if not key:
             continue
         task = _interact_tasks.get(key)
         if task is not None and not task.done():
             task.cancel()
-            return True
-    return False
+            cancelled = True
+    if cancelled:
+        _mark_embed_recovery(session_id=session_id, thread_id=thread_id)
+    return cancelled
+
+
+def _mark_embed_recovery(
+    *,
+    session_id: Optional[str] = None,
+    thread_id: Optional[str] = None,
+) -> None:
+    try:
+        from jvagent.harness.runtime import get_runtime
+
+        rt = get_runtime()
+        for sid in (session_id, thread_id):
+            if not sid:
+                continue
+            corr = rt.correlation_for_session(sid)
+            if not corr:
+                continue
+            try:
+                rt.mark_recovery(corr, reason="embed_cancel")
+            except Exception:
+                logger.debug(
+                    "embed.cancel_interact: mark_recovery failed corr=%s", corr
+                )
+            break
+    except Exception:
+        logger.debug("embed.cancel_interact: harness recovery skip", exc_info=True)
 
 
 async def interact(
@@ -480,6 +513,14 @@ async def interact_stream(
             if sid not in task_keys:
                 task_keys.append(sid)
                 await _register_interact_task(sid, walk_task)
+            try:
+                from jvagent.harness.runtime import get_runtime
+
+                corr = getattr(walker, "correlation_id", "") or ""
+                if corr:
+                    get_runtime().bind_lease(sid, corr)
+            except Exception:
+                logger.debug("embed.interact_stream: lease bind skip", exc_info=True)
 
         # Stream messages off the response bus until the walker finishes.
         if walker.response_bus and walker.session_id:

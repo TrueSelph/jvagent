@@ -947,7 +947,7 @@ class OrchestratorInteractAction(
         if interaction is None:
             return
         with bind_turn_cache() as cache:
-            from jvagent.harness.contracts import NativeCaller
+            from jvagent.harness.contracts import NativeCaller, TurnRunState
             from jvagent.harness.runtime import AdmissionRefused, get_runtime
 
             rt = get_runtime()
@@ -960,6 +960,7 @@ class OrchestratorInteractAction(
                 logger.info("harness admission refused: draining")
                 return
             cache["caller"] = caller
+            cache["interaction"] = interaction
             cache["correlation_id"] = (
                 getattr(visitor, "correlation_id", "") or rt.new_correlation()
             )
@@ -968,18 +969,37 @@ class OrchestratorInteractAction(
             except AdmissionRefused:
                 logger.info("harness snapshot admission refused")
                 return
-            rt.start_turn(
-                cache["correlation_id"],
-                caller,
-                cache["snapshot"],
-                interaction_id=str(getattr(interaction, "id", "") or ""),
-            )
+            restored = None
+            payload = rt.checkpoint_from_interaction(interaction)
+            if payload:
+                restored = rt.import_checkpoint(payload)
+            if restored is not None and restored.state not in (
+                TurnRunState.COMPLETED,
+                TurnRunState.FAILED,
+                TurnRunState.CANCELLED,
+            ):
+                cache["correlation_id"] = restored.correlation_id
+                if restored.state is TurnRunState.WAITING_TOOL:
+                    rt.transition(
+                        restored.correlation_id,
+                        TurnRunState.RUNNING,
+                        reason="resume",
+                    )
+            else:
+                rt.start_turn(
+                    cache["correlation_id"],
+                    caller,
+                    cache["snapshot"],
+                    interaction_id=str(getattr(interaction, "id", "") or ""),
+                )
             try:
                 await self._execute_turn(visitor)
                 rt.complete_turn(cache["correlation_id"])
             except Exception:
                 rt.fail_turn(cache["correlation_id"], reason="execute_error")
                 raise
+            finally:
+                rt.persist_to_interaction(interaction, cache["correlation_id"])
 
     async def _execute_turn(self, visitor: "InteractWalker") -> None:
         # Curate the remaining walk path: routable IAs (exposed as tools) must

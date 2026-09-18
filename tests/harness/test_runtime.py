@@ -371,3 +371,55 @@ def test_micro_benches_under_budget(rt: HarnessRuntime, caller: NativeCaller):
         )
     elapsed_ms = (time.perf_counter() - t0) * 1000
     assert elapsed_ms < 2000
+
+
+class _FakeInteraction:
+    def __init__(self) -> None:
+        self.observability_metrics: list = []
+
+
+def test_checkpoint_round_trip_restores_idempotent_result(
+    rt: HarnessRuntime, caller: NativeCaller
+):
+    snap = rt.admit_snapshot(caller)
+    corr = rt.new_correlation()
+    rt.start_turn(corr, caller, snap, interaction_id="int-ckpt")
+    rec, _ = rt.begin_invocation(
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+        tool_name="echo",
+        payload={"x": 1},
+        idempotency_class=IdempotencyClass.IDEMPOTENT,
+    )
+    rt.finish_invocation(correlation_id=corr, record=rec, result="hello")
+    interaction = _FakeInteraction()
+    rt.persist_to_interaction(interaction, corr)
+    other = HarnessRuntime(HarnessStore(), worker_id="w2")
+    payload = other.checkpoint_from_interaction(interaction)
+    assert payload is not None
+    restored = other.import_checkpoint(payload)
+    assert restored.correlation_id == corr
+    assert rec.invocation_id in restored.completed_invocation_ids
+    cached = other.peek_completed_result(
+        correlation_id=corr, tool_name="echo", payload={"x": 1}
+    )
+    assert cached == "hello"
+
+
+def test_peek_completed_skips_non_idempotent(rt: HarnessRuntime, caller: NativeCaller):
+    snap = rt.admit_snapshot(caller)
+    corr = rt.new_correlation()
+    rt.start_turn(corr, caller, snap)
+    rec, _ = rt.begin_invocation(
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+        tool_name="send",
+        payload={"n": 1},
+    )
+    rt.finish_invocation(correlation_id=corr, record=rec, result="sent")
+    assert (
+        rt.peek_completed_result(
+            correlation_id=corr, tool_name="send", payload={"n": 1}
+        )
+        is None
+    )

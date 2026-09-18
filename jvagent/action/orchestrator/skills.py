@@ -82,6 +82,7 @@ class SkillDoc:
     allowed_channels: Tuple[str, ...] = ()
     denied_channels: Tuple[str, ...] = ()
     deny_access_directive: str = ""
+    digest: str = ""
     metadata: dict = field(default_factory=dict)
 
 
@@ -218,6 +219,7 @@ def discover_skill_docs(
                 allowed_channels=tuple(bundle.get("allowed_channels") or ()),
                 denied_channels=tuple(bundle.get("denied_channels") or ()),
                 deny_access_directive=str(bundle.get("deny_access_directive") or ""),
+                digest=str(bundle.get("digest") or ""),
                 metadata=bundle.get("metadata") or {},
             )
         )

@@ -35,6 +35,7 @@ from jvagent.core.sandbox import (
     provision_user_sandbox,
     resolve_agent_user,
 )
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_executor import get_tool_visitor
 
@@ -115,20 +116,75 @@ class CodeExecutionAction(Action):
         )
         return cwd
 
-    async def stage_skill(self, visitor: Any, skill_dir: str, name: str) -> str:
+    async def stage_skill(
+        self,
+        visitor: Any,
+        skill_dir: str,
+        name: str,
+        *,
+        trust_tier: str = "trusted",
+    ) -> str:
         """Copy an activated skill folder into the user's slice (read-on-use).
 
         Returns the path *relative to the sandbox cwd* (e.g.
         ``staged_skills/pdf-generation``) so a script can be run as
-        ``python staged_skills/pdf-generation/scripts/x.py``. Idempotent per
-        turn: re-staging refreshes the copy.
+        ``python staged_skills/pdf-generation/scripts/x.py``. When a turn
+        snapshot is in cache the dest is snapshot/digest-keyed. Idempotent per
+        turn: re-staging refreshes the copy. Untrusted skills refuse unless the
+        runtime has an approved isolation backend.
         """
+        from jvagent.scaffold.skill_resolve import skill_digest
+
         cwd = await self.resolve_user_cwd(visitor)
-        rel = f"{STAGED_SKILLS_DIR}/{name}"
-        dest = os.path.join(cwd, *rel.split("/"))
         src = Path(skill_dir)
         if not src.is_dir():
             raise FileNotFoundError(f"skill dir not found: {skill_dir}")
+        digest = skill_digest(src)
+        rel = f"{STAGED_SKILLS_DIR}/{name}"
+        snap = None
+        caller = None
+        try:
+            from jvagent.action.orchestrator.turn_cache import get_turn_cache
+
+            turn = get_turn_cache() or {}
+            snap = turn.get("snapshot")
+            caller = turn.get("caller")
+        except Exception:
+            pass
+        if snap is not None and caller is not None:
+            from jvagent.harness.runtime import SkillManifest, get_runtime
+
+            rt = get_runtime()
+            rt.require_usable(snap.snapshot_id)
+            if digest not in rt.store.skill_manifests:
+                spec = "claude" if (src / "scripts").is_dir() else "jv"
+                rt.register_manifest(
+                    SkillManifest(
+                        skill_key=name,
+                        source="stage",
+                        digest=digest,
+                        declared_tools=(),
+                        capabilities=(),
+                        trust_tier=trust_tier,
+                        spec=spec,
+                    )
+                )
+            rt.activate_skill(caller, snap.snapshot_id, digest, trust_tier=trust_tier)
+            rel = f"{STAGED_SKILLS_DIR}/{snap.snapshot_id[:12]}/{digest}/{name}"
+        elif trust_tier == "untrusted":
+            from jvagent.harness.runtime import (
+                APPROVED_ISOLATION_BACKENDS,
+                SkillIsolationRefused,
+                get_runtime,
+            )
+
+            backend = get_runtime().isolation_backend
+            if backend not in APPROVED_ISOLATION_BACKENDS:
+                raise SkillIsolationRefused(
+                    "untrusted skill requires an approved isolation backend "
+                    f"(got {backend!r}; subprocess is not a sandbox)"
+                )
+        dest = os.path.join(cwd, *rel.split("/"))
         if os.path.exists(dest):
             shutil.rmtree(dest, ignore_errors=True)
         shutil.copytree(src, dest)
@@ -146,7 +202,7 @@ class CodeExecutionAction(Action):
 
         return collect_tools(self)
 
-    @tool(name="code_execution__bash")
+    @tool(name="code_execution__bash", idempotency_class=IdempotencyClass.NON_RETRYABLE)
     async def _t_bash(
         self,
         command: Annotated[str, "Shell command to run in the sandbox."],

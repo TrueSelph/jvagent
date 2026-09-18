@@ -17,8 +17,12 @@ Trusted SOP skills (no script) activate from digest under the admitted snapshot.
 
 ## Staging
 
-Stage path is `stage/{session_id}/{snapshot_id}/{digest}`. Cleanup is
-`cleanup_stage(path)`. A revoked or expired snapshot cannot activate.
+Runtime stage record is `stage/{session_id}/{snapshot_id}/{digest}`. Filesystem copy
+for `CodeExecutionAction.stage_skill` is `staged_skills/{snapshot_id[:12]}/{digest}/{name}`
+when a turn snapshot is in cache; otherwise the legacy `staged_skills/{name}` dest
+is kept for tests and offline staging. Cleanup is `cleanup_stage(path)`. A revoked
+or expired snapshot cannot activate. Claude (`spec: claude`) activations pass
+`trust_tier=untrusted` and refuse without an approved isolation backend.
 
 ## Audit
 

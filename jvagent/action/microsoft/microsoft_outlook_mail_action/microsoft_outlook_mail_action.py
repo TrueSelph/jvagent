@@ -7,6 +7,7 @@ from jvagent.action.email_action.canonical_send_builder import (
     standalone_mailbox_effective_sender_name,
 )
 from jvagent.action.email_action.modules.outlook import OutlookEmailProvider
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
@@ -157,7 +158,10 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
             "displayName": me.get("displayName"),
         }
 
-    @tool(name="outlook__send_email")
+    @tool(
+        name="outlook__send_email",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_send_email(
         self,
         to: Annotated[str, "Recipient email address."],
