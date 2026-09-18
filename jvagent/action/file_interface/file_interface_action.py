@@ -145,7 +145,10 @@ class FileInterfaceAction(Action):
         except Exception as e:
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="file_interface__create_directory")
+    @tool(
+        name="file_interface__create_directory",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_directory(
         self,
         path: Annotated[str, "Relative directory path."],

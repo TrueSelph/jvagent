@@ -7,7 +7,9 @@ tests. TurnRun is a journal Object (I-GRAPH-02), not a conversation Node.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import logging
 import threading
 import time
 import uuid
@@ -37,8 +39,12 @@ SNAPSHOT_TTL = timedelta(hours=1)
 DEFAULT_LEASE_TTL_S = 30.0
 MAX_EVENTS_PER_SESSION = 10_000
 MAX_OBSERVATION_CHARS = 8_000
+MAX_TRACE_SPANS = 10_000
 APPROVED_ISOLATION_BACKENDS = frozenset({"gvisor", "firecracker", "nsjail"})
 CHECKPOINT_KIND = "harness.turn_run"
+TRACE_KIND = "harness.trace"
+
+_log = logging.getLogger("jvagent.harness")
 
 _runtime_guard = threading.Lock()
 _runtime: Optional["HarnessRuntime"] = None
@@ -117,6 +123,7 @@ class HarnessStore:
     host_tools: Dict[str, List[str]] = field(default_factory=dict)
     host_skills: Dict[str, List[str]] = field(default_factory=dict)
     revoked_host_tools: Dict[str, set] = field(default_factory=dict)
+    revoked_manifests: set = field(default_factory=set)
     breaker_states: Dict[str, Any] = field(default_factory=dict)
     draining: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -131,11 +138,19 @@ class HarnessRuntime:
         *,
         worker_id: str = "",
         isolation_backend: str = "",
+        skill_signing_key: str = "",
+        lease_backend: Any = None,
+        max_trace_spans: int = MAX_TRACE_SPANS,
     ) -> None:
         self.store = store or HarnessStore()
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
         self.isolation_backend = isolation_backend
+        self.skill_signing_key = skill_signing_key
+        self.lease_backend = lease_backend
+        self.max_trace_spans = max_trace_spans
         self.contract_version = CONTRACT_VERSION
+        self._host_runners: Dict[Tuple[str, str], Any] = {}
+        self._compensators: Dict[str, Any] = {}
 
     # -- identity (HP-02) -------------------------------------------------
 
@@ -362,7 +377,10 @@ class HarnessRuntime:
     def correlation_for_session(self, session_id: str) -> Optional[str]:
         if not session_id:
             return None
-        held = self.store.leases.get(session_id)
+        if self.lease_backend is not None:
+            held = self.lease_backend.get(session_id)
+        else:
+            held = self.store.leases.get(session_id)
         if held:
             corr = str(held.get("correlation_id") or "")
             if corr:
@@ -496,6 +514,13 @@ class HarnessRuntime:
             if not (isinstance(m, dict) and m.get("kind") == CHECKPOINT_KIND)
         ]
         metrics.append({"kind": CHECKPOINT_KIND, "payload": payload})
+        spans = self.traces_for(correlation_id)
+        metrics = [
+            m
+            for m in metrics
+            if not (isinstance(m, dict) and m.get("kind") == TRACE_KIND)
+        ]
+        metrics.append({"kind": TRACE_KIND, "spans": spans})
         interaction.observability_metrics = metrics
 
     def checkpoint_from_interaction(self, interaction: Any) -> Optional[Dict[str, Any]]:
@@ -581,6 +606,9 @@ class HarnessRuntime:
                 if journal is not None:
                     journal.completed_invocation_ids.append(record.invocation_id)
                     journal.observation_refs.append(f"inv:{record.invocation_id}")
+        if not ok and record.idempotency_class is IdempotencyClass.COMPENSATABLE:
+            if record.tool_name in self._compensators:
+                self.compensate(record.invocation_id)
         if not ok and record.idempotency_class is IdempotencyClass.NON_RETRYABLE:
             self.mark_recovery(correlation_id, reason=f"failed:{record.tool_name}")
             return
@@ -593,7 +621,24 @@ class HarnessRuntime:
             )
 
     def compensate(self, invocation_id: str) -> str:
-        return f"compensated:{invocation_id}"
+        record = None
+        with self.store.lock:
+            for rec in self.store.invocations.values():
+                if rec.invocation_id == invocation_id:
+                    record = rec
+                    break
+        if record is None:
+            raise HarnessContractError(f"unknown invocation {invocation_id}")
+        fn = self._compensators.get(record.tool_name)
+        if fn is None:
+            raise HarnessContractError(
+                f"no compensator registered for {record.tool_name}"
+            )
+        result = fn(record)
+        return str(result)
+
+    def register_compensator(self, tool_name: str, fn: Any) -> None:
+        self._compensators[tool_name] = fn
 
     # -- outbox (HP-06) ---------------------------------------------------
 
@@ -642,11 +687,28 @@ class HarnessRuntime:
         out = [e for e in stream if e.sequence > after]
         return out[:limit]
 
+    def journal_entries(
+        self, correlation_id: str, *, after_seq: int = 0, limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        journal = self.get_run(correlation_id)
+        if journal is None:
+            return []
+        rows = [e for e in journal.entries if int(e.get("seq") or 0) > after_seq]
+        return rows[: max(limit, 0)]
+
     # -- leases (HP-07) ---------------------------------------------------
 
     def acquire_session_lease(
         self, session_id: str, *, ttl_s: float = DEFAULT_LEASE_TTL_S
     ) -> None:
+        if self.lease_backend is not None:
+            rec = self.lease_backend.acquire(session_id, self.worker_id, ttl_s=ttl_s)
+            expired = rec.get("expired_correlation_id") or ""
+            if expired and expired in self.store.runs:
+                run = self.store.runs[expired]
+                if run.state not in TURN_RUN_TERMINAL:
+                    self.mark_recovery(expired, reason="lease_expired")
+            return
         now = time.monotonic()
         with self.store.lock:
             held = self.store.leases.get(session_id)
@@ -683,6 +745,9 @@ class HarnessRuntime:
             }
 
     def bind_lease(self, session_id: str, correlation_id: str) -> None:
+        if self.lease_backend is not None:
+            self.lease_backend.bind(session_id, self.worker_id, correlation_id)
+            return
         with self.store.lock:
             held = self.store.leases.get(session_id)
             if held and held["worker_id"] == self.worker_id:
@@ -691,6 +756,9 @@ class HarnessRuntime:
     def renew_session_lease(
         self, session_id: str, *, ttl_s: float = DEFAULT_LEASE_TTL_S
     ) -> None:
+        if self.lease_backend is not None:
+            self.lease_backend.renew(session_id, self.worker_id, ttl_s=ttl_s)
+            return
         now = time.monotonic()
         with self.store.lock:
             held = self.store.leases.get(session_id)
@@ -699,6 +767,9 @@ class HarnessRuntime:
             held["expires_at"] = now + ttl_s
 
     def release_session_lease(self, session_id: str) -> None:
+        if self.lease_backend is not None:
+            self.lease_backend.release(session_id, self.worker_id)
+            return
         with self.store.lock:
             held = self.store.leases.get(session_id)
             if held and held["worker_id"] == self.worker_id:
@@ -750,15 +821,42 @@ class HarnessRuntime:
         with self.store.lock:
             self.store.revoked_host_tools.setdefault(session_id, set()).add(name)
 
+    def register_host_runner(self, session_id: str, name: str, fn: Any) -> None:
+        self._host_runners[(session_id, name)] = fn
+
+    def host_runner(self, session_id: str, name: str) -> Any:
+        return self._host_runners.get((session_id, name))
+
     # -- skills (HP-09) ---------------------------------------------------
+
+    def sign_digest(self, digest: str) -> str:
+        if not self.skill_signing_key:
+            return ""
+        return hmac.new(
+            self.skill_signing_key.encode(), digest.encode(), hashlib.sha256
+        ).hexdigest()
 
     def register_manifest(self, manifest: SkillManifest) -> None:
         if manifest.spec not in ("jv", "claude"):
             raise HarnessContractError(
                 f"unsupported skill spec {manifest.spec!r}; only jv and claude"
             )
+        if manifest.digest in self.store.revoked_manifests:
+            raise HarnessContractError(f"revoked skill digest {manifest.digest}")
+        if self.skill_signing_key:
+            expected = self.sign_digest(manifest.digest)
+            if not hmac.compare_digest(manifest.signature or "", expected):
+                raise HarnessContractError("invalid skill signature")
         with self.store.lock:
             self.store.skill_manifests[manifest.digest] = manifest
+
+    def publish_manifest(self, manifest: SkillManifest) -> None:
+        self.register_manifest(manifest)
+
+    def revoke_manifest(self, digest: str) -> None:
+        with self.store.lock:
+            self.store.revoked_manifests.add(digest)
+            self.store.skill_manifests.pop(digest, None)
 
     def activate_skill(
         self,
@@ -769,6 +867,8 @@ class HarnessRuntime:
         trust_tier: str = "trusted",
     ) -> StageRecord:
         snap = self.require_usable(snapshot_id)
+        if digest in self.store.revoked_manifests:
+            raise HarnessContractError(f"revoked skill digest {digest}")
         manifest = self.store.skill_manifests.get(digest)
         if manifest is None:
             raise HarnessContractError(f"unknown skill digest {digest}")
@@ -808,8 +908,16 @@ class HarnessRuntime:
             fields = dict(fields)
             fields["caller"] = fields["caller"].as_tuple()
         redacted = {k: v for k, v in fields.items() if k not in ("secret", "password")}
+        _log.info(
+            "harness.span %s",
+            json.dumps(
+                {"correlation_id": correlation_id, "name": name, **redacted},
+                default=str,
+            ),
+        )
         with self.store.lock:
-            self.store.traces.setdefault(correlation_id, []).append(
+            spans = self.store.traces.setdefault(correlation_id, [])
+            spans.append(
                 {
                     "name": name,
                     "ts": datetime.now(timezone.utc).isoformat(),
@@ -817,6 +925,9 @@ class HarnessRuntime:
                     **redacted,
                 }
             )
+            overflow = len(spans) - self.max_trace_spans
+            if overflow > 0:
+                del spans[:overflow]
 
     def traces_for(self, correlation_id: str) -> List[Dict[str, Any]]:
         return list(self.store.traces.get(correlation_id, []))
@@ -838,6 +949,21 @@ class HarnessRuntime:
             "journal": journal.entries if journal else [],
             "invocations": list(journal.completed_invocation_ids) if journal else [],
         }
+
+    def mark_background(self, correlation_id: str) -> None:
+        journal = self.get_run(correlation_id)
+        if journal is None or journal.state in TURN_RUN_TERMINAL:
+            return
+        journal.plan_phase = "background"
+
+    def prune_retention(self) -> None:
+        with self.store.lock:
+            for sid, stream in list(self.store.outbox.items()):
+                if len(stream) > MAX_EVENTS_PER_SESSION:
+                    self.store.outbox[sid] = stream[-MAX_EVENTS_PER_SESSION:]
+            for corr, spans in list(self.store.traces.items()):
+                if len(spans) > self.max_trace_spans:
+                    self.store.traces[corr] = spans[-self.max_trace_spans :]
 
     # -- internals --------------------------------------------------------
 
@@ -902,6 +1028,8 @@ __all__ = [
     "HarnessStore",
     "MAX_EVENTS_PER_SESSION",
     "MAX_OBSERVATION_CHARS",
+    "MAX_TRACE_SPANS",
+    "TRACE_KIND",
     "SAME_SESSION_POLICY",
     "SessionBusy",
     "SkillIsolationRefused",

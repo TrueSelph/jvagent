@@ -63,9 +63,12 @@ def release_record(*, digest: str, topology: str) -> dict:
         "matrix": DEPLOYMENT_MATRIX,
         "limitations": [
             "JSON and SQLite are single-writer; do not claim active-active.",
-            "Outbox is store-backed in HarnessStore; durable transport swap is deferred.",
+            "Outbox dump/load is JSON on disk via dump_store; Redis/Dynamo streams are not implied.",
+            "Session leases: in-process default; file/redis/dynamo adapters require an explicit client or path (no silent fallback).",
             "Subprocess skill execution is development containment, not a sandbox.",
+            "Untrusted skills refuse unless gvisor/firecracker/nsjail is on PATH.",
             "Exactly-once third-party effects require an idempotency mechanism.",
+            "HostCapabilityProvider.invoke runs a registered host runner; native tools stay on wrap_action_tool.",
         ],
         "rollback": "revert to process-local caches/bus; disable drain and shared store.",
     }

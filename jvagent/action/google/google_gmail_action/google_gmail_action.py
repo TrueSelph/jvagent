@@ -129,7 +129,10 @@ class GoogleGmailAction(GoogleAction):
             await self.get_message(message_id, fmt=fmt or "full"), indent=2
         )
 
-    @tool(name="gmail__mark_read")
+    @tool(
+        name="gmail__mark_read",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_mark_read(
         self,
         message_id: Annotated[str, "ID of the message to mark as read."],

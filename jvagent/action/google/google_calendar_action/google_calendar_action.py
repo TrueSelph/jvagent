@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
@@ -85,7 +86,10 @@ class GoogleCalendarAction(GoogleAction):
         )
         return json.dumps(results, indent=2)
 
-    @tool(name="calendar__create_event")
+    @tool(
+        name="calendar__create_event",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_event(
         self,
         summary: Annotated[str, "Event title/summary"],
@@ -108,7 +112,10 @@ class GoogleCalendarAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="calendar__delete_event")
+    @tool(
+        name="calendar__delete_event",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_event(
         self,
         calendar_id: Annotated[str, "Calendar identifier (default: 'primary')"],

@@ -14,6 +14,16 @@ backends is configured on `HarnessRuntime(isolation_backend=...)`:
 - `nsjail`
 
 Trusted SOP skills (no script) activate from digest under the admitted snapshot.
+With `skill_signing_key` set, `register_manifest` / `publish_manifest` require an
+HMAC-SHA256 signature (`hmac.compare_digest`). `revoke_manifest` drops the digest
+from the in-process registry so the next activate refuses.
+
+## Isolation executor
+
+`jvagent.harness.isolation.IsolatedExecutor` prefixes the command with `runsc` /
+`firecracker` / `nsjail` **only when that binary is on PATH**. Absence is a
+`SkillIsolationRefused`, never a subprocess fallback. `CodeExecutionAction.executor()`
+uses `executor_for_backend(get_runtime().isolation_backend, SubprocessExecutor())`.
 
 ## Staging
 

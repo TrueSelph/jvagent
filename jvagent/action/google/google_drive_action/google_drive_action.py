@@ -498,7 +498,10 @@ class GoogleDriveAction(GoogleAction):
             indent=2,
         )
 
-    @tool(name="google_drive__share_file")
+    @tool(
+        name="google_drive__share_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_share_file(
         self,
         file_id: Annotated[str, "The ID of the file to share."],

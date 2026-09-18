@@ -36,17 +36,31 @@ class LocalHostProvider:
     ) -> ToolResult:
         reject_model_authority_fields(payload)
         snap = self.runtime.require_usable(snapshot_id)
+        if tool_name in snap.host_tool_names:
+            runner = self.runtime.host_runner(snap.caller.session_id, tool_name)
+            if runner is None:
+                raise HarnessContractError(
+                    f"no runner registered for host tool {tool_name!r}"
+                )
+            result = runner(dict(payload))
+            if hasattr(result, "__await__"):
+                result = await result  # type: ignore[misc]
+            return ToolResult(
+                invocation_id=invocation_id,
+                ok=True,
+                payload=(
+                    dict(result) if isinstance(result, Mapping) else {"result": result}
+                ),
+            )
         if (
-            tool_name not in snap.host_tool_names
-            and tool_name not in snap.native_tool_names
+            tool_name not in snap.native_tool_names
+            and tool_name not in snap.host_tool_names
         ):
             raise HarnessContractError(
                 f"tool {tool_name!r} not on snapshot {snapshot_id}"
             )
-        return ToolResult(
-            invocation_id=invocation_id,
-            ok=True,
-            payload={"echo": dict(payload), "tool": tool_name},
+        raise HarnessContractError(
+            f"native tool {tool_name!r} is dispatched by wrap_action_tool, not HostCapabilityProvider"
         )
 
     async def load_skill(

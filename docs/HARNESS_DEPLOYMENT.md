@@ -15,6 +15,18 @@ Same-session policy is **lease** (`SAME_SESSION_POLICY`). A second worker that
 does not hold the lease is refused (`SessionBusy`). Drain stops admissions and
 keeps outbox replay.
 
+Lease backends: in-process (default), `FileLeaseBackend` (JSON + `os.replace`),
+optional Redis `SET NX EX` and Dynamo `put_item` adapters. Missing Redis/Dynamo
+clients raise; they do not silently fall back.
+
+Durable store dump: `jvagent.harness.persist.dump_store` / `load_store` writes
+identities, snapshots, journals, ledger, outbox, traces, skills, and leases to
+JSON. Callables (host runners, compensators) are not restored.
+
+Retention: `HarnessRuntime.prune_retention()` clips outbox and traces to
+`MAX_EVENTS_PER_SESSION` / `max_trace_spans`. Journal and event reads paginate
+(`journal_entries`, `replay_from(..., limit=)`).
+
 ## Matrix
 
 Cells are `guaranteed` / `degraded` / `unsupported`. Never blank.

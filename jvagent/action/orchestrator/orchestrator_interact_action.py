@@ -999,7 +999,10 @@ class OrchestratorInteractAction(
                 rt.fail_turn(cache["correlation_id"], reason="execute_error")
                 raise
             finally:
+                if getattr(visitor, "background_actions", None):
+                    rt.mark_background(cache["correlation_id"])
                 rt.persist_to_interaction(interaction, cache["correlation_id"])
+                rt.prune_retention()
 
     async def _execute_turn(self, visitor: "InteractWalker") -> None:
         # Curate the remaining walk path: routable IAs (exposed as tools) must

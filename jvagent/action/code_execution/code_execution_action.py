@@ -82,9 +82,15 @@ class CodeExecutionAction(Action):
     _executor: Optional[Executor] = None
 
     def executor(self) -> Executor:
-        """The execution backend. Override to swap in a container/jail backend."""
+        """The execution backend. Isolation backend when runtime requires it."""
         if self._executor is None:
-            self._executor = SubprocessExecutor()
+            inner: Executor = SubprocessExecutor()
+            from jvagent.harness.isolation import executor_for_backend
+            from jvagent.harness.runtime import get_runtime
+
+            backend = get_runtime().isolation_backend
+            # Refuse — never fall back to subprocess — when a backend is named.
+            self._executor = executor_for_backend(backend, inner)
         return self._executor
 
     # -- per-user sandbox resolution --------------------------------------

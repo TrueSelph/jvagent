@@ -233,7 +233,10 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
         user_id = user_id if user_id is not None else "me"
         return json.dumps(await self.get_message(message_id, user_id=user_id), indent=2)
 
-    @tool(name="outlook__mark_read")
+    @tool(
+        name="outlook__mark_read",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_mark_read(
         self,
         message_id: Annotated[str, "The ID of the message to mark as read."],

@@ -54,6 +54,7 @@ from jvagent.action.interact.utils.uploads import (
     UploadItem,
     normalize_upload_entry,
 )
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 if False:
@@ -1293,7 +1294,10 @@ class ArtifactHandlerInteractAction(InteractAction):
             args["question"] = question
         return args
 
-    @tool(name="artifact_handler__ingest_document")
+    @tool(
+        name="artifact_handler__ingest_document",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_ingest_document(
         self,
         visitor: Any = None,
@@ -1319,7 +1323,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         """List the documents the user has saved, with save age and expiry."""
         return await self._dispatch_tool("list_my_documents", visitor=visitor)
 
-    @tool(name="artifact_handler__delete_document")
+    @tool(
+        name="artifact_handler__delete_document",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_document(
         self, doc_name: str, visitor: Any = None, **kwargs: Any
     ) -> str:

@@ -14,6 +14,7 @@ from jvagent.action.spreadsheet.range_utils import (
     qualify_sheet_title,
     resolve_spreadsheet_id,
 )
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
@@ -390,7 +391,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__update_spreadsheet")
+    @tool(
+        name="excel__update_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_update_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[Optional[str], "Spreadsheet URL or ID"] = None,
@@ -418,7 +422,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__append_spreadsheet")
+    @tool(
+        name="excel__append_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_append_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[Optional[str], "Spreadsheet URL or ID"] = None,
@@ -449,7 +456,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__create_spreadsheet")
+    @tool(
+        name="excel__create_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_spreadsheet(
         self,
         title: Annotated[str, "Title for the new spreadsheet"],
@@ -458,7 +468,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         result = await self.create_spreadsheet(title=title)
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__delete_spreadsheet")
+    @tool(
+        name="excel__delete_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -471,7 +484,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps({"deleted": result}, indent=2)
 
-    @tool(name="excel__create_worksheet")
+    @tool(
+        name="excel__create_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_worksheet(
         self,
         title: Annotated[str, "Title for the new worksheet"],
@@ -494,7 +510,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__update_worksheet")
+    @tool(
+        name="excel__update_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_update_worksheet(
         self,
         worksheet_title: Annotated[str, "Current title of the worksheet to update"],
@@ -522,7 +541,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__delete_worksheet")
+    @tool(
+        name="excel__delete_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_worksheet(
         self,
         worksheet_title: Annotated[str, "Title of the worksheet to delete"],
@@ -535,7 +557,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__batch_clear")
+    @tool(
+        name="excel__batch_clear",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_batch_clear(
         self,
         spreadsheet_url_or_id: Annotated[Optional[str], "Spreadsheet URL or ID"] = None,
@@ -554,7 +579,10 @@ class MicrosoftExcelAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="excel__share_spreadsheet")
+    @tool(
+        name="excel__share_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_share_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[Optional[str], "Spreadsheet URL or ID"] = None,

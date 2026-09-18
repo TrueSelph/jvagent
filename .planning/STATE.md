@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** Dependable graph-native harness — model as pilot, tools as controls, skills as flight plan.
-**Current focus:** v2.0 Harness Excellence — Phases 1–5 implemented; awaiting user commit/PR
+**Current focus:** v2.0 Harness Excellence — Phases 1–5 implemented; gap-close in working tree
 
 ## Current Position
 
 Phase: 5 of 5 (Operational excellence and release proof)
 Plan: 3 of 3 in current phase
-Status: Implementation complete; not committed
-Last activity: 2026-09-18 — HP-02 … HP-12 runtime + wires
+Status: Implementation complete including gap-close; not committed
+Last activity: 2026-09-18 — HP-02 … HP-12 runtime + wires + remaining gaps
 
 Progress: [██████████] 100%
 
@@ -47,6 +47,8 @@ Progress: [██████████] 100%
 - TurnRun is a journal Object (I-GRAPH-02), not a conversation Node
 - JSON/SQLite active-active is unsupported
 - Subprocess ≠ sandbox
+- Isolation binary missing → refuse, never subprocess fallback
+- Redis/Dynamo lease adapters require an explicit client
 
 ### Pending Todos
 
@@ -54,22 +56,17 @@ User will commit and open PR.
 
 ### Blockers/Concerns
 
-- Durable outbox transport swap still deferred (HarnessStore is the first backend)
-- Active-active for Mongo/Postgres marked degraded until Redis/Dynamo leases are configured
+- Real gvisor/firecracker/nsjail kernel jails are not implemented in-tree; wrap prefix + PATH check is the contract
+- Active-active for Mongo/Postgres stays degraded until a shared lease backend is configured
 
 ## Deferred Items
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| Transport | First durable outbox/coordination transport | Future | v2.0 start |
-| Retention | Separate checkpoint vs event retention per backend | Future | v2.0 start |
-| Workers | Background work vs TurnRun executor | Future | v2.0 start |
-| Skills | External publisher registry + revocation service | Future | v2.0 start |
+None remaining from the v2.0 gap list. Optional later work: Redis/Dynamo *stream* transports (leases already have adapters), remote publisher service (in-process revoke/publish is the registry).
 
 ## Session Continuity
 
 Last session: 2026-09-18
-Stopped at: Phases 2–5 implemented (HP-02 … HP-12)
+Stopped at: All listed HP gaps closed in working tree
 Resume file: None
 
 Next: user commit + PR

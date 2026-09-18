@@ -107,6 +107,8 @@ def wrap_action_tool(
         runtime = None
         correlation_id = ""
         interaction = None
+        snap = None
+        turn: Dict[str, Any] = {}
         try:
             from jvagent.action.orchestrator.turn_cache import get_turn_cache
             from jvagent.harness.runtime import get_runtime
@@ -135,6 +137,37 @@ def wrap_action_tool(
             logger.debug("wrap_action_tool: ledger skip: %s", exc)
             record = None
             runtime = None
+        if (
+            snap is not None
+            and runtime is not None
+            and name in (getattr(snap, "host_tool_names", ()) or ())
+        ):
+            from jvagent.harness.provider import provider_for
+
+            try:
+                provider = turn.get("provider") or provider_for("native", runtime)
+                invoked = await provider.invoke(
+                    snap.snapshot_id,
+                    record.invocation_id if record is not None else "",
+                    name,
+                    call_args,
+                )
+                content = json.dumps(dict(invoked.payload), default=str)
+                ok = bool(invoked.ok)
+            except Exception as exc:
+                logger.warning("wrap_action_tool: host tool %r raised: %s", name, exc)
+                content = f"(tool error: {exc})"
+                ok = False
+            if record is not None:
+                runtime.finish_invocation(
+                    correlation_id=correlation_id,
+                    record=record,
+                    result=content,
+                    ok=ok,
+                )
+                if interaction is not None:
+                    runtime.persist_to_interaction(interaction, correlation_id)
+            return content
         try:
             result = await _tool.call(**call_kwargs)
         except Exception as exc:

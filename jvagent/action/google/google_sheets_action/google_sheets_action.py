@@ -11,6 +11,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Optional, Tuple
 from googleapiclient.discovery import build
 from jvspatial.core.annotations import attribute
 
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
@@ -743,7 +744,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__update_spreadsheet")
+    @tool(
+        name="google_sheets__update_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_update_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -776,7 +780,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__append_spreadsheet")
+    @tool(
+        name="google_sheets__append_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_append_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -810,7 +817,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__create_spreadsheet")
+    @tool(
+        name="google_sheets__create_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_spreadsheet(
         self,
         title: Annotated[str, "Title for the new spreadsheet"],
@@ -819,7 +829,10 @@ class GoogleSheetsAction(GoogleAction):
         result = await self.create_spreadsheet(title=title)
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__delete_spreadsheet")
+    @tool(
+        name="google_sheets__delete_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[Optional[str], "Spreadsheet URL or ID"] = None,
@@ -830,7 +843,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps({"deleted": result}, indent=2)
 
-    @tool(name="google_sheets__create_worksheet")
+    @tool(
+        name="google_sheets__create_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_worksheet(
         self,
         title: Annotated[str, "Title for the new worksheet"],
@@ -858,7 +874,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__update_worksheet")
+    @tool(
+        name="google_sheets__update_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_update_worksheet(
         self,
         worksheet_title: Annotated[str, "Title of the worksheet to update"],
@@ -887,7 +906,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__delete_worksheet")
+    @tool(
+        name="google_sheets__delete_worksheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_worksheet(
         self,
         worksheet_title: Annotated[str, "Title of the worksheet to delete"],
@@ -903,7 +925,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__merge_cells")
+    @tool(
+        name="google_sheets__merge_cells",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_merge_cells(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -932,7 +957,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__unmerge_cells")
+    @tool(
+        name="google_sheets__unmerge_cells",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_unmerge_cells(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -954,7 +982,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__format_cells")
+    @tool(
+        name="google_sheets__format_cells",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_format_cells(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -1010,7 +1041,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__batch_clear")
+    @tool(
+        name="google_sheets__batch_clear",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_batch_clear(
         self,
         spreadsheet_url_or_id: Annotated[
@@ -1032,7 +1066,10 @@ class GoogleSheetsAction(GoogleAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="google_sheets__share_spreadsheet")
+    @tool(
+        name="google_sheets__share_spreadsheet",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_share_spreadsheet(
         self,
         spreadsheet_url_or_id: Annotated[

@@ -663,7 +663,10 @@ class PageIndexAction(Action):
         # Agent prompt sees start_page/end_page; API/search rows keep index keys.
         return json.dumps(prompt_page_aliases(results), indent=2)
 
-    @tool(name="pageindex__assimilate")
+    @tool(
+        name="pageindex__assimilate",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_assimilate(
         self,
         doc: Annotated[

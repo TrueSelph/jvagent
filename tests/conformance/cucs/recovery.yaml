@@ -1,0 +1,26 @@
+schema: jvagent.use-case/v1
+id: harness.recovery.non-retryable
+title: Failed non-retryable tool marks the TurnRun recovery_required
+priority: P0
+tags: [harness, recovery]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: send
+    when:
+      user: "Send the mail"
+    harness:
+      decisions:
+        - action: tool
+          tool: send_mail
+          args:
+            to: a@b.c
+        - action: final
+          answer: "queued for recovery"
+    then:
+      loop:
+        tools_called:
+          - send_mail
+      context:
+        recovery_required: true

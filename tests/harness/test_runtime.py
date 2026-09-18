@@ -336,6 +336,7 @@ def test_compensatable_path(rt: HarnessRuntime, caller: NativeCaller):
     snap = rt.admit_snapshot(caller)
     corr = rt.new_correlation()
     rt.start_turn(corr, caller, snap)
+    rt.register_compensator("book", lambda rec: f"compensated:{rec.invocation_id}")
     rec, _ = rt.begin_invocation(
         correlation_id=corr,
         snapshot_id=snap.snapshot_id,
@@ -344,6 +345,7 @@ def test_compensatable_path(rt: HarnessRuntime, caller: NativeCaller):
         idempotency_class=IdempotencyClass.COMPENSATABLE,
     )
     assert rt.compensate(rec.invocation_id).startswith("compensated:")
+    rt.finish_invocation(correlation_id=corr, record=rec, result="failed", ok=False)
 
 
 def test_completed_run_not_resumed(rt: HarnessRuntime, caller: NativeCaller):
