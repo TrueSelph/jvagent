@@ -380,4 +380,67 @@ describe("useStreaming thought handling", () => {
 
     expect(result.current.error).toMatch(/unauthorized|failed/i);
   });
+
+  it("merges user adhoc flush into the streaming row instead of duplicating", async () => {
+    mockStreamInteract.mockImplementation(async (_agentId, _request, onChunk) => {
+      onChunk({
+        type: "start",
+        interaction_id: "int-user-merge",
+        session_id: "sess-user-merge",
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.user123",
+          session_id: "sess-user-merge",
+          interaction_id: "int-user-merge",
+          message_type: "stream_chunk",
+          content: "Ships ",
+          channel: "default",
+          category: "user",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "message",
+        message: {
+          id: "o.ResponseMessage.user123",
+          session_id: "sess-user-merge",
+          interaction_id: "int-user-merge",
+          message_type: "adhoc",
+          content: "Ships Tuesday.",
+          channel: "default",
+          category: "user",
+          metadata: {},
+        },
+      });
+      onChunk({
+        type: "final",
+        interaction: {
+          id: "int-user-merge",
+          utterance: "when",
+          actions: [],
+          directives: [],
+          parameters: [],
+          model_log: [],
+          messages: [],
+          streamed: true,
+        },
+      });
+    });
+
+    const { result } = renderHook(() => useStreaming("agent-1", "sess-user-merge"));
+
+    await act(async () => {
+      await result.current.sendMessage("when");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    const assistants = result.current.messages.filter((m) => m.role === "assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.content).toBe("Ships Tuesday.");
+  });
 });

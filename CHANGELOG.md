@@ -86,6 +86,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   `Test jvagent` run has succeeded. The `jvchat` job has a 20-minute job
   timeout, an 8-minute install timeout and one `npm ci` retry.
 
+### Fixed
+
+- **One assistant identity per streamed turn.** Non-stream `publish()` while a
+  user accumulator is open is suppressed (it minted a new Object id, which
+  Integral splits into a second bubble). `finalize_interaction` no longer
+  emits a second `message_type=final` under a fresh id when the stream already
+  finalized. `commit_pending_adhoc` reuses `acc.message_id`. jvchat merges a
+  same-id adhoc flush into the in-flight stream row.
+
 ### Added
 
 - **Nightly reproduction of the #203 failure.** `scripts/live_smoke.py` gains

@@ -467,11 +467,14 @@ class ResponseBus:
         # ``Interaction.emitted`` is the framework's single-egress latch
         # (ADR-0025). A live user stream may continue after its first chunk set
         # the latch, but every separate non-transient user publish is rejected
-        # here at the delivery choke point. Consumers should never need to
-        # compare reply text or repair duplicate bubbles.
-        active_user_stream = bool(
-            stream and interaction_id and interaction_id in self._adhoc_accumulation
+        # here at the delivery choke point. A non-stream publish while the
+        # accumulator is already open mints a new Object id; Integral splits
+        # bubbles on that id, so it is suppressed even if the first chunk has
+        # not latched yet (gate-held / empty).
+        open_user_stream = bool(
+            interaction_id and interaction_id in self._adhoc_accumulation
         )
+        active_user_stream = bool(stream and open_user_stream)
         has_emitted = getattr(interaction, "has_emitted", None)
         already_emitted = False
         if callable(has_emitted):
@@ -484,8 +487,10 @@ class ResponseBus:
             and not transient
             and interaction is not None
             and content
-            and already_emitted
-            and not active_user_stream
+            and (
+                (already_emitted and not active_user_stream)
+                or (not stream and open_user_stream)
+            )
         ):
             logger.debug(
                 "response bus: suppressed second user egress for interaction %s",
@@ -854,6 +859,7 @@ class ResponseBus:
             return
         now = await self._get_now()
         message = ResponseMessage(
+            id=acc.message_id,
             session_id=acc.session_id,
             user_id=acc.user_id or "",
             interaction_id=interaction_id,
@@ -1157,15 +1163,28 @@ class ResponseBus:
         # Token spend is computed in the endpoint after flush, when all model_call
         # events are present in observability_metrics.
 
-        # Emit final signal
+        # Streaming publish() already enqueued message_type=final under
+        # acc.message_id. A second final with a new Object id is a distinct
+        # assistant identity on the wire (Integral splits bubbles on that).
         user_id = getattr(interaction, "user_id", None) if interaction else None
-        await self._emit_final_signal(
-            session_id=session_id,
-            channel=channel,
-            interaction_id=interaction_id,
-            user_id=user_id,
-            metadata={},
-        )
+        last_user_id = None
+        already_final = False
+        for buffered in self._message_buffers.get(interaction_id) or []:
+            if (getattr(buffered, "category", "user") or "user") != "user":
+                continue
+            if buffered.id:
+                last_user_id = buffered.id
+            if buffered.message_type == "final":
+                already_final = True
+        if not already_final:
+            await self._emit_final_signal(
+                session_id=session_id,
+                channel=channel,
+                interaction_id=interaction_id,
+                user_id=user_id,
+                metadata={},
+                message_id=last_user_id,
+            )
 
         # Clean up request-scoped resources (adhoc, message buffers)
         self._adhoc_accumulation.pop(interaction_id, None)
