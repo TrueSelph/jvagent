@@ -330,13 +330,9 @@ class RepairState(Node):
     async def finish(self) -> None:
         """Delete state node and its edges when repair is complete/reset.
 
-        After deleting each edge this method also calls
-        ``context.atomic_remove_edge_id`` on the *other* endpoint (typically
-        the App node) so that its stored ``edge_ids`` attribute is kept
-        consistent.  Without this, the sync phase of the next repair run would
-        always detect a stale edge reference on App and report
-        ``node_edge_ids_synced: 1``, causing an apparent never-ending repair
-        loop even on a healthy graph.
+        Deletes each edge via ``context.delete`` then removes the RepairState
+        node.  Node adjacency is derive-only (jvspatial 0.0.19+); there is no
+        ``edge_ids`` list to keep in sync on the other endpoint.
 
         This method is hardened to always remove the node document even when
         edge cleanup or the high-level ``delete()`` raises.  A raw DB delete is
@@ -347,17 +343,6 @@ class RepairState(Node):
             for edge in await self.edges(direction="both"):
                 if not isinstance(edge, Edge):
                     continue
-                # Determine the other endpoint of this edge (not self)
-                other_id = edge.target if edge.source == self.id else edge.source
-                if other_id:
-                    try:
-                        await context.atomic_remove_edge_id(other_id, edge.id)
-                    except Exception:
-                        logger.warning(
-                            "repair_state.finish: could not remove edge_id %s from node %s",
-                            edge.id,
-                            other_id,
-                        )
                 try:
                     await context.delete(edge, cascade=False)
                 except Exception:

@@ -2,6 +2,7 @@ import logging
 from typing import Annotated, Any, ClassVar, Dict, List, Optional
 from urllib.parse import quote
 
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
@@ -122,7 +123,10 @@ class MicrosoftOutlookCalendarAction(MicrosoftAction):
         )
         return json.dumps(results, indent=2)
 
-    @tool(name="outlook_calendar__create_event")
+    @tool(
+        name="outlook_calendar__create_event",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_create_event(
         self,
         summary: Annotated[str, "Event title/subject"],
@@ -148,7 +152,10 @@ class MicrosoftOutlookCalendarAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="outlook_calendar__delete_event")
+    @tool(
+        name="outlook_calendar__delete_event",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_event(
         self,
         calendar_id: Annotated[str, "Calendar identifier (default: 'primary')"],

@@ -15,6 +15,8 @@ PH_SCHEMA_ACTIONS_DEDUPE = "schema_actions_dedupe"
 PH_SCHEMA_MEMORY_DEDUPE = "schema_memory_dedupe"
 PH_SCHEMA_SINGLETON_ACTIONS = "schema_singleton_actions"
 PH_DEAD_EDGES = "dead_edges"
+# Kept for mid-upgrade resume: run_repair_session / state_from_dict advance these
+# to PH_ORPHANS_LIST_NODES (jvspatial 0.0.19 removed Node.edge_ids sync).
 PH_SYNC_PREPARE = "sync_prepare"
 PH_SYNC_APPLY = "sync_apply"
 PH_ORPHANS_LIST_NODES = "orphans_list_nodes"

@@ -613,6 +613,19 @@ async def interact_endpoint(
         client_ip = "unknown"
 
     # Check rate limit
+    if data:
+        from jvagent.harness.contracts import (
+            HarnessContractError,
+            reject_host_domain_fields,
+        )
+
+        try:
+            reject_host_domain_fields(data)
+        except HarnessContractError as exc:
+            raise ValidationError(
+                message=str(exc),
+                details={"reason": "host_domain_forbidden"},
+            ) from exc
     if not await rate_limiter.check_rate_limit(client_ip, agent_id):
         raise RateLimitError(
             message=f"Rate limit exceeded: {rate_limiter.rate_limit_per_minute} requests per minute",

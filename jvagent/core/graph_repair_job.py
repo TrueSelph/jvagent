@@ -16,7 +16,7 @@ import logging
 import time
 from collections import deque
 from inspect import isawaitable
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.core.repair_phases.memory import (
     tick_memory_agents,
@@ -51,6 +51,10 @@ from jvagent.core.repair_phases.types import (
     repair_checkpoint,
 )
 
+# Removed in jvspatial 0.0.19 (derive-only adjacency). Kept as aliases so
+# mid-upgrade resume of an in-flight repair can skip forward.
+_REMOVED_SYNC_PHASES = frozenset({PH_SYNC_PREPARE, PH_SYNC_APPLY})
+
 logger = logging.getLogger(__name__)
 
 # Non-serializable reattach lookup maps keyed by repair run_id (never stored in cursor).
@@ -70,8 +74,8 @@ def _trim_reattach_ctx_cache() -> None:
 
 SORT_ID_ASC: List[Tuple[str, int]] = [("id", 1)]
 
-# Full-graph orphan/dup/prune phases run after edge sync (post-listen). When
-# JVAGENT_DEFER_REPAIR=1 these are skipped so cold start can return faster;
+# Full-graph orphan/dup/prune phases run after dead-edge cleanup (post-listen).
+# When JVAGENT_DEFER_REPAIR=1 these are skipped so cold start can return faster;
 # schedule POST /graph/repair (or the repair scheduler) to run them later.
 _OPTIONAL_POST_LISTEN_PHASES = frozenset(
     {
@@ -134,7 +138,6 @@ def _new_result_counters() -> Dict[str, Any]:
         "dead_edges_removed": 0,
         "orphaned_nodes_reattached": 0,
         "orphaned_nodes_deleted": 0,
-        "node_edge_ids_synced": 0,
         "duplicate_edges_removed": 0,
         "interactions_pruned": 0,
         "counters_fixed": 0,
@@ -210,6 +213,13 @@ def state_from_dict(
             "remapping to the first work phase (unfinished session)"
         )
         phase = PH_SCHEMA_APP_DEDUPE if dry_run else PH_MEMORY_COUNTERS
+    # jvspatial 0.0.19: node edge_ids sync phases removed (derive-only adjacency).
+    if phase in _REMOVED_SYNC_PHASES:
+        phase = PH_ORPHANS_LIST_NODES
+        cur = {
+            "last_node_id": "",
+            "run_id": payload.get("run_id") or cur.get("run_id") or "",
+        }
     return {
         "phase": phase,
         "dry_run": dry_run,
@@ -602,12 +612,8 @@ async def _tick_dead_edges(
     deadline = time.monotonic() + (limits.max_seconds or 1e9)
     page = await _find_edges_page(context, last if last else None, batch)
     if not page:
-        state["phase"] = PH_SYNC_PREPARE
-        state["cursor"] = {
-            "last_edge_id": "",
-            "acc_node_edges": {},
-            "acc_valid_ids": [],
-        }
+        state["phase"] = PH_ORPHANS_LIST_NODES
+        state["cursor"] = {"last_node_id": ""}
         return True
 
     processed = 0
@@ -664,157 +670,8 @@ async def _tick_dead_edges(
         return True
 
     if len(page) < batch and full_page:
-        state["phase"] = PH_SYNC_PREPARE
-        state["cursor"] = {
-            "last_edge_id": "",
-            "acc_node_edges": {},
-            "acc_valid_ids": [],
-        }
-    return True
-
-
-async def _tick_sync_prepare(
-    context: Any, state: Dict[str, Any], limits: RepairLimits
-) -> bool:
-    """Accumulate node->edge ids and valid edge ids from paged edges.
-
-    Uses the repair_scratch collection so the RepairState cursor stays small
-    regardless of graph size.
-    """
-    from jvagent.core.repair_scratch import (
-        ensure_scratch_indexes,
-        scratch_upsert_bulk,
-    )
-
-    cur = state["cursor"]
-    run_id: str = cur.get("run_id") or state.get("run_id") or ""
-    if not run_id:
-        import uuid
-
-        run_id = uuid.uuid4().hex
-        state["run_id"] = run_id
-        cur["run_id"] = run_id
-        db = context.database
-        await ensure_scratch_indexes(db)
-
-    last = cur.get("last_edge_id") or ""
-    batch = limits.batch_size
-    db = context.database
-
-    page = await _find_edges_page(context, last if last else None, batch)
-    if not page:
-        state["phase"] = PH_SYNC_APPLY
-        state["cursor"] = {"last_node_id": "", "run_id": run_id}
-        return True
-
-    node_edge_items: List[Tuple[str, str]] = []
-    valid_edge_items: List[Tuple[str, str]] = []
-    for data in page:
-        eid = data.get("id")
-        source = data.get("source")
-        target = data.get("target")
-        if eid:
-            valid_edge_items.append((eid, ""))
-        if eid and source:
-            # key = "<node_id>|<edge_id>" so we can group by node in apply phase
-            node_edge_items.append((f"{source}|{eid}", eid))
-        if eid and target:
-            node_edge_items.append((f"{target}|{eid}", eid))
-
-    if node_edge_items:
-        await scratch_upsert_bulk(db, run_id, "node_edge", node_edge_items)
-    if valid_edge_items:
-        await scratch_upsert_bulk(db, run_id, "valid_edge", valid_edge_items)
-
-    cur["last_edge_id"] = page[-1].get("id", "")
-    cur["run_id"] = run_id
-    if len(page) < batch:
-        state["phase"] = PH_SYNC_APPLY
-        state["cursor"] = {"last_node_id": "", "run_id": run_id}
-    return True
-
-
-async def _tick_sync_apply(
-    context: Any, state: Dict[str, Any], limits: RepairLimits
-) -> bool:
-    """Sync node edge_ids reading valid/expected sets from the scratch collection."""
-    from jvspatial.core import Node
-
-    from jvagent.core.repair_scratch import scratch_page, scratch_page_key_prefix
-
-    cur = state["cursor"]
-    run_id: str = cur.get("run_id") or state.get("run_id") or ""
-    last = cur.get("last_node_id") or ""
-    batch = limits.batch_size
-    synced = 0
-    db = context.database
-
-    page = await _find_nodes_page(context, last if last else None, batch)
-    if not page:
         state["phase"] = PH_ORPHANS_LIST_NODES
-        state["cursor"] = {"last_node_id": "", "run_id": run_id}
-        return True
-
-    # Page through all valid_edge rows (no fixed cap).
-    valid_ids: Set[str] = set()
-    valid_after: Optional[str] = None
-    while True:
-        valid_rows = await scratch_page(db, run_id, "valid_edge", valid_after, batch)
-        if not valid_rows:
-            break
-        valid_ids.update(r["key"] for r in valid_rows if r.get("key"))
-        if len(valid_rows) < batch:
-            break
-        valid_after = valid_rows[-1].get("key")
-
-    dry = state["dry_run"]
-    for data in page:
-        node_id = data.get("id")
-        if not node_id:
-            continue
-        current_edge_ids = set(data.get("edges", []))
-
-        # Expected edges for this node only (key prefix "<node_id>|").
-        expected: Set[str] = set()
-        edge_prefix = f"{node_id}|"
-        edge_after: Optional[str] = None
-        while True:
-            node_edge_rows = await scratch_page_key_prefix(
-                db, run_id, "node_edge", edge_prefix, edge_after, batch
-            )
-            if not node_edge_rows:
-                break
-            for r in node_edge_rows:
-                k = r.get("key", "")
-                if k.startswith(edge_prefix):
-                    expected.add(k.split("|", 1)[1])
-            if len(node_edge_rows) < batch:
-                break
-            edge_after = node_edge_rows[-1].get("key")
-
-        valid_current = current_edge_ids & valid_ids
-        new_edge_ids = valid_current | expected
-        if set(current_edge_ids) != new_edge_ids:
-            if not dry:
-                try:
-                    node = await context._deserialize_entity(Node, data)
-                    if node:
-                        node.edge_ids = list(new_edge_ids)
-                        await node.save()
-                        synced += 1
-                except Exception as e:
-                    logger.warning(
-                        "Failed to sync edge_ids for node %s: %s", node_id, e
-                    )
-            else:
-                synced += 1
-
-    state["result"]["node_edge_ids_synced"] += synced
-    cur["last_node_id"] = page[-1].get("id", "")
-    cur["run_id"] = run_id
-    if len(page) < batch:
-        state["phase"] = PH_ORPHANS_LIST_NODES
-        state["cursor"] = {"last_node_id": "", "run_id": run_id}
+        state["cursor"] = {"last_node_id": ""}
     return True
 
 
@@ -1182,7 +1039,7 @@ async def _tick_dup_prepare(
 async def _tick_dup_apply(
     context: Any, state: Dict[str, Any], limits: RepairLimits
 ) -> bool:
-    from jvspatial.core import Edge, Node
+    from jvspatial.core import Edge
 
     from jvagent.core.repair_scratch import scratch_page
 
@@ -1218,14 +1075,6 @@ async def _tick_dup_apply(
                 try:
                     edge = await context._deserialize_entity(Edge, dup_data)
                     if edge:
-                        source_node = await context.get(Node, edge.source)
-                        target_node = await context.get(Node, edge.target)
-                        if source_node and edge.id in source_node.edge_ids:
-                            source_node.edge_ids.remove(edge.id)
-                            await source_node.save()
-                        if target_node and edge.id in target_node.edge_ids:
-                            target_node.edge_ids.remove(edge.id)
-                            await target_node.save()
                         await context.delete(edge, cascade=False)
                         removed += 1
                 except Exception as e:
@@ -1337,8 +1186,6 @@ def _build_message(state: Dict[str, Any]) -> str:
         parts.append(f"{r['orphaned_nodes_reattached']} orphan(s) reattached")
     if r.get("orphaned_nodes_deleted"):
         parts.append(f"{r['orphaned_nodes_deleted']} orphan(s) deleted")
-    if r.get("node_edge_ids_synced"):
-        parts.append(f"{r['node_edge_ids_synced']} node(s) edge_ids synced")
     if r.get("duplicate_edges_removed"):
         parts.append(f"{r['duplicate_edges_removed']} duplicate edge(s) removed")
     if r.get("interactions_pruned"):
@@ -1360,8 +1207,6 @@ _PHASE_ORDER: List[str] = [
     PH_SCHEMA_MEMORY_DEDUPE,
     PH_SCHEMA_SINGLETON_ACTIONS,
     PH_DEAD_EDGES,
-    PH_SYNC_PREPARE,
-    PH_SYNC_APPLY,
     PH_ORPHANS_LIST_NODES,
     PH_ORPHANS_BFS,
     PH_ORPHANS_REATTACH,
@@ -1405,6 +1250,12 @@ async def run_repair_session(
     stall_count: int = int(state.get("stall_count", 0))
 
     phase = state.get("phase", PH_DONE)
+    # Mid-upgrade resume: skip removed edge_ids sync phases (jvspatial 0.0.19).
+    if phase in _REMOVED_SYNC_PHASES:
+        run_id = state.get("run_id") or (state.get("cursor") or {}).get("run_id") or ""
+        state["phase"] = PH_ORPHANS_LIST_NODES
+        state["cursor"] = {"last_node_id": "", "run_id": run_id}
+        phase = PH_ORPHANS_LIST_NODES
     _apply_deferred_phase_skip(state)
     phase = state.get("phase", PH_DONE)
     if phase == PH_DONE:
@@ -1433,10 +1284,6 @@ async def run_repair_session(
         tick_coro = _tick_schema_singleton_actions(context, state, limits)
     elif phase == PH_DEAD_EDGES:
         tick_coro = _tick_dead_edges(context, state, limits)
-    elif phase == PH_SYNC_PREPARE:
-        tick_coro = _tick_sync_prepare(context, state, limits)
-    elif phase == PH_SYNC_APPLY:
-        tick_coro = _tick_sync_apply(context, state, limits)
     elif phase == PH_ORPHANS_LIST_NODES:
         tick_coro = _tick_orphans_list_nodes(context, state, limits)
     elif phase == PH_ORPHANS_BFS:

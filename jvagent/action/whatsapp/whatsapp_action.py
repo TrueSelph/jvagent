@@ -15,6 +15,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_executor import get_dispatch_context, get_tool_visitor
 
@@ -1587,7 +1588,10 @@ class WhatsAppAction(Action):
             logger.exception("whatsapp__list_templates failed")
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="whatsapp__send_template")
+    @tool(
+        name="whatsapp__send_template",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def send_template(
         self,
         template_name: Annotated[
@@ -1804,7 +1808,10 @@ class WhatsAppAction(Action):
             logger.exception("whatsapp__list_flows failed")
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-    @tool(name="whatsapp__send_flow")
+    @tool(
+        name="whatsapp__send_flow",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def send_flow(
         self,
         flow_id: Annotated[

@@ -240,6 +240,7 @@ jvagent resolves configuration by precedence (highest first):
 - [Environment keys reference](https://github.com/TrueSelph/jvagent/blob/main/docs/environment-keys-reference.md) — every `JVAGENT_*` / `JVSPATIAL_*` / vendor key
 - [App scaffolding CLI](https://github.com/TrueSelph/jvagent/blob/main/docs/scaffolding.md) — `jvagent app create`, `agent create`, `app profile new`
 - [Language models](https://github.com/TrueSelph/jvagent/blob/main/docs/language-models.md) — provider actions, retries, model gearing
+- [Harness excellence roadmap](docs/HARNESS_EXCELLENCE_PLAN.md) — host-neutral reliability and extensibility roadmap
 - [Database indexing](https://github.com/TrueSelph/jvagent/blob/main/docs/database-indexing.md) · [Security review](https://github.com/TrueSelph/jvagent/blob/main/docs/security-review.md)
 - [Logging](https://github.com/TrueSelph/jvagent/blob/main/docs/logging.md) · [Interaction logging](https://github.com/TrueSelph/jvagent/blob/main/docs/interaction-logging.md) · [Error logging](https://github.com/TrueSelph/jvagent/blob/main/docs/error-logging.md)
 - [Task tracking](https://github.com/TrueSelph/jvagent/blob/main/docs/task-tracking.md) · [Proactive messages](https://github.com/TrueSelph/jvagent/blob/main/docs/proactive-messages.md)

@@ -88,19 +88,111 @@ def wrap_action_tool(
     )
 
     async def _run(args: Dict[str, Any], _tool: Any = tool) -> str:
+        from jvagent.harness.contracts import (
+            HarnessContractError,
+            IdempotencyClass,
+            reject_model_authority_fields,
+        )
+
+        call_args = dict(args or {})
+        reject_model_authority_fields(call_args)
         if effective_access_label is not None and not await is_tool_allowed(
             agent, label=effective_access_label, user_id=user_id, channel=channel
         ):
             return "(access denied)"
-        call_kwargs = dict(args or {})
+        call_kwargs = dict(call_args)
         if visitor is not None:
             call_kwargs["visitor"] = visitor
+        record = None
+        runtime = None
+        correlation_id = ""
+        interaction = None
+        snap = None
+        turn: Dict[str, Any] = {}
+        try:
+            from jvagent.action.orchestrator.turn_cache import get_turn_cache
+            from jvagent.harness.runtime import get_runtime
+
+            turn = get_turn_cache() or {}
+            snap = turn.get("snapshot")
+            interaction = turn.get("interaction")
+            correlation_id = str(turn.get("correlation_id") or "")
+            if snap is not None and correlation_id:
+                runtime = get_runtime()
+                klass = getattr(_tool, "idempotency_class", None)
+                if not isinstance(klass, IdempotencyClass):
+                    klass = None
+                record, cached = runtime.begin_invocation(
+                    correlation_id=correlation_id,
+                    snapshot_id=snap.snapshot_id,
+                    tool_name=name,
+                    payload=call_args,
+                    idempotency_class=klass,
+                )
+                if cached is not None:
+                    return cached
+        except HarnessContractError as exc:
+            return f"(tool error: {exc})"
+        except Exception as exc:
+            logger.debug("wrap_action_tool: ledger skip: %s", exc)
+            record = None
+            runtime = None
+        if (
+            snap is not None
+            and runtime is not None
+            and name in (getattr(snap, "host_tool_names", ()) or ())
+        ):
+            from jvagent.harness.provider import provider_for
+
+            try:
+                provider = turn.get("provider") or provider_for("native", runtime)
+                invoked = await provider.invoke(
+                    snap.snapshot_id,
+                    record.invocation_id if record is not None else "",
+                    name,
+                    call_args,
+                )
+                content = json.dumps(dict(invoked.payload), default=str)
+                ok = bool(invoked.ok)
+            except Exception as exc:
+                logger.warning("wrap_action_tool: host tool %r raised: %s", name, exc)
+                content = f"(tool error: {exc})"
+                ok = False
+            if record is not None:
+                runtime.finish_invocation(
+                    correlation_id=correlation_id,
+                    record=record,
+                    result=content,
+                    ok=ok,
+                )
+                if interaction is not None:
+                    runtime.persist_to_interaction(interaction, correlation_id)
+            return content
         try:
             result = await _tool.call(**call_kwargs)
         except Exception as exc:
             logger.warning("wrap_action_tool: tool %r raised: %s", name, exc)
+            if runtime is not None and record is not None:
+                runtime.finish_invocation(
+                    correlation_id=correlation_id,
+                    record=record,
+                    result=f"(tool error: {exc})",
+                    ok=False,
+                )
+                if interaction is not None:
+                    runtime.persist_to_interaction(interaction, correlation_id)
             return f"(tool error: {exc})"
-        return (getattr(result, "content", "") or "") if result is not None else ""
+        content = (getattr(result, "content", "") or "") if result is not None else ""
+        if runtime is not None and record is not None:
+            runtime.finish_invocation(
+                correlation_id=correlation_id,
+                record=record,
+                result=content,
+                ok=True,
+            )
+            if interaction is not None:
+                runtime.persist_to_interaction(interaction, correlation_id)
+        return content
 
     schema = getattr(tool, "parameters_schema", None)
     return SkillTool(
@@ -111,6 +203,78 @@ def wrap_action_tool(
         parameters_schema=(
             dict(schema) if isinstance(schema, dict) and schema else _empty_schema()
         ),
+    )
+
+
+def wrap_host_tool(name: str, *, description: str = "") -> SkillTool:
+    """Adapt one snapshot-declared host capability into the model tool surface."""
+
+    async def _run(args: Dict[str, Any]) -> str:
+        from jvagent.action.orchestrator.turn_cache import get_turn_cache
+        from jvagent.harness.contracts import (
+            HarnessContractError,
+            reject_model_authority_fields,
+        )
+        from jvagent.harness.provider import provider_for
+        from jvagent.harness.runtime import get_runtime
+
+        payload = dict(args or {})
+        record = None
+        runtime = None
+        correlation_id = ""
+        interaction = None
+        try:
+            reject_model_authority_fields(payload)
+            turn = get_turn_cache() or {}
+            snap = turn.get("snapshot")
+            correlation_id = str(turn.get("correlation_id") or "")
+            interaction = turn.get("interaction")
+            if snap is None or not correlation_id:
+                raise HarnessContractError("host tool called outside an admitted turn")
+            runtime = get_runtime()
+            record, cached = runtime.begin_invocation(
+                correlation_id=correlation_id,
+                snapshot_id=snap.snapshot_id,
+                tool_name=name,
+                payload=payload,
+            )
+            if cached is not None:
+                return cached
+            provider = turn.get("provider") or provider_for("native", runtime)
+            result = await provider.invoke(
+                snap.snapshot_id, record.invocation_id, name, payload
+            )
+            content = json.dumps(dict(result.payload), default=str)
+            ok = bool(result.ok)
+        except HarnessContractError as exc:
+            if record is None:
+                return f"(tool error: {exc})"
+            content = f"(tool error: {exc})"
+            ok = False
+        except Exception as exc:
+            logger.warning("host tool %r raised: %s", name, exc)
+            content = f"(tool error: {exc})"
+            ok = False
+        if runtime is not None and record is not None:
+            runtime.finish_invocation(
+                correlation_id=correlation_id,
+                record=record,
+                result=content,
+                ok=ok,
+            )
+            if interaction is not None:
+                runtime.persist_to_interaction(interaction, correlation_id)
+        return content
+
+    return SkillTool(
+        name=name,
+        description=description or f"Host-provided capability: {name}",
+        run=_run,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": True,
+        },
     )
 
 

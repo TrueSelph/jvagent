@@ -88,12 +88,14 @@ class Memory(Node):
         Returns:
             User node if found or created, None otherwise
         """
+        from jvagent.core.distributed_lease import distributed_lease
         from jvagent.memory.lock_manager import get_user_lock_manager
 
-        lock_mgr = get_user_lock_manager()
-        lock = await lock_mgr.acquire(f"{self.id}:{user_id}")
-        async with lock:
-            return await self._get_user_unlocked(user_id, create_if_missing)
+        async with distributed_lease(f"user-create:{self.id}:{user_id}"):
+            lock_mgr = get_user_lock_manager()
+            lock = await lock_mgr.acquire(f"{self.id}:{user_id}")
+            async with lock:
+                return await self._get_user_unlocked(user_id, create_if_missing)
 
     async def _get_user_unlocked(
         self, user_id: str, create_if_missing: bool
@@ -519,14 +521,16 @@ class Memory(Node):
             return await self._get_session_unlocked(
                 user_id, session_id, user_name, channel
             )
+        from jvagent.core.distributed_lease import distributed_lease
         from jvagent.memory.lock_manager import get_conversation_lock_manager
 
-        lock_mgr = get_conversation_lock_manager()
-        lock = await lock_mgr.acquire(f"session-create:{self.id}:{session_id}")
-        async with lock:
-            return await self._get_session_unlocked(
-                user_id, session_id, user_name, channel
-            )
+        async with distributed_lease(f"session-create:{self.id}:{session_id}"):
+            lock_mgr = get_conversation_lock_manager()
+            lock = await lock_mgr.acquire(f"session-create:{self.id}:{session_id}")
+            async with lock:
+                return await self._get_session_unlocked(
+                    user_id, session_id, user_name, channel
+                )
 
     async def _get_session_unlocked(
         self,

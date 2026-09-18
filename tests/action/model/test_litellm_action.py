@@ -162,10 +162,16 @@ async def test_missing_litellm_is_a_clear_runtime_error(monkeypatch):
 
 
 def test_capabilities_and_pricing_come_from_upstream_metadata():
-    action = _action(model="anthropic/claude-sonnet-4-5")
+    from jvagent.action.model.capabilities import litellm_capabilities
+
+    model = "anthropic/claude-sonnet-4-5"
+    upstream = litellm_capabilities(model, provider="litellm")
+    assert upstream is not None and upstream.context_window
+
+    action = _action(model=model)
     caps = action.capabilities()
     assert caps.supports_tools is True
-    assert isinstance(caps.context_window, int) and caps.context_window >= 200_000
+    assert caps.context_window == upstream.context_window
     assert "litellm" in (caps.source or "")
     assert action.pricing().source == "litellm"
     assert json.dumps(

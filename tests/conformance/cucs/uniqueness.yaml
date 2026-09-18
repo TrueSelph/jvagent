@@ -1,0 +1,32 @@
+schema: jvagent.use-case/v1
+id: harness.response.uniqueness
+title: Idempotent replay returns the cached observation; final event is unique by message id
+priority: P0
+tags: [harness, uniqueness]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: echo-once
+    when:
+      user: "Echo this"
+    harness:
+      decisions:
+        - action: tool
+          tool: echo
+          args:
+            x: 1
+        - action: tool
+          tool: echo
+          args:
+            x: 1
+        - action: final
+          answer: "hello"
+    then:
+      loop:
+        tools_called:
+          - echo
+          - echo
+      context:
+        cached_replay: true
+        unique_final: true

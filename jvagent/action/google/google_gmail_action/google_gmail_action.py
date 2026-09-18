@@ -7,6 +7,7 @@ from jvagent.action.email_action.canonical_send_builder import (
     standalone_mailbox_effective_sender_name,
 )
 from jvagent.action.email_action.modules.gmail import GmailEmailProvider
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..google_action import GoogleAction
@@ -90,7 +91,10 @@ class GoogleGmailAction(GoogleAction):
             .execute()
         )
 
-    @tool(name="gmail__send_email")
+    @tool(
+        name="gmail__send_email",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_send_email(
         self,
         to: Annotated[str, "Recipient email address."],
@@ -125,7 +129,10 @@ class GoogleGmailAction(GoogleAction):
             await self.get_message(message_id, fmt=fmt or "full"), indent=2
         )
 
-    @tool(name="gmail__mark_read")
+    @tool(
+        name="gmail__mark_read",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_mark_read(
         self,
         message_id: Annotated[str, "ID of the message to mark as read."],

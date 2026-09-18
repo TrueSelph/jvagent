@@ -16,9 +16,9 @@ Collection schema::
       "id":         "<run_id>:<kind>:<key>",   # PK - used for upserts
       "_id":        "<run_id>:<kind>:<key>",
       "run_id":     str,
-      "kind":       str,     # "node_id" | "bfs_seen" | "node_edge" | "valid_edge" | "edge_pair"
+      "kind":       str,     # "node_id" | "bfs_seen" | "edge_pair" | "all_node_id"
       "key":        str,     # e.g. node_id, edge_id, "source\\ntarget"
-      "value":      str,     # optional secondary value (e.g. edge_id for node_edge rows)
+      "value":      str,     # optional secondary value
       "created_at": float,   # Unix timestamp for TTL
     }
 """

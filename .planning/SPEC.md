@@ -124,6 +124,21 @@ Rationale and consequences: [`adr/0012-skill-executive-architecture.md`](adr/001
 
 Harness design contract (thin server, thick SOP): [`docs/thin-harness.md`](../docs/thin-harness.md). Interview profile: [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md).
 
+### 3.4 Harness contracts (ADR-0054)
+
+Types and validators live in [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py) (`CONTRACT_VERSION`). Runtime (journals, ledger, outbox, leases, snapshots, traces) is [`jvagent/harness/runtime.py`](../jvagent/harness/runtime.py). TurnRun is a log-shaped journal (I-GRAPH-02), not a conversation Node.
+
+- `NativeCaller` ([`contracts.py:131`](../jvagent/harness/contracts.py)) is `(agent_id, user_id, session_id)`. `native_caller_from_mapping` ([`contracts.py:149`](../jvagent/harness/contracts.py)) rejects host-domain keys (`workspace_id`, `organization`, `organization_id`, `org_id`, `content_profile_id`). Public interact/embed `data` payloads are rejected the same way.
+- `TurnRunState` + `assert_turn_run_transition` ([`contracts.py:42`](../jvagent/harness/contracts.py), [`contracts.py:122`](../jvagent/harness/contracts.py)) define legal lifecycle edges. `HarnessRuntime.start_turn` / `transition` persist them.
+- `ToolSurfaceSnapshot` ([`contracts.py:167`](../jvagent/harness/contracts.py)) is immutable; `cache_key()` includes `snapshot_id` and NativeCaller; revoked/expired snapshots raise `HarnessContractError`. Catalog cache keys match ([`catalog.py`](../jvagent/action/orchestrator/catalog.py)).
+- `InvocationRecord` ([`contracts.py:193`](../jvagent/harness/contracts.py)) and `IdempotencyClass` ([`contracts.py:53`](../jvagent/harness/contracts.py)) describe dispatch identity. Ledger: `HarnessRuntime.begin_invocation` / `finish_invocation`; `@tool(idempotency_class=...)`.
+- `EventEnvelope` ([`contracts.py:204`](../jvagent/harness/contracts.py)) is the durable-delivery shape (`sequence >= 1`). ResponseBus appends to the outbox before fan-out; SSE may replay via `cursor`.
+- `HostCapabilityProvider` ([`contracts.py:239`](../jvagent/harness/contracts.py)) is an async Protocol. Adapters: [`provider.py`](../jvagent/harness/provider.py) (`native` / `embedded` / `remote`). Model payloads must not carry authority keys (`reject_model_authority_fields`, [`contracts.py:113`](../jvagent/harness/contracts.py)).
+- Same-session policy is **lease** (`SessionBusy` if another worker holds it). JSON/SQLite active-active is **unsupported** ([`docs/HARNESS_DEPLOYMENT.md`](../docs/HARNESS_DEPLOYMENT.md)).
+- Conformance suite: `tests/conformance/` (pytest marker `harness_conformance`). Native reference app: `examples/jvagent_app`. Independent host fixture: `tests/conformance/fixtures/fake_host/` (not a product host).
+
+See [ADR-0054](adr/0054-harness-contracts.md).
+
 ---
 
 ## 4. Action contract
@@ -188,7 +203,7 @@ Errors raised by these hooks are logged automatically by the action's `enable()`
 
 ### 4.4 Tools and capabilities
 
-- `get_tools() -> List[Tool]` ([`base.py:259`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the Orchestrator's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`).
+- `get_tools() -> List[Tool]` ([`base.py:259`](../jvagent/action/base.py)) — every `Action` MAY expose tools to the agentic loop (e.g. the Orchestrator's think-act-observe loop). Each tool wraps a callable with a JSON Schema for arguments; they are registered with an `action__` prefix in the tool registry. `InteractAction.get_tools()` forwards to `execute(visitor)` and builds the tool description from the manifest (`purpose` + `activates_on`, via `routing_triggers()`). Target admission surface is a `ToolSurfaceSnapshot` ([`contracts.py:163`](../jvagent/harness/contracts.py)); today's cache is still per-agent ([`catalog.py:45`](../jvagent/action/orchestrator/catalog.py)) until HP-03.
 - `get_capabilities() -> List[str]` ([`base.py:180`](../jvagent/action/base.py)) — short capability strings aggregated by `ReplyAction` for reply-prompt injection.
 
 ### 4.5 Action discovery
@@ -219,7 +234,8 @@ See [`adr/0004-namespace-isolation.md`](adr/0004-namespace-isolation.md) and [`a
 ### 5.1 Identity
 
 - `User.memory_id` + `User.user_id` together form a compound unique key per `Memory` subgraph (compound index at `memory/user.py:16-24`).
-- A `lock_manager` (`memory/lock_manager.py`) acquires a per-`(memory_id, user_id)` lock before `_get_user_unlocked()` to prevent duplicate `User` rows under concurrent creates.
+- Harness admission identity is `NativeCaller(agent_id, user_id, session_id)` ([`contracts.py:131`](../jvagent/harness/contracts.py)). `Conversation.session_id` remains globally unique ([`conversation.py`](../jvagent/memory/conversation.py)). `get_user` / `get_session` wrap `distributed_lease` plus the in-process lock; two-worker identity upsert is proven on a shared `HarnessStore` ([`runtime.py`](../jvagent/harness/runtime.py)). Redis/Dynamo still required for cluster-wide User/Conversation uniqueness on JSON.
+- A `lock_manager` (`memory/lock_manager.py`) acquires a per-`(memory_id, user_id)` lock before `_get_user_unlocked()` to prevent duplicate `User` rows under concurrent creates. The lock is process-local today.
 
 ### 5.2 Conversation chaining
 
@@ -290,7 +306,7 @@ See [`adr/0005-app-yaml-agent-yaml-split.md`](adr/0005-app-yaml-agent-yaml-split
 
 ## 7. Response bus
 
-The response bus ([`jvagent/action/response/response_bus.py`](../jvagent/action/response/response_bus.py)) is **per-agent**. Each `Agent` lazily constructs one via `Agent.get_response_bus()` ([`agent.py:256`](../jvagent/core/agent.py)).
+The response bus ([`jvagent/action/response/response_bus.py`](../jvagent/action/response/response_bus.py)) is **per-agent**. Each `Agent` lazily constructs one via `Agent.get_response_bus()` ([`agent.py:256`](../jvagent/core/agent.py)). Session queues and subscribers are process-local (`_agent_bus_registry`, `_session_queues`). Target durable shape is `EventEnvelope` ([`contracts.py:200`](../jvagent/harness/contracts.py)); outbox persistence is HP-06.
 
 - Channel adapters (`EmailAction`, `WhatsAppAction`, `FacebookAction`, etc.) register with the bus and translate messages to channel-specific transports.
 - Filters can drop, transform, or duplicate messages per channel.
@@ -363,6 +379,8 @@ There is **no external task queue** (no Celery / RQ). Long-lived autonomous work
 10. Flow continuation is configurable via `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)). When on (default), the active flow's IA tool is dispatched with no model round-trip; when off, the flow is surfaced as routable context and the model decides. See §3.3 invariants 2–3.
 11. Routing is tool selection. There is no separate router or capability registry; IAs (as tools), persona, core services, and skills are all tools. A flow's control-task (turn-lock) is persisted on the conversation `TaskStore`; the active flow is surfaced as a routable tool and continued by model tool selection next turn. See §3.3 invariant 4.
 12. Access control gates tool dispatch (`tool:*`), including IA-as-tool execution (`tool:delegate:{name}`); a denial routes to the orchestrator's safe-fallback. See §3.3 invariant 6.
+13. Public harness types use `NativeCaller` only — no host-domain fields in `jvagent.harness` ([ADR-0054](adr/0054-harness-contracts.md), [`contracts.py:13`](../jvagent/harness/contracts.py)).
+14. Model-generated tool payloads MUST NOT carry authority keys (`reject_model_authority_fields`, [`contracts.py:111`](../jvagent/harness/contracts.py)).
 
 ---
 
@@ -385,6 +403,7 @@ Load-bearing design choices are captured as ADRs:
 - [`adr/0010-executive-centers-architecture.md`](adr/0010-executive-centers-architecture.md) *(superseded by ADR-0012; retained as history)*
 - [`adr/0011-skills-two-kinds.md`](adr/0011-skills-two-kinds.md)
 - [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md)
+- [`adr/0054-harness-contracts.md`](adr/0054-harness-contracts.md)
 
 ---
 

@@ -21,6 +21,7 @@ from jvspatial.exceptions import DatabaseError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import collect_tools, tool
 
 from .. import llm_bridge
@@ -662,7 +663,10 @@ class PageIndexAction(Action):
         # Agent prompt sees start_page/end_page; API/search rows keep index keys.
         return json.dumps(prompt_page_aliases(results), indent=2)
 
-    @tool(name="pageindex__assimilate")
+    @tool(
+        name="pageindex__assimilate",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_assimilate(
         self,
         doc: Annotated[
@@ -877,7 +881,10 @@ class PageIndexAction(Action):
         )
         return payload
 
-    @tool(name="pageindex__delete")
+    @tool(
+        name="pageindex__delete",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_doc(
         self,
         doc_name: Annotated[str, "Name of the document to delete."],
