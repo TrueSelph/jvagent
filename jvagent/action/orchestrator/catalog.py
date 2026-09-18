@@ -28,8 +28,9 @@ from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.orchestrator.tools import SkillTool
 
 
-# Per-agent assembled tool surface cache. Keyed by agent_id; invalidated on
-# action reload when the orchestrator's config hash changes.
+# Assembled tool surface cache. Keyed by snapshot_id + NativeCaller (HP-03).
+# Generation invalidation drops matching keys; do not clear() the whole process
+# dict per turn.
 @dataclass
 class _ToolSurfaceCacheEntry:
     config_hash: str
@@ -42,7 +43,16 @@ class _ToolSurfaceCacheEntry:
     longtail: frozenset[str] = frozenset()
 
 
-_TOOL_SURFACE_CACHE: Dict[str, _ToolSurfaceCacheEntry] = {}
+_TOOL_SURFACE_CACHE: Dict[Tuple[str, str, str, str], _ToolSurfaceCacheEntry] = {}
+
+
+def _surface_cache_key(
+    agent_id: str,
+    user_id: str = "",
+    session_id: str = "",
+    snapshot_id: str = "",
+) -> Tuple[str, str, str, str]:
+    return (snapshot_id or "", agent_id, user_id or "", session_id or "")
 
 
 def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -> str:
@@ -70,20 +80,70 @@ def compute_tool_surface_config_hash(orch: Any, enabled_action_ids: List[str]) -
     return digest[:16]
 
 
-def get_tool_surface_cache(agent_id: str) -> Optional[_ToolSurfaceCacheEntry]:
-    return _TOOL_SURFACE_CACHE.get(agent_id)
+def get_tool_surface_cache(
+    agent_id: str,
+    user_id: str = "",
+    session_id: str = "",
+    snapshot_id: str = "",
+) -> Optional[_ToolSurfaceCacheEntry]:
+    return _TOOL_SURFACE_CACHE.get(
+        _surface_cache_key(agent_id, user_id, session_id, snapshot_id)
+    )
 
 
-def set_tool_surface_cache(agent_id: str, entry: _ToolSurfaceCacheEntry) -> None:
-    _TOOL_SURFACE_CACHE[agent_id] = entry
+def set_tool_surface_cache(
+    agent_id: str,
+    entry: _ToolSurfaceCacheEntry,
+    user_id: str = "",
+    session_id: str = "",
+    snapshot_id: str = "",
+) -> None:
+    _TOOL_SURFACE_CACHE[
+        _surface_cache_key(agent_id, user_id, session_id, snapshot_id)
+    ] = entry
 
 
-def invalidate_tool_surface_cache(agent_id: Optional[str] = None) -> None:
-    """Drop cached tool surfaces for one agent or the entire process."""
-    if agent_id is None:
+def invalidate_tool_surface_cache(
+    agent_id: Optional[str] = None, snapshot_id: Optional[str] = None
+) -> None:
+    """Drop cached surfaces for one agent, one snapshot, or the whole process."""
+    if agent_id is None and snapshot_id is None:
         _TOOL_SURFACE_CACHE.clear()
-    else:
-        _TOOL_SURFACE_CACHE.pop(agent_id, None)
+        return
+    drop = [
+        key
+        for key in _TOOL_SURFACE_CACHE
+        if (agent_id is not None and key[1] == agent_id)
+        or (snapshot_id is not None and key[0] == snapshot_id)
+    ]
+    for key in drop:
+        _TOOL_SURFACE_CACHE.pop(key, None)
+
+
+def surface_cache_identity(visitor: Any = None) -> Dict[str, str]:
+    """NativeCaller + snapshot_id kwargs for the tool-surface cache."""
+    user_id = str(getattr(visitor, "user_id", "") or "") if visitor is not None else ""
+    session_id = (
+        str(getattr(visitor, "session_id", "") or "") if visitor is not None else ""
+    )
+    snapshot_id = ""
+    try:
+        from jvagent.action.orchestrator.turn_cache import get_turn_cache
+
+        turn = get_turn_cache() or {}
+        snap = turn.get("snapshot")
+        snapshot_id = str(getattr(snap, "snapshot_id", "") or "")
+        caller = turn.get("caller")
+        if caller is not None:
+            user_id = user_id or str(getattr(caller, "user_id", "") or "")
+            session_id = session_id or str(getattr(caller, "session_id", "") or "")
+    except Exception:
+        pass
+    return {
+        "user_id": user_id,
+        "session_id": session_id,
+        "snapshot_id": snapshot_id,
+    }
 
 
 # One-line summary length for a ``find_tool`` hit. Discovery only needs enough
@@ -451,4 +511,5 @@ __all__ = [
     "get_tool_surface_cache",
     "set_tool_surface_cache",
     "invalidate_tool_surface_cache",
+    "surface_cache_identity",
 ]

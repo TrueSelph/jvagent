@@ -2250,7 +2250,9 @@ class ApiClient {
         throw err
       }
     })
-    return response.data
+    const data = response.data
+    if (data?.success && data?.data) return data.data
+    return data
   }
 }
 

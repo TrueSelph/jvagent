@@ -101,3 +101,67 @@ async def test_stage_skill_copies_into_slice(tmp_path, monkeypatch):
     rel = await action.stage_skill(_Visitor(), str(skill), "demo")
     assert rel == "staged_skills/demo"
     assert (slice_dir / "staged_skills" / "demo" / "scripts" / "x.py").exists()
+
+
+async def test_stage_skill_snapshot_keyed(tmp_path, monkeypatch):
+    from jvagent.action.orchestrator.turn_cache import bind_turn_cache
+    from jvagent.harness.contracts import NativeCaller
+    from jvagent.harness.runtime import reset_runtime
+    from jvagent.scaffold.skill_resolve import skill_digest
+
+    skill = tmp_path / "src_skill"
+    (skill / "scripts").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: demo\n---\nbody\n")
+    (skill / "scripts" / "x.py").write_text("print('hi')\n")
+    slice_dir = tmp_path / "slice"
+    slice_dir.mkdir()
+    action = CodeExecutionAction()
+    action.enabled = True
+
+    async def _fake_cwd(self, visitor):
+        return str(slice_dir)
+
+    monkeypatch.setattr(CodeExecutionAction, "resolve_user_cwd", _fake_cwd)
+    rt = reset_runtime()
+    caller = NativeCaller("ag", "u1", "s1")
+    snap = rt.admit_snapshot(caller)
+    digest = skill_digest(skill)
+    with bind_turn_cache() as cache:
+        cache["caller"] = caller
+        cache["snapshot"] = snap
+        rel = await action.stage_skill(_Visitor(), str(skill), "demo")
+    assert rel == f"staged_skills/{snap.snapshot_id[:12]}/{digest}/demo"
+    assert (slice_dir / rel / "scripts" / "x.py").exists()
+    reset_runtime()
+
+
+async def test_stage_skill_untrusted_refuses_without_isolation(tmp_path, monkeypatch):
+    from jvagent.harness.runtime import SkillIsolationRefused, reset_runtime
+
+    skill = tmp_path / "src_skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: demo\n---\nbody\n")
+    slice_dir = tmp_path / "slice"
+    slice_dir.mkdir()
+    action = CodeExecutionAction()
+
+    async def _fake_cwd(self, visitor):
+        return str(slice_dir)
+
+    monkeypatch.setattr(CodeExecutionAction, "resolve_user_cwd", _fake_cwd)
+    reset_runtime()
+    try:
+        await action.stage_skill(_Visitor(), str(skill), "demo", trust_tier="untrusted")
+        raise AssertionError("expected SkillIsolationRefused")
+    except SkillIsolationRefused:
+        pass
+    reset_runtime()
+
+
+async def test_bash_tool_is_non_retryable():
+    from jvagent.harness.contracts import IdempotencyClass
+
+    action = CodeExecutionAction()
+    action.enabled = True
+    tools = await action.get_tools()
+    assert tools[0].idempotency_class is IdempotencyClass.NON_RETRYABLE

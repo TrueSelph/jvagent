@@ -32,6 +32,7 @@ from jvagent.action.skill_hub._skills_cli import (
     run_skills_list,
 )
 from jvagent.core.app_context import get_app_root
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
@@ -419,7 +420,10 @@ class SkillHubAction(Action):
         result = await self.search_registry(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)
 
-    @tool(name="skill_hub__install_skill")
+    @tool(
+        name="skill_hub__install_skill",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_install_skill(
         self,
         source: Annotated[
@@ -460,7 +464,10 @@ class SkillHubAction(Action):
         result = await self.list_installed(arguments, visitor=visitor)
         return result if isinstance(result, str) else json.dumps(result)
 
-    @tool(name="skill_hub__remove_skill")
+    @tool(
+        name="skill_hub__remove_skill",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_remove_skill(
         self,
         skill_name: Annotated[str, "Name of the installed skill to remove"],

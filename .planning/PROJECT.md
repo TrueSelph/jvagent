@@ -1,7 +1,8 @@
 # jvagent — Project Vision
 
-> **Status**: Draft, AI-agent-maintained. Last review: 2026-05-17.
+> **Status**: Draft, AI-agent-maintained. Last review: 2026-09-17.
 > **Companion docs**: [`SPEC.md`](SPEC.md) for normative semantics, [`architecture.md`](architecture.md) for diagrams, [`../README.md`](../README.md) for user-facing onboarding.
+> **Current milestone**: [`ROADMAP.md`](ROADMAP.md) — v2.0 Harness Excellence.
 
 ## TL;DR
 
@@ -21,6 +22,24 @@ Build, deploy, and maintain production AI agents without re-implementing the bor
 - HTTP endpoints, auth, file storage, observability, structured logging, and graph repair — out of the box.
 
 The model is the pilot. Tools are the controls. Skills are the flight plan. ([source](../docs/ORCHESTRATOR.md))
+
+---
+
+## Current Milestone: v2.0 Harness Excellence
+
+**Goal:** Make jvagent the dependable, graph-native harness for many agents, users, and simultaneous sessions — without sacrificing model agency, Claude-skill compatibility, or host-neutrality.
+
+**North star:** [`docs/HARNESS_EXCELLENCE_PLAN.md`](../docs/HARNESS_EXCELLENCE_PLAN.md)
+
+**Target features:**
+- Native identity `(agent_id, user_id, session_id)` as the only isolation key in core
+- Immutable `ToolSurfaceSnapshot` for tools and skills; no cross-session cache leakage
+- Graph-backed `TurnRun` journal, invocation ledger, and durable event outbox
+- Host-neutral `HostCapabilityProvider` with embedded and remote adapters
+- Signed skill manifests and selectable isolation backends
+- Correlated trace/replay, load evidence, and a release compatibility matrix
+
+**Requirements:** [`REQUIREMENTS.md`](REQUIREMENTS.md) · **Roadmap:** [`ROADMAP.md`](ROADMAP.md) · **State:** [`STATE.md`](STATE.md)
 
 ---
 
@@ -106,7 +125,39 @@ This repo is `jvagent` only. The graph framework is at `../jvspatial` (sibling d
 
 ## Roadmap
 
-In-flight planning lives at [`EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md) (archived now that v1 has shipped). When this project adopts the GSD workflow, roadmaps move to a `ROADMAP.md` at the `.planning/` root.
+- **v1 Orchestrator** — shipped. Historical plan: [`archive/EXECUTIVE-ROADMAP.md`](archive/EXECUTIVE-ROADMAP.md).
+- **v2.0 Harness Excellence** — active. [`ROADMAP.md`](ROADMAP.md), sourced from [`docs/HARNESS_EXCELLENCE_PLAN.md`](../docs/HARNESS_EXCELLENCE_PLAN.md).
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Native identity only — no workspace/org/App in core | Hosts map their scopes to session ids; jvagent stays reusable | — Pending v2.0 |
+| Snapshots, never live host imports into the Orchestrator | Prevents cache leakage and host-domain coupling | — Pending v2.0 |
+| Authority bound server-side, never in model payloads | Model-generated JSON cannot escalate capability | — Pending v2.0 |
+| Subprocess limits are development-only containment | Not a sandbox for untrusted code | — Pending v2.0 |
+| Single-process remains a documented narrower profile | Active-active is optional, not required | — Pending v2.0 |
+| HP-08 and HP-09 run in parallel after HP-03 + HP-05 | Skill hardening does not wait on host transport | — Pending v2.0 |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition:**
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone:**
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-09-17 after starting milestone v2.0 Harness Excellence*
 
 ---
 

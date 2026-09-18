@@ -6,6 +6,7 @@ from typing import Annotated, Any, ClassVar, Dict, List, Optional
 import httpx
 from jvspatial.env import env
 
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
@@ -230,7 +231,10 @@ class MicrosoftOneDriveAction(MicrosoftAction):
         )
         return json.dumps(results, indent=2)
 
-    @tool(name="onedrive__upload_file")
+    @tool(
+        name="onedrive__upload_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_upload_file(
         self,
         name: Annotated[str, "Name for the uploaded file."],
@@ -254,7 +258,10 @@ class MicrosoftOneDriveAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="onedrive__share_file")
+    @tool(
+        name="onedrive__share_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_share_file(
         self,
         file_id: Annotated[str, "The ID of the file to share."],
@@ -284,7 +291,10 @@ class MicrosoftOneDriveAction(MicrosoftAction):
         )
         return json.dumps(result, indent=2)
 
-    @tool(name="onedrive__delete_file")
+    @tool(
+        name="onedrive__delete_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_file(
         self,
         file_id: Annotated[str, "The ID of the file to delete."],

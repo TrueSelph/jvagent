@@ -54,10 +54,31 @@ from jvagent.action.interact.utils.uploads import (
     UploadItem,
     normalize_upload_entry,
 )
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 if False:
     from jvagent.action.interact.interact_walker import InteractWalker
+
+
+def _register_orchestrator_vocabulary() -> None:
+    """Declare vault tool results as a trusted directive source.
+
+    ``artifact_handler__*`` results may carry ``Tell the user:``
+    ``response_directive`` (ready notice + pending-question answer on
+    other-channel status polls). Runs at import so the orchestrator trusts
+    them without hardcoding this plugin.
+    """
+    try:
+        from jvagent.action.orchestrator.constants import (
+            register_trusted_directive_prefix,
+        )
+    except Exception:  # pragma: no cover - orchestrator optional at load
+        return
+    register_trusted_directive_prefix("artifact_handler__")
+
+
+_register_orchestrator_vocabulary()
 
 _AGENT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), *([".."] * 4))
 if str(_AGENT_ROOT) not in sys.path:
@@ -78,6 +99,34 @@ def _now_ts() -> int:
 
 
 _PROCESSING_STATUSES = frozenset({"queued", "processing", "pending", "submitted"})
+
+DOCUMENT_CONTENT_CONDITION = (
+    "the user asks a content or factual question that could come from their "
+    "uploaded documents, asks about their saved documents, uploads, or files, "
+    "references a document by name, type, pronoun, or description, or continues "
+    "a prior document question (and/also, the last 2, the first two, ordinals "
+    "like second/third)"
+)
+
+DOCUMENT_SELECTION_RULES = (
+    "Document selection (mandatory when documents are listed above):\n"
+    "Do not answer from prior replies, [EVENT] text, or the doc_description "
+    "lines above. Those are only for choosing doc_name — not facts to quote.\n"
+    "1. If faq is not already active, first call use_skill with name faq "
+    "(pageindex__search is not callable until then).\n"
+    "2. Pick doc_name: if the user clearly names a different document (explicit "
+    "name or type), use that doc_name; otherwise use Active document (or the "
+    "listed vault name when there is one). Follow-ups include and/also, the "
+    "last 2, the first two, ordinals like second/third, 'the photo', 'that "
+    "document', and history [EVENT] lines naming that last/saved doc. Do not "
+    "ask which document first.\n"
+    "3. Then call pageindex__search with query from this user message and that "
+    "doc_name.\n"
+    "4. Description match or unscoped pageindex__search only when Active "
+    "document is unset and the user did not name a file.\n"
+    "5. Never reply with only a clarifying question before searching when "
+    "documents are listed."
+)
 
 
 def _safe_filename_segment(
@@ -633,6 +682,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                         "notified": False,
                         "job_id": job_id or None,
                         "status": "queued",
+                        "file_url": ingest_url,
                     }
                     if pq:
                         entry["pending_question"] = pq
@@ -642,6 +692,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                             "doc_name": doc_name,
                             "status": "queued",
                             "submitted_at": now,
+                            "file_url": ingest_url,
                         }
                         if pq:
                             pending_entry["pending_question"] = pq
@@ -687,6 +738,22 @@ class ArtifactHandlerInteractAction(InteractAction):
                 await conversation.update_context({"artifact_handler": vault})
             except Exception:
                 pass
+            from .vault_events import record_vault_event, saved_document_event
+
+            for name in queued:
+                await record_vault_event(
+                    visitor,
+                    saved_document_event(
+                        name, pending_question=pending_question, status="processing"
+                    ),
+                )
+            for name in ingested:
+                await record_vault_event(
+                    visitor,
+                    saved_document_event(
+                        name, pending_question=pending_question, status="ready"
+                    ),
+                )
             saved_count = len(queued) + len(ingested)
             kind_phrase = _media_kind_phrase(saved_items)
             verb_is, finished = _kind_verb_finished(kind_phrase)
@@ -830,20 +897,6 @@ class ArtifactHandlerInteractAction(InteractAction):
                             vault.get("active_doc_name") or ""
                         ).strip()
 
-            _SELECTION_RULES = (
-                "Document selection (mandatory when documents are listed above):\n"
-                "1. Match the user's question to a doc_description; if one clearly "
-                "fits, call pageindex__search with that doc_name — do not ask which "
-                "document first.\n"
-                "2. If Active document is set and the question is a follow-up that "
-                "fits that document's description, prefer that doc_name.\n"
-                "3. Prefer description match over Active document when they conflict.\n"
-                "4. If still unclear, call pageindex__search without doc_name before "
-                "asking which document.\n"
-                "5. Never reply with only a clarifying question before searching when "
-                "documents are listed."
-            )
-
             if not docs:
                 response_text = "The user currently has no saved documents."
             else:
@@ -866,7 +919,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                     ]
                     if active_doc_name:
                         parts.append(f"Active document: {active_doc_name}")
-                    parts.append(_SELECTION_RULES)
+                    parts.append(DOCUMENT_SELECTION_RULES)
                     response_text = "\n".join(parts)
                 else:
                     response_text = "The user currently has no saved documents."
@@ -875,12 +928,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 await visitor.add_parameter(
                     {
                         "scope": "orchestration",
-                        "condition": (
-                            "the user asks a content or factual question that could "
-                            "come from their uploaded documents, asks about their "
-                            "saved documents, uploads, or files, or references a "
-                            "document by name, type, pronoun, or description"
-                        ),
+                        "condition": DOCUMENT_CONTENT_CONDITION,
                         "response": response_text,
                     }
                 )
@@ -1022,11 +1070,13 @@ class ArtifactHandlerInteractAction(InteractAction):
         agent_id: str,
         pending_question: Optional[str] = None,
         filename: Optional[str] = None,
+        file_url: Optional[str] = None,
     ) -> None:
         if not job_id:
             return
         question = (pending_question or "").strip() or None
         display_name = (filename or "").strip() or None
+        saved_url = (file_url or "").strip() or None
         index = dict(self.jvforge_job_index or {})
         index[job_id] = {
             "job_id": job_id,
@@ -1040,6 +1090,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             "submitted_at": _utc_iso(),
             "notified": False,
             "pending_question": question,
+            "file_url": saved_url or "",
         }
         self.jvforge_job_index = index
         try:
@@ -1197,6 +1248,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 agent_id=agent_id,
                 pending_question=pending_question,
                 filename=filename,
+                file_url=file_url,
             )
         return result
 
@@ -1293,7 +1345,10 @@ class ArtifactHandlerInteractAction(InteractAction):
             args["question"] = question
         return args
 
-    @tool(name="artifact_handler__ingest_document")
+    @tool(
+        name="artifact_handler__ingest_document",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_ingest_document(
         self,
         visitor: Any = None,
@@ -1319,7 +1374,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         """List the documents the user has saved, with save age and expiry."""
         return await self._dispatch_tool("list_my_documents", visitor=visitor)
 
-    @tool(name="artifact_handler__delete_document")
+    @tool(
+        name="artifact_handler__delete_document",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_delete_document(
         self, doc_name: str, visitor: Any = None, **kwargs: Any
     ) -> str:

@@ -644,32 +644,37 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 })
                 // Don't set isStreaming to false here - wait for chunk.type='final' for complete payload
               } else if (msg.message_type === 'adhoc') {
-                const adhocMessage: Message = {
-                  id: msg.id || `adhoc-${Date.now()}-${Math.random()}`,
-                  role: 'assistant',
-                  interactionId: msg.interaction_id,
-                  content: msg.content || '',
-                  timestamp: msg.timestamp || new Date().toISOString(),
-                  streaming: false,
-                  metadata: mergeResponseMetadata(undefined, msg.metadata),
+                const messageId = msg.id || `adhoc-${Date.now()}-${Math.random()}`
+                const upsertAdhoc = (list: Message[]): Message[] => {
+                  const existingIndex = list.findIndex((m) => m.id === messageId)
+                  if (existingIndex >= 0) {
+                    return list.map((m, idx) =>
+                      idx === existingIndex
+                        ? {
+                            ...m,
+                            content: msg.content || m.content || '',
+                            streaming: false,
+                            interactionId: m.interactionId || msg.interaction_id,
+                            metadata: mergeResponseMetadata(m.metadata, msg.metadata),
+                            timestamp: msg.timestamp || m.timestamp,
+                          }
+                        : m
+                    )
+                  }
+                  return [
+                    ...list,
+                    {
+                      id: messageId,
+                      role: 'assistant' as const,
+                      interactionId: msg.interaction_id,
+                      content: msg.content || '',
+                      timestamp: msg.timestamp || new Date().toISOString(),
+                      streaming: false,
+                      metadata: mergeResponseMetadata(undefined, msg.metadata),
+                    },
+                  ]
                 }
-                const streamSessionId = streamSessionIdRef.current
-                const currentView = sessionIdRef.current
-                const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
-
-                if (!viewingStreamSession && streamSessionId) {
-                  const stored = getMessages(streamSessionId)
-                  const updated = [...stored, adhocMessage]
-                  saveMessages(streamSessionId, updated)
-                  return
-                }
-
-                setMessages((prev) => {
-                  // Append as new message (don't update existing messages)
-                  let updated = [...prev, adhocMessage]
-
-                  // Ensure only the last message of each interaction has debugData
-                  // Group messages by interactionId and keep debugData only on the last message per interaction
+                const stripDebugToLast = (updated: Message[]): Message[] => {
                   const interactionGroups = new Map<string, number[]>()
                   updated.forEach((m, idx) => {
                     if (m.role === 'assistant' && m.interactionId) {
@@ -678,9 +683,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       interactionGroups.set(m.interactionId, indices)
                     }
                   })
-
-                  // Remove debugData from all messages except the last one per interaction
-                  updated = updated.map((m, idx) => {
+                  return updated.map((m, idx) => {
                     if (m.role === 'assistant' && m.interactionId && m.debugData) {
                       const indices = interactionGroups.get(m.interactionId) || []
                       const lastIndexForInteraction = indices.length > 0 ? indices[indices.length - 1] : -1
@@ -691,8 +694,20 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     }
                     return m
                   })
+                }
+                const streamSessionId = streamSessionIdRef.current
+                const currentView = sessionIdRef.current
+                const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
 
-                  // Save adhoc message immediately if we have a session ID
+                if (!viewingStreamSession && streamSessionId) {
+                  const stored = getMessages(streamSessionId)
+                  const updated = stripDebugToLast(upsertAdhoc(stored))
+                  saveMessages(streamSessionId, updated)
+                  return
+                }
+
+                setMessages((prev) => {
+                  const updated = stripDebugToLast(upsertAdhoc(prev))
                   const activeSessionId = sessionIdRef.current
                   if (activeSessionId) {
                     saveMessages(activeSessionId, updated)

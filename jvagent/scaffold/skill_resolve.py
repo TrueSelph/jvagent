@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import importlib
 import logging
 import os
@@ -22,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 BUILTIN_SKILLS_PACKAGE = "jvagent.skills"
 SELECTOR_ALL = "-all"
+
+
+def skill_digest(skill_dir: Union[str, Path]) -> str:
+    """SHA-256 prefix of ``SKILL.md`` (or the file itself). Empty if missing."""
+    path = Path(skill_dir)
+    skill_md = path / "SKILL.md" if path.is_dir() else path
+    blob = skill_md.read_bytes() if skill_md.is_file() else b""
+    return hashlib.sha256(blob).hexdigest()[:16]
 
 
 _KNOWN_FRONTMATTER_KEYS = frozenset(
@@ -439,6 +448,7 @@ def parse_skill_bundle(
         "deny_access_directive": deny_access_directive,
         "scope_hint": scope_hint,
         "source": source,
+        "digest": skill_digest(skill_file),
         "metadata": {
             "version": frontmatter.get("version"),
             "license": frontmatter.get("license"),

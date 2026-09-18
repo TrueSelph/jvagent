@@ -56,6 +56,7 @@ from jvagent.action.orchestrator.catalog import (
     get_tool_surface_cache,
     invalidate_tool_surface_cache,
     set_tool_surface_cache,
+    surface_cache_identity,
 )
 from jvagent.action.orchestrator.egress import OrchestratorEgressMixin
 from jvagent.action.orchestrator.loop import OrchestratorLoopMixin
@@ -121,6 +122,7 @@ from jvagent.action.orchestrator.tools import (
     salvage_tool_call_text,
     truncate_thought,
     wrap_action_tool,
+    wrap_host_tool,
 )
 from jvagent.action.orchestrator.turn_cache import (
     bind_turn_cache,
@@ -945,8 +947,75 @@ class OrchestratorInteractAction(
         interaction = getattr(visitor, "interaction", None)
         if interaction is None:
             return
-        with bind_turn_cache():
-            await self._execute_turn(visitor)
+        with bind_turn_cache() as cache:
+            from jvagent.harness.contracts import NativeCaller, TurnRunState
+            from jvagent.harness.runtime import AdmissionRefused, get_runtime
+
+            rt = get_runtime()
+            caller = NativeCaller(
+                str(getattr(visitor, "agent_id", "") or ""),
+                str(getattr(visitor, "user_id", "") or ""),
+                str(getattr(visitor, "session_id", "") or ""),
+            )
+            if rt.is_draining:
+                logger.info("harness admission refused: draining")
+                return
+            cache["caller"] = caller
+            cache["interaction"] = interaction
+            cache["correlation_id"] = (
+                getattr(visitor, "correlation_id", "") or rt.new_correlation()
+            )
+            try:
+                cache["snapshot"] = rt.admit_snapshot(caller)
+            except AdmissionRefused:
+                logger.info("harness snapshot admission refused")
+                return
+            restored = None
+            payload = rt.checkpoint_from_interaction(interaction)
+            if payload:
+                restored = rt.import_checkpoint(payload)
+            if (
+                restored is not None
+                and restored.state is TurnRunState.RECOVERY_REQUIRED
+            ):
+                await visitor.report(
+                    {
+                        "recovery_required": True,
+                        "correlation_id": restored.correlation_id,
+                        "reason": restored.reason,
+                    }
+                )
+                return
+            if restored is not None and restored.state not in (
+                TurnRunState.COMPLETED,
+                TurnRunState.FAILED,
+                TurnRunState.CANCELLED,
+            ):
+                cache["correlation_id"] = restored.correlation_id
+                if restored.state is TurnRunState.WAITING_TOOL:
+                    rt.transition(
+                        restored.correlation_id,
+                        TurnRunState.RUNNING,
+                        reason="resume",
+                    )
+            else:
+                rt.start_turn(
+                    cache["correlation_id"],
+                    caller,
+                    cache["snapshot"],
+                    interaction_id=str(getattr(interaction, "id", "") or ""),
+                )
+            try:
+                await self._execute_turn(visitor)
+                rt.complete_turn(cache["correlation_id"])
+            except Exception:
+                rt.fail_turn(cache["correlation_id"], reason="execute_error")
+                raise
+            finally:
+                if getattr(visitor, "background_actions", None):
+                    rt.mark_background(cache["correlation_id"])
+                rt.persist_to_interaction(interaction, cache["correlation_id"])
+                rt.prune_retention()
 
     async def _execute_turn(self, visitor: "InteractWalker") -> None:
         # Curate the remaining walk path: routable IAs (exposed as tools) must
@@ -1139,7 +1208,9 @@ class OrchestratorInteractAction(
         )
         config_hash = compute_tool_surface_config_hash(self, action_ids)
         cached_surface = (
-            get_tool_surface_cache(agent.id) if agent and agent.id else None
+            get_tool_surface_cache(agent.id, **surface_cache_identity(visitor))
+            if agent and agent.id
+            else None
         )
         use_tool_cache = (
             cached_surface is not None
@@ -1276,7 +1347,9 @@ class OrchestratorInteractAction(
 
             if agent and agent.id:
                 cache_entry.longtail = frozenset(longtail)
-                set_tool_surface_cache(agent.id, cache_entry)
+                set_tool_surface_cache(
+                    agent.id, cache_entry, **surface_cache_identity(visitor)
+                )
 
         if use_tool_cache and cached_surface is not None:
             longtail |= set(cached_surface.longtail)
@@ -1353,6 +1426,19 @@ class OrchestratorInteractAction(
             tools["respond"] = wrap_action_tool(_respond_tool, visitor=visitor)
             visible.add("reply")
             visible.add("respond")
+
+        # Host capabilities are snapshot-bound tools, not descriptor metadata.
+        # Native tools win name collisions, and host tools remain discoverable
+        # through the standard lean catalogue.
+        snap = (get_turn_cache() or {}).get("snapshot")
+        if snap is not None:
+            for name in getattr(snap, "host_tool_names", ()) or ():
+                if not name or name in tools:
+                    if name in tools:
+                        logger.warning("host tool %r conflicts with native tool", name)
+                    continue
+                tools[name] = wrap_host_tool(name)
+                longtail.add(name)
 
         # Skill-only gating (ADR-0043), part 1 — the GLOB MATCH. It runs HERE,
         # before the lean policy, because a gated name must not win a lean
@@ -1574,6 +1660,24 @@ class OrchestratorInteractAction(
                     continue
                 visible.discard(name)
                 longtail.discard(name)
+        snap = None
+        try:
+            from jvagent.harness.runtime import get_runtime
+
+            turn = get_turn_cache() or {}
+            snap = turn.get("snapshot")
+            if snap is not None:
+                get_runtime().update_snapshot_descriptors(
+                    snap.snapshot_id,
+                    native_tool_names=tuple(sorted(tools.keys())),
+                    native_skill_keys=tuple(
+                        getattr(d, "name", "")
+                        for d in (skill_docs or [])
+                        if getattr(d, "name", "")
+                    ),
+                )
+        except Exception as exc:
+            logger.debug("harness snapshot descriptor update skipped: %s", exc)
         return tools
 
     def _tool_surface_policy(

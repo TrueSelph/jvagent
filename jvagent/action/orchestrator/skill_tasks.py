@@ -592,7 +592,14 @@ def compose_skill_activate_hooks(
             directory = getattr(doc, "directory", "") or ""
             if directory:
                 try:
-                    rel = await code_exec.stage_skill(visitor, directory, doc.name)
+                    trust = (
+                        "untrusted"
+                        if getattr(doc, "spec", "jv") == "claude"
+                        else "trusted"
+                    )
+                    rel = await code_exec.stage_skill(
+                        visitor, directory, doc.name, trust_tier=trust
+                    )
                     notes.append(
                         f"This skill's files are staged at '{rel}/' in your sandbox. Run "
                         f"its scripts with the code_execution__bash tool — e.g. "

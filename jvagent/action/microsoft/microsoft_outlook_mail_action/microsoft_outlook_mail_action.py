@@ -7,6 +7,7 @@ from jvagent.action.email_action.canonical_send_builder import (
     standalone_mailbox_effective_sender_name,
 )
 from jvagent.action.email_action.modules.outlook import OutlookEmailProvider
+from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import tool
 
 from ..microsoft_action import MicrosoftAction
@@ -157,7 +158,10 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
             "displayName": me.get("displayName"),
         }
 
-    @tool(name="outlook__send_email")
+    @tool(
+        name="outlook__send_email",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_send_email(
         self,
         to: Annotated[str, "Recipient email address."],
@@ -229,7 +233,10 @@ class MicrosoftOutlookMailAction(MicrosoftAction):
         user_id = user_id if user_id is not None else "me"
         return json.dumps(await self.get_message(message_id, user_id=user_id), indent=2)
 
-    @tool(name="outlook__mark_read")
+    @tool(
+        name="outlook__mark_read",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+    )
     async def _t_mark_read(
         self,
         message_id: Annotated[str, "The ID of the message to mark as read."],
