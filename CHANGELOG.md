@@ -88,6 +88,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Atomic per-interaction egress claim across ResponseBus instances.** A
+  process-wide `InteractionEgressRecord` (keyed by `interaction_id`) is the
+  single durable latch for user delivery and `message_type=final`. Rematerialized
+  `Interaction` objects and a second bus instance can no longer emit a second
+  Hello. Fresh session → Hello → exactly one persisted response and one
+  delivered final (`test_atomic_final_emission.py`).
+
 - **One assistant identity per streamed turn.** Non-stream `publish()` while a
   user accumulator is open is suppressed (it minted a new Object id, which
   Integral splits into a second bubble). `finalize_interaction` no longer

@@ -13,6 +13,7 @@ from jvagent.action.response.message import ResponseMessage
 from jvagent.action.response.response_bus import (
     ResponseBus,
     clear_agent_response_bus,
+    clear_interaction_egress,
     get_agent_response_bus,
 )
 from jvagent.action.response.streaming import (
@@ -31,4 +32,5 @@ __all__ = [
     "stream_messages",
     "get_agent_response_bus",
     "clear_agent_response_bus",
+    "clear_interaction_egress",
 ]

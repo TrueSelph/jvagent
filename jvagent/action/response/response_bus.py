@@ -80,6 +80,106 @@ def _governed(category: str, transient: bool) -> bool:
 _agent_bus_registry: Dict[str, "ResponseBus"] = {}
 
 
+@dataclass
+class InteractionEgressRecord:
+    """Process-wide single-egress claim for one interaction.
+
+    ``Interaction.emitted`` is per-Python-object and ``_message_buffers`` is
+    per-ResponseBus. A rematerialized Interaction or a second bus instance
+    cannot see those latches, so Hello can still emit twice. This table is
+    the shared record every bus consults.
+    """
+
+    interaction_id: str
+    message_id: str = ""
+    session_id: str = ""
+    delivered: bool = False
+    finalized: bool = False
+
+
+_interaction_egress: Dict[str, InteractionEgressRecord] = {}
+
+
+def _interaction_egress_lock() -> asyncio.Lock:
+    from jvagent.core.async_locks import get_loop_lock
+
+    return get_loop_lock("interaction_egress")
+
+
+def clear_interaction_egress(interaction_id: Optional[str] = None) -> None:
+    """Test helper: drop one or all process-wide egress claims."""
+    if interaction_id is None:
+        _interaction_egress.clear()
+        return
+    _interaction_egress.pop(str(interaction_id), None)
+
+
+async def try_claim_user_egress(
+    interaction_id: str,
+    *,
+    message_id: str,
+    session_id: str = "",
+    continue_stream: bool = False,
+) -> Tuple[bool, str]:
+    """Atomically claim the first user delivery for ``interaction_id``.
+
+    Returns ``(allowed, canonical_message_id)``. Stream continuation of the
+    already-claimed identity is allowed; any other user delivery is not.
+    """
+    key = str(interaction_id or "").strip()
+    if not key:
+        return True, message_id
+    async with _interaction_egress_lock():
+        rec = _interaction_egress.get(key)
+        if rec is None:
+            _interaction_egress[key] = InteractionEgressRecord(
+                interaction_id=key,
+                message_id=message_id,
+                session_id=session_id,
+                delivered=True,
+            )
+            return True, message_id
+        if continue_stream and rec.message_id and rec.message_id == message_id:
+            rec.delivered = True
+            return True, rec.message_id
+        if rec.delivered:
+            return False, rec.message_id or message_id
+        rec.delivered = True
+        rec.message_id = rec.message_id or message_id
+        rec.session_id = rec.session_id or session_id
+        return True, rec.message_id
+
+
+async def try_claim_final(
+    interaction_id: str,
+    *,
+    message_id: Optional[str] = None,
+    session_id: str = "",
+) -> Tuple[bool, str]:
+    """Atomically claim the single ``message_type=final`` for ``interaction_id``."""
+    key = str(interaction_id or "").strip()
+    fallback = message_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}"
+    if not key:
+        return True, fallback
+    async with _interaction_egress_lock():
+        rec = _interaction_egress.get(key)
+        if rec is None:
+            rec = InteractionEgressRecord(
+                interaction_id=key,
+                message_id=fallback,
+                session_id=session_id,
+            )
+            _interaction_egress[key] = rec
+        if rec.finalized:
+            return False, rec.message_id or fallback
+        rec.finalized = True
+        rec.delivered = True
+        rec.session_id = rec.session_id or session_id
+        if not rec.message_id:
+            rec.message_id = fallback
+        return True, rec.message_id
+
+
 def _agent_bus_lock() -> asyncio.Lock:
     from jvagent.core.async_locks import get_loop_lock
 
@@ -103,6 +203,7 @@ def clear_agent_response_bus(agent_id: Optional[str] = None) -> None:
     """Test helper: drop one or all registry entries."""
     if agent_id is None:
         _agent_bus_registry.clear()
+        clear_interaction_egress()
         return
     _agent_bus_registry.pop(str(agent_id), None)
 
@@ -471,6 +572,10 @@ class ResponseBus:
         # accumulator is already open mints a new Object id; Integral splits
         # bubbles on that id, so it is suppressed even if the first chunk has
         # not latched yet (gate-held / empty).
+        #
+        # The process-wide InteractionEgressRecord is the latch that survives
+        # a rematerialized Interaction OR a second ResponseBus instance for
+        # the same agent (fresh-session Hello duplicates).
         open_user_stream = bool(
             interaction_id and interaction_id in self._adhoc_accumulation
         )
@@ -482,16 +587,35 @@ class ResponseBus:
                 already_emitted = has_emitted() is True
             except Exception:
                 already_emitted = False
+        suppress_second = False
+        claimed_user_id = ""
         if (
             message_category == "user"
             and not transient
             and interaction is not None
-            and content
-            and (
-                (already_emitted and not active_user_stream)
-                or (not stream and open_user_stream)
-            )
+            and (not stream and open_user_stream)
         ):
+            suppress_second = True
+        elif (
+            message_category == "user" and not transient and content and interaction_id
+        ):
+            if already_emitted and not active_user_stream:
+                suppress_second = True
+            else:
+                acc_id = ""
+                if active_user_stream:
+                    acc_id = self._adhoc_accumulation[interaction_id].message_id
+                allowed, claimed_user_id = await try_claim_user_egress(
+                    interaction_id,
+                    message_id=acc_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
+                    session_id=session_id,
+                    continue_stream=active_user_stream,
+                )
+                if not allowed:
+                    suppress_second = True
+                    if hasattr(interaction, "mark_emitted"):
+                        interaction.mark_emitted()
+        if suppress_second:
             logger.debug(
                 "response bus: suppressed second user egress for interaction %s",
                 interaction_id or getattr(interaction, "id", ""),
@@ -512,19 +636,22 @@ class ResponseBus:
 
         if not stream:
             # Non-streaming: immediate filters, adapter, accumulation, one adhoc message
-            message = ResponseMessage(
-                session_id=session_id,
-                user_id=user_id or "",
-                interaction_id=interaction_id or "",
-                content=content,
-                channel=channel,
-                message_type="adhoc",
-                metadata=metadata or {},
-                timestamp=now,
-                category=message_category,
-                thought_type=thought_type,
-                segment_id=message_segment_id,
-            )
+            message_kwargs: Dict[str, Any] = {
+                "session_id": session_id,
+                "user_id": user_id or "",
+                "interaction_id": interaction_id or "",
+                "content": content,
+                "channel": channel,
+                "message_type": "adhoc",
+                "metadata": metadata or {},
+                "timestamp": now,
+                "category": message_category,
+                "thought_type": thought_type,
+                "segment_id": message_segment_id,
+            }
+            if claimed_user_id:
+                message_kwargs["id"] = claimed_user_id
+            message = ResponseMessage(**message_kwargs)
             await _deliver_flush(message, content, transient)
             await self._enqueue_and_notify(message, session_id)
             if interaction_id:
@@ -566,6 +693,8 @@ class ResponseBus:
                 segment_id=message_segment_id,
                 relay_to_adapters=relay_to_adapters,
             )
+            if claimed_user_id and message_category == "user":
+                acc.message_id = claimed_user_id
             for chunk in chunk_text_by_lm_tokens(content):
                 acc.chunks.append(chunk)
                 acc.last_activity = time.time()
@@ -630,8 +759,12 @@ class ResponseBus:
                 thought_type=acc.thought_type,
                 segment_id=acc.segment_id,
             )
-            await self._enqueue_and_notify(final_message, session_id)
-            self._append_to_message_buffers(interaction_id, final_message)
+            await self._enqueue_claimed_final(
+                interaction_id=interaction_id,
+                session_id=session_id,
+                final_message=final_message,
+                category=message_category,
+            )
             if message_category == "thought":
                 self._thought_accumulation.pop(
                     (interaction_id, acc.segment_id or "default"), None
@@ -652,6 +785,8 @@ class ResponseBus:
                 segment_id=message_segment_id,
                 relay_to_adapters=relay_to_adapters,
             )
+            if claimed_user_id and message_category == "user" and not acc.chunks:
+                acc.message_id = claimed_user_id
             # Incremental chunks are released through the accumulator's gate: it
             # withholds anything a later chunk could still change (a trailing
             # closer, an unfinished sentence) and returns only settled text.
@@ -783,8 +918,12 @@ class ResponseBus:
                 thought_type=acc.thought_type,
                 segment_id=acc.segment_id,
             )
-            await self._enqueue_and_notify(final_message, session_id)
-            self._append_to_message_buffers(interaction_id, final_message)
+            await self._enqueue_claimed_final(
+                interaction_id=interaction_id,
+                session_id=session_id,
+                final_message=final_message,
+                category=message_category,
+            )
             if message_category == "thought":
                 self._thought_accumulation.pop(
                     (interaction_id, acc.segment_id or "default"), None
@@ -938,6 +1077,42 @@ class ResponseBus:
                     )
             self._thought_accumulation.pop(key, None)
 
+    async def _enqueue_claimed_final(
+        self,
+        *,
+        interaction_id: str,
+        session_id: str,
+        final_message: ResponseMessage,
+        category: str,
+    ) -> bool:
+        """Enqueue a stream-complete final if this interaction has not already finalized."""
+        if category == "user":
+            allowed, canon = await try_claim_final(
+                interaction_id,
+                message_id=final_message.id,
+                session_id=session_id,
+            )
+            if not allowed:
+                return False
+            if canon and canon != getattr(final_message, "id", ""):
+                final_message = ResponseMessage(
+                    id=canon,
+                    session_id=final_message.session_id,
+                    user_id=final_message.user_id,
+                    interaction_id=final_message.interaction_id,
+                    content=final_message.content,
+                    channel=final_message.channel,
+                    message_type=final_message.message_type,
+                    metadata=final_message.metadata or {},
+                    timestamp=final_message.timestamp,
+                    category=final_message.category,
+                    thought_type=final_message.thought_type,
+                    segment_id=final_message.segment_id,
+                )
+        await self._enqueue_and_notify(final_message, session_id)
+        self._append_to_message_buffers(interaction_id, final_message)
+        return True
+
     async def _emit_final_signal(
         self,
         session_id: str,
@@ -948,9 +1123,14 @@ class ResponseBus:
         message_id: Optional[str] = None,
     ) -> None:
         """Internal: enqueue a final ResponseMessage and notify subscribers (no filters/adapters)."""
+        allowed, canon = await try_claim_final(
+            interaction_id, message_id=message_id, session_id=session_id
+        )
+        if not allowed:
+            return
         now = await self._get_now()
         final_message = ResponseMessage(
-            id=message_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
+            id=canon,
             session_id=session_id,
             user_id=user_id or "",
             interaction_id=interaction_id,
@@ -1166,25 +1346,26 @@ class ResponseBus:
         # Streaming publish() already enqueued message_type=final under
         # acc.message_id. A second final with a new Object id is a distinct
         # assistant identity on the wire (Integral splits bubbles on that).
+        # try_claim_final is process-wide so a second ResponseBus cannot
+        # emit another one just because this instance's buffers are empty.
         user_id = getattr(interaction, "user_id", None) if interaction else None
         last_user_id = None
-        already_final = False
         for buffered in self._message_buffers.get(interaction_id) or []:
             if (getattr(buffered, "category", "user") or "user") != "user":
                 continue
             if buffered.id:
                 last_user_id = buffered.id
-            if buffered.message_type == "final":
-                already_final = True
-        if not already_final:
-            await self._emit_final_signal(
-                session_id=session_id,
-                channel=channel,
-                interaction_id=interaction_id,
-                user_id=user_id,
-                metadata={},
-                message_id=last_user_id,
-            )
+        rec = _interaction_egress.get(interaction_id)
+        if rec is not None and rec.message_id:
+            last_user_id = rec.message_id
+        await self._emit_final_signal(
+            session_id=session_id,
+            channel=channel,
+            interaction_id=interaction_id,
+            user_id=user_id,
+            metadata={},
+            message_id=last_user_id,
+        )
 
         # Clean up request-scoped resources (adhoc, message buffers)
         self._adhoc_accumulation.pop(interaction_id, None)
