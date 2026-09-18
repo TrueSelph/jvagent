@@ -13,6 +13,7 @@ from jvspatial import flush_deferred_entities
 from jvspatial.exceptions import DatabaseError
 
 from jvagent.action.interact.conversation_lock_manager import ConversationLockManager
+from jvagent.action.interact.response_builder import export_observability_metrics
 from jvagent.core.app import App
 from jvagent.logging.service import INTERACTION_LEVEL_NUMBER
 from jvagent.memory.conversation import Conversation
@@ -219,10 +220,8 @@ def build_interaction_log_data(
     directives = interaction.directives if hasattr(interaction, "directives") else []
     parameters = interaction.parameters if hasattr(interaction, "parameters") else []
     events = interaction.events if hasattr(interaction, "events") else []
-    observability_metrics = (
-        interaction.observability_metrics
-        if hasattr(interaction, "observability_metrics")
-        else []
+    observability_metrics = export_observability_metrics(
+        getattr(interaction, "observability_metrics", None)
     )
     streamed = interaction.streamed if hasattr(interaction, "streamed") else False
     closed = interaction.closed if hasattr(interaction, "closed") else False
@@ -240,6 +239,9 @@ def build_interaction_log_data(
 
     if hasattr(interaction, "get_state"):
         interaction_data = interaction.get_state()
+        if isinstance(interaction_data, dict):
+            interaction_data = dict(interaction_data)
+            interaction_data["observability_metrics"] = observability_metrics
     else:
         interaction_data = {
             "id": interaction_id,

@@ -56,7 +56,14 @@ function debugCodePanelClass(isDark: boolean) {
  * type-specific summary, helm_shift events render as bare "Interaction"
  * rows that the inspector can't fill — produces dead-air gaps in the UI.
  */
+function isHarnessJournalMetric(metric: any): boolean {
+  return typeof metric?.kind === "string" && metric.kind.startsWith("harness.");
+}
+
 function formatMetricLabel(metric: any): string {
+  if (isHarnessJournalMetric(metric)) {
+    return String(metric.kind);
+  }
   const data = metric?.data || {};
   const eventType = metric?.event_type || "";
   if (eventType === "helm_shift") {
@@ -412,7 +419,9 @@ export function DebugInteractions({
     return (logs || [])
       .map((log: any) => {
         const interactionData = log.log_data?.interaction_data || {};
-        const metrics = interactionData.observability_metrics || [];
+        const metrics = (interactionData.observability_metrics || []).filter(
+          (m: any) => !isHarnessJournalMetric(m),
+        );
         const utterance = interactionData.utterance;
         const conversationHistory =
           interactionData.conversation_history || [];
