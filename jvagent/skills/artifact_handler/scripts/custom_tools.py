@@ -20,9 +20,10 @@ fallback (no jvforge base URL) still calls
 
 The LLM-facing entry point is ``ingest_document``: the model calls it when
 the user types a URL. An optional ``question`` is saved with the job and
-answered when the document is ready (WhatsApp notify generates the reply
-in-process via PageIndex search + call_model, or web via
-``check_ingest_status``).
+answered when the document is ready (WhatsApp/Messenger notify generates the
+reply in-process; other channels generate the same ready → remind → answer
+copy inside ``check_ingest_status`` when the user asks if processing is
+finished).
 
 Access is always ``private_<user_id>``; the matching access-control group
 is created idempotently so the same user can later search their own docs.
@@ -990,6 +991,7 @@ async def ingest_document(ctx) -> Dict[str, Any]:
             "notified": False,
             "job_id": job_id or None,
             "status": "queued",
+            "file_url": url_arg,
         }
         if pending_q:
             entry["pending_question"] = pending_q
@@ -1000,6 +1002,7 @@ async def ingest_document(ctx) -> Dict[str, Any]:
                 "doc_name": doc_name,
                 "status": "queued",
                 "submitted_at": now,
+                "file_url": url_arg,
             }
             if pending_q:
                 pending_entry["pending_question"] = pending_q
@@ -1059,6 +1062,23 @@ async def ingest_document(ctx) -> Dict[str, Any]:
             await conversation.update_context({_VAULT_CTX_KEY: vault})
         except Exception:
             pass
+        from jvagent.action.artifact_handler_interact_action.vault_events import (
+            record_vault_event,
+            saved_document_event,
+        )
+
+        for name in queued:
+            await record_vault_event(
+                visitor,
+                saved_document_event(
+                    name, pending_question=pending_q, status="processing"
+                ),
+            )
+        for name in ingested:
+            await record_vault_event(
+                visitor,
+                saved_document_event(name, pending_question=pending_q, status="ready"),
+            )
 
     # ── Reply ──
     if queued and not failed:
@@ -1476,6 +1496,160 @@ async def _clear_pending_questions(
     return updated
 
 
+def _tell_user_directive(text: str) -> str:
+    """Prefix generated copy so the orchestrator delivers it as the turn reply."""
+    body = (text or "").strip()
+    if not body:
+        return ""
+    if body.lower().startswith("tell the user"):
+        return body
+    return f"Tell the user: {body}"
+
+
+def _pending_search_say(*, partial: bool) -> str:
+    """Fallback instruction when in-process ready+answer generation fails."""
+    scope = " on a ready doc" if partial else ""
+    ready_bit = (
+        "say which document(s) are ready"
+        if partial
+        else "say the document/image is ready"
+    )
+    return (
+        f"For each pending question{scope}, call pageindex__search with query "
+        "set to the pending_question value and doc_name set to that "
+        "job's doc_name. Then write one reply in this exact order: "
+        f"(1) {ready_bit}, (2) remind them of their "
+        "pending question by quoting or paraphrasing it, (3) give the "
+        "answer from the search results."
+    )
+
+
+def _pending_search_compose_directive(
+    ready_questions: List[Dict[str, str]],
+    *,
+    became: List[str],
+    still: List[str],
+) -> str:
+    questions_text = "; ".join(q["question"] for q in ready_questions)
+    if became and not still:
+        if len(became) == 1:
+            phrase = _friendly_file_phrase(became[0])
+            return (
+                f"In one reply: (1) tell the user {phrase} is ready, "
+                f"(2) remind them they asked: {questions_text}, "
+                f"(3) answer that question from pageindex__search results."
+            )
+        phrases = [_friendly_file_phrase(n) for n in became]
+        return (
+            f"In one reply: (1) tell the user their files are ready "
+            f"({', '.join(phrases)}), "
+            f"(2) remind them they asked about: {questions_text}, "
+            f"(3) answer from pageindex__search results."
+        )
+    if still:
+        ready_phrases = [_friendly_file_phrase(n) for n in became] if became else []
+        ready_bit = (
+            f"some of their files are ready ({', '.join(ready_phrases)}) "
+            "while others are still processing"
+            if ready_phrases
+            else "some of their files are ready while others are still processing"
+        )
+        return (
+            f"In one reply: (1) tell the user {ready_bit}, "
+            f"(2) remind them they asked about: {questions_text}, "
+            f"(3) answer the ready docs from pageindex__search results."
+        )
+    return (
+        f"In one reply: (1) tell the user their saved files are ready, "
+        f"(2) remind them they asked about: {questions_text}, "
+        f"(3) answer from pageindex__search results."
+    )
+
+
+def _emit_pending_question_search_fallback(
+    ctx: Any,
+    ready_questions: List[Dict[str, str]],
+    *,
+    became: List[str],
+    still: List[str],
+) -> None:
+    ctx.add_directive(
+        _pending_search_compose_directive(ready_questions, became=became, still=still)
+    )
+    ctx.say(_pending_search_say(partial=bool(still)))
+
+
+async def _resolve_ready_message_agent(ctx: Any) -> Tuple[Any, Any]:
+    """Return ``(agent, vault_action)`` for in-process ready-message generation."""
+    vault_action = getattr(ctx, "_action", None)
+    if vault_action is None:
+        vault_action = await _get_artifact_handler_action(ctx)
+    agent = None
+    if vault_action is not None:
+        getter = getattr(vault_action, "get_agent", None)
+        if callable(getter):
+            try:
+                agent = await getter()
+            except Exception:
+                agent = None
+    if agent is None:
+        visitor = getattr(ctx, "visitor", None)
+        agent = getattr(visitor, "_agent", None) if visitor is not None else None
+    return agent, vault_action
+
+
+async def _generate_poll_ready_answer(
+    ctx: Any,
+    ready_questions: List[Dict[str, str]],
+    desc_lookup: Dict[str, str],
+) -> Optional[str]:
+    """Generate ready → remind → answer copy for other-channel status polls."""
+    if not ready_questions:
+        return None
+    agent, vault_action = await _resolve_ready_message_agent(ctx)
+    if agent is None or vault_action is None:
+        return None
+    from jvagent.action.artifact_handler_interact_action.ready_message import (
+        _generate_ready_message,
+        _generate_ready_message_multi,
+    )
+
+    try:
+        if len(ready_questions) == 1:
+            q = ready_questions[0]
+            doc_name = q["doc_name"]
+            return await _generate_ready_message(
+                agent=agent,
+                vault_action=vault_action,
+                internal_doc_name=doc_name,
+                display_doc=_display_doc_name(doc_name),
+                utterance=q["question"],
+                doc_description=desc_lookup.get(doc_name) or None,
+            )
+        entries = [
+            {
+                "internal_doc_name": q["doc_name"],
+                "display_doc": _display_doc_name(q["doc_name"]),
+                "pending_question": q["question"],
+            }
+            for q in ready_questions
+        ]
+        descriptions: Dict[str, str] = {}
+        for q in ready_questions:
+            display = _display_doc_name(q["doc_name"])
+            desc = desc_lookup.get(q["doc_name"], "")
+            if desc:
+                descriptions[display] = desc
+        return await _generate_ready_message_multi(
+            agent=agent,
+            vault_action=vault_action,
+            ready_entries=entries,
+            doc_descriptions=descriptions or None,
+        )
+    except Exception:
+        return None
+
+
 async def check_ingest_status(ctx) -> Dict[str, Any]:
     """Check pending async ingest jobs and report ready / still-processing.
 
@@ -1492,10 +1666,11 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
     Also auto-runs (via helpers) on ingest_document / list_my_documents /
     review_expired activation.
 
-    When a ready job has a saved ``pending_question``, surface it so the
-    agent replies in one message: ready notice → remind the question →
-    answer via faq / pageindex__search using that job's ``doc_name`` (never
-    invent a Google Docs/URL id or other non-vault id as ``doc_name``).
+    When a ready job has a saved ``pending_question``, generate the answer
+    in-process (ready notice → remind the question → answer from PageIndex
+    content) and return it as a ``Tell the user:`` directive. If generation
+    fails, fall back to ``pageindex__search`` using that job's ``doc_name``
+    (never invent a Google Docs/URL id or other non-vault id as ``doc_name``).
     """
     visitor = ctx.visitor
     session_id = _resolve_session_id(visitor)
@@ -1537,40 +1712,16 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
     ready_questions = _collect_ready_pending_questions(pending)
 
     if became and not still and not failed:
-        if ready_questions:
-            questions_text = "; ".join(q["question"] for q in ready_questions)
+        if not ready_questions:
             if len(became) == 1:
                 phrase = _friendly_file_phrase(became[0])
                 ctx.add_directive(
-                    f"In one reply: (1) tell the user {phrase} is ready, "
-                    f"(2) remind them they asked: {questions_text}, "
-                    f"(3) answer that question from pageindex__search results."
+                    f"Tell the user {phrase} is ready and they can ask questions about it."
                 )
             else:
-                phrases = [_friendly_file_phrase(n) for n in became]
                 ctx.add_directive(
-                    f"In one reply: (1) tell the user their files are ready "
-                    f"({', '.join(phrases)}), "
-                    f"(2) remind them they asked about: {questions_text}, "
-                    f"(3) answer from pageindex__search results."
+                    "Tell the user their files are ready and they can ask questions about them."
                 )
-            ctx.say(
-                "For each pending question, call pageindex__search with query "
-                "set to the pending_question value and doc_name set to that "
-                "job's doc_name. Then write one reply in this exact order: "
-                "(1) say the document/image is ready, (2) remind them of their "
-                "pending question by quoting or paraphrasing it, (3) give the "
-                "answer from the search results."
-            )
-        elif len(became) == 1:
-            phrase = _friendly_file_phrase(became[0])
-            ctx.add_directive(
-                f"Tell the user {phrase} is ready and they can ask questions about it."
-            )
-        else:
-            ctx.add_directive(
-                "Tell the user their files are ready and they can ask questions about them."
-            )
         status = "ready"
     elif still and not became and not failed:
         if len(still) == 1:
@@ -1586,24 +1737,7 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
             )
         status = "queued"
     elif became and still:
-        if ready_questions:
-            questions_text = "; ".join(q["question"] for q in ready_questions)
-            ready_phrases = [_friendly_file_phrase(n) for n in became]
-            ctx.add_directive(
-                f"In one reply: (1) tell the user some of their files are ready "
-                f"({', '.join(ready_phrases)}) while others are still processing, "
-                f"(2) remind them they asked about: {questions_text}, "
-                f"(3) answer the ready docs from pageindex__search results."
-            )
-            ctx.say(
-                "For each pending question on a ready doc, call pageindex__search "
-                "with query set to the pending_question value and doc_name set to "
-                "that job's doc_name. Then write one reply in this exact order: "
-                "(1) say which document(s) are ready, (2) remind them of their "
-                "pending question by quoting or paraphrasing it, (3) give the "
-                "answer from the search results."
-            )
-        else:
+        if not ready_questions:
             ready_phrases = [_friendly_file_phrase(n) for n in became]
             ctx.add_directive(
                 f"Tell the user some of their files are ready "
@@ -1619,39 +1753,9 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
     else:
         # Mixed failed + other, or only ready-from-before.
         if ready_questions and still:
-            questions_text = "; ".join(q["question"] for q in ready_questions)
-            ctx.add_directive(
-                f"In one reply: (1) tell the user some of their files are ready "
-                f"while others are still processing, "
-                f"(2) remind them they asked about: {questions_text}, "
-                f"(3) answer the ready docs from pageindex__search results."
-            )
-            ctx.say(
-                "For each pending question on a ready doc, call pageindex__search "
-                "with query set to the pending_question value and doc_name set to "
-                "that job's doc_name. Then write one reply in this exact order: "
-                "(1) say which document(s) are ready, (2) remind them of their "
-                "pending question by quoting or paraphrasing it, (3) give the "
-                "answer from the search results."
-            )
             status = "partial"
         elif ready_names and not still:
-            if ready_questions:
-                questions_text = "; ".join(q["question"] for q in ready_questions)
-                ctx.add_directive(
-                    f"In one reply: (1) tell the user their saved files are ready, "
-                    f"(2) remind them they asked about: {questions_text}, "
-                    f"(3) answer from pageindex__search results."
-                )
-                ctx.say(
-                    "For each pending question, call pageindex__search with query "
-                    "set to the pending_question value and doc_name set to that "
-                    "job's doc_name. Then write one reply in this exact order: "
-                    "(1) say the document/image is ready, (2) remind them of their "
-                    "pending question by quoting or paraphrasing it, (3) give the "
-                    "answer from the search results."
-                )
-            else:
+            if not ready_questions:
                 ctx.add_directive(
                     "Tell the user their saved files are ready and they can ask "
                     "questions about them."
@@ -1687,11 +1791,37 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
             }
         )
 
-    # Only clear deferred questions after we surfaced them for answering.
+    answered = False
     if ready_questions and status in ("ready", "partial"):
-        pending = await _clear_pending_questions(
-            conversation, group_key, pending, ready_questions
+        answer_text = await _generate_poll_ready_answer(
+            ctx, ready_questions, desc_lookup
         )
+        if answer_text:
+            tell = _tell_user_directive(answer_text)
+            ctx.say(tell)
+            ctx.add_directive(tell)
+            pending = await _clear_pending_questions(
+                conversation, group_key, pending, ready_questions
+            )
+            answered_docs = {q["doc_name"] for q in ready_questions}
+            for job in jobs_list:
+                if job.get("doc_name") in answered_docs:
+                    job["pending_question"] = None
+            answered = True
+            from jvagent.action.artifact_handler_interact_action.vault_events import (
+                answered_pending_event,
+                record_vault_event,
+            )
+
+            for q in ready_questions:
+                await record_vault_event(
+                    visitor,
+                    answered_pending_event(q["doc_name"], q["question"]),
+                )
+        else:
+            _emit_pending_question_search_fallback(
+                ctx, ready_questions, became=became, still=still
+            )
     elif ready_questions:
         # Still processing only — keep questions for a later status check.
         ready_questions = []
@@ -1724,7 +1854,17 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
         "Active document for follow-ups; for later vague questions, prefer a "
         "clearer doc_description match over Active document when they conflict."
     )
-    if ready_questions:
+    if answered:
+        system_message += (
+            " A pending question was answered in this result. Deliver the "
+            "response_directive to the user as the reply. Do not call "
+            "pageindex__search for that question."
+        )
+        if active_candidate:
+            system_message += (
+                f" After answering, Active document is {active_candidate!r}."
+            )
+    elif ready_questions:
         system_message += (
             " One or more jobs have a pending_question field. Call "
             "pageindex__search with query set to the pending_question value and "
@@ -1750,9 +1890,6 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
             "these docs, call pageindex__search with that jobs[].doc_name — do "
             "not re-ingest."
         )
-
-    # When everything is ready (or nothing pending), release task-lock so faq
-    # can answer content questions on the next turn.
 
     return ctx.tool_response(
         ok=True,
