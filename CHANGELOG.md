@@ -517,6 +517,30 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc13] - 2026-09-18
+
+### Added
+
+- **Harness excellence runtime (HP-00 … HP-12, #232).** NativeCaller admission,
+  snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox,
+  session leases, host providers, skill isolation, CUCS evals, and CI lanes.
+  See `[Unreleased]` for the full write-up.
+
+- **jvchat debug tick replay with first-tick tool schemas (#230).**
+
+### Fixed
+
+- **One assistant identity / atomic final per streamed turn (#232).** Non-stream
+  `publish()` during an open accumulator no longer mints a second Object id;
+  `finalize_interaction` reuses the claimed final.
+
+- **Harness journal blobs hidden from Debug export (#233).** `harness.turn_run`
+  / `harness.trace` stay on the Interaction node for recovery; SSE, INTERACTION
+  logs, and the Debug picker no longer label them as extra **Interaction** rows.
+
+- **Artifact handler answers pending questions from ingested document content
+  (#231).**
+
 ## [0.1.8rc12] - 2026-09-14
 
 ### Changed
