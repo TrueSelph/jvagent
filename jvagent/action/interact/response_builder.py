@@ -26,6 +26,23 @@ def _public_debug_hardened() -> bool:
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
+# Journal blobs mixed into observability_metrics (HP-11). Recovery reads
+# them off the Interaction node; export/debug lists must not treat them as
+# model_call "Interaction" rows at the end of every turn.
+_HARNESS_METRIC_PREFIX = "harness."
+
+
+def export_observability_metrics(metrics: Any) -> List[Any]:
+    """Copy metrics, dropping harness journal/trace entries."""
+    out: List[Any] = []
+    for metric in metrics or []:
+        if isinstance(metric, dict):
+            kind = str(metric.get("kind") or "")
+            if kind.startswith(_HARNESS_METRIC_PREFIX):
+                continue
+        out.append(metric)
+    return out
+
 
 def _parse_interaction_timestamp(value: Any) -> Optional[datetime]:
     """Parse datetime-like values from interaction/task payloads."""
@@ -169,7 +186,9 @@ def build_interaction_payload(
         "tasks": tasks if tasks is not None else [],
         "parameters": interaction.parameters,
         "events": interaction.events,
-        "observability_metrics": interaction.observability_metrics,
+        "observability_metrics": export_observability_metrics(
+            interaction.observability_metrics
+        ),
         "usage": getattr(interaction, "usage", None) or {},
         "streamed": interaction.streamed,
     }
