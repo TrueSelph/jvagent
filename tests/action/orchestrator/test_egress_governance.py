@@ -73,10 +73,10 @@ async def test_streamed_and_non_streamed_replies_are_governed_identically():
         "Hello! How can I assist you today?"
     )
 
-    async def _run(stream: bool) -> str:
+    async def _run(stream: bool, interaction_id: str) -> str:
         bus = ResponseBus()
         interaction = MagicMock()
-        interaction.id = "i1"
+        interaction.id = interaction_id
         interaction.response = None
         interaction.parameters = []
         interaction.set_response = MagicMock(return_value=True)
@@ -88,7 +88,7 @@ async def test_streamed_and_non_streamed_replies_are_governed_identically():
                     content=ch,
                     channel="default",
                     stream=True,
-                    interaction_id="i1",
+                    interaction_id=interaction_id,
                     interaction=interaction,
                     user_id="u1",
                     streaming_complete=False,
@@ -98,14 +98,14 @@ async def test_streamed_and_non_streamed_replies_are_governed_identically():
                 content="",
                 channel="default",
                 stream=True,
-                interaction_id="i1",
+                interaction_id=interaction_id,
                 interaction=interaction,
                 user_id="u1",
                 streaming_complete=True,
             )
             return "".join(
                 m.content
-                for m in bus._message_buffers.get("i1", [])
+                for m in bus._message_buffers.get(interaction_id, [])
                 if m.message_type == "stream_chunk"
             )
         await bus.publish(
@@ -113,16 +113,16 @@ async def test_streamed_and_non_streamed_replies_are_governed_identically():
             content=text,
             channel="default",
             stream=False,
-            interaction_id="i1",
+            interaction_id=interaction_id,
             interaction=interaction,
             user_id="u1",
         )
         return "".join(
-            m.content for m in bus._message_buffers.get("i1", []) if m.content
+            m.content for m in bus._message_buffers.get(interaction_id, []) if m.content
         )
 
-    streamed = await _run(True)
-    plain = await _run(False)
+    streamed = await _run(True, "i-stream")
+    plain = await _run(False, "i-plain")
     assert streamed == plain == vet_egress(text)
     assert streamed.count("Hello") == 1
 
