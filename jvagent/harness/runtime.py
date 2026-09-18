@@ -25,6 +25,7 @@ from jvagent.harness.contracts import (
     IdempotencyClass,
     InvocationRecord,
     NativeCaller,
+    SkillMaterialization,
     SnapshotSelector,
     ToolSurfaceSnapshot,
     TurnRunState,
@@ -122,6 +123,9 @@ class HarnessStore:
     stages: Dict[str, StageRecord] = field(default_factory=dict)
     host_tools: Dict[str, List[str]] = field(default_factory=dict)
     host_skills: Dict[str, List[str]] = field(default_factory=dict)
+    host_skill_materializations: Dict[Tuple[str, str], SkillMaterialization] = field(
+        default_factory=dict
+    )
     revoked_host_tools: Dict[str, set] = field(default_factory=dict)
     revoked_manifests: set = field(default_factory=set)
     breaker_states: Dict[str, Any] = field(default_factory=dict)
@@ -650,6 +654,7 @@ class HarnessRuntime:
         message_id: str,
         correlation_id: str,
         snapshot_id: str,
+        payload: Optional[Mapping[str, Any]] = None,
     ) -> EventEnvelope:
         with self.store.lock:
             stream = self.store.outbox.setdefault(session_id, [])
@@ -664,6 +669,7 @@ class HarnessRuntime:
                 correlation_id=correlation_id,
                 snapshot_id=snapshot_id,
                 kind=kind,
+                payload=dict(payload or {}),
             )
             stream.append(env)
         self.record_span(
@@ -816,6 +822,37 @@ class HarnessRuntime:
     def put_host_skills(self, session_id: str, keys: List[str]) -> None:
         with self.store.lock:
             self.store.host_skills[session_id] = list(keys)
+
+    def register_host_skill(
+        self,
+        session_id: str,
+        skill_key: str,
+        *,
+        digest: str,
+        spec: str,
+        body: str,
+    ) -> None:
+        """Register the immutable materialization a host exposes for one session."""
+        if spec not in ("jv", "claude"):
+            raise HarnessContractError(f"unsupported host skill spec {spec!r}")
+        materialization = SkillMaterialization(
+            skill_key=skill_key,
+            digest=digest,
+            spec=spec,
+            body=body,
+        )
+        with self.store.lock:
+            keys = self.store.host_skills.setdefault(session_id, [])
+            if skill_key not in keys:
+                keys.append(skill_key)
+            self.store.host_skill_materializations[(session_id, skill_key)] = (
+                materialization
+            )
+
+    def host_skill_materialization(
+        self, session_id: str, skill_key: str
+    ) -> Optional[SkillMaterialization]:
+        return self.store.host_skill_materializations.get((session_id, skill_key))
 
     def revoke_host_tool(self, session_id: str, name: str) -> None:
         with self.store.lock:

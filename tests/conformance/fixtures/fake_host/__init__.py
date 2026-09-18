@@ -13,7 +13,13 @@ def fake_host_runtime() -> HarnessRuntime:
     store = HarnessStore()
     rt = HarnessRuntime(store, worker_id="fake-host")
     rt.put_host_tools("sess-conformance", ["host_lookup"])
-    rt.put_host_skills("sess-conformance", ["host_skill"])
+    rt.register_host_skill(
+        "sess-conformance",
+        "host_skill",
+        digest="fake-host-skill-v1",
+        spec="jv",
+        body="# host_skill\n\nUse host_lookup before replying.",
+    )
 
     async def _lookup(payload: dict) -> dict:
         return {"ok": True, "q": payload.get("q")}

@@ -55,15 +55,27 @@ def collect_host_skill_docs(agent: Any) -> List[SkillDoc]:
         turn = get_turn_cache() or {}
         snap = turn.get("snapshot")
         if snap is not None:
+            from jvagent.harness.runtime import get_runtime
+
             existing = {d.name for d in docs}
             for key in getattr(snap, "host_skill_keys", ()) or ():
                 if key and key not in existing:
+                    materialization = get_runtime().host_skill_materialization(
+                        snap.caller.session_id, key
+                    )
+                    if materialization is None:
+                        logger.warning(
+                            "host skill %r has no registered materialization", key
+                        )
+                        continue
                     docs.append(
                         SkillDoc(
                             name=key,
                             description=f"Host skill {key}",
-                            body="",
+                            body=materialization.body,
                             source="host",
+                            spec=materialization.spec,
+                            digest=materialization.digest,
                         )
                     )
     except Exception as exc:

@@ -321,6 +321,7 @@ class ResponseBus:
                 ),
                 correlation_id=str(turn.get("correlation_id") or ""),
                 snapshot_id=str(getattr(snap, "snapshot_id", "") or ""),
+                payload=message.to_dict(),
             )
         except Exception:
             pass

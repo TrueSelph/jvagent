@@ -425,3 +425,69 @@ def test_peek_completed_skips_non_idempotent(rt: HarnessRuntime, caller: NativeC
         )
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_host_tool_is_callable_from_the_standard_tool_surface(
+    caller: NativeCaller,
+):
+    from jvagent.action.orchestrator.tools import wrap_host_tool
+    from jvagent.action.orchestrator.turn_cache import bind_turn_cache
+
+    runtime = HarnessRuntime(HarnessStore())
+    reset_runtime(runtime)
+    runtime.put_host_tools(caller.session_id, ["host_lookup"])
+    runtime.register_host_runner(
+        caller.session_id,
+        "host_lookup",
+        lambda payload: {"answer": payload["q"]},
+    )
+    snapshot = runtime.admit_snapshot(caller)
+    corr = runtime.new_correlation()
+    runtime.start_turn(corr, caller, snapshot)
+    with bind_turn_cache() as turn:
+        turn["snapshot"] = snapshot
+        turn["correlation_id"] = corr
+        result = await wrap_host_tool("host_lookup").run({"q": "found"})
+    assert '"answer": "found"' in result
+    assert runtime.get_run(corr).completed_invocation_ids
+    reset_runtime()
+
+
+@pytest.mark.asyncio
+async def test_host_tool_invoke_error_finishes_the_ledger(caller: NativeCaller):
+    from jvagent.action.orchestrator.tools import wrap_host_tool
+    from jvagent.action.orchestrator.turn_cache import bind_turn_cache
+
+    runtime = HarnessRuntime(HarnessStore())
+    reset_runtime(runtime)
+    runtime.put_host_tools(caller.session_id, ["host_lookup"])
+    snapshot = runtime.admit_snapshot(caller)
+    corr = runtime.new_correlation()
+    runtime.start_turn(corr, caller, snapshot)
+    with bind_turn_cache() as turn:
+        turn["snapshot"] = snapshot
+        turn["correlation_id"] = corr
+        result = await wrap_host_tool("host_lookup").run({"q": "x"})
+    assert result.startswith("(tool error:")
+    assert runtime.get_run(corr).state is TurnRunState.RUNNING
+    reset_runtime()
+
+
+@pytest.mark.asyncio
+async def test_host_skill_materialization_is_not_a_placeholder(caller: NativeCaller):
+    from jvagent.harness.provider import LocalHostProvider
+
+    runtime = HarnessRuntime(HarnessStore())
+    runtime.register_host_skill(
+        caller.session_id,
+        "host_procedure",
+        digest="host-procedure-v1",
+        spec="jv",
+        body="# Host procedure\n\nCall host_lookup first.",
+    )
+    snapshot = runtime.admit_snapshot(caller)
+    materialization = await LocalHostProvider(runtime).load_skill(
+        snapshot.snapshot_id, "host_procedure"
+    )
+    assert materialization.body == "# Host procedure\n\nCall host_lookup first."

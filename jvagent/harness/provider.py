@@ -74,6 +74,15 @@ class LocalHostProvider:
             raise HarnessContractError(
                 f"skill {skill_key!r} not on snapshot {snapshot_id}"
             )
+        if skill_key in snap.host_skill_keys:
+            materialization = self.runtime.host_skill_materialization(
+                snap.caller.session_id, skill_key
+            )
+            if materialization is None:
+                raise HarnessContractError(
+                    f"host skill {skill_key!r} has no registered materialization"
+                )
+            return materialization
         digest = f"digest-{skill_key}"
         return SkillMaterialization(
             skill_key=skill_key,

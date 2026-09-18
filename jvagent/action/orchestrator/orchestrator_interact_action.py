@@ -122,6 +122,7 @@ from jvagent.action.orchestrator.tools import (
     salvage_tool_call_text,
     truncate_thought,
     wrap_action_tool,
+    wrap_host_tool,
 )
 from jvagent.action.orchestrator.turn_cache import (
     bind_turn_cache,
@@ -973,6 +974,18 @@ class OrchestratorInteractAction(
             payload = rt.checkpoint_from_interaction(interaction)
             if payload:
                 restored = rt.import_checkpoint(payload)
+            if (
+                restored is not None
+                and restored.state is TurnRunState.RECOVERY_REQUIRED
+            ):
+                await visitor.report(
+                    {
+                        "recovery_required": True,
+                        "correlation_id": restored.correlation_id,
+                        "reason": restored.reason,
+                    }
+                )
+                return
             if restored is not None and restored.state not in (
                 TurnRunState.COMPLETED,
                 TurnRunState.FAILED,
@@ -1414,6 +1427,19 @@ class OrchestratorInteractAction(
             visible.add("reply")
             visible.add("respond")
 
+        # Host capabilities are snapshot-bound tools, not descriptor metadata.
+        # Native tools win name collisions, and host tools remain discoverable
+        # through the standard lean catalogue.
+        snap = (get_turn_cache() or {}).get("snapshot")
+        if snap is not None:
+            for name in getattr(snap, "host_tool_names", ()) or ():
+                if not name or name in tools:
+                    if name in tools:
+                        logger.warning("host tool %r conflicts with native tool", name)
+                    continue
+                tools[name] = wrap_host_tool(name)
+                longtail.add(name)
+
         # Skill-only gating (ADR-0043), part 1 — the GLOB MATCH. It runs HERE,
         # before the lean policy, because a gated name must not win a lean
         # pre-surface slot only to be discarded again at install time: gating one
@@ -1636,7 +1662,6 @@ class OrchestratorInteractAction(
                 longtail.discard(name)
         snap = None
         try:
-            from jvagent.action.orchestrator.turn_cache import get_turn_cache
             from jvagent.harness.runtime import get_runtime
 
             turn = get_turn_cache() or {}

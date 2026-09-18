@@ -42,6 +42,7 @@ async def test_provider_revocation_takes_effect_on_next_snapshot(transport):
     assert first.snapshot_id != second.snapshot_id
     skill = await provider.load_skill(second.snapshot_id, "host_skill")
     assert skill.skill_key == "host_skill"
+    assert "host_lookup" in skill.body
     encode = getattr(provider, "encode_caller", None)
     if callable(encode):
         blob = encode(caller)

@@ -16,6 +16,7 @@ from jvagent.harness.contracts import (
     EventEnvelope,
     IdempotencyClass,
     InvocationRecord,
+    SkillMaterialization,
     ToolSurfaceSnapshot,
     TurnRunState,
     native_caller_from_mapping,
@@ -110,6 +111,10 @@ def dump_store(store: HarnessStore, path: Path) -> None:
             "stages": stages,
             "host_tools": {k: list(v) for k, v in store.host_tools.items()},
             "host_skills": {k: list(v) for k, v in store.host_skills.items()},
+            "host_skill_materializations": {
+                _tuple_key(key): asdict(value)
+                for key, value in store.host_skill_materializations.items()
+            },
             "revoked_host_tools": {
                 k: sorted(v) for k, v in store.revoked_host_tools.items()
             },
@@ -222,6 +227,15 @@ def load_store(path: Path, store: Optional[HarnessStore] = None) -> HarnessStore
         }
         target.host_skills = {
             k: list(v) for k, v in (raw.get("host_skills") or {}).items()
+        }
+        target.host_skill_materializations = {
+            _split_pair(key): SkillMaterialization(
+                skill_key=str(value["skill_key"]),
+                digest=str(value["digest"]),
+                spec=str(value["spec"]),
+                body=str(value["body"]),
+            )
+            for key, value in (raw.get("host_skill_materializations") or {}).items()
         }
         target.revoked_host_tools = {
             k: set(v) for k, v in (raw.get("revoked_host_tools") or {}).items()

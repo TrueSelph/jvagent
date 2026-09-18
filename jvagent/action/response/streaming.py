@@ -12,6 +12,14 @@ logger = logging.getLogger(__name__)
 
 def _sse_dedup_key(message: Any) -> tuple:
     """Dedup key for SSE replay overlap — (id, message_type, sequence)."""
+    if isinstance(message, dict):
+        mid = message.get("id") or message.get("message_id") or ""
+        mtype = message.get("message_type") or ""
+        meta = message.get("metadata") or {}
+        seq = meta.get("sequence") if isinstance(meta, dict) else None
+        if seq is None:
+            seq = message.get("content") or ""
+        return (mid, mtype, seq)
     mid = getattr(message, "id", None) or getattr(message, "message_id", None) or ""
     mtype = getattr(message, "message_type", "") or ""
     meta = getattr(message, "metadata", None) or {}
@@ -88,6 +96,9 @@ async def stream_messages(
     await response_bus.subscribe(session_id, message_callback, receive_chunks=True)
 
     try:
+        # IDs emitted from durable replay must not also be emitted when an
+        # in-process queue still has the same response during reconnect.
+        replayed_ids: set = set()
         # Durable outbox replay (HP-06) when a cursor is supplied. Live bus
         # backlog still covers in-process overlap; message ids remain the
         # dedup key (test_streaming_dedup).
@@ -96,22 +107,28 @@ async def stream_messages(
                 from jvagent.harness.runtime import get_runtime
 
                 for env in get_runtime().replay_from(session_id, cursor):
-                    yield format_sse_chunk(
-                        {
-                            "session_id": env.session_id,
-                            "sequence": env.sequence,
-                            "cursor": env.cursor,
-                            "message_id": env.message_id,
-                            "correlation_id": env.correlation_id,
-                            "snapshot_id": env.snapshot_id,
-                            "kind": env.kind,
-                        }
-                    )
+                    frame = dict(env.payload)
+                    if not frame:
+                        logger.warning(
+                            "outbox event %s has no replayable payload", env.cursor
+                        )
+                        continue
+                    if not frame.get("id") and not frame.get("message_id"):
+                        frame["id"] = env.message_id
+                    if not frame.get("message_type"):
+                        frame["message_type"] = env.kind
+                    frame["harness"] = {
+                        "sequence": env.sequence,
+                        "cursor": env.cursor,
+                        "correlation_id": env.correlation_id,
+                        "snapshot_id": env.snapshot_id,
+                    }
+                    replayed_ids.add(_sse_dedup_key(frame))
+                    yield format_sse_chunk(frame)
             except Exception as exc:
                 logger.debug("outbox cursor replay skipped: %s", exc)
 
         # Send any existing messages first, recording their ids for dedup.
-        replayed_ids: set = set()
         existing_messages = await response_bus.get_messages(session_id)
         if max_replay is not None and len(existing_messages) > max_replay:
             existing_messages = existing_messages[-max_replay:]

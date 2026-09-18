@@ -5,7 +5,7 @@ Types and validators only. No Orchestrator I/O, persistence, or host imports.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Mapping, Optional, Protocol, Tuple
@@ -209,6 +209,9 @@ class EventEnvelope:
     correlation_id: str
     snapshot_id: str
     kind: str
+    # The original transport frame. Metadata alone cannot reconstruct an
+    # assistant reply after the process-local ResponseBus has disappeared.
+    payload: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.sequence < 1:
