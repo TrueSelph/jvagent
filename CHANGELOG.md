@@ -517,6 +517,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc14] - 2026-09-18
+
+### Changed
+
+- **jvspatial 0.0.20.** Runtime dependency now uses the atomic
+  `Object.create_if_absent` substrate release.
+
 ## [0.1.8rc13] - 2026-09-18
 
 ### Added

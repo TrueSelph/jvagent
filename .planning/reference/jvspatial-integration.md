@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.19`.
+- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.20`.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
