@@ -12,6 +12,7 @@ from jvagent.harness.contracts import (
     ToolSurfaceSnapshot,
     TurnRunState,
     assert_turn_run_transition,
+    host_work_execution_context,
     native_caller_from_mapping,
     reject_host_domain_fields,
     reject_model_authority_fields,
@@ -135,6 +136,43 @@ def test_revoked_snapshot_is_not_usable_after_flag():
 def test_model_payload_cannot_carry_authority():
     with pytest.raises(HarnessContractError, match="authority"):
         reject_model_authority_fields({"q": "hi", "capability_token": "secret"})
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "work_item_id",
+        "lease_token",
+        "lease_fence",
+        "effect_key",
+        "logical_step_key",
+        "work_execution_context",
+    ],
+)
+def test_model_payload_cannot_forge_work_execution_authority(key):
+    with pytest.raises(HarnessContractError, match="authority"):
+        reject_model_authority_fields({"q": "hi", key: "forged"})
+
+
+def test_host_work_execution_context_reads_visitor_data_only():
+    class _Visitor:
+        data = {
+            "run_id": "workrun:abc",
+            "work_item_id": "o.WorkItem.1",
+            "lease_token": "tok",
+            "lease_fence": 3,
+            "noise": "ignore-me",
+        }
+
+    ctx = host_work_execution_context(_Visitor())
+    assert ctx == {
+        "run_id": "workrun:abc",
+        "work_item_id": "o.WorkItem.1",
+        "lease_token": "tok",
+        "lease_fence": 3,
+    }
+    assert host_work_execution_context(None) == {}
+    assert host_work_execution_context(object()) == {}
 
 
 def test_idempotency_classes_are_the_three_declared_ones():

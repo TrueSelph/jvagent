@@ -29,6 +29,34 @@ FORBIDDEN_AUTHORITY_KEYS = frozenset(
         "capability_token",
         "snapshot_secret",
         "isolation_backend",
+        # Host-owned durable work-kernel fields. Models must not forge these
+        # on tool arguments; hosts may place them on visitor.data only.
+        "work_item_id",
+        "lease_token",
+        "lease_fence",
+        "effect_key",
+        "logical_step_key",
+        "work_execution_context",
+    }
+)
+
+# Keys hosts may stash on walker/visitor data for resident tool callbacks.
+# Kept as a frozenset so Integral (and other embeds) can round-trip a durable
+# WorkExecutionContext without inventing a second channel.
+HOST_WORK_EXECUTION_KEYS = frozenset(
+    {
+        "work_item_id",
+        "attempt",
+        "run_id",
+        "principal_id",
+        "workspace_id",
+        "logical_step_key",
+        "effect_key",
+        "lease_token",
+        "lease_fence",
+        "deadline_at",
+        "cancellation_signal",
+        "work_execution_context",
     }
 )
 
@@ -117,6 +145,22 @@ def reject_model_authority_fields(payload: Mapping[str, Any]) -> None:
             f"authority field(s) forbidden on model-generated payloads: "
             f"{sorted(leaked)}"
         )
+
+
+def host_work_execution_context(visitor: Any) -> dict[str, Any]:
+    """Return host-supplied work-execution fields from ``visitor.data``.
+
+    Model tool arguments never contribute — only the walker/visitor bag the
+    host populated for this turn. Missing visitor/data yields ``{}``.
+    """
+    data = getattr(visitor, "data", None)
+    if not isinstance(data, Mapping):
+        return {}
+    return {
+        key: data[key]
+        for key in HOST_WORK_EXECUTION_KEYS
+        if key in data and data[key] is not None
+    }
 
 
 def assert_turn_run_transition(src: TurnRunState, dst: TurnRunState) -> None:
@@ -263,6 +307,7 @@ __all__ = [
     "CONTRACT_VERSION",
     "FORBIDDEN_AUTHORITY_KEYS",
     "FORBIDDEN_HOST_DOMAIN_KEYS",
+    "HOST_WORK_EXECUTION_KEYS",
     "EventEnvelope",
     "HarnessContractError",
     "HostCapabilityProvider",
@@ -277,6 +322,7 @@ __all__ = [
     "ToolSurfaceSnapshot",
     "TurnRunState",
     "assert_turn_run_transition",
+    "host_work_execution_context",
     "native_caller_from_mapping",
     "reject_host_domain_fields",
     "reject_model_authority_fields",
