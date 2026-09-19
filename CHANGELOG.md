@@ -517,6 +517,22 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc15] - 2026-09-19
+
+### Changed
+
+- **jvspatial 0.0.21.** Runtime dependency picks up
+  `PostgresTransaction.find_one_and_update` for durable work-kernel CAS +
+  outbox atomicity on one public transaction handle.
+
+### Added
+
+- **Host work-execution context helpers.** `HOST_WORK_EXECUTION_KEYS` /
+  `host_work_execution_context(visitor)` read host-owned fields from
+  `visitor.data`. Model tool payloads reject forged work-kernel authority
+  keys (`work_item_id`, `lease_token`, `lease_fence`, `effect_key`,
+  `logical_step_key`, `work_execution_context`).
+
 ## [0.1.8rc14] - 2026-09-18
 
 ### Changed
