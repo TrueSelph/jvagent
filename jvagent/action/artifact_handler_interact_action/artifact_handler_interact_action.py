@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import re
 import sys
@@ -59,6 +60,8 @@ from jvagent.tooling.tool_decorator import tool
 
 if False:
     from jvagent.action.interact.interact_walker import InteractWalker
+
+logger = logging.getLogger(__name__)
 
 
 def _register_orchestrator_vocabulary() -> None:
@@ -669,6 +672,10 @@ class ArtifactHandlerInteractAction(InteractAction):
                             filename=display_filename,
                         )
                     except Exception:
+                        logger.exception(
+                            "artifact_handler execute: submit_ingest failed filename=%s",
+                            filename,
+                        )
                         failed.append(filename)
                         continue
 
@@ -1093,10 +1100,9 @@ class ArtifactHandlerInteractAction(InteractAction):
             "file_url": saved_url or "",
         }
         self.jvforge_job_index = index
-        try:
-            await self.save()
-        except Exception:
-            pass
+        await self._persist_job_index(
+            job_id=job_id, op="register_job", raise_on_error=True
+        )
 
     async def lookup_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         if not job_id:
@@ -1105,6 +1111,32 @@ class ArtifactHandlerInteractAction(InteractAction):
         entry = index.get(job_id)
         return dict(entry) if isinstance(entry, dict) else None
 
+    async def _persist_job_index(
+        self, *, job_id: str, op: str, raise_on_error: bool = False
+    ) -> None:
+        index = self.jvforge_job_index or {}
+        size = len(index) if isinstance(index, dict) else 0
+        try:
+            await self.save()
+        except Exception:
+            logger.exception(
+                "artifact_handler %s save failed job_id=%s agent_id=%s index_size=%s",
+                op,
+                job_id,
+                getattr(self, "agent_id", None),
+                size,
+            )
+            if raise_on_error:
+                raise
+            return
+        logger.info(
+            "artifact_handler %s saved job_id=%s agent_id=%s index_size=%s",
+            op,
+            job_id,
+            getattr(self, "agent_id", None),
+            size,
+        )
+
     async def clear_job(self, job_id: str) -> None:
         if not job_id:
             return
@@ -1112,10 +1144,7 @@ class ArtifactHandlerInteractAction(InteractAction):
         if job_id in index:
             del index[job_id]
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="clear_job")
 
     async def mark_notified(self, job_id: str) -> None:
         if not job_id:
@@ -1128,10 +1157,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             entry["notified_at"] = _utc_iso()
             index[job_id] = entry
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="mark_notified")
 
     async def mark_notifying(self, job_id: str) -> None:
         if not job_id:
@@ -1143,10 +1169,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             entry["notifying_at"] = _now_ts()
             index[job_id] = entry
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="mark_notifying")
 
     # ── Async jvforge ingest submission ──
 
@@ -1275,7 +1298,41 @@ class ArtifactHandlerInteractAction(InteractAction):
                 body if isinstance(body, dict) else {"status": "unknown", "raw": body}
             )
         except Exception as exc:
+            logger.warning(
+                "artifact_handler get_job_status failed job_id=%s error=%s",
+                jid,
+                exc,
+            )
             return {"status": "unknown", "job_id": jid, "error": str(exc)}
+
+    async def confirm_artifact_imported(self, job_id: str) -> None:
+        """DELETE the retained jvforge artifact after a successful pull-import."""
+        import httpx
+
+        from jvagent.env import get_jvagent_jvforge_base_url
+
+        jid = (job_id or "").strip()
+        if not jid:
+            return
+        forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
+        if not forge_base:
+            return
+        url = f"{forge_base}/v1/artifacts/{jid}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.delete(url)
+            if resp.status_code not in (204, 404):
+                logger.warning(
+                    "artifact_handler artifact DELETE job_id=%s status=%s",
+                    jid,
+                    resp.status_code,
+                )
+        except Exception as exc:
+            logger.warning(
+                "artifact_handler artifact DELETE failed job_id=%s error=%s",
+                jid,
+                exc,
+            )
 
     # ── LLM tools (dispatched to custom_tools.py via VaultToolContext) ──
 

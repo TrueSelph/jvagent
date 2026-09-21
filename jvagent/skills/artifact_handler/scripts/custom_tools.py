@@ -37,16 +37,20 @@ The last-discussed / newest doc for follow-up selection lives on
 ``conversation.context["artifact_handler"]["active_doc_name"]``. On every
 ``ingest_document`` / ``list_my_documents`` / ``review_expired`` /
 ``check_ingest_status`` call, pending jobs are refreshed by checking
-``PageIndexAction.list_documents`` with access control and newly-expired
-docs are surfaced.
+``PageIndexAction.list_documents`` and, when a doc is still missing,
+jvforge job status (pull-import on ``webhook_failed`` / ``completed``).
+Newly-expired docs are surfaced.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 _SKILL_NAME = "artifact_handler"
 
@@ -662,13 +666,20 @@ async def _maybe_refresh_pending_jobs(
     session_id: str = "",
     user_id: str = "",
 ) -> Dict[str, Any]:
-    """Check pending async ingest jobs via PageIndex list_documents.
+    """Refresh pending ingest jobs via PageIndex, then jvforge pull-import.
 
-    Marks jobs ``ready`` when PageIndex lists the ``doc_name`` with
-    access-control filtering (so only docs accessible to this user/session
-    count). Surfaces a short ready message when a job transitions
-    (web/default backstop; WhatsApp usually already got the proactive ping).
+    Marks jobs ``ready`` when PageIndex lists the ``doc_name``, or when jvforge
+    reports ``webhook_failed`` / ``completed`` with an ``artifact_url`` and
+    pull-import succeeds. Marks ``failed`` when jvforge reports ``failed`` or
+    ``not_found``. Leaves jobs ``queued`` while jvforge is still processing
+    (including the notify delay, when ``artifact_url`` is hidden).
     """
+    from jvagent.action.artifact_handler_interact_action.job_status import (
+        FAILED_JOB_STATUSES,
+        READY_STATUSES,
+        apply_ingest_job_status,
+    )
+
     pending = _read_pending_jobs(conversation)
     if not pending:
         return {"refreshed": 0, "became_ready": [], "still_queued": [], "failed": []}
@@ -691,7 +702,9 @@ async def _maybe_refresh_pending_jobs(
                 str(d.get("doc_name") or "") for d in docs if isinstance(d, dict)
             }
         except Exception:
-            pass
+            logger.warning(
+                "artifact_handler refresh: list_documents failed", exc_info=True
+            )
 
     def _resolve_available_name(doc_name: str) -> str:
         """Return the PageIndex name if doc_name or its md-stripped form is listed."""
@@ -705,24 +718,25 @@ async def _maybe_refresh_pending_jobs(
             return stripped
         return ""
 
-    changed = False
     became_ready: List[str] = []
     still_queued: List[str] = []
     failed: List[str] = []
+    dv_action = None
 
     for job_id, entry in list(pending.items()):
         status = str(entry.get("status") or "queued").lower()
         doc_name = str(entry.get("doc_name") or "")
-        if status in ("ready", "ingested"):
-            # Heal stale .md suffixes so search uses the PageIndex name.
+        if status in READY_STATUSES:
             resolved = _resolve_available_name(doc_name)
             if resolved and resolved != doc_name:
+                await apply_ingest_job_status(
+                    conversation, job_id, "ready", doc_name=resolved
+                )
                 entry = dict(entry)
                 entry["doc_name"] = resolved
                 pending[job_id] = entry
-                changed = True
             continue
-        if status in _FAILED_JOB_STATUSES:
+        if status in FAILED_JOB_STATUSES:
             if doc_name:
                 failed.append(doc_name)
             continue
@@ -730,20 +744,48 @@ async def _maybe_refresh_pending_jobs(
         resolved = _resolve_available_name(doc_name)
         if resolved:
             prev = status
-            entry = dict(entry)
-            entry["status"] = "ready"
-            entry["ready_at"] = _now_ts()
-            if resolved != doc_name:
+            ok = await apply_ingest_job_status(
+                conversation, job_id, "ready", doc_name=resolved
+            )
+            if ok:
+                entry = dict(entry)
+                entry["status"] = "ready"
                 entry["doc_name"] = resolved
-            pending[job_id] = entry
-            changed = True
-            if prev not in ("ready", "ingested") and resolved:
-                became_ready.append(resolved)
-        elif doc_name:
-            still_queued.append(doc_name)
+                pending[job_id] = entry
+                if prev not in READY_STATUSES:
+                    became_ready.append(resolved)
+            elif doc_name:
+                still_queued.append(doc_name)
+            continue
 
-    if changed:
-        await _write_pending_jobs(conversation, pending)
+        if not doc_name:
+            continue
+
+        if dv_action is None:
+            dv_action = await _get_artifact_handler_action(ctx)
+        if dv_action is None:
+            logger.info(
+                "artifact_handler refresh: PageIndex miss job_id=%s doc=%s "
+                "(no artifact_handler action; leaving queued)",
+                job_id,
+                doc_name,
+            )
+            still_queued.append(doc_name)
+            continue
+
+        outcome, ready_name = await _refresh_job_from_jvforge(
+            ctx,
+            conversation,
+            dv_action,
+            job_id,
+            doc_name,
+        )
+        if outcome == "ready":
+            became_ready.append(ready_name or doc_name)
+        elif outcome == "failed":
+            failed.append(doc_name)
+        else:
+            still_queued.append(doc_name)
 
     if say_ready and became_ready:
         if len(became_ready) == 1:
@@ -762,6 +804,88 @@ async def _maybe_refresh_pending_jobs(
         "still_queued": still_queued,
         "failed": failed,
     }
+
+
+async def _refresh_job_from_jvforge(
+    ctx: Any,
+    conversation: Any,
+    dv_action: Any,
+    job_id: str,
+    doc_name: str,
+) -> Tuple[str, str]:
+    """Poll jvforge and pull-import when the push callback already finished.
+
+    Returns ``(ready|failed|queued, doc_name)``.
+    """
+    from jvagent.action.artifact_handler_interact_action.job_status import (
+        PROCESSING_STATUSES,
+        apply_ingest_job_status,
+    )
+
+    forge = await dv_action.get_job_status(job_id)
+    forge_status = str((forge or {}).get("status") or "").strip().lower()
+    logger.info(
+        "artifact_handler refresh: job_id=%s jvforge_status=%s",
+        job_id,
+        forge_status or "unknown",
+    )
+    if forge_status in PROCESSING_STATUSES or forge_status in ("", "unknown"):
+        return "queued", doc_name
+    if forge_status in ("failed", "not_found"):
+        await apply_ingest_job_status(conversation, job_id, "failed")
+        return "failed", doc_name
+
+    artifact_url = str((forge or {}).get("artifact_url") or "").strip()
+    if forge_status not in ("webhook_failed", "completed") or not artifact_url:
+        logger.info(
+            "artifact_handler refresh: no pull-import job_id=%s status=%s "
+            "has_artifact_url=%s",
+            job_id,
+            forge_status,
+            bool(artifact_url),
+        )
+        return "queued", doc_name
+
+    from jvagent.action.artifact_handler_interact_action.endpoints import (
+        _download_and_import_graph,
+    )
+
+    visitor = getattr(ctx, "visitor", None)
+    agent_id = _resolve_agent_id(ctx, visitor, dv_action)
+    if not agent_id:
+        logger.warning(
+            "artifact_handler refresh: pull-import skipped job_id=%s (no agent_id)",
+            job_id,
+        )
+        return "queued", doc_name
+
+    logger.info("artifact_handler refresh: pull-import start job_id=%s", job_id)
+    imported = await _download_and_import_graph(artifact_url, agent_id)
+    if not imported:
+        logger.warning("artifact_handler refresh: pull-import failed job_id=%s", job_id)
+        return "queued", doc_name
+
+    ok = await apply_ingest_job_status(conversation, job_id, "ready", doc_name=imported)
+    if not ok:
+        logger.warning(
+            "artifact_handler refresh: mark-ready after pull-import failed job_id=%s",
+            job_id,
+        )
+        return "queued", doc_name
+    try:
+        await dv_action.confirm_artifact_imported(job_id)
+    except Exception:
+        logger.warning(
+            "artifact_handler refresh: artifact DELETE failed job_id=%s",
+            job_id,
+            exc_info=True,
+        )
+    logger.info(
+        "artifact_handler refresh: pull-import ok job_id=%s doc=%s",
+        job_id,
+        imported,
+    )
+    return "ready", imported
 
 
 # ─── Tool 0: check_pending_attachments ────────────────────────────────
@@ -1661,8 +1785,9 @@ async def check_ingest_status(ctx) -> Dict[str, Any]:
     may still be queued. This is the status check during or after processing.
     Do not use ``check_pending_attachments`` for these questions.
 
-    Uses PageIndex list_documents with access control to verify a document
-    is available to the user, instead of polling jvforge for job status.
+    Uses PageIndex list_documents and jvforge job status (pull-import when
+    the notify callback failed) instead of treating missing PageIndex docs
+    as still queued forever.
     Also auto-runs (via helpers) on ingest_document / list_my_documents /
     review_expired activation.
 

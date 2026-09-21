@@ -96,6 +96,7 @@ async def test_notify_skips_import_for_unknown_job():
     action = SimpleNamespace(
         notify_webhook_api_key_id="key-1",
         lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
     )
     req = _request(
         payload={
@@ -120,7 +121,8 @@ async def test_notify_skips_import_for_unknown_job():
         ) as import_graph,
     ):
         resp = await artifact_handler_notify(req, "Agent:a")
-        assert resp.status_code == 404
+        assert resp.status_code == 503
+        assert resp.headers.get("Retry-After")
         import_graph.assert_not_awaited()
 
 

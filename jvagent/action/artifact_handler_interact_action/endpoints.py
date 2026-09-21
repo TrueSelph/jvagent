@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import Request
@@ -58,10 +57,38 @@ async def _resolve_action(agent_id: str) -> Optional[Any]:
             return None
         action = await agent.get_action_by_type("ArtifactHandlerInteractAction")
         if action is None:
-            pass
+            logger.warning(
+                "artifact_handler_notify: ArtifactHandlerInteractAction missing "
+                "agent_id=%s",
+                agent_id,
+            )
         return action
     except Exception:
+        logger.warning(
+            "artifact_handler_notify: action resolve failed agent_id=%s",
+            agent_id,
+            exc_info=True,
+        )
         return None
+
+
+async def _reload_action(action: Any) -> Any:
+    """Reload the action node from DB so lookup_job sees a persisted index."""
+    action_id = getattr(action, "id", None)
+    if not action_id:
+        return action
+    try:
+        from jvagent.action.base import Action
+
+        fresh = await Action.get(action_id)
+        return fresh if fresh is not None else action
+    except Exception:
+        logger.warning(
+            "artifact_handler_notify: action reload failed action_id=%s",
+            action_id,
+            exc_info=True,
+        )
+        return action
 
 
 def _display_doc_name(entry: Dict[str, Any], payload_doc_name: str) -> str:
@@ -422,8 +449,6 @@ async def _publish_messenger_message(
         return False
 
 
-_PROCESSING_STATUSES = frozenset({"queued", "processing", "pending", "submitted"})
-
 _RETRY_AFTER_SECONDS = 30
 
 _ARTIFACT_404_RETRIES = 6
@@ -452,8 +477,9 @@ async def _download_and_import_graph(
     fetch_url = rewrite_process_document_url_to_jvforge_base(process_document_url)
     trusted = is_trusted_jvforge_url(fetch_url)
     if fetch_url != process_document_url:
-
-        pass
+        logger.info(
+            "artifact_handler import: rewritten artifact URL onto JVAGENT_JVFORGE_BASE_URL"
+        )
     raw_bytes: Optional[bytes] = None
     for attempt in range(1, _ARTIFACT_404_RETRIES + 1):
         try:
@@ -469,19 +495,34 @@ async def _download_and_import_graph(
                 delay = _ARTIFACT_404_BACKOFF_S[
                     min(attempt - 1, len(_ARTIFACT_404_BACKOFF_S) - 1)
                 ]
+                logger.info(
+                    "artifact_handler import: artifact 404 attempt=%s/%s retry in %.1fs",
+                    attempt,
+                    _ARTIFACT_404_RETRIES,
+                    delay,
+                )
                 await asyncio.sleep(delay)
                 continue
+            logger.warning(
+                "artifact_handler import: artifact fetch failed attempt=%s/%s: %s",
+                attempt,
+                _ARTIFACT_404_RETRIES,
+                msg,
+            )
             return None
 
     if not raw_bytes:
+        logger.warning("artifact_handler import: empty artifact body")
         return None
 
     try:
         graph = json.loads(raw_bytes)
     except Exception:
+        logger.warning("artifact_handler import: artifact is not JSON", exc_info=True)
         return None
 
     if not isinstance(graph, dict):
+        logger.warning("artifact_handler import: artifact JSON is not an object")
         return None
 
     roots = graph.get("roots")
@@ -532,8 +573,18 @@ async def _download_and_import_graph(
     try:
         await _import_documents(graph, purge=False, collection_name=agent_id)
     except Exception:
+        logger.warning(
+            "artifact_handler import: PageIndex import failed agent_id=%s",
+            agent_id,
+            exc_info=True,
+        )
         return None
 
+    logger.info(
+        "artifact_handler import: graph imported agent_id=%s doc_name=%s",
+        agent_id,
+        effective_name,
+    )
     return effective_name
 
 
@@ -628,6 +679,11 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         or not api_key_id
         or not hmac.compare_digest(expected_key, api_key_id)
     ):
+        logger.warning(
+            "artifact_handler_notify: API key not authorized agent_id=%s job_id=%s",
+            agent_id,
+            job_id,
+        )
         return JSONResponse(
             status_code=403,
             content={"detail": "API key not authorized for this agent"},
@@ -643,17 +699,35 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
         )
 
-    # Job lookup BEFORE download/import — unknown / cleared jobs must not
-    # trigger expensive PageIndex writes (replay / forged callbacks).
+    action = await _reload_action(action)
+
+    # Job lookup BEFORE download/import — unknown jobs must not trigger
+    # expensive PageIndex writes (replay / forged callbacks). 503 so jvforge
+    # retries when the reverse-index save is not yet visible on this Lambda.
     entry = await action.lookup_job(job_id)
     if not entry:
+        index = getattr(action, "jvforge_job_index", None) or {}
+        index_size = len(index) if isinstance(index, dict) else 0
+        logger.warning(
+            "artifact_handler_notify: unknown job_id=%s agent_id=%s index_size=%s",
+            job_id,
+            agent_id,
+            index_size,
+        )
         return JSONResponse(
-            status_code=404,
-            content={"detail": "unknown or already-cleared job_id"},
+            status_code=503,
+            content={"detail": "unknown job_id"},
+            headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
         )
 
     entry_agent = str(entry.get("agent_id") or "").strip()
     if entry_agent and entry_agent != agent_id:
+        logger.warning(
+            "artifact_handler_notify: job_id=%s belongs to agent_id=%s not %s",
+            job_id,
+            entry_agent,
+            agent_id,
+        )
         return JSONResponse(
             status_code=403,
             content={"detail": "job_id does not belong to this agent"},
@@ -668,8 +742,18 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             "doc_name": str(entry.get("doc_name") or doc_name or ""),
         }
 
+    logger.info(
+        "artifact_handler_notify: import start job_id=%s agent_id=%s",
+        job_id,
+        agent_id,
+    )
     imported_doc_name = await _download_and_import_graph(process_document_url, agent_id)
     if not imported_doc_name:
+        logger.warning(
+            "artifact_handler_notify: graph import failed job_id=%s agent_id=%s",
+            job_id,
+            agent_id,
+        )
         return JSONResponse(
             status_code=503,
             content={"detail": "graph import failed"},
@@ -708,31 +792,47 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         try:
             from jvagent.memory.conversation import Conversation
 
+            from .job_status import PROCESSING_STATUSES, apply_ingest_job_status
+
             conv = await Conversation.get(conversation_id)
-            if conv is not None:
+            if conv is None:
+                logger.warning(
+                    "artifact_handler_notify: conversation not found job_id=%s "
+                    "conversation_id=%s",
+                    job_id,
+                    conversation_id,
+                )
+            else:
+                pending = {}
                 ctx = getattr(conv, "context", None)
                 if isinstance(ctx, dict):
                     vault = ctx.get("artifact_handler")
                     if isinstance(vault, dict):
-                        pending = vault.get("pending_ingest_jobs")
-                        if isinstance(pending, dict) and job_id in pending:
-                            job_entry = pending[job_id]
-                            if isinstance(job_entry, dict):
-                                prev_status = str(job_entry.get("status") or "").lower()
-                                if (
-                                    prev_status in _PROCESSING_STATUSES
-                                    or prev_status == ""
-                                ):
-                                    job_entry["status"] = "ready"
-                                    job_entry["ready_at"] = time.time()
-                                    if internal_doc_name:
-                                        job_entry["doc_name"] = internal_doc_name
-                                        vault["active_doc_name"] = internal_doc_name
-                                    await conv.update_context(
-                                        {"artifact_handler": vault}
-                                    )
+                        raw = vault.get("pending_ingest_jobs")
+                        if isinstance(raw, dict):
+                            pending = raw
+                prev = (
+                    pending.get(job_id) if isinstance(pending.get(job_id), dict) else {}
+                )
+                prev_status = str(prev.get("status") or "").lower()
+                if prev_status in PROCESSING_STATUSES or prev_status == "":
+                    ok = await apply_ingest_job_status(
+                        conv,
+                        job_id,
+                        "ready",
+                        doc_name=internal_doc_name or None,
+                    )
+                    if not ok:
+                        logger.warning(
+                            "artifact_handler_notify: mark-ready failed job_id=%s",
+                            job_id,
+                        )
         except Exception:
-            pass
+            logger.warning(
+                "artifact_handler_notify: mark-ready failed job_id=%s",
+                job_id,
+                exc_info=True,
+            )
     # ── Send proactive notifications.
     # WhatsApp and Messenger get push messages; web/default relies on
     # check_ingest_status polling (TODO: add web push in a future phase).
@@ -769,7 +869,11 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             await action.mark_notified(job_id)
             await action.clear_job(job_id)
         except Exception:
-            pass
+            logger.warning(
+                "artifact_handler_notify: clear_job failed job_id=%s",
+                job_id,
+                exc_info=True,
+            )
     return {
         "status": "imported",
         "job_id": job_id,

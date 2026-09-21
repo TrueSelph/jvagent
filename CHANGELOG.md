@@ -33,6 +33,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Artifact handler notify + ingest status.** `register_job` now fails the ingest when the reverse-index cannot be saved (instead of swallowing `save()` and leaving chats stuck on `queued`). The notify webhook reloads the action from the DB before `lookup_job`, logs unknown jobs, and returns **503** so jvforge retries. `check_ingest_status` still consults PageIndex first, then polls jvforge and pull-imports `webhook_failed` / `completed` artifacts; jvforge `failed` marks the vault job failed. Pending and vault entry statuses stay in sync via `apply_ingest_job_status`.
+
 - **ResponseBus now enforces the single-egress latch.** The first delivered
   non-transient user stream chunk marks its `Interaction` as emitted, active
   chunks may finish that same stream, and any later independent user publish
