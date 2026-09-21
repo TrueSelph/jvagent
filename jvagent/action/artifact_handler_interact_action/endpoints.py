@@ -4,8 +4,9 @@ jvforge POSTs to ``/api/artifact_handler_action/notify/{agent_id}`` with a
 ``process_document_url`` when an async ingest job finishes. The vault
 downloads the artifact, imports the pageindex_graph into PageIndex, then
 sends a proactive notification (WhatsApp or Messenger) with a ready notice
-and an optional answer.
-(background, using call_model if there's a pending question).
+and an optional answer. WhatsApp/Messenger send is scheduled with
+``jvspatial.create_task`` (Shape B: awaited on Lambda, backgrounded on
+long-running servers).
 
 On failure the endpoint returns 503 + Retry-After so jvforge retries the
 callback. On success it returns 200.
@@ -20,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 
@@ -166,6 +168,11 @@ async def _publish_whatsapp_message(
     """
     memory = await agent.get_memory()
     if not memory:
+        logger.warning(
+            "_publish_whatsapp_message: agent has no memory job_id=%s user_id=%s",
+            job_id,
+            user_id,
+        )
         return False
 
     conversation = None
@@ -175,21 +182,48 @@ async def _publish_whatsapp_message(
 
             conversation = await Conversation.get(conversation_id)
         except Exception:
+            logger.warning(
+                "_publish_whatsapp_message: Conversation.get failed job_id=%s "
+                "conversation_id=%s",
+                job_id,
+                conversation_id,
+                exc_info=True,
+            )
             conversation = None
 
     if conversation is None:
         user = await memory.get_user(user_id, create_if_missing=False)
         if not user:
+            logger.warning(
+                "_publish_whatsapp_message: user not found job_id=%s user_id=%s",
+                job_id,
+                user_id,
+            )
             return False
         if session_id:
             conversation = await user.get_conversation_by_session(session_id)
         if conversation is None:
+            logger.warning(
+                "_publish_whatsapp_message: conversation not found job_id=%s "
+                "user_id=%s session_id=%s conversation_id=%s",
+                job_id,
+                user_id,
+                session_id,
+                conversation_id,
+            )
             return False
 
     effective_session_id = (
         session_id or str(getattr(conversation, "session_id", "") or "").strip() or ""
     )
     if not effective_session_id:
+        logger.warning(
+            "_publish_whatsapp_message: no effective session_id job_id=%s "
+            "user_id=%s conversation_id=%s",
+            job_id,
+            user_id,
+            conversation_id,
+        )
         return False
 
     interaction = await conversation.add_interaction(
@@ -198,6 +232,13 @@ async def _publish_whatsapp_message(
         session_id=effective_session_id,
     )
     if not interaction:
+        logger.warning(
+            "_publish_whatsapp_message: add_interaction returned None job_id=%s "
+            "user_id=%s conversation_id=%s",
+            job_id,
+            user_id,
+            conversation_id,
+        )
         return False
 
     interaction.add_parameter(
@@ -230,17 +271,40 @@ async def _publish_whatsapp_message(
 
     whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
     if whatsapp_action is None:
+        logger.warning(
+            "_publish_whatsapp_message: WhatsAppAction missing job_id=%s user_id=%s",
+            job_id,
+            user_id,
+        )
         return False
 
     try:
         if not whatsapp_action.is_configured():
+            logger.warning(
+                "_publish_whatsapp_message: WhatsAppAction not configured "
+                "job_id=%s user_id=%s",
+                job_id,
+                user_id,
+            )
             return False
     except Exception:
+        logger.warning(
+            "_publish_whatsapp_message: is_configured failed job_id=%s user_id=%s",
+            job_id,
+            user_id,
+            exc_info=True,
+        )
         return False
 
     try:
         api = await whatsapp_action.api()
     except Exception:
+        logger.warning(
+            "_publish_whatsapp_message: api() failed job_id=%s user_id=%s",
+            job_id,
+            user_id,
+            exc_info=True,
+        )
         return False
 
     try:
@@ -248,8 +312,23 @@ async def _publish_whatsapp_message(
             phone=user_id,
             message=content,
         )
-        return isinstance(result, dict) and bool(result.get("ok", True))
+        ok = isinstance(result, dict) and bool(result.get("ok", True))
+        if not ok:
+            logger.warning(
+                "_publish_whatsapp_message: send_message not ok job_id=%s "
+                "user_id=%s result=%r",
+                job_id,
+                user_id,
+                result,
+            )
+        return ok
     except Exception:
+        logger.warning(
+            "_publish_whatsapp_message: send_message failed job_id=%s user_id=%s",
+            job_id,
+            user_id,
+            exc_info=True,
+        )
         return False
 
 
@@ -588,6 +667,44 @@ async def _download_and_import_graph(
     return effective_name
 
 
+async def _close_reverse_index_job(action: Any, job_id: str) -> None:
+    """Mark notified and drop the jvforge reverse-index entry."""
+    if action is None or not job_id:
+        return
+    try:
+        await action.mark_notified(job_id)
+        await action.clear_job(job_id)
+    except Exception:
+        logger.warning(
+            "artifact_handler_notify: clear_job failed job_id=%s",
+            job_id,
+            exc_info=True,
+        )
+
+
+async def _notify_and_close_job(
+    send_coro: Any,
+    *,
+    action: Any,
+    job_id: str,
+    channel: str,
+    agent_id: str,
+) -> bool:
+    """Await a channel send, then close the reverse-index job on success."""
+    sent = bool(await send_coro)
+    if sent:
+        await _close_reverse_index_job(action, job_id)
+        return True
+    logger.warning(
+        "artifact_handler_notify: %s send failed job_id=%s "
+        "agent_id=%s; leaving reverse-index job for retry",
+        channel,
+        job_id,
+        agent_id,
+    )
+    return False
+
+
 @endpoint(
     "/artifact_handler_action/notify/{agent_id}",
     methods=["POST"],
@@ -625,8 +742,13 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
         3. Download artifact from ``process_document_url`` and import into PageIndex.
         4. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        5. For WhatsApp/Messenger: send ready notice + optional answer.
+        5. For WhatsApp/Messenger: schedule ready notice + optional answer via
+           ``await create_task(coro)`` (jvspatial Shape B). On Lambda the
+           coroutine is awaited in this request; on a long-running server it
+           runs in the background. ``mark_notified`` / ``clear_job`` run only
+           after a successful send.
         6. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
+           A failed channel send leaves the reverse-index job in place.
     """
     import hmac
 
@@ -833,12 +955,22 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                 job_id,
                 exc_info=True,
             )
+    else:
+        logger.warning(
+            "artifact_handler_notify: skip mark-ready job_id=%s "
+            "conversation_id empty",
+            job_id,
+        )
     # ── Send proactive notifications.
     # WhatsApp and Messenger get push messages; web/default relies on
     # check_ingest_status polling (TODO: add web push in a future phase).
-    if user_id and channel == "whatsapp":
-        asyncio.create_task(
-            _send_whatsapp_notifications(
+    # Schedule via jvspatial.create_task (Shape B): Lambda awaits in this
+    # request; a long-running server backgrounds the coroutine. Close the
+    # reverse-index job only after a successful send.
+    notified = False
+    if user_id and channel in ("whatsapp", "messenger"):
+        if channel == "whatsapp":
+            send_coro = _send_whatsapp_notifications(
                 agent_id=agent_id,
                 job_id=job_id or "",
                 user_id=user_id,
@@ -848,10 +980,8 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                 display_doc=display_doc,
                 pending_question=pending_question,
             )
-        )
-    elif user_id and channel == "messenger":
-        asyncio.create_task(
-            _send_messenger_notifications(
+        else:
+            send_coro = _send_messenger_notifications(
                 agent_id=agent_id,
                 job_id=job_id or "",
                 user_id=user_id,
@@ -861,23 +991,45 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                 display_doc=display_doc,
                 pending_question=pending_question,
             )
-        )
+        box: List[bool] = []
 
-    # ── Mark notified + clear from jvforge reverse index.
-    if action is not None and job_id:
-        try:
-            await action.mark_notified(job_id)
-            await action.clear_job(job_id)
-        except Exception:
-            logger.warning(
-                "artifact_handler_notify: clear_job failed job_id=%s",
-                job_id,
-                exc_info=True,
+        async def _run() -> None:
+            box.append(
+                await _notify_and_close_job(
+                    send_coro,
+                    action=action,
+                    job_id=job_id or "",
+                    channel=channel,
+                    agent_id=agent_id,
+                )
             )
+
+        task = await create_task(
+            _run(),
+            name=f"artifact_handler_{channel}_{job_id}",
+        )
+        if task is None:
+            if not (box and box[0]):
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": f"{channel} notify failed"},
+                    headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+                )
+        notified = True
+    else:
+        logger.warning(
+            "artifact_handler_notify: skip channel send job_id=%s "
+            "channel=%s user_id=%s (push only for whatsapp/messenger with user_id)",
+            job_id,
+            channel,
+            user_id or "(empty)",
+        )
+        await _close_reverse_index_job(action, job_id)
+
     return {
         "status": "imported",
         "job_id": job_id,
-        "notified": channel in ("whatsapp", "messenger") and bool(user_id),
+        "notified": notified,
         "doc_name": imported_doc_name,
     }
 
@@ -892,14 +1044,29 @@ async def _send_whatsapp_notifications(
     internal_doc_name: str,
     display_doc: str,
     pending_question: str,
-) -> None:
-    """Send a single WhatsApp notification: ready notice, or ready + answer."""
+) -> bool:
+    """Send a single WhatsApp notification: ready notice, or ready + answer.
+
+    Returns True only after ``_publish_whatsapp_message`` succeeds.
+    """
+    logger.info(
+        "_send_whatsapp_notifications: starting agent_id=%s job_id=%s "
+        "user_id=%s doc=%s",
+        agent_id,
+        job_id,
+        user_id,
+        display_doc,
+    )
     try:
         from jvagent.core.agent import Agent
 
         agent = await Agent.get(agent_id)
         if agent is None:
-            return
+            logger.warning(
+                "_send_whatsapp_notifications: agent not found agent_id=%s",
+                agent_id,
+            )
+            return False
 
         action = await _resolve_action(agent_id)
 
@@ -931,13 +1098,27 @@ async def _send_whatsapp_notifications(
                 answered = True
 
         if not content:
+            logger.warning(
+                "_send_whatsapp_notifications: using canned ready message "
+                "job_id=%s doc=%s pending_question=%s",
+                job_id,
+                display_doc,
+                bool(pending_question),
+            )
             content = _canned_ready_message(
                 display_doc,
                 doc_description=doc_description,
                 pending_question=pending_question or None,
             )
 
-        await _publish_whatsapp_message(
+        logger.info(
+            "_send_whatsapp_notifications: publishing to user_id=%s "
+            "answered=%s content_len=%d",
+            user_id,
+            answered,
+            len(content) if content else 0,
+        )
+        ok = await _publish_whatsapp_message(
             agent=agent,
             user_id=user_id,
             session_id=session_id,
@@ -949,13 +1130,31 @@ async def _send_whatsapp_notifications(
             internal_doc_name=internal_doc_name,
             pending_question=pending_question,
         )
+        if ok:
+            logger.info(
+                "_send_whatsapp_notifications: sent agent_id=%s job_id=%s "
+                "user_id=%s",
+                agent_id,
+                job_id,
+                user_id,
+            )
+        else:
+            logger.warning(
+                "_send_whatsapp_notifications: publish failed agent_id=%s "
+                "job_id=%s user_id=%s",
+                agent_id,
+                job_id,
+                user_id,
+            )
+        return bool(ok)
     except Exception:
         logger.error(
-            "_send_whatsapp_notifications: unexpected error agent_id=%s " "job_id=%s",
+            "_send_whatsapp_notifications: unexpected error agent_id=%s job_id=%s",
             agent_id,
             job_id,
             exc_info=True,
         )
+        return False
 
 
 async def _send_messenger_notifications(
@@ -968,8 +1167,11 @@ async def _send_messenger_notifications(
     internal_doc_name: str,
     display_doc: str,
     pending_question: str,
-) -> None:
-    """Send a single Messenger notification: ready notice, or ready + answer."""
+) -> bool:
+    """Send a single Messenger notification: ready notice, or ready + answer.
+
+    Returns True only after ``_publish_messenger_message`` succeeds.
+    """
     logger.info(
         "_send_messenger_notifications: starting agent_id=%s job_id=%s "
         "user_id=%s doc=%s",
@@ -987,7 +1189,7 @@ async def _send_messenger_notifications(
                 "_send_messenger_notifications: agent not found agent_id=%s",
                 agent_id,
             )
-            return
+            return False
 
         action = await _resolve_action(agent_id)
 
@@ -1032,7 +1234,7 @@ async def _send_messenger_notifications(
             answered,
             len(content) if content else 0,
         )
-        await _publish_messenger_message(
+        ok = await _publish_messenger_message(
             agent=agent,
             user_id=user_id,
             session_id=session_id,
@@ -1044,6 +1246,23 @@ async def _send_messenger_notifications(
             internal_doc_name=internal_doc_name,
             pending_question=pending_question,
         )
+        if ok:
+            logger.info(
+                "_send_messenger_notifications: sent agent_id=%s job_id=%s "
+                "user_id=%s",
+                agent_id,
+                job_id,
+                user_id,
+            )
+        else:
+            logger.warning(
+                "_send_messenger_notifications: publish failed agent_id=%s "
+                "job_id=%s user_id=%s",
+                agent_id,
+                job_id,
+                user_id,
+            )
+        return bool(ok)
     except Exception:
         logger.error(
             "_send_messenger_notifications: unexpected error agent_id=%s job_id=%s",
@@ -1051,3 +1270,4 @@ async def _send_messenger_notifications(
             job_id,
             exc_info=True,
         )
+        return False

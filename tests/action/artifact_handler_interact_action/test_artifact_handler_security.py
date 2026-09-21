@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -54,6 +55,14 @@ def _request(*, api_key_id: str = "key-1", payload: dict | None = None):
     req.state = SimpleNamespace(user={"api_key_id": api_key_id, "user_id": "sys"})
     req.json = AsyncMock(return_value=payload or {})
     return req
+
+
+async def _inline_create_task(coro_or_type, payload=None, **kwargs):
+    """Lambda Shape B: await the coroutine and return None."""
+    if asyncio.iscoroutine(coro_or_type):
+        await coro_or_type
+        return None
+    raise AssertionError(f"expected a coroutine, got {type(coro_or_type)!r}")
 
 
 @pytest.mark.asyncio
@@ -160,7 +169,127 @@ async def test_notify_idempotent_when_already_notified():
             "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
             new_callable=AsyncMock,
         ) as import_graph,
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            new_callable=AsyncMock,
+        ) as send,
     ):
         out = await artifact_handler_notify(req, "Agent:a")
         assert out["status"] == "already_imported"
         import_graph.assert_not_awaited()
+        send.assert_not_awaited()
+
+
+def _whatsapp_job(**extra):
+    entry = {
+        "job_id": "job-1",
+        "agent_id": "Agent:a",
+        "notified": False,
+        "user_id": "5926431530",
+        "session_id": "sess-1",
+        "conversation_id": "",
+        "channel": "whatsapp",
+        "doc_name": "upload.jpg",
+        "filename": "upload.jpg",
+    }
+    entry.update(extra)
+    return entry
+
+
+def _notify_action(job_entry):
+    return SimpleNamespace(
+        notify_webhook_api_key_id="key-1",
+        lookup_job=AsyncMock(return_value=job_entry),
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+        jvforge_job_index={"job-1": job_entry},
+    )
+
+
+@pytest.mark.asyncio
+async def test_notify_awaits_whatsapp_send_before_clearing_job():
+    action = _notify_action(_whatsapp_job())
+    req = _request(
+        payload={
+            "process_document_url": "https://example.com/a",
+            "job_id": "job-1",
+            "doc_name": "upload.jpg",
+        }
+    )
+    send = AsyncMock(return_value=True)
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="5926431530_upload.jpg",
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            send,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints.create_task",
+            _inline_create_task,
+        ),
+    ):
+        out = await artifact_handler_notify(req, "Agent:a")
+    assert out["status"] == "imported"
+    assert out["notified"] is True
+    send.assert_awaited_once()
+    action.mark_notified.assert_awaited_once_with("job-1")
+    action.clear_job.assert_awaited_once_with("job-1")
+    assert send.await_args.kwargs["user_id"] == "5926431530"
+    assert send.await_args.kwargs["job_id"] == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_notify_returns_503_when_whatsapp_send_fails():
+    action = _notify_action(_whatsapp_job())
+    req = _request(
+        payload={
+            "process_document_url": "https://example.com/a",
+            "job_id": "job-1",
+        }
+    )
+    send = AsyncMock(return_value=False)
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="5926431530_upload.jpg",
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            send,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints.create_task",
+            _inline_create_task,
+        ),
+    ):
+        resp = await artifact_handler_notify(req, "Agent:a")
+    assert resp.status_code == 503
+    assert resp.headers.get("Retry-After")
+    send.assert_awaited_once()
+    action.mark_notified.assert_not_awaited()
+    action.clear_job.assert_not_awaited()
