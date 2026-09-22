@@ -40,6 +40,8 @@ async def test_pre_startup_bootstrap_admin_and_health(tmp_path, monkeypatch):
         "JVSPATIAL_JWT_SECRET_KEY", "test-jwt-secret-key-for-integration-tests"
     )
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    monkeypatch.setenv("JVSPATIAL_DB_TYPE", "json")
+    monkeypatch.setenv("JVSPATIAL_DB_PATH", str(tmp_path / "test_jvdb"))
 
     app_root = str(tmp_path)
     (tmp_path / "app.yaml").write_text(MINIMAL_APP_YAML.strip(), encoding="utf-8")
@@ -90,6 +92,8 @@ async def test_bootstrap_only_creates_admin_without_preexisting_server(
         "JVSPATIAL_JWT_SECRET_KEY", "test-jwt-secret-key-for-integration-tests"
     )
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    monkeypatch.setenv("JVSPATIAL_DB_TYPE", "json")
+    monkeypatch.setenv("JVSPATIAL_DB_PATH", str(tmp_path / "test_jvdb"))
 
     app_root = str(tmp_path)
     (tmp_path / "app.yaml").write_text(MINIMAL_APP_YAML.strip(), encoding="utf-8")
