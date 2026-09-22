@@ -737,6 +737,12 @@ async def pre_startup_bootstrap(
             # Initialize all actions (channel adapters, TaskMonitor registration, …)
             await run_app_startup()
 
+        from jvagent.core.embed_endpoints import (
+            remount_artifact_handler_notify_if_app_built,
+        )
+
+        remount_artifact_handler_notify_if_app_built(server)
+
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()
 

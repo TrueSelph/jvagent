@@ -8,6 +8,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Artifact handler notify 404 on Lambda.** `POST /api/artifact_handler_action/notify/{agent_id}` is imported with first-party routes before `get_app()`, and remounted if the live FastAPI app was already built, so jvforge's import callback is no longer a registry-only 404.
+
 ### Added
 
 - **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.
