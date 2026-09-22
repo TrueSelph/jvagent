@@ -3,8 +3,9 @@
 Inbound route: ``/api/artifact_handler_action/notify/{agent_id}``.
 Credentials are persisted on ``ArtifactHandlerInteractAction``.
 
-Keys are scoped to the **exact** notify path for one agent (no trailing
-``/*`` wildcard) so a leaked notify key cannot hit another agent's callback.
+Keys are minted with ``ALLOWED_WEBHOOK_ENDPOINT_GLOB`` (``…/notify/*``),
+same as Drive/WhatsApp/PageIndex. Cross-agent binding is the handler hmac
+of ``notify_webhook_api_key_id``.
 """
 
 from jvagent.action.utils.webhook_system_user import webhook_system_user_factory

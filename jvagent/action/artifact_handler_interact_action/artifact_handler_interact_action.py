@@ -968,10 +968,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         from jvagent.core.public_url import get_public_base_url
 
         from .webhook_auth import (
+            ALLOWED_WEBHOOK_ENDPOINT_GLOB,
             ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX,
             WEBHOOK_PERMISSION,
             get_or_create_system_user,
-            notify_endpoint_for_agent,
         )
 
         base_url = (get_public_base_url() or "").strip().rstrip("/")
@@ -987,7 +987,6 @@ class ArtifactHandlerInteractAction(InteractAction):
             expected_url_base = (
                 f"{base_url}/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/{agent_id}"
             )
-            allowed_endpoint = notify_endpoint_for_agent(agent_id)
 
             def _key_scoped_to_agent(existing_key: Any) -> bool:
                 if existing_key is None or not getattr(
@@ -997,14 +996,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 existing_eps = list(
                     getattr(existing_key, "allowed_endpoints", None) or []
                 )
-                if allowed_endpoint not in existing_eps:
-                    return False
-                for ep in existing_eps:
-                    if ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX not in ep:
-                        continue
-                    if ep.endswith("*"):
-                        return False
-                return True
+                return ALLOWED_WEBHOOK_ENDPOINT_GLOB in existing_eps
 
             prime_ctx = GraphContext(database=get_prime_database())
             api_key_service = APIKeyService(context=prime_ctx)
@@ -1067,7 +1059,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 permissions=[WEBHOOK_PERMISSION],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=[allowed_endpoint],
+                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
                 key_prefix="jv_",
             )
 

@@ -1974,7 +1974,7 @@ async def import_documents_endpoint(
 
 
 @endpoint(
-    "/pageindex_retrieval_interact_action/interact/webhook/{agent_id}",
+    "/pageindex/interact/webhook/{agent_id}",
     methods=["POST"],
     webhook=True,
     auth=False,

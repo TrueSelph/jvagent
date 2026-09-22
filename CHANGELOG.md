@@ -10,6 +10,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Artifact handler notify webhook 403 on Lambda.** Notify API keys are minted with `/api/artifact_handler_action/notify/*` like Drive/WhatsApp/PageIndex, so jvspatial webhook auth no longer 403s when the request path does not byte-match an exact agent id. The handler still hmac-binds the key id to this action. Exact-path keys remint on the next vault submit.
+
 - **Artifact handler notify 404 on Lambda.** `POST /api/artifact_handler_action/notify/{agent_id}` is imported with first-party routes before `get_app()`, and remounted if the live FastAPI app was already built, so jvforge's import callback is no longer a registry-only 404.
 
 - **Artifact handler notify awaits `create_task` return and time-bounds ready-answer generate.** After inline import, generate then send run as two sequential `jvspatial.create_task` calls; a non-None return is awaited so Lambda cannot 200-and-freeze the ready message. PageIndex desc lookup (5s) and ready-answer generate (12s) time out to a canned message, then the channel send still runs.
@@ -38,6 +40,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   changes.
 
 ### Changed
+
+- **PageIndex LLM webhook path.** `POST /api/pageindex/interact/webhook/{agent_id}` replaces `/api/pageindex_retrieval_interact_action/interact/webhook/{agent_id}`. Keys remint on the next `get_webhook_url`. Old URLs 404; ship with matching jvforge.
 
 - **Artifact handler notify awaits channel send.** WhatsApp/Messenger ready messages are sent in the notify request (not `asyncio.create_task`) so Lambda does not freeze the send when the Function URL returns. A failed send leaves the job in the reverse index and returns **503** so jvforge retries.
 

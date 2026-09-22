@@ -10,6 +10,7 @@ import pytest
 from jvspatial.api.exceptions import ValidationError
 
 from jvagent.action.artifact_handler_interact_action.artifact_handler_interact_action import (
+    ArtifactHandlerInteractAction,
     _fetch_url_bytes_for_vault,
 )
 from jvagent.action.artifact_handler_interact_action.endpoints import (
@@ -17,6 +18,7 @@ from jvagent.action.artifact_handler_interact_action.endpoints import (
     artifact_handler_notify,
 )
 from jvagent.action.artifact_handler_interact_action.webhook_auth import (
+    ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     notify_endpoint_for_agent,
 )
 
@@ -25,6 +27,109 @@ def test_notify_endpoint_for_agent_is_exact_path():
     path = notify_endpoint_for_agent("Agent:abc")
     assert path == "/api/artifact_handler_action/notify/Agent:abc"
     assert not path.endswith("*")
+    assert ALLOWED_WEBHOOK_ENDPOINT_GLOB == "/api/artifact_handler_action/notify/*"
+
+
+def _notify_mint_patches(*, generate_key, get_key=None):
+    mock_service = MagicMock()
+    mock_service.generate_key = generate_key
+    mock_service.get_key = get_key or AsyncMock(return_value=None)
+    mock_service.revoke_key = AsyncMock()
+    return (
+        patch.object(
+            ArtifactHandlerInteractAction,
+            "get_agent",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="n.Agent.test123", name="TestAgent"),
+        ),
+        patch.object(ArtifactHandlerInteractAction, "save", new_callable=AsyncMock),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.webhook_auth.get_or_create_system_user",
+            new_callable=AsyncMock,
+            return_value="o.User.system123",
+        ),
+        patch(
+            "jvspatial.api.auth.api_key_service.APIKeyService",
+            return_value=mock_service,
+        ),
+        patch("jvspatial.db.get_prime_database", return_value=MagicMock()),
+        patch("jvspatial.core.context.GraphContext", return_value=MagicMock()),
+    ), mock_service
+
+
+@pytest.mark.asyncio
+async def test_notify_webhook_mints_drive_style_glob(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
+    action = ArtifactHandlerInteractAction()
+    mock_key = SimpleNamespace(id="o.APIKey.key123")
+    generate_key = AsyncMock(return_value=("test_mock_api_key", mock_key))
+    patches, service = _notify_mint_patches(generate_key=generate_key)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        url = await action.get_notify_webhook_url()
+    assert url.startswith(
+        "http://localhost:8000/api/artifact_handler_action/notify/n.Agent.test123"
+    )
+    assert "?api_key=test_mock_api_key" in url
+    kwargs = generate_key.call_args.kwargs
+    assert kwargs["allowed_endpoints"] == [ALLOWED_WEBHOOK_ENDPOINT_GLOB]
+    assert kwargs["permissions"] == ["webhook:artifact_handler_action"]
+    assert kwargs["allowed_ips"] == []
+    service.generate_key.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_webhook_remints_exact_path_only_key(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
+    action = ArtifactHandlerInteractAction()
+    action.notify_webhook_url = (
+        "http://localhost:8000/api/artifact_handler_action/notify/"
+        "n.Agent.test123?api_key=old"
+    )
+    action.notify_webhook_api_key_id = "o.APIKey.old"
+    stale = SimpleNamespace(
+        is_active=True,
+        allowed_endpoints=["/api/artifact_handler_action/notify/n.Agent.test123"],
+        allowed_ips=[],
+    )
+    mock_key = SimpleNamespace(id="o.APIKey.new")
+    generate_key = AsyncMock(return_value=("new_key", mock_key))
+    patches, service = _notify_mint_patches(
+        generate_key=generate_key,
+        get_key=AsyncMock(return_value=stale),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        url = await action.get_notify_webhook_url()
+    assert "new_key" in url
+    service.generate_key.assert_awaited_once()
+    assert service.generate_key.call_args.kwargs["allowed_endpoints"] == [
+        ALLOWED_WEBHOOK_ENDPOINT_GLOB
+    ]
+
+
+@pytest.mark.asyncio
+async def test_notify_webhook_reuses_glob_scoped_key(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
+    existing = (
+        "http://localhost:8000/api/artifact_handler_action/notify/"
+        "n.Agent.test123?api_key=keep"
+    )
+    action = ArtifactHandlerInteractAction()
+    action.notify_webhook_url = existing
+    action.notify_webhook_api_key_id = "o.APIKey.keep"
+    scoped = SimpleNamespace(
+        is_active=True,
+        allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
+        allowed_ips=[],
+    )
+    generate_key = AsyncMock()
+    patches, service = _notify_mint_patches(
+        generate_key=generate_key,
+        get_key=AsyncMock(return_value=scoped),
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        url = await action.get_notify_webhook_url()
+    assert url == existing
+    service.generate_key.assert_not_awaited()
 
 
 @pytest.mark.asyncio
