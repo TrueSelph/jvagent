@@ -7,8 +7,11 @@ when chunks are empty.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 _IMAGE_EXTENSIONS = frozenset(
     {
@@ -263,12 +266,27 @@ async def _ready_document_text(
     """Document body for a ready-notify answer: chunks first, search if empty."""
     text, loaded = await _load_document_content(agent, internal_doc_name, page_index)
     if _useful_source_text(text):
+        logger.warning(
+            "_ready_document_text: chunks doc=%s text_len=%s",
+            internal_doc_name,
+            len(text),
+        )
         return text, True
     search_text, searched = await _search_document_content(
         page_index, query, internal_doc_name
     )
     if _useful_source_text(search_text):
+        logger.warning(
+            "_ready_document_text: search doc=%s text_len=%s",
+            internal_doc_name,
+            len(search_text),
+        )
         return search_text, True
+    logger.warning(
+        "_ready_document_text: empty doc=%s reached_pageindex=%s",
+        internal_doc_name,
+        loaded or searched,
+    )
     return "", loaded or searched
 
 
@@ -466,8 +484,21 @@ async def _generate_ready_message(
     try:
         from jvagent.action.utils.call_model import call_model
 
+        logger.warning(
+            "_generate_ready_message: call_model start doc=%s",
+            internal_doc_name,
+        )
         text = await call_model(vault_action, user_prompt, system_prompt)
+        logger.warning(
+            "_generate_ready_message: call_model done doc=%s",
+            internal_doc_name,
+        )
     except Exception:
+        logger.warning(
+            "_generate_ready_message: call_model failed doc=%s",
+            internal_doc_name,
+            exc_info=True,
+        )
         return None
 
     if not isinstance(text, str) or not text.strip():

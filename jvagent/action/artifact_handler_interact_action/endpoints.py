@@ -5,8 +5,8 @@ jvforge POSTs to ``/api/artifact_handler_action/notify/{agent_id}`` with a
 downloads the artifact, imports the pageindex_graph into PageIndex, then
 sends a proactive notification (WhatsApp or Messenger) with a ready notice
 and an optional answer. WhatsApp/Messenger send is scheduled with
-``jvspatial.create_task`` (Shape B: awaited on Lambda, backgrounded on
-long-running servers).
+``jvspatial.create_task`` (generate, then send); if a call returns a
+scheduled object it is awaited before 200 so Lambda cannot freeze the send.
 
 On failure the endpoint returns 503 + Retry-After so jvforge retries the
 callback. On success it returns 200.
@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -41,6 +41,10 @@ from .ready_message import (  # noqa: F401 — re-export for tests / notify
 )
 
 logger = logging.getLogger(__name__)
+
+_RETRY_AFTER_SECONDS = 30
+_READY_DESC_LOOKUP_TIMEOUT_S = 5.0
+_READY_GENERATE_TIMEOUT_S = 12.0
 
 
 async def _resolve_action(agent_id: str) -> Optional[Any]:
@@ -129,12 +133,20 @@ async def _doc_description_lookup(
         return {}
     page_index = await agent.get_action_by_type("PageIndexAction")
     if page_index is None:
+        logger.warning(
+            "artifact_handler notify: PageIndexAction missing for desc lookup"
+        )
         return {}
     try:
         docs = await page_index.list_documents(access_control=False, summary=True)
     except Exception:
+        logger.warning(
+            "artifact_handler notify: desc lookup list_documents failed",
+            exc_info=True,
+        )
         return {}
     if not isinstance(docs, list):
+        logger.warning("artifact_handler notify: desc lookup not a list")
         return {}
     lookup: Dict[str, str] = {}
     for d in docs:
@@ -144,7 +156,43 @@ async def _doc_description_lookup(
         desc = str(d.get("doc_description") or "").strip()
         if name and desc:
             lookup[name] = desc
+    logger.warning("artifact_handler notify: desc lookup done size=%s", len(lookup))
     return lookup
+
+
+async def _await_ready_step(label: str, coro: Any, timeout: float, job_id: str) -> Any:
+    """Await a ready-message step; None on timeout or exception."""
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "%s timed out job_id=%s timeout_s=%s",
+            label,
+            job_id,
+            timeout,
+        )
+        return None
+    except Exception:
+        logger.warning(
+            "%s failed job_id=%s",
+            label,
+            job_id,
+            exc_info=True,
+        )
+        return None
+
+
+async def _await_create_task(coro: Any, *, name: str, job_id: str, kind: str) -> None:
+    """Shape B: run via ``create_task``; await a non-None scheduled return."""
+    scheduled = await create_task(coro, name=name)
+    logger.warning(
+        "artifact_handler_notify: create_task %s scheduled=%s job_id=%s",
+        kind,
+        scheduled is not None,
+        job_id,
+    )
+    if scheduled is not None:
+        await scheduled
 
 
 async def _publish_whatsapp_message(
@@ -308,6 +356,11 @@ async def _publish_whatsapp_message(
         return False
 
     try:
+        logger.warning(
+            "_publish_whatsapp_message: send_message start job_id=%s user_id=%s",
+            job_id,
+            user_id,
+        )
         result = await api.send_message(
             phone=user_id,
             message=content,
@@ -320,6 +373,12 @@ async def _publish_whatsapp_message(
                 job_id,
                 user_id,
                 result,
+            )
+        else:
+            logger.warning(
+                "_publish_whatsapp_message: send_message ok job_id=%s user_id=%s",
+                job_id,
+                user_id,
             )
         return ok
     except Exception:
@@ -515,20 +574,21 @@ async def _publish_messenger_message(
                 result.get("error"),
             )
             return False
-        logger.info(
-            "_publish_messenger_message: sent to user_id=%s job_id=%s", user_id, job_id
+        logger.warning(
+            "_publish_messenger_message: send_message ok job_id=%s user_id=%s",
+            job_id,
+            user_id,
         )
         return True
     except Exception:
         logger.error(
-            "_publish_messenger_message: send_text_message exception for user_id=%s",
+            "_publish_messenger_message: send_message failed job_id=%s user_id=%s",
+            job_id,
             user_id,
             exc_info=True,
         )
         return False
 
-
-_RETRY_AFTER_SECONDS = 30
 
 _ARTIFACT_404_RETRIES = 6
 _ARTIFACT_404_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 10.0, 5.0)
@@ -695,6 +755,12 @@ async def _notify_and_close_job(
     sent = bool(await send_coro)
     if sent:
         await _close_reverse_index_job(action, job_id)
+        logger.warning(
+            "artifact_handler_notify: %s send succeeded job_id=%s agent_id=%s",
+            channel,
+            job_id,
+            agent_id,
+        )
         return True
     logger.warning(
         "artifact_handler_notify: %s send failed job_id=%s "
@@ -743,11 +809,10 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
         3. Download artifact from ``process_document_url`` and import into PageIndex.
         4. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        5. For WhatsApp/Messenger: schedule ready notice + optional answer via
-           ``await create_task(coro)`` (jvspatial Shape B). On Lambda the
-           coroutine is awaited in this request; on a long-running server it
-           runs in the background. ``mark_notified`` / ``clear_job`` run only
-           after a successful send.
+        5. For WhatsApp/Messenger: two sequential ``create_task`` calls
+           (generate, then send). If a call returns a scheduled object it is
+           awaited before 200 so Lambda cannot freeze the send.
+           ``mark_notified`` / ``clear_job`` run only after a successful send.
         6. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
            A failed channel send leaves the reverse-index job in place.
     """
@@ -1004,57 +1069,126 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     # ── Send proactive notifications.
     # WhatsApp and Messenger get push messages; web/default relies on
     # check_ingest_status polling (TODO: add web push in a future phase).
-    # Schedule via jvspatial.create_task (Shape B): Lambda awaits in this
-    # request; a long-running server backgrounds the coroutine. Close the
+    # Two sequential Shape B tasks (generate, then send). Await a non-None
+    # create_task return so Lambda cannot 200-and-freeze the send. Close the
     # reverse-index job only after a successful send.
     notified = False
     if user_id and channel in ("whatsapp", "messenger"):
-        if channel == "whatsapp":
-            send_coro = _send_whatsapp_notifications(
-                agent_id=agent_id,
-                job_id=job_id or "",
-                user_id=user_id,
-                session_id=session_id,
-                conversation_id=conversation_id,
-                internal_doc_name=internal_doc_name,
-                display_doc=display_doc,
-                pending_question=pending_question,
-            )
-        else:
-            send_coro = _send_messenger_notifications(
-                agent_id=agent_id,
-                job_id=job_id or "",
-                user_id=user_id,
-                session_id=session_id,
-                conversation_id=conversation_id,
-                internal_doc_name=internal_doc_name,
-                display_doc=display_doc,
-                pending_question=pending_question,
-            )
-        box: List[bool] = []
-
-        async def _run() -> None:
-            box.append(
-                await _notify_and_close_job(
-                    send_coro,
-                    action=action,
-                    job_id=job_id or "",
-                    channel=channel,
-                    agent_id=agent_id,
-                )
-            )
-
-        task = await create_task(
-            _run(),
-            name=f"artifact_handler_{channel}_{job_id}",
+        logger.warning(
+            "artifact_handler_notify: sending channel=%s job_id=%s user_id=%s",
+            channel,
+            job_id,
+            user_id,
         )
-        if task is None:
-            if not (box and box[0]):
-                return JSONResponse(
-                    status_code=503,
-                    content={"detail": f"{channel} notify failed"},
-                    headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+        content_box: List[Tuple[str, bool]] = []
+
+        async def _generate() -> None:
+            content_box.append(
+                await _generate_ready_content(
+                    agent_id=agent_id,
+                    job_id=job_id or "",
+                    internal_doc_name=internal_doc_name,
+                    display_doc=display_doc,
+                    pending_question=pending_question,
                 )
+            )
+
+        await _await_create_task(
+            _generate(),
+            name=f"artifact_handler_generate_{job_id}",
+            job_id=job_id or "",
+            kind="generate",
+        )
+        if content_box:
+            content, answered = content_box[0]
+        else:
+            logger.warning(
+                "_generate_ready_content: using canned ready message job_id=%s",
+                job_id,
+            )
+            content = _canned_ready_message(
+                display_doc,
+                pending_question=pending_question or None,
+            )
+            answered = False
+
+        sent_box: List[bool] = []
+
+        async def _send() -> None:
+            from jvagent.core.agent import Agent
+
+            try:
+                agent = await Agent.get(agent_id)
+                if agent is None:
+                    logger.warning(
+                        "artifact_handler_notify: agent not found for send "
+                        "agent_id=%s job_id=%s",
+                        agent_id,
+                        job_id,
+                    )
+                    sent_box.append(False)
+                    return
+                if channel == "whatsapp":
+                    send_coro = _publish_whatsapp_message(
+                        agent=agent,
+                        user_id=user_id,
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        content=content,
+                        display_doc=display_doc,
+                        job_id=job_id or "",
+                        answered=answered,
+                        internal_doc_name=internal_doc_name,
+                        pending_question=pending_question,
+                    )
+                else:
+                    send_coro = _publish_messenger_message(
+                        agent=agent,
+                        user_id=user_id,
+                        session_id=session_id,
+                        conversation_id=conversation_id,
+                        content=content,
+                        display_doc=display_doc,
+                        job_id=job_id or "",
+                        answered=answered,
+                        internal_doc_name=internal_doc_name,
+                        pending_question=pending_question,
+                    )
+                sent_box.append(
+                    await _notify_and_close_job(
+                        send_coro,
+                        action=action,
+                        job_id=job_id or "",
+                        channel=channel,
+                        agent_id=agent_id,
+                    )
+                )
+            except Exception:
+                logger.warning(
+                    "artifact_handler_notify: send failed job_id=%s",
+                    job_id,
+                    exc_info=True,
+                )
+                sent_box.append(False)
+
+        await _await_create_task(
+            _send(),
+            name=f"artifact_handler_{channel}_{job_id}",
+            job_id=job_id or "",
+            kind="send",
+        )
+        sent = bool(sent_box and sent_box[0])
+        logger.warning(
+            "artifact_handler_notify: send result sent=%s job_id=%s",
+            sent,
+            job_id,
+        )
+        if not sent:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": f"{channel} notify failed"},
+                headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+            )
         notified = True
     else:
         logger.warning(
@@ -1074,6 +1208,102 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     }
 
 
+async def _generate_ready_content(
+    *,
+    agent_id: str,
+    job_id: str,
+    internal_doc_name: str,
+    display_doc: str,
+    pending_question: str,
+) -> Tuple[str, bool]:
+    """Build ready-notice text: 5s desc lookup + 12s generate, else canned.
+
+    Returns ``(content, answered)``. ``answered`` is True only when generate
+    produced a message before timeout.
+    """
+    from jvagent.core.agent import Agent
+
+    try:
+        agent = await Agent.get(agent_id)
+        if agent is None:
+            logger.warning(
+                "_generate_ready_content: agent not found agent_id=%s job_id=%s",
+                agent_id,
+                job_id,
+            )
+            return (
+                _canned_ready_message(
+                    display_doc,
+                    pending_question=pending_question or None,
+                ),
+                False,
+            )
+
+        action = await _resolve_action(agent_id)
+        single_entry = {
+            "internal_doc_name": internal_doc_name,
+            "display_doc": display_doc,
+            "pending_question": pending_question,
+        }
+        desc_lookup = await _await_ready_step(
+            "_generate_ready_content: desc lookup",
+            _doc_description_lookup(agent, [single_entry]),
+            _READY_DESC_LOOKUP_TIMEOUT_S,
+            job_id,
+        )
+        if not isinstance(desc_lookup, dict):
+            desc_lookup = {}
+        doc_description = desc_lookup.get(internal_doc_name, "")
+
+        content: Optional[str] = None
+        answered = False
+        if pending_question and internal_doc_name and action is not None:
+            logger.warning(
+                "_generate_ready_content: generate start job_id=%s",
+                job_id,
+            )
+            content = await _await_ready_step(
+                "_generate_ready_content: generate",
+                _generate_ready_message(
+                    agent=agent,
+                    vault_action=action,
+                    internal_doc_name=internal_doc_name,
+                    display_doc=display_doc,
+                    utterance=pending_question,
+                    doc_description=doc_description or None,
+                ),
+                _READY_GENERATE_TIMEOUT_S,
+                job_id,
+            )
+            if content:
+                answered = True
+
+        if not content:
+            logger.warning(
+                "_generate_ready_content: using canned ready message job_id=%s",
+                job_id,
+            )
+            content = _canned_ready_message(
+                display_doc,
+                doc_description=doc_description,
+                pending_question=pending_question or None,
+            )
+        return content, answered
+    except Exception:
+        logger.warning(
+            "_generate_ready_content: using canned ready message job_id=%s",
+            job_id,
+            exc_info=True,
+        )
+        return (
+            _canned_ready_message(
+                display_doc,
+                pending_question=pending_question or None,
+            ),
+            False,
+        )
+
+
 async def _send_whatsapp_notifications(
     *,
     agent_id: str,
@@ -1085,229 +1315,28 @@ async def _send_whatsapp_notifications(
     display_doc: str,
     pending_question: str,
 ) -> bool:
-    """Send a single WhatsApp notification: ready notice, or ready + answer.
+    """Generate ready text then publish via WhatsApp (used by tests)."""
+    from jvagent.core.agent import Agent
 
-    Returns True only after ``_publish_whatsapp_message`` succeeds.
-    """
-    logger.warning(
-        "_send_whatsapp_notifications: starting agent_id=%s job_id=%s "
-        "user_id=%s doc=%s",
-        agent_id,
-        job_id,
-        user_id,
-        display_doc,
+    content, answered = await _generate_ready_content(
+        agent_id=agent_id,
+        job_id=job_id,
+        internal_doc_name=internal_doc_name,
+        display_doc=display_doc,
+        pending_question=pending_question,
     )
-    try:
-        from jvagent.core.agent import Agent
-
-        agent = await Agent.get(agent_id)
-        if agent is None:
-            logger.warning(
-                "_send_whatsapp_notifications: agent not found agent_id=%s",
-                agent_id,
-            )
-            return False
-
-        action = await _resolve_action(agent_id)
-
-        single_entry = {
-            "internal_doc_name": internal_doc_name,
-            "display_doc": display_doc,
-            "pending_question": pending_question,
-        }
-        desc_lookup: Dict[str, str] = {}
-        try:
-            desc_lookup = await _doc_description_lookup(agent, [single_entry])
-        except Exception:
-            pass
-        doc_description = desc_lookup.get(internal_doc_name, "")
-
-        content: Optional[str] = None
-        answered = False
-
-        if pending_question and internal_doc_name and action is not None:
-            content = await _generate_ready_message(
-                agent=agent,
-                vault_action=action,
-                internal_doc_name=internal_doc_name,
-                display_doc=display_doc,
-                utterance=pending_question,
-                doc_description=doc_description or None,
-            )
-            if content:
-                answered = True
-
-        if not content:
-            logger.warning(
-                "_send_whatsapp_notifications: using canned ready message "
-                "job_id=%s doc=%s pending_question=%s",
-                job_id,
-                display_doc,
-                bool(pending_question),
-            )
-            content = _canned_ready_message(
-                display_doc,
-                doc_description=doc_description,
-                pending_question=pending_question or None,
-            )
-
-        logger.warning(
-            "_send_whatsapp_notifications: publishing to user_id=%s "
-            "answered=%s content_len=%d",
-            user_id,
-            answered,
-            len(content) if content else 0,
-        )
-        ok = await _publish_whatsapp_message(
-            agent=agent,
-            user_id=user_id,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            content=content,
-            display_doc=display_doc,
-            job_id=job_id,
-            answered=answered,
-            internal_doc_name=internal_doc_name,
-            pending_question=pending_question,
-        )
-        if ok:
-            logger.info(
-                "_send_whatsapp_notifications: sent agent_id=%s job_id=%s "
-                "user_id=%s",
-                agent_id,
-                job_id,
-                user_id,
-            )
-        else:
-            logger.warning(
-                "_send_whatsapp_notifications: publish failed agent_id=%s "
-                "job_id=%s user_id=%s",
-                agent_id,
-                job_id,
-                user_id,
-            )
-        return bool(ok)
-    except Exception:
-        logger.error(
-            "_send_whatsapp_notifications: unexpected error agent_id=%s job_id=%s",
-            agent_id,
-            job_id,
-            exc_info=True,
-        )
+    agent = await Agent.get(agent_id)
+    if agent is None:
         return False
-
-
-async def _send_messenger_notifications(
-    *,
-    agent_id: str,
-    job_id: str,
-    user_id: str,
-    session_id: str,
-    conversation_id: str,
-    internal_doc_name: str,
-    display_doc: str,
-    pending_question: str,
-) -> bool:
-    """Send a single Messenger notification: ready notice, or ready + answer.
-
-    Returns True only after ``_publish_messenger_message`` succeeds.
-    """
-    logger.warning(
-        "_send_messenger_notifications: starting agent_id=%s job_id=%s "
-        "user_id=%s doc=%s",
-        agent_id,
-        job_id,
-        user_id,
-        display_doc,
+    return await _publish_whatsapp_message(
+        agent=agent,
+        user_id=user_id,
+        session_id=session_id,
+        conversation_id=conversation_id,
+        content=content,
+        display_doc=display_doc,
+        job_id=job_id,
+        answered=answered,
+        internal_doc_name=internal_doc_name,
+        pending_question=pending_question,
     )
-    try:
-        from jvagent.core.agent import Agent
-
-        agent = await Agent.get(agent_id)
-        if agent is None:
-            logger.warning(
-                "_send_messenger_notifications: agent not found agent_id=%s",
-                agent_id,
-            )
-            return False
-
-        action = await _resolve_action(agent_id)
-
-        single_entry = {
-            "internal_doc_name": internal_doc_name,
-            "display_doc": display_doc,
-            "pending_question": pending_question,
-        }
-        desc_lookup: Dict[str, str] = {}
-        try:
-            desc_lookup = await _doc_description_lookup(agent, [single_entry])
-        except Exception:
-            pass
-        doc_description = desc_lookup.get(internal_doc_name, "")
-
-        content: Optional[str] = None
-        answered = False
-
-        if pending_question and internal_doc_name and action is not None:
-            content = await _generate_ready_message(
-                agent=agent,
-                vault_action=action,
-                internal_doc_name=internal_doc_name,
-                display_doc=display_doc,
-                utterance=pending_question,
-                doc_description=doc_description or None,
-            )
-            if content:
-                answered = True
-
-        if not content:
-            content = _canned_ready_message(
-                display_doc,
-                doc_description=doc_description,
-                pending_question=pending_question or None,
-            )
-
-        logger.warning(
-            "_send_messenger_notifications: publishing to user_id=%s "
-            "answered=%s content_len=%d",
-            user_id,
-            answered,
-            len(content) if content else 0,
-        )
-        ok = await _publish_messenger_message(
-            agent=agent,
-            user_id=user_id,
-            session_id=session_id,
-            conversation_id=conversation_id,
-            content=content,
-            display_doc=display_doc,
-            job_id=job_id,
-            answered=answered,
-            internal_doc_name=internal_doc_name,
-            pending_question=pending_question,
-        )
-        if ok:
-            logger.info(
-                "_send_messenger_notifications: sent agent_id=%s job_id=%s "
-                "user_id=%s",
-                agent_id,
-                job_id,
-                user_id,
-            )
-        else:
-            logger.warning(
-                "_send_messenger_notifications: publish failed agent_id=%s "
-                "job_id=%s user_id=%s",
-                agent_id,
-                job_id,
-                user_id,
-            )
-        return bool(ok)
-    except Exception:
-        logger.error(
-            "_send_messenger_notifications: unexpected error agent_id=%s job_id=%s",
-            agent_id,
-            job_id,
-            exc_info=True,
-        )
-        return False

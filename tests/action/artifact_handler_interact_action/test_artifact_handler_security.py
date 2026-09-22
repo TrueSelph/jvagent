@@ -13,6 +13,7 @@ from jvagent.action.artifact_handler_interact_action.artifact_handler_interact_a
     _fetch_url_bytes_for_vault,
 )
 from jvagent.action.artifact_handler_interact_action.endpoints import (
+    _send_whatsapp_notifications,
     artifact_handler_notify,
 )
 from jvagent.action.artifact_handler_interact_action.webhook_auth import (
@@ -170,7 +171,7 @@ async def test_notify_idempotent_when_already_notified():
             new_callable=AsyncMock,
         ) as import_graph,
         patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            "jvagent.action.artifact_handler_interact_action.endpoints._publish_whatsapp_message",
             new_callable=AsyncMock,
         ) as send,
     ):
@@ -234,7 +235,12 @@ async def test_notify_awaits_whatsapp_send_before_clearing_job():
             return_value="5926431530_upload.jpg",
         ),
         patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            "jvagent.action.artifact_handler_interact_action.endpoints._generate_ready_content",
+            new_callable=AsyncMock,
+            return_value=("Your image is ready. Ask me anything about it.", False),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._publish_whatsapp_message",
             send,
         ),
         patch(
@@ -279,7 +285,12 @@ async def test_notify_returns_503_when_whatsapp_send_fails():
             return_value="5926431530_upload.jpg",
         ),
         patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._send_whatsapp_notifications",
+            "jvagent.action.artifact_handler_interact_action.endpoints._generate_ready_content",
+            new_callable=AsyncMock,
+            return_value=("Your image is ready. Ask me anything about it.", False),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._publish_whatsapp_message",
             send,
         ),
         patch(
@@ -293,3 +304,60 @@ async def test_notify_returns_503_when_whatsapp_send_fails():
     send.assert_awaited_once()
     action.mark_notified.assert_not_awaited()
     action.clear_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_whatsapp_uses_canned_when_generate_times_out():
+    action = SimpleNamespace(id="action-1")
+    agent = SimpleNamespace(id="Agent:a")
+
+    async def _hang(**_kwargs):
+        await asyncio.sleep(30)
+        return "should not be used"
+
+    publish = AsyncMock(return_value=True)
+    with (
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=agent,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._doc_description_lookup",
+            new_callable=AsyncMock,
+            return_value={},
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._generate_ready_message",
+            _hang,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._READY_GENERATE_TIMEOUT_S",
+            0.05,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._publish_whatsapp_message",
+            publish,
+        ),
+    ):
+        ok = await _send_whatsapp_notifications(
+            agent_id="Agent:a",
+            job_id="job-1",
+            user_id="5926431530",
+            session_id="sess-1",
+            conversation_id="conv-1",
+            internal_doc_name="upload.jpg",
+            display_doc="upload.jpg",
+            pending_question="what is this?",
+        )
+    assert ok is True
+    publish.assert_awaited_once()
+    assert publish.await_args.kwargs["answered"] is False
+    content = publish.await_args.kwargs["content"] or ""
+    assert "ready" in content.lower()
+    assert "what is this?" in content
