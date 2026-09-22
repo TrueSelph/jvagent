@@ -109,12 +109,11 @@ async def apply_ingest_job_status(
     try:
         await conversation.update_context({VAULT_CTX_KEY: vault})
     except Exception:
-        logger.warning(
+        logger.exception(
             "artifact_handler apply_ingest_job_status: context update failed "
             "job_id=%s status=%s",
             jid,
             new_status,
-            exc_info=True,
         )
         return False
     return True

@@ -41,6 +41,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Artifact handler notify logs.** Dropped breadcrumb `logger.warning` traces (entered, remint, import start, send ok, canned fallback, `create_task` scheduled). Failures stay as `logger.error` / `logger.exception`.
+
 - **PageIndex LLM webhook path.** `POST /api/pageindex/interact/webhook/{agent_id}` replaces `/api/pageindex_retrieval_interact_action/interact/webhook/{agent_id}`. Keys remint on the next `get_webhook_url`. Old URLs 404; ship with matching jvforge.
 
 - **Artifact handler notify awaits channel send.** WhatsApp/Messenger ready messages are sent in the notify request (not `asyncio.create_task`) so Lambda does not freeze the send when the Function URL returns. A failed send leaves the job in the reverse index and returns **503** so jvforge retries.
