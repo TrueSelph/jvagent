@@ -14,11 +14,11 @@ from jvagent.action.artifact_handler_interact_action.artifact_handler_interact_a
     _fetch_url_bytes_for_vault,
 )
 from jvagent.action.artifact_handler_interact_action.endpoints import (
+    _is_trusted_notify_artifact_url,
     _send_whatsapp_notifications,
     artifact_handler_notify,
 )
 from jvagent.action.artifact_handler_interact_action.webhook_auth import (
-    ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     notify_endpoint_for_agent,
 )
 
@@ -27,15 +27,13 @@ def test_notify_endpoint_for_agent_is_exact_path():
     path = notify_endpoint_for_agent("Agent:abc")
     assert path == "/api/artifact_handler_action/notify/Agent:abc"
     assert not path.endswith("*")
-    assert ALLOWED_WEBHOOK_ENDPOINT_GLOB == "/api/artifact_handler_action/notify/*"
 
 
-def _notify_mint_patches(*, generate_key, get_key=None):
-    mock_service = MagicMock()
-    mock_service.generate_key = generate_key
-    mock_service.get_key = get_key or AsyncMock(return_value=None)
-    mock_service.revoke_key = AsyncMock()
-    return (
+@pytest.mark.asyncio
+async def test_notify_webhook_url_has_no_api_key(monkeypatch):
+    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
+    action = ArtifactHandlerInteractAction()
+    with (
         patch.object(
             ArtifactHandlerInteractAction,
             "get_agent",
@@ -44,92 +42,66 @@ def _notify_mint_patches(*, generate_key, get_key=None):
         ),
         patch.object(ArtifactHandlerInteractAction, "save", new_callable=AsyncMock),
         patch(
-            "jvagent.action.artifact_handler_interact_action.webhook_auth.get_or_create_system_user",
-            new_callable=AsyncMock,
-            return_value="o.User.system123",
-        ),
-        patch(
             "jvspatial.api.auth.api_key_service.APIKeyService",
-            return_value=mock_service,
-        ),
-        patch("jvspatial.db.get_prime_database", return_value=MagicMock()),
-        patch("jvspatial.core.context.GraphContext", return_value=MagicMock()),
-    ), mock_service
-
-
-@pytest.mark.asyncio
-async def test_notify_webhook_mints_drive_style_glob(monkeypatch):
-    monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
-    action = ArtifactHandlerInteractAction()
-    mock_key = SimpleNamespace(id="o.APIKey.key123")
-    generate_key = AsyncMock(return_value=("test_mock_api_key", mock_key))
-    patches, service = _notify_mint_patches(generate_key=generate_key)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        ) as key_svc,
+    ):
         url = await action.get_notify_webhook_url()
-    assert url.startswith(
-        "http://localhost:8000/api/artifact_handler_action/notify/n.Agent.test123"
+    assert (
+        url
+        == "http://localhost:8000/api/artifact_handler_action/notify/n.Agent.test123"
     )
-    assert "?api_key=test_mock_api_key" in url
-    kwargs = generate_key.call_args.kwargs
-    assert kwargs["allowed_endpoints"] == [ALLOWED_WEBHOOK_ENDPOINT_GLOB]
-    assert kwargs["permissions"] == ["webhook:artifact_handler_action"]
-    assert kwargs["allowed_ips"] == []
-    service.generate_key.assert_awaited_once()
+    assert "api_key" not in url
+    key_svc.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_notify_webhook_remints_exact_path_only_key(monkeypatch):
+async def test_notify_webhook_strips_legacy_api_key_query(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
     action = ArtifactHandlerInteractAction()
     action.notify_webhook_url = (
         "http://localhost:8000/api/artifact_handler_action/notify/"
         "n.Agent.test123?api_key=old"
     )
-    action.notify_webhook_api_key_id = "o.APIKey.old"
-    stale = SimpleNamespace(
-        is_active=True,
-        allowed_endpoints=["/api/artifact_handler_action/notify/n.Agent.test123"],
-        allowed_ips=[],
-    )
-    mock_key = SimpleNamespace(id="o.APIKey.new")
-    generate_key = AsyncMock(return_value=("new_key", mock_key))
-    patches, service = _notify_mint_patches(
-        generate_key=generate_key,
-        get_key=AsyncMock(return_value=stale),
-    )
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+    with (
+        patch.object(
+            ArtifactHandlerInteractAction,
+            "get_agent",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="n.Agent.test123", name="TestAgent"),
+        ),
+        patch.object(
+            ArtifactHandlerInteractAction, "save", new_callable=AsyncMock
+        ) as save,
+    ):
         url = await action.get_notify_webhook_url()
-    assert "new_key" in url
-    service.generate_key.assert_awaited_once()
-    assert service.generate_key.call_args.kwargs["allowed_endpoints"] == [
-        ALLOWED_WEBHOOK_ENDPOINT_GLOB
-    ]
+    assert url == (
+        "http://localhost:8000/api/artifact_handler_action/notify/n.Agent.test123"
+    )
+    save.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_notify_webhook_reuses_glob_scoped_key(monkeypatch):
+async def test_notify_webhook_reuses_matching_public_url(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "http://localhost:8000")
     existing = (
-        "http://localhost:8000/api/artifact_handler_action/notify/"
-        "n.Agent.test123?api_key=keep"
+        "http://localhost:8000/api/artifact_handler_action/notify/n.Agent.test123"
     )
     action = ArtifactHandlerInteractAction()
     action.notify_webhook_url = existing
-    action.notify_webhook_api_key_id = "o.APIKey.keep"
-    scoped = SimpleNamespace(
-        is_active=True,
-        allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
-        allowed_ips=[],
-    )
-    generate_key = AsyncMock()
-    patches, service = _notify_mint_patches(
-        generate_key=generate_key,
-        get_key=AsyncMock(return_value=scoped),
-    )
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+    with (
+        patch.object(
+            ArtifactHandlerInteractAction,
+            "get_agent",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="n.Agent.test123", name="TestAgent"),
+        ),
+        patch.object(
+            ArtifactHandlerInteractAction, "save", new_callable=AsyncMock
+        ) as save,
+    ):
         url = await action.get_notify_webhook_url()
     assert url == existing
-    service.generate_key.assert_not_awaited()
+    save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -156,11 +128,18 @@ async def test_fetch_url_bytes_for_vault_returns_bytes_on_ok():
         fetch.assert_awaited_once()
 
 
-def _request(*, api_key_id: str = "key-1", payload: dict | None = None):
+def _request(*, payload: dict | None = None):
     req = MagicMock()
-    req.state = SimpleNamespace(user={"api_key_id": api_key_id, "user_id": "sys"})
+    req.state = SimpleNamespace(user=None)
     req.json = AsyncMock(return_value=payload or {})
     return req
+
+
+def _trusted_artifact():
+    return patch(
+        "jvagent.action.artifact_handler_interact_action.endpoints._is_trusted_notify_artifact_url",
+        return_value=True,
+    )
 
 
 async def _inline_create_task(coro_or_type, payload=None, **kwargs):
@@ -184,32 +163,113 @@ async def test_notify_rejects_missing_job_id():
 
 
 @pytest.mark.asyncio
-async def test_notify_rejects_mismatched_api_key():
+async def test_notify_rejects_untrusted_artifact_url():
     action = SimpleNamespace(
-        notify_webhook_api_key_id="key-expected",
-        lookup_job=AsyncMock(),
+        lookup_job=AsyncMock(
+            return_value={"job_id": "job-1", "agent_id": "Agent:a", "notified": False}
+        ),
+        jvforge_job_index={},
     )
     req = _request(
-        api_key_id="key-other",
         payload={
-            "process_document_url": "https://example.com/a",
+            "process_document_url": "https://evil.example/secret.json",
             "job_id": "job-1",
         },
     )
-    with patch(
-        "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
-        new_callable=AsyncMock,
-        return_value=action,
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+        ) as import_graph,
     ):
         resp = await artifact_handler_notify(req, "Agent:a")
         assert resp.status_code == 403
-        action.lookup_job.assert_not_awaited()
+        import_graph.assert_not_awaited()
+
+
+def test_notify_rejects_artifact_url_for_other_job():
+    assert not _is_trusted_notify_artifact_url(
+        "https://jvforge.example/v1/artifacts/other-job", "job-1"
+    )
+
+
+def test_notify_rejects_artifact_when_jvforge_base_unset(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: None,
+    )
+    assert not _is_trusted_notify_artifact_url(
+        "https://jvforge.example/v1/artifacts/job-1", "job-1"
+    )
+
+
+def test_notify_trusts_matching_artifact_on_jvforge_base(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://jvforge.example",
+    )
+    assert _is_trusted_notify_artifact_url(
+        "https://jvforge.example/v1/artifacts/job-1", "job-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_notify_imports_when_job_and_trusted_artifact(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://jvforge.example",
+    )
+    action = SimpleNamespace(
+        lookup_job=AsyncMock(
+            return_value={
+                "job_id": "job-1",
+                "agent_id": "Agent:a",
+                "notified": False,
+                "channel": "default",
+            }
+        ),
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+        jvforge_job_index={"job-1": {}},
+    )
+    req = _request(
+        payload={
+            "process_document_url": "https://jvforge.example/v1/artifacts/job-1",
+            "job_id": "job-1",
+        }
+    )
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="Doc.md",
+        ) as import_graph,
+    ):
+        out = await artifact_handler_notify(req, "Agent:a")
+    assert out["status"] == "imported"
+    import_graph.assert_awaited_once()
+    action.mark_notified.assert_awaited_once_with("job-1")
+    action.clear_job.assert_awaited_once_with("job-1")
 
 
 @pytest.mark.asyncio
 async def test_notify_skips_import_for_unknown_job():
     action = SimpleNamespace(
-        notify_webhook_api_key_id="key-1",
         lookup_job=AsyncMock(return_value=None),
         jvforge_job_index={},
     )
@@ -242,9 +302,42 @@ async def test_notify_skips_import_for_unknown_job():
 
 
 @pytest.mark.asyncio
+async def test_notify_rejects_job_for_other_agent():
+    action = SimpleNamespace(
+        lookup_job=AsyncMock(
+            return_value={
+                "job_id": "job-1",
+                "agent_id": "Agent:b",
+                "notified": False,
+            }
+        ),
+        jvforge_job_index={},
+    )
+    req = _request(
+        payload={
+            "process_document_url": "https://jvforge.example/v1/artifacts/job-1",
+            "job_id": "job-1",
+        }
+    )
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+        ) as import_graph,
+    ):
+        resp = await artifact_handler_notify(req, "Agent:a")
+        assert resp.status_code == 403
+        import_graph.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_notify_idempotent_when_already_notified():
     action = SimpleNamespace(
-        notify_webhook_api_key_id="key-1",
         lookup_job=AsyncMock(
             return_value={
                 "job_id": "job-1",
@@ -304,7 +397,6 @@ def _whatsapp_job(**extra):
 
 def _notify_action(job_entry):
     return SimpleNamespace(
-        notify_webhook_api_key_id="key-1",
         lookup_job=AsyncMock(return_value=job_entry),
         mark_notified=AsyncMock(),
         clear_job=AsyncMock(),
@@ -352,6 +444,7 @@ async def test_notify_awaits_whatsapp_send_before_clearing_job():
             "jvagent.action.artifact_handler_interact_action.endpoints.create_task",
             _inline_create_task,
         ),
+        _trusted_artifact(),
     ):
         out = await artifact_handler_notify(req, "Agent:a")
     assert out["status"] == "imported"
@@ -402,6 +495,7 @@ async def test_notify_returns_503_when_whatsapp_send_fails():
             "jvagent.action.artifact_handler_interact_action.endpoints.create_task",
             _inline_create_task,
         ),
+        _trusted_artifact(),
     ):
         resp = await artifact_handler_notify(req, "Agent:a")
     assert resp.status_code == 503
