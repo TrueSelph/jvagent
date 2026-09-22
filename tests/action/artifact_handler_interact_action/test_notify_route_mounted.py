@@ -1,7 +1,9 @@
-"""Notify webhook must be on the live FastAPI app (not registry-only)."""
+"""Notify webhook mounts when the action is loaded, not via core."""
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
 
 from starlette.testclient import TestClient
@@ -37,7 +39,6 @@ def _server(tmp_path, monkeypatch):
         "JVSPATIAL_JWT_SECRET_KEY", "test-jwt-secret-key-for-integration-tests"
     )
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
-    # Own DB env keys so _set_db_env_from_config cannot leak json into later tests.
     monkeypatch.setenv("JVSPATIAL_DB_TYPE", "json")
     monkeypatch.setenv("JVSPATIAL_DB_PATH", str(tmp_path / "test_jvdb"))
     app_root = str(tmp_path)
@@ -47,34 +48,29 @@ def _server(tmp_path, monkeypatch):
     return create_server_from_config(debug=False, app_root=app_root)
 
 
-def test_notify_route_on_live_app_after_create_server(tmp_path, monkeypatch):
-    """Eager import in create_server_from_config must land notify on get_app()."""
+def test_core_embed_endpoints_does_not_import_artifact_handler():
+    from jvagent.core import embed_endpoints
+
+    src = inspect.getsource(embed_endpoints)
+    assert "artifact_handler" not in src
+    assert "remount_artifact_handler_notify_if_app_built" not in dir(embed_endpoints)
+
+
+def test_notify_route_on_live_app_after_action_import(tmp_path, monkeypatch):
+    """Importing the action after get_app() remounts notify (plugin load)."""
     from jvagent.core.app import App
     from jvagent.core.app_context import clear_app_root
 
     try:
         server = _server(tmp_path, monkeypatch)
         assert "JVSPATIAL_JSONDB_PATH" not in os.environ
-        client = TestClient(server.get_app())
-        response = client.post(NOTIFY_PATH, json={})
-        assert response.status_code != 404, response.text
-    finally:
-        App.clear_cache()
-        clear_app_root()
-
-
-def test_notify_route_remount_if_app_already_built(tmp_path, monkeypatch):
-    """Late remount must keep POST notify off 404 when get_app() already ran."""
-    from jvagent.core.app import App
-    from jvagent.core.app_context import clear_app_root
-    from jvagent.core.embed_endpoints import (
-        remount_artifact_handler_notify_if_app_built,
-    )
-
-    try:
-        server = _server(tmp_path, monkeypatch)
         app = server.get_app()
-        remount_artifact_handler_notify_if_app_built(server)
+        importlib.import_module("jvagent.action.artifact_handler_interact_action")
+        importlib.reload(
+            importlib.import_module(
+                "jvagent.action.artifact_handler_interact_action.endpoints"
+            )
+        )
         client = TestClient(app)
         response = client.post(NOTIFY_PATH, json={})
         assert response.status_code != 404, response.text
