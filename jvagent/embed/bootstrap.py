@@ -257,7 +257,9 @@ def register_jvagent_endpoints_on_host(
         )
 
     synced = sync_endpoint_modules(target_server)
-    from jvagent.core.embed_endpoints import remount_artifact_handler_notify_if_app_built
+    from jvagent.core.embed_endpoints import (
+        remount_artifact_handler_notify_if_app_built,
+    )
 
     remount_artifact_handler_notify_if_app_built(target_server)
     logger.info("jvagent embed registered %d endpoint module(s) on host server", synced)

@@ -556,8 +556,9 @@ async def _download_and_import_graph(
     fetch_url = rewrite_process_document_url_to_jvforge_base(process_document_url)
     trusted = is_trusted_jvforge_url(fetch_url)
     if fetch_url != process_document_url:
-        logger.info(
-            "artifact_handler import: rewritten artifact URL onto JVAGENT_JVFORGE_BASE_URL"
+        logger.warning(
+            "artifact_handler import: rewritten artifact URL onto "
+            "JVAGENT_JVFORGE_BASE_URL"
         )
     raw_bytes: Optional[bytes] = None
     for attempt in range(1, _ARTIFACT_404_RETRIES + 1):
@@ -574,7 +575,7 @@ async def _download_and_import_graph(
                 delay = _ARTIFACT_404_BACKOFF_S[
                     min(attempt - 1, len(_ARTIFACT_404_BACKOFF_S) - 1)
                 ]
-                logger.info(
+                logger.warning(
                     "artifact_handler import: artifact 404 attempt=%s/%s retry in %.1fs",
                     attempt,
                     _ARTIFACT_404_RETRIES,
@@ -659,7 +660,7 @@ async def _download_and_import_graph(
         )
         return None
 
-    logger.info(
+    logger.warning(
         "artifact_handler import: graph imported agent_id=%s doc_name=%s",
         agent_id,
         effective_name,
@@ -752,6 +753,30 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     """
     import hmac
 
+    req_url = getattr(request, "url", None)
+    req_path = str(getattr(req_url, "path", "") or "")
+    query_params = getattr(request, "query_params", None)
+    headers = getattr(request, "headers", None)
+    has_api_key = False
+    try:
+        query = getattr(req_url, "query", None)
+        if isinstance(query, str) and "api_key=" in query:
+            has_api_key = True
+        elif query_params is not None:
+            raw_key = query_params.get("api_key")
+            has_api_key = isinstance(raw_key, str) and bool(raw_key)
+        if not has_api_key and headers is not None:
+            raw_header = headers.get("x-api-key")
+            has_api_key = isinstance(raw_header, str) and bool(raw_header)
+    except Exception:
+        has_api_key = False
+    logger.warning(
+        "artifact_handler_notify: entered agent_id=%s path=%s has_api_key=%s",
+        agent_id,
+        req_path,
+        has_api_key,
+    )
+
     try:
         payload = await request.json()
     except Exception:
@@ -769,11 +794,21 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     doc_name = str(payload.get("doc_name") or "").strip()
 
     if not process_document_url:
+        logger.warning(
+            "artifact_handler_notify: 400 missing process_document_url "
+            "agent_id=%s job_id=%s",
+            agent_id,
+            job_id or "(empty)",
+        )
         return JSONResponse(
             status_code=400,
             content={"detail": "process_document_url is required"},
         )
     if not job_id:
+        logger.warning(
+            "artifact_handler_notify: 400 missing job_id agent_id=%s",
+            agent_id,
+        )
         return JSONResponse(
             status_code=400,
             content={"detail": "job_id is required"},
@@ -857,6 +892,11 @@ async def artifact_handler_notify(request: Request, agent_id: str):
 
     # Idempotent success when we already finished notifying for this job.
     if entry.get("notified"):
+        logger.warning(
+            "artifact_handler_notify: already_imported job_id=%s agent_id=%s",
+            job_id,
+            agent_id,
+        )
         return {
             "status": "already_imported",
             "job_id": job_id,
@@ -864,7 +904,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             "doc_name": str(entry.get("doc_name") or doc_name or ""),
         }
 
-    logger.info(
+    logger.warning(
         "artifact_handler_notify: import start job_id=%s agent_id=%s",
         job_id,
         agent_id,
@@ -886,7 +926,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     session_id = str(entry.get("session_id") or "").strip()
     conversation_id = str(entry.get("conversation_id") or "").strip()
     channel = str(entry.get("channel") or "").strip().lower() or "default"
-    logger.info(
+    logger.warning(
         "artifact_handler_notify: job_id=%s channel=%s user_id=%s doc=%s",
         job_id,
         channel,
@@ -1049,7 +1089,7 @@ async def _send_whatsapp_notifications(
 
     Returns True only after ``_publish_whatsapp_message`` succeeds.
     """
-    logger.info(
+    logger.warning(
         "_send_whatsapp_notifications: starting agent_id=%s job_id=%s "
         "user_id=%s doc=%s",
         agent_id,
@@ -1111,7 +1151,7 @@ async def _send_whatsapp_notifications(
                 pending_question=pending_question or None,
             )
 
-        logger.info(
+        logger.warning(
             "_send_whatsapp_notifications: publishing to user_id=%s "
             "answered=%s content_len=%d",
             user_id,
@@ -1172,7 +1212,7 @@ async def _send_messenger_notifications(
 
     Returns True only after ``_publish_messenger_message`` succeeds.
     """
-    logger.info(
+    logger.warning(
         "_send_messenger_notifications: starting agent_id=%s job_id=%s "
         "user_id=%s doc=%s",
         agent_id,
@@ -1227,7 +1267,7 @@ async def _send_messenger_notifications(
                 pending_question=pending_question or None,
             )
 
-        logger.info(
+        logger.warning(
             "_send_messenger_notifications: publishing to user_id=%s "
             "answered=%s content_len=%d",
             user_id,

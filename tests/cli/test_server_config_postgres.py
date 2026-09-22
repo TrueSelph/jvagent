@@ -7,11 +7,21 @@ driver's own env read made a connection possible.
 """
 
 import pytest
+from jvspatial.api.config_groups import DatabaseConfig
 
 # Building a Server with db_type=postgres instantiates PostgresDB, which imports
 # asyncpg. It ships in the [test] extra; skip rather than error for anyone
 # running the suite without it.
 pytest.importorskip("asyncpg")
+
+_DB_FIELDS = getattr(DatabaseConfig, "model_fields", None) or getattr(
+    DatabaseConfig, "__fields__", {}
+)
+if "postgres_dsn" not in _DB_FIELDS:
+    pytest.skip(
+        "jvspatial DatabaseConfig has no postgres fields (need >= 0.0.16)",
+        allow_module_level=True,
+    )
 
 POSTGRES_APP_YAML = """
 app: pg_config_test
@@ -79,6 +89,8 @@ def build_server(tmp_path, monkeypatch):
 
     monkeypatch.setenv("JVSPATIAL_JWT_SECRET_KEY", "test-secret-for-pg-config-tests")
     monkeypatch.setenv("JVAGENT_ADMIN_PASSWORD", "x")
+    monkeypatch.delenv("JVSPATIAL_DB_TYPE", raising=False)
+    monkeypatch.delenv("JVSPATIAL_DB_PATH", raising=False)
     for key in _PG_ENV:
         monkeypatch.delenv(key, raising=False)
 

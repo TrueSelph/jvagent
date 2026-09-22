@@ -564,6 +564,12 @@ class ArtifactHandlerInteractAction(InteractAction):
                 try:
                     notification_url = await self.get_notify_webhook_url()
                 except Exception:
+                    logger.warning(
+                        "artifact_handler notify: webhook url mint failed "
+                        "agent_id=%s",
+                        getattr(self, "agent_id", None),
+                        exc_info=True,
+                    )
                     notification_url = None
                 if not notification_url:
                     await visitor.add_directive(
@@ -1021,11 +1027,28 @@ class ArtifactHandlerInteractAction(InteractAction):
                                 getattr(existing_key, "allowed_ips", None) or []
                             )
                             if requested_ips == existing_ips:
+                                logger.warning(
+                                    "artifact_handler notify: reusing webhook url "
+                                    "agent_id=%s path=%s",
+                                    agent_id,
+                                    expected_url_base,
+                                )
                                 return self.notify_webhook_url
                         else:
+                            logger.warning(
+                                "artifact_handler notify: reusing webhook url "
+                                "agent_id=%s path=%s",
+                                agent_id,
+                                expected_url_base,
+                            )
                             return self.notify_webhook_url
                 except Exception:
-                    pass
+                    logger.warning(
+                        "artifact_handler notify: existing webhook key lookup "
+                        "failed agent_id=%s; minting a new key",
+                        agent_id,
+                        exc_info=True,
+                    )
 
             system_user_id = await get_or_create_system_user()
 
@@ -1051,6 +1074,11 @@ class ArtifactHandlerInteractAction(InteractAction):
             self.notify_webhook_api_key_id = api_key.id
             self.notify_webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
             await self.save()
+            logger.warning(
+                "artifact_handler notify: minted webhook url agent_id=%s path=%s",
+                agent_id,
+                expected_url_base,
+            )
             return self.notify_webhook_url
 
         except DatabaseError:
@@ -1129,7 +1157,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             if raise_on_error:
                 raise
             return
-        logger.info(
+        logger.warning(
             "artifact_handler %s saved job_id=%s agent_id=%s index_size=%s",
             op,
             job_id,
@@ -1222,6 +1250,12 @@ class ArtifactHandlerInteractAction(InteractAction):
             try:
                 notify = (await self.get_notify_webhook_url() or "").strip()
             except Exception:
+                logger.warning(
+                    "artifact_handler notify: submit_ingest webhook url mint "
+                    "failed agent_id=%s",
+                    agent_id,
+                    exc_info=True,
+                )
                 notify = ""
         if not notify:
             raise ValueError(

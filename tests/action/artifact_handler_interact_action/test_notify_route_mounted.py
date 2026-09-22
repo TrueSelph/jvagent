@@ -37,6 +37,9 @@ def _server(tmp_path, monkeypatch):
         "JVSPATIAL_JWT_SECRET_KEY", "test-jwt-secret-key-for-integration-tests"
     )
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    # Own DB env keys so _set_db_env_from_config cannot leak json into later tests.
+    monkeypatch.setenv("JVSPATIAL_DB_TYPE", "json")
+    monkeypatch.setenv("JVSPATIAL_DB_PATH", str(tmp_path / "test_jvdb"))
     app_root = str(tmp_path)
     (tmp_path / "app.yaml").write_text(MINIMAL_APP_YAML.strip(), encoding="utf-8")
     set_app_root(app_root)
@@ -64,7 +67,9 @@ def test_notify_route_remount_if_app_already_built(tmp_path, monkeypatch):
     """Late remount must keep POST notify off 404 when get_app() already ran."""
     from jvagent.core.app import App
     from jvagent.core.app_context import clear_app_root
-    from jvagent.core.embed_endpoints import remount_artifact_handler_notify_if_app_built
+    from jvagent.core.embed_endpoints import (
+        remount_artifact_handler_notify_if_app_built,
+    )
 
     try:
         server = _server(tmp_path, monkeypatch)
