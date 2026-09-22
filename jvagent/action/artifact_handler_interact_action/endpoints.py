@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote, urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -93,6 +94,24 @@ async def _reload_action(action: Any) -> Any:
             action_id,
         )
         return action
+
+
+def _is_trusted_notify_artifact_url(process_document_url: str, job_id: str) -> bool:
+    """True when the URL is this job's jvforge artifact on the configured forge origin."""
+    from jvagent.action.pageindex.url_guard import (
+        is_trusted_jvforge_url,
+        rewrite_process_document_url_to_jvforge_base,
+    )
+
+    raw = (process_document_url or "").strip()
+    jid = (job_id or "").strip()
+    if not raw or not jid:
+        return False
+    path = unquote(urlparse(raw).path or "").rstrip("/")
+    if path != f"/v1/artifacts/{jid}":
+        return False
+    rewritten = rewrite_process_document_url_to_jvforge_base(raw)
+    return is_trusted_jvforge_url(rewritten)
 
 
 def _display_doc_name(entry: Dict[str, Any], payload_doc_name: str) -> str:
@@ -706,12 +725,12 @@ async def _notify_and_close_job(
     methods=["POST"],
     webhook=True,
     auth=False,
-    webhook_auth="api_key",
     tags=["ArtifactHandlerInteractAction"],
     summary="jvforge async ingest completion callback (import + notification)",
     description=(
-        "Authenticate with **api_key** query parameter or header. "
-        "jvforge POSTs ``process_document_url`` when an async ingest job finishes."
+        "jvforge POSTs ``process_document_url`` when an async ingest job finishes. "
+        "Authorization is a known reverse-index ``job_id`` plus a trusted "
+        "jvforge ``/v1/artifacts/{job_id}`` URL."
     ),
     response=success_response(
         data={
@@ -734,19 +753,18 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         }
 
     Flow:
-        1. Resolve the ArtifactHandlerInteractAction; bind API key to this agent.
+        1. Resolve the ArtifactHandlerInteractAction and reload from DB.
         2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
-        3. Download artifact from ``process_document_url`` and import into PageIndex.
-        4. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        5. For WhatsApp/Messenger: two sequential ``create_task`` calls
+        3. Require ``process_document_url`` to be this job's trusted jvforge artifact.
+        4. Download artifact from ``process_document_url`` and import into PageIndex.
+        5. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
+        6. For WhatsApp/Messenger: two sequential ``create_task`` calls
            (generate, then send). If a call returns a scheduled object it is
            awaited before 200 so Lambda cannot freeze the send.
            ``mark_notified`` / ``clear_job`` run only after a successful send.
-        6. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
+        7. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
            A failed channel send leaves the reverse-index job in place.
     """
-    import hmac
-
     try:
         payload = await request.json()
     except Exception:
@@ -779,40 +797,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         return JSONResponse(
             status_code=503,
             content={"detail": "action not available"},
-            headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
-        )
-
-    # Bind the presented API key to this action's minted notify key so a key
-    # minted for agent A cannot drive imports on agent B (jvspatial endpoint
-    # allowlists are prefix-based; exact-path minting alone is not enough when
-    # agent ids share a common prefix).
-    user = getattr(request.state, "user", None) or {}
-    api_key_id = (
-        str(user.get("api_key_id") or "").strip() if isinstance(user, dict) else ""
-    )
-    expected_key = str(getattr(action, "notify_webhook_api_key_id", None) or "").strip()
-    if (
-        not expected_key
-        or not api_key_id
-        or not hmac.compare_digest(expected_key, api_key_id)
-    ):
-        logger.error(
-            "artifact_handler_notify: API key not authorized agent_id=%s job_id=%s",
-            agent_id,
-            job_id,
-        )
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "API key not authorized for this agent"},
-        )
-
-    from jvagent.core.agent import Agent
-
-    agent = await Agent.get(agent_id)
-    if agent is None:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "agent not found"},
             headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
         )
 
@@ -858,6 +842,28 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             "notified": True,
             "doc_name": str(entry.get("doc_name") or doc_name or ""),
         }
+
+    if not _is_trusted_notify_artifact_url(process_document_url, job_id):
+        logger.error(
+            "artifact_handler_notify: untrusted artifact URL job_id=%s agent_id=%s",
+            job_id,
+            agent_id,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "process_document_url is not this job's trusted artifact"
+            },
+        )
+
+    from jvagent.core.agent import Agent
+
+    if await Agent.get(agent_id) is None:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "agent not found"},
+            headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+        )
 
     imported_doc_name = await _download_and_import_graph(process_document_url, agent_id)
     if not imported_doc_name:

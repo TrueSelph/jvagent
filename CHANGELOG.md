@@ -39,6 +39,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Artifact handler notify has no API key.** `POST /api/artifact_handler_action/notify/{agent_id}` is a public webhook. Authorization is a known reverse-index `job_id` plus a trusted jvforge `/v1/artifacts/{job_id}` URL. `get_notify_webhook_url` no longer mints `?api_key=`.
+
 - **Artifact handler notify is action-loaded only.** Core/cli/embed no longer import or remount `POST /api/artifact_handler_action/notify/{agent_id}`. The route registers when `ArtifactHandlerInteractAction` is loaded (same as WhatsApp/PageIndex); jvspatial `@endpoint` remounts if `get_app()` already ran.
 
 - **Artifact handler notify logs.** Dropped breadcrumb `logger.warning` traces (entered, remint, import start, send ok, canned fallback, `create_task` scheduled). Failures stay as `logger.error` / `logger.exception`.
