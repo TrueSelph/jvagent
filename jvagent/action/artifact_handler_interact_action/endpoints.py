@@ -63,17 +63,16 @@ async def _resolve_action(agent_id: str) -> Optional[Any]:
             return None
         action = await agent.get_action_by_type("ArtifactHandlerInteractAction")
         if action is None:
-            logger.warning(
+            logger.error(
                 "artifact_handler_notify: ArtifactHandlerInteractAction missing "
                 "agent_id=%s",
                 agent_id,
             )
         return action
     except Exception:
-        logger.warning(
+        logger.exception(
             "artifact_handler_notify: action resolve failed agent_id=%s",
             agent_id,
-            exc_info=True,
         )
         return None
 
@@ -89,10 +88,9 @@ async def _reload_action(action: Any) -> Any:
         fresh = await Action.get(action_id)
         return fresh if fresh is not None else action
     except Exception:
-        logger.warning(
+        logger.exception(
             "artifact_handler_notify: action reload failed action_id=%s",
             action_id,
-            exc_info=True,
         )
         return action
 
@@ -133,20 +131,13 @@ async def _doc_description_lookup(
         return {}
     page_index = await agent.get_action_by_type("PageIndexAction")
     if page_index is None:
-        logger.warning(
-            "artifact_handler notify: PageIndexAction missing for desc lookup"
-        )
         return {}
     try:
         docs = await page_index.list_documents(access_control=False, summary=True)
     except Exception:
-        logger.warning(
-            "artifact_handler notify: desc lookup list_documents failed",
-            exc_info=True,
-        )
+        logger.exception("artifact_handler notify: desc lookup list_documents failed")
         return {}
     if not isinstance(docs, list):
-        logger.warning("artifact_handler notify: desc lookup not a list")
         return {}
     lookup: Dict[str, str] = {}
     for d in docs:
@@ -156,7 +147,6 @@ async def _doc_description_lookup(
         desc = str(d.get("doc_description") or "").strip()
         if name and desc:
             lookup[name] = desc
-    logger.warning("artifact_handler notify: desc lookup done size=%s", len(lookup))
     return lookup
 
 
@@ -165,7 +155,7 @@ async def _await_ready_step(label: str, coro: Any, timeout: float, job_id: str) 
     try:
         return await asyncio.wait_for(coro, timeout=timeout)
     except asyncio.TimeoutError:
-        logger.warning(
+        logger.error(
             "%s timed out job_id=%s timeout_s=%s",
             label,
             job_id,
@@ -173,24 +163,18 @@ async def _await_ready_step(label: str, coro: Any, timeout: float, job_id: str) 
         )
         return None
     except Exception:
-        logger.warning(
+        logger.exception(
             "%s failed job_id=%s",
             label,
             job_id,
-            exc_info=True,
         )
         return None
 
 
 async def _await_create_task(coro: Any, *, name: str, job_id: str, kind: str) -> None:
     """Shape B: run via ``create_task``; await a non-None scheduled return."""
+    del job_id, kind
     scheduled = await create_task(coro, name=name)
-    logger.warning(
-        "artifact_handler_notify: create_task %s scheduled=%s job_id=%s",
-        kind,
-        scheduled is not None,
-        job_id,
-    )
     if scheduled is not None:
         await scheduled
 
@@ -216,7 +200,7 @@ async def _publish_whatsapp_message(
     """
     memory = await agent.get_memory()
     if not memory:
-        logger.warning(
+        logger.error(
             "_publish_whatsapp_message: agent has no memory job_id=%s user_id=%s",
             job_id,
             user_id,
@@ -230,19 +214,18 @@ async def _publish_whatsapp_message(
 
             conversation = await Conversation.get(conversation_id)
         except Exception:
-            logger.warning(
+            logger.exception(
                 "_publish_whatsapp_message: Conversation.get failed job_id=%s "
                 "conversation_id=%s",
                 job_id,
                 conversation_id,
-                exc_info=True,
             )
             conversation = None
 
     if conversation is None:
         user = await memory.get_user(user_id, create_if_missing=False)
         if not user:
-            logger.warning(
+            logger.error(
                 "_publish_whatsapp_message: user not found job_id=%s user_id=%s",
                 job_id,
                 user_id,
@@ -251,7 +234,7 @@ async def _publish_whatsapp_message(
         if session_id:
             conversation = await user.get_conversation_by_session(session_id)
         if conversation is None:
-            logger.warning(
+            logger.error(
                 "_publish_whatsapp_message: conversation not found job_id=%s "
                 "user_id=%s session_id=%s conversation_id=%s",
                 job_id,
@@ -265,7 +248,7 @@ async def _publish_whatsapp_message(
         session_id or str(getattr(conversation, "session_id", "") or "").strip() or ""
     )
     if not effective_session_id:
-        logger.warning(
+        logger.error(
             "_publish_whatsapp_message: no effective session_id job_id=%s "
             "user_id=%s conversation_id=%s",
             job_id,
@@ -280,7 +263,7 @@ async def _publish_whatsapp_message(
         session_id=effective_session_id,
     )
     if not interaction:
-        logger.warning(
+        logger.error(
             "_publish_whatsapp_message: add_interaction returned None job_id=%s "
             "user_id=%s conversation_id=%s",
             job_id,
@@ -319,7 +302,7 @@ async def _publish_whatsapp_message(
 
     whatsapp_action = await agent.get_action_by_type("WhatsAppAction")
     if whatsapp_action is None:
-        logger.warning(
+        logger.error(
             "_publish_whatsapp_message: WhatsAppAction missing job_id=%s user_id=%s",
             job_id,
             user_id,
@@ -328,7 +311,7 @@ async def _publish_whatsapp_message(
 
     try:
         if not whatsapp_action.is_configured():
-            logger.warning(
+            logger.error(
                 "_publish_whatsapp_message: WhatsAppAction not configured "
                 "job_id=%s user_id=%s",
                 job_id,
@@ -336,57 +319,43 @@ async def _publish_whatsapp_message(
             )
             return False
     except Exception:
-        logger.warning(
+        logger.exception(
             "_publish_whatsapp_message: is_configured failed job_id=%s user_id=%s",
             job_id,
             user_id,
-            exc_info=True,
         )
         return False
 
     try:
         api = await whatsapp_action.api()
     except Exception:
-        logger.warning(
+        logger.exception(
             "_publish_whatsapp_message: api() failed job_id=%s user_id=%s",
             job_id,
             user_id,
-            exc_info=True,
         )
         return False
 
     try:
-        logger.warning(
-            "_publish_whatsapp_message: send_message start job_id=%s user_id=%s",
-            job_id,
-            user_id,
-        )
         result = await api.send_message(
             phone=user_id,
             message=content,
         )
         ok = isinstance(result, dict) and bool(result.get("ok", True))
         if not ok:
-            logger.warning(
+            logger.error(
                 "_publish_whatsapp_message: send_message not ok job_id=%s "
                 "user_id=%s result=%r",
                 job_id,
                 user_id,
                 result,
             )
-        else:
-            logger.warning(
-                "_publish_whatsapp_message: send_message ok job_id=%s user_id=%s",
-                job_id,
-                user_id,
-            )
         return ok
     except Exception:
-        logger.warning(
+        logger.exception(
             "_publish_whatsapp_message: send_message failed job_id=%s user_id=%s",
             job_id,
             user_id,
-            exc_info=True,
         )
         return False
 
@@ -413,7 +382,7 @@ async def _publish_messenger_message(
     """
     memory = await agent.get_memory()
     if not memory:
-        logger.warning("_publish_messenger_message: agent has no memory, cannot send")
+        logger.error("_publish_messenger_message: agent has no memory, cannot send")
         return False
 
     conversation = None
@@ -428,14 +397,14 @@ async def _publish_messenger_message(
     if conversation is None:
         user = await memory.get_user(user_id, create_if_missing=False)
         if not user:
-            logger.warning(
+            logger.error(
                 "_publish_messenger_message: user not found user_id=%s", user_id
             )
             return False
         if session_id:
             conversation = await user.get_conversation_by_session(session_id)
         if conversation is None:
-            logger.warning(
+            logger.error(
                 "_publish_messenger_message: conversation not found "
                 "user_id=%s session_id=%s conversation_id=%s",
                 user_id,
@@ -448,7 +417,7 @@ async def _publish_messenger_message(
         session_id or str(getattr(conversation, "session_id", "") or "").strip() or ""
     )
     if not effective_session_id:
-        logger.warning(
+        logger.error(
             "_publish_messenger_message: no effective session_id "
             "user_id=%s conversation_id=%s",
             user_id,
@@ -462,7 +431,7 @@ async def _publish_messenger_message(
         session_id=effective_session_id,
     )
     if not interaction:
-        logger.warning(
+        logger.error(
             "_publish_messenger_message: add_interaction returned None "
             "user_id=%s conversation_id=%s",
             user_id,
@@ -503,20 +472,17 @@ async def _publish_messenger_message(
     try:
         response_bus = await agent.get_response_bus()
     except Exception:
-        logger.warning(
-            "_publish_messenger_message: get_response_bus failed",
-            exc_info=True,
-        )
+        logger.exception("_publish_messenger_message: get_response_bus failed")
         return False
     if not response_bus:
-        logger.warning("_publish_messenger_message: no response bus")
+        logger.error("_publish_messenger_message: no response bus")
         return False
 
     adapter = response_bus._channel_adapters.get("messenger")
     if not adapter or not getattr(adapter, "_initialized", False):
         facebook_action = await agent.get_action_by_type("FacebookAction")
         if facebook_action is None:
-            logger.warning(
+            logger.error(
                 "_publish_messenger_message: FacebookAction not found on agent"
             )
             return False
@@ -524,43 +490,36 @@ async def _publish_messenger_message(
             await facebook_action.ensure_page_access_token()
             await facebook_action.ensure_adapter_registered()
         except Exception:
-            logger.warning(
-                "_publish_messenger_message: ensure adapter/token failed",
-                exc_info=True,
-            )
+            logger.exception("_publish_messenger_message: ensure adapter/token failed")
             return False
         adapter = response_bus._channel_adapters.get("messenger")
         if not adapter:
-            logger.warning(
-                "_publish_messenger_message: MessengerAdapter not registered"
-            )
+            logger.error("_publish_messenger_message: MessengerAdapter not registered")
             return False
 
     facebook_action = getattr(adapter, "action", None)
     if facebook_action is None:
-        logger.warning(
+        logger.error(
             "_publish_messenger_message: MessengerAdapter has no FacebookAction"
         )
         return False
 
     try:
         if not facebook_action.is_configured():
-            logger.warning("_publish_messenger_message: FacebookAction not configured")
+            logger.error("_publish_messenger_message: FacebookAction not configured")
             return False
     except Exception:
-        logger.warning(
-            "_publish_messenger_message: FacebookAction is_configured() failed",
-            exc_info=True,
+        logger.exception(
+            "_publish_messenger_message: FacebookAction is_configured() failed"
         )
         return False
 
     try:
         api = facebook_action.api()
     except Exception:
-        logger.warning(
+        logger.exception(
             "_publish_messenger_message: FacebookAction.api() failed on "
-            "registered action",
-            exc_info=True,
+            "registered action"
         )
         return False
 
@@ -574,18 +533,12 @@ async def _publish_messenger_message(
                 result.get("error"),
             )
             return False
-        logger.warning(
-            "_publish_messenger_message: send_message ok job_id=%s user_id=%s",
-            job_id,
-            user_id,
-        )
         return True
     except Exception:
-        logger.error(
+        logger.exception(
             "_publish_messenger_message: send_message failed job_id=%s user_id=%s",
             job_id,
             user_id,
-            exc_info=True,
         )
         return False
 
@@ -615,11 +568,6 @@ async def _download_and_import_graph(
 
     fetch_url = rewrite_process_document_url_to_jvforge_base(process_document_url)
     trusted = is_trusted_jvforge_url(fetch_url)
-    if fetch_url != process_document_url:
-        logger.warning(
-            "artifact_handler import: rewritten artifact URL onto "
-            "JVAGENT_JVFORGE_BASE_URL"
-        )
     raw_bytes: Optional[bytes] = None
     for attempt in range(1, _ARTIFACT_404_RETRIES + 1):
         try:
@@ -635,15 +583,9 @@ async def _download_and_import_graph(
                 delay = _ARTIFACT_404_BACKOFF_S[
                     min(attempt - 1, len(_ARTIFACT_404_BACKOFF_S) - 1)
                 ]
-                logger.warning(
-                    "artifact_handler import: artifact 404 attempt=%s/%s retry in %.1fs",
-                    attempt,
-                    _ARTIFACT_404_RETRIES,
-                    delay,
-                )
                 await asyncio.sleep(delay)
                 continue
-            logger.warning(
+            logger.error(
                 "artifact_handler import: artifact fetch failed attempt=%s/%s: %s",
                 attempt,
                 _ARTIFACT_404_RETRIES,
@@ -652,17 +594,17 @@ async def _download_and_import_graph(
             return None
 
     if not raw_bytes:
-        logger.warning("artifact_handler import: empty artifact body")
+        logger.error("artifact_handler import: empty artifact body")
         return None
 
     try:
         graph = json.loads(raw_bytes)
     except Exception:
-        logger.warning("artifact_handler import: artifact is not JSON", exc_info=True)
+        logger.exception("artifact_handler import: artifact is not JSON")
         return None
 
     if not isinstance(graph, dict):
-        logger.warning("artifact_handler import: artifact JSON is not an object")
+        logger.error("artifact_handler import: artifact JSON is not an object")
         return None
 
     roots = graph.get("roots")
@@ -713,18 +655,12 @@ async def _download_and_import_graph(
     try:
         await _import_documents(graph, purge=False, collection_name=agent_id)
     except Exception:
-        logger.warning(
+        logger.exception(
             "artifact_handler import: PageIndex import failed agent_id=%s",
             agent_id,
-            exc_info=True,
         )
         return None
 
-    logger.warning(
-        "artifact_handler import: graph imported agent_id=%s doc_name=%s",
-        agent_id,
-        effective_name,
-    )
     return effective_name
 
 
@@ -736,10 +672,9 @@ async def _close_reverse_index_job(action: Any, job_id: str) -> None:
         await action.mark_notified(job_id)
         await action.clear_job(job_id)
     except Exception:
-        logger.warning(
+        logger.exception(
             "artifact_handler_notify: clear_job failed job_id=%s",
             job_id,
-            exc_info=True,
         )
 
 
@@ -755,14 +690,8 @@ async def _notify_and_close_job(
     sent = bool(await send_coro)
     if sent:
         await _close_reverse_index_job(action, job_id)
-        logger.warning(
-            "artifact_handler_notify: %s send succeeded job_id=%s agent_id=%s",
-            channel,
-            job_id,
-            agent_id,
-        )
         return True
-    logger.warning(
+    logger.error(
         "artifact_handler_notify: %s send failed job_id=%s "
         "agent_id=%s; leaving reverse-index job for retry",
         channel,
@@ -818,30 +747,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     """
     import hmac
 
-    req_url = getattr(request, "url", None)
-    req_path = str(getattr(req_url, "path", "") or "")
-    query_params = getattr(request, "query_params", None)
-    headers = getattr(request, "headers", None)
-    has_api_key = False
-    try:
-        query = getattr(req_url, "query", None)
-        if isinstance(query, str) and "api_key=" in query:
-            has_api_key = True
-        elif query_params is not None:
-            raw_key = query_params.get("api_key")
-            has_api_key = isinstance(raw_key, str) and bool(raw_key)
-        if not has_api_key and headers is not None:
-            raw_header = headers.get("x-api-key")
-            has_api_key = isinstance(raw_header, str) and bool(raw_header)
-    except Exception:
-        has_api_key = False
-    logger.warning(
-        "artifact_handler_notify: entered agent_id=%s path=%s has_api_key=%s",
-        agent_id,
-        req_path,
-        has_api_key,
-    )
-
     try:
         payload = await request.json()
     except Exception:
@@ -859,21 +764,11 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     doc_name = str(payload.get("doc_name") or "").strip()
 
     if not process_document_url:
-        logger.warning(
-            "artifact_handler_notify: 400 missing process_document_url "
-            "agent_id=%s job_id=%s",
-            agent_id,
-            job_id or "(empty)",
-        )
         return JSONResponse(
             status_code=400,
             content={"detail": "process_document_url is required"},
         )
     if not job_id:
-        logger.warning(
-            "artifact_handler_notify: 400 missing job_id agent_id=%s",
-            agent_id,
-        )
         return JSONResponse(
             status_code=400,
             content={"detail": "job_id is required"},
@@ -901,7 +796,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         or not api_key_id
         or not hmac.compare_digest(expected_key, api_key_id)
     ):
-        logger.warning(
+        logger.error(
             "artifact_handler_notify: API key not authorized agent_id=%s job_id=%s",
             agent_id,
             job_id,
@@ -930,7 +825,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     if not entry:
         index = getattr(action, "jvforge_job_index", None) or {}
         index_size = len(index) if isinstance(index, dict) else 0
-        logger.warning(
+        logger.error(
             "artifact_handler_notify: unknown job_id=%s agent_id=%s index_size=%s",
             job_id,
             agent_id,
@@ -944,7 +839,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
 
     entry_agent = str(entry.get("agent_id") or "").strip()
     if entry_agent and entry_agent != agent_id:
-        logger.warning(
+        logger.error(
             "artifact_handler_notify: job_id=%s belongs to agent_id=%s not %s",
             job_id,
             entry_agent,
@@ -957,11 +852,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
 
     # Idempotent success when we already finished notifying for this job.
     if entry.get("notified"):
-        logger.warning(
-            "artifact_handler_notify: already_imported job_id=%s agent_id=%s",
-            job_id,
-            agent_id,
-        )
         return {
             "status": "already_imported",
             "job_id": job_id,
@@ -969,14 +859,9 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             "doc_name": str(entry.get("doc_name") or doc_name or ""),
         }
 
-    logger.warning(
-        "artifact_handler_notify: import start job_id=%s agent_id=%s",
-        job_id,
-        agent_id,
-    )
     imported_doc_name = await _download_and_import_graph(process_document_url, agent_id)
     if not imported_doc_name:
-        logger.warning(
+        logger.error(
             "artifact_handler_notify: graph import failed job_id=%s agent_id=%s",
             job_id,
             agent_id,
@@ -991,13 +876,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     session_id = str(entry.get("session_id") or "").strip()
     conversation_id = str(entry.get("conversation_id") or "").strip()
     channel = str(entry.get("channel") or "").strip().lower() or "default"
-    logger.warning(
-        "artifact_handler_notify: job_id=%s channel=%s user_id=%s doc=%s",
-        job_id,
-        channel,
-        user_id,
-        doc_name,
-    )
     # Prefer PageIndex import name; fall back to vault job name normalized the
     # same way PageIndex does (strip_redundant_md_suffix).
     vault_doc_name = str(entry.get("doc_name") or doc_name or "").strip()
@@ -1022,14 +900,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             from .job_status import PROCESSING_STATUSES, apply_ingest_job_status
 
             conv = await Conversation.get(conversation_id)
-            if conv is None:
-                logger.warning(
-                    "artifact_handler_notify: conversation not found job_id=%s "
-                    "conversation_id=%s",
-                    job_id,
-                    conversation_id,
-                )
-            else:
+            if conv is not None:
                 pending = {}
                 ctx = getattr(conv, "context", None)
                 if isinstance(ctx, dict):
@@ -1050,22 +921,15 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                         doc_name=internal_doc_name or None,
                     )
                     if not ok:
-                        logger.warning(
+                        logger.error(
                             "artifact_handler_notify: mark-ready failed job_id=%s",
                             job_id,
                         )
         except Exception:
-            logger.warning(
+            logger.exception(
                 "artifact_handler_notify: mark-ready failed job_id=%s",
                 job_id,
-                exc_info=True,
             )
-    else:
-        logger.warning(
-            "artifact_handler_notify: skip mark-ready job_id=%s "
-            "conversation_id empty",
-            job_id,
-        )
     # ── Send proactive notifications.
     # WhatsApp and Messenger get push messages; web/default relies on
     # check_ingest_status polling (TODO: add web push in a future phase).
@@ -1074,12 +938,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     # reverse-index job only after a successful send.
     notified = False
     if user_id and channel in ("whatsapp", "messenger"):
-        logger.warning(
-            "artifact_handler_notify: sending channel=%s job_id=%s user_id=%s",
-            channel,
-            job_id,
-            user_id,
-        )
         content_box: List[Tuple[str, bool]] = []
 
         async def _generate() -> None:
@@ -1102,10 +960,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         if content_box:
             content, answered = content_box[0]
         else:
-            logger.warning(
-                "_generate_ready_content: using canned ready message job_id=%s",
-                job_id,
-            )
             content = _canned_ready_message(
                 display_doc,
                 pending_question=pending_question or None,
@@ -1120,7 +974,7 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             try:
                 agent = await Agent.get(agent_id)
                 if agent is None:
-                    logger.warning(
+                    logger.error(
                         "artifact_handler_notify: agent not found for send "
                         "agent_id=%s job_id=%s",
                         agent_id,
@@ -1164,10 +1018,9 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                     )
                 )
             except Exception:
-                logger.warning(
+                logger.exception(
                     "artifact_handler_notify: send failed job_id=%s",
                     job_id,
-                    exc_info=True,
                 )
                 sent_box.append(False)
 
@@ -1178,11 +1031,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             kind="send",
         )
         sent = bool(sent_box and sent_box[0])
-        logger.warning(
-            "artifact_handler_notify: send result sent=%s job_id=%s",
-            sent,
-            job_id,
-        )
         if not sent:
             return JSONResponse(
                 status_code=503,
@@ -1191,13 +1039,6 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             )
         notified = True
     else:
-        logger.warning(
-            "artifact_handler_notify: skip channel send job_id=%s "
-            "channel=%s user_id=%s (push only for whatsapp/messenger with user_id)",
-            job_id,
-            channel,
-            user_id or "(empty)",
-        )
         await _close_reverse_index_job(action, job_id)
 
     return {
@@ -1226,7 +1067,7 @@ async def _generate_ready_content(
     try:
         agent = await Agent.get(agent_id)
         if agent is None:
-            logger.warning(
+            logger.error(
                 "_generate_ready_content: agent not found agent_id=%s job_id=%s",
                 agent_id,
                 job_id,
@@ -1258,10 +1099,6 @@ async def _generate_ready_content(
         content: Optional[str] = None
         answered = False
         if pending_question and internal_doc_name and action is not None:
-            logger.warning(
-                "_generate_ready_content: generate start job_id=%s",
-                job_id,
-            )
             content = await _await_ready_step(
                 "_generate_ready_content: generate",
                 _generate_ready_message(
@@ -1279,10 +1116,6 @@ async def _generate_ready_content(
                 answered = True
 
         if not content:
-            logger.warning(
-                "_generate_ready_content: using canned ready message job_id=%s",
-                job_id,
-            )
             content = _canned_ready_message(
                 display_doc,
                 doc_description=doc_description,
@@ -1290,10 +1123,9 @@ async def _generate_ready_content(
             )
         return content, answered
     except Exception:
-        logger.warning(
+        logger.exception(
             "_generate_ready_content: using canned ready message job_id=%s",
             job_id,
-            exc_info=True,
         )
         return (
             _canned_ready_message(
