@@ -57,7 +57,15 @@ async def test_pageindex_llm_webhook_mints_new_path():
     mock_key = SimpleNamespace(id="o.APIKey.key123")
     generate_key = AsyncMock(return_value=("test_mock_api_key", mock_key))
     patches, service = _mint_patches(generate_key=generate_key)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6]:
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        patches[5],
+        patches[6],
+    ):
         url = await action.get_webhook_url()
     assert url.startswith(
         "http://localhost:8000/api/pageindex/interact/webhook/n.Agent.test123"
@@ -81,7 +89,15 @@ async def test_pageindex_llm_webhook_remints_legacy_prefix():
     mock_key = SimpleNamespace(id="o.APIKey.new")
     generate_key = AsyncMock(return_value=("new_key", mock_key))
     patches, service = _mint_patches(generate_key=generate_key)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6]:
+    with (
+        patches[0],
+        patches[1],
+        patches[2],
+        patches[3],
+        patches[4],
+        patches[5],
+        patches[6],
+    ):
         url = await action.get_webhook_url()
     assert "/api/pageindex/interact/webhook/n.Agent.test123" in url
     assert "new_key" in url
