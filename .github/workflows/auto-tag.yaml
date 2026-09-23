@@ -20,7 +20,7 @@ name: Auto-tag on version bump
 on:
   push:
     branches:
-      - artifact_bug
+      - main
     paths:
       - "jvagent/version.py"
 
