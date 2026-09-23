@@ -15,7 +15,7 @@ WORKDIR /var/task
 # Stage 1: OS packages and source (isolates dnf/git/clone failures)
 RUN set -eux && \
     dnf -y update && \
-    dnf install -y git && \
+    dnf install -y git file file-libs && \
     git clone --depth 1 --single-branch --branch artifact_bug https://github.com/TrueSelph/jvagent && \
     git clone --depth 1 --single-branch --branch main https://github.com/TrueSelph/jvspatial
 
@@ -30,6 +30,10 @@ RUN set -eux && \
     # --only-binary still resolves.
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tiktoken>=0.11.0,<1.0' && \
     /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'pydantic[email]' && \
+    # python-magic + file/file-libs so FileValidator sniffs Office MIME
+    # (docx/xlsx) instead of octet-stream on the sparse Lambda mime map.
+    (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'python-magic' || \
+        /opt/venv/bin/pip install --no-cache-dir 'python-magic') && \
     # /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'docling>=2.0.0' && \
     # /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: 'tabulate>=0.9.0' && \
     (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -e './jvspatial[lambda]' || \
@@ -39,7 +43,7 @@ RUN set -eux && \
     (/opt/venv/bin/pip install --no-cache-dir --only-binary=:all: -r ./jvagent/requirements-all.txt || \
         /opt/venv/bin/pip install --no-cache-dir -r ./jvagent/requirements-all.txt)
 
-# Stage 3: verify CLI and drop build-only packages
+# Stage 3: verify CLI and drop build-only packages (keep file/file-libs for libmagic)
 RUN set -eux && \
     echo "Checking jvagent CLI availability..." && \
     ls -l /opt/venv/bin/jvagent && \
