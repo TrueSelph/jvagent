@@ -567,8 +567,9 @@ async def _schedule_background_webhook_graph_import(
 ) -> None:
     """Schedule graph import via Shape B ``create_task``.
 
-    Serverless awaits the import in this request so Lambda cannot freeze it.
-    Long-running schedules a local Task and returns immediately.
+    Serverless awaits the import inside ``create_task`` and returns None.
+    When ``create_task`` returns a scheduled object, await it so Lambda
+    cannot freeze the import after the HTTP response.
     """
 
     async def _job() -> None:
@@ -591,10 +592,12 @@ async def _schedule_background_webhook_graph_import(
         finally:
             await _delete_staged_file(staged_path)
 
-    await create_task(
+    scheduled = await create_task(
         _job(),
         name=f"pageindex_webhook_import_{agent_id}",
     )
+    if scheduled is not None:
+        await scheduled
 
 
 async def _import_graph_from_remote_url(

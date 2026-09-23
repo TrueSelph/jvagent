@@ -73,7 +73,9 @@ def test_notify_route_on_live_app_after_action_import(tmp_path, monkeypatch):
         )
         client = TestClient(app)
         response = client.post(NOTIFY_PATH, json={})
-        assert response.status_code != 404, response.text
+        body = response.json()
+        assert response.status_code != 404
+        assert body.get("error_code") == 401 or "API key required" in response.text
     finally:
         App.clear_cache()
         clear_app_root()
