@@ -72,7 +72,7 @@ test = [
     "openai>=1.0.0",
     "filetype>=1.2.0",
     "tiktoken>=0.5.0",
-    "litellm>=1.100.0,<1.102",
+    "litellm>=1.101.0,<1.102",
     "PyPDF2>=3.0.1",
     "pypdfium2>=4.30.0",
     "sortedcontainers>=2.4.0",
@@ -99,7 +99,7 @@ test = [
 # proposes the bump; tests/action/model + scripts/live_smoke.py gate it). Keep
 # every declaration identical — tests/test_requirements_sync.py checks.
 litellm = [
-    "litellm>=1.100.0,<1.102",
+    "litellm>=1.101.0,<1.102",
 ]
 
 # Optional: cluster-wide conversation locks (Redis SET NX or DynamoDB).
