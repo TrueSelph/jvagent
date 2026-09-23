@@ -61,6 +61,10 @@ async def _resolve_action(agent_id: str) -> Optional[Any]:
 
         agent = await Agent.get(agent_id)
         if agent is None:
+            logger.warning(
+                "artifact_handler_notify: agent not found agent_id=%s",
+                agent_id,
+            )
             return None
         action = await agent.get_action_by_type("ArtifactHandlerInteractAction")
         if action is None:
@@ -94,6 +98,97 @@ async def _reload_action(action: Any) -> Any:
             action_id,
         )
         return action
+
+
+def _action_index_size(action: Any) -> int:
+    index = getattr(action, "jvforge_job_index", None) or {}
+    return len(index) if isinstance(index, dict) else 0
+
+
+async def _scan_sibling_actions_for_job(
+    agent_id: str,
+    job_id: str,
+    *,
+    skip_id: Optional[str] = None,
+    skip_index_size: Optional[int] = None,
+) -> tuple[Optional[Any], Optional[Dict[str, Any]]]:
+    """Load every ArtifactHandlerInteractAction for this agent and find job_id."""
+    try:
+        from jvagent.action.identity import (
+            find_records_by_archetype,
+            load_action_from_record,
+        )
+
+        records = await find_records_by_archetype(
+            agent_id, "ArtifactHandlerInteractAction"
+        )
+    except Exception:
+        logger.exception(
+            "artifact_handler_notify: sibling scan failed job_id=%s agent_id=%s",
+            job_id,
+            agent_id,
+        )
+        return None, None
+    if not isinstance(records, list):
+        records = []
+    sizes: List[str] = []
+    loaded: List[Tuple[Any, str, int]] = []
+    if skip_id:
+        skip_size = skip_index_size if skip_index_size is not None else "?"
+        sizes.append(f"{skip_id}:{skip_size}")
+    for record in records:
+        rid = str((record or {}).get("id") or "")
+        if skip_id and rid == skip_id:
+            continue
+        try:
+            other = await load_action_from_record(record)
+        except Exception:
+            logger.exception(
+                "artifact_handler_notify: load action failed job_id=%s agent_id=%s "
+                "action_id=%s",
+                job_id,
+                agent_id,
+                rid or "?",
+            )
+            other = None
+        if other is None:
+            sizes.append(f"{rid or '?'}:missing")
+            continue
+        other = await _reload_action(other)
+        size = _action_index_size(other)
+        oid = str(getattr(other, "id", None) or rid or "?")
+        sizes.append(f"{oid}:{size}")
+        loaded.append((other, oid, size))
+    logger.warning(
+        "artifact_handler_notify: lookup job_id=%s agent_id=%s record_count=%s "
+        "actions=%s",
+        job_id,
+        agent_id,
+        len(records),
+        ",".join(sizes) or "-",
+    )
+    for other, oid, size in loaded:
+        entry = await other.lookup_job(job_id)
+        if entry:
+            logger.warning(
+                "artifact_handler_notify: job_id=%s agent_id=%s found on "
+                "action_id=%s index_size=%s scanned=%s",
+                job_id,
+                agent_id,
+                oid,
+                size,
+                ",".join(sizes),
+            )
+            return other, entry
+    logger.warning(
+        "artifact_handler_notify: sibling scan miss job_id=%s agent_id=%s "
+        "record_count=%s scanned=%s",
+        job_id,
+        agent_id,
+        len(records),
+        ",".join(sizes) or "-",
+    )
+    return None, None
 
 
 def _is_trusted_notify_artifact_url(process_document_url: str, job_id: str) -> bool:
@@ -782,44 +877,77 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     doc_name = str(payload.get("doc_name") or "").strip()
 
     if not process_document_url:
+        logger.warning(
+            "artifact_handler_notify: missing process_document_url agent_id=%s",
+            agent_id,
+        )
         return JSONResponse(
             status_code=400,
             content={"detail": "process_document_url is required"},
         )
     if not job_id:
+        logger.warning(
+            "artifact_handler_notify: missing job_id agent_id=%s",
+            agent_id,
+        )
         return JSONResponse(
             status_code=400,
             content={"detail": "job_id is required"},
         )
 
     action = await _resolve_action(agent_id)
-    if action is None:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "action not available"},
-            headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
-        )
-
-    action = await _reload_action(action)
+    if action is not None:
+        action = await _reload_action(action)
 
     # Job lookup BEFORE download/import — unknown jobs must not trigger
-    # expensive PageIndex writes (replay / forged callbacks). 503 so jvforge
-    # retries when the reverse-index save is not yet visible on this Lambda.
-    entry = await action.lookup_job(job_id)
-    if not entry:
-        index = getattr(action, "jvforge_job_index", None) or {}
-        index_size = len(index) if isinstance(index, dict) else 0
-        logger.error(
-            "artifact_handler_notify: unknown job_id=%s agent_id=%s index_size=%s",
+    # expensive PageIndex writes (replay / forged callbacks). Scan every
+    # ArtifactHandlerInteractAction for this agent; get_action_by_type may
+    # return a different node than the ingest Lambda saved. 503 so jvforge
+    # retries when the reverse-index save is not yet visible.
+    action_id = str(getattr(action, "id", None) or "") if action is not None else ""
+    index_size = _action_index_size(action) if action is not None else 0
+    logger.warning(
+        "artifact_handler_notify: lookup job_id=%s agent_id=%s action_id=%s "
+        "index_size=%s",
+        job_id,
+        agent_id,
+        action_id or "-",
+        index_size,
+    )
+    entry = await action.lookup_job(job_id) if action is not None else None
+    if entry:
+        logger.warning(
+            "artifact_handler_notify: first_hit job_id=%s agent_id=%s action_id=%s "
+            "index_size=%s",
             job_id,
             agent_id,
+            action_id or "-",
             index_size,
         )
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "unknown job_id"},
-            headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+    else:
+        other, other_entry = await _scan_sibling_actions_for_job(
+            agent_id,
+            job_id,
+            skip_id=action_id or None,
+            skip_index_size=index_size,
         )
+        if other is not None and other_entry:
+            action = other
+            entry = other_entry
+        else:
+            logger.warning(
+                "artifact_handler_notify: unknown job_id=%s agent_id=%s "
+                "action_id=%s index_size=%s",
+                job_id,
+                agent_id,
+                action_id or "-",
+                index_size,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "unknown job_id"},
+                headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+            )
 
     entry_agent = str(entry.get("agent_id") or "").strip()
     if entry_agent and entry_agent != agent_id:
@@ -836,6 +964,13 @@ async def artifact_handler_notify(request: Request, agent_id: str):
 
     # Idempotent success when we already finished notifying for this job.
     if entry.get("notified"):
+        logger.warning(
+            "artifact_handler_notify: already_imported job_id=%s agent_id=%s "
+            "action_id=%s",
+            job_id,
+            agent_id,
+            action_id or "-",
+        )
         return {
             "status": "already_imported",
             "job_id": job_id,
@@ -859,6 +994,12 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     from jvagent.core.agent import Agent
 
     if await Agent.get(agent_id) is None:
+        logger.warning(
+            "artifact_handler_notify: agent not found after lookup job_id=%s "
+            "agent_id=%s",
+            job_id,
+            agent_id,
+        )
         return JSONResponse(
             status_code=503,
             content={"detail": "agent not found"},
