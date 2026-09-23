@@ -153,26 +153,22 @@ async def _inline_create_task(coro_or_type, payload=None, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_notify_rejects_missing_job_id(caplog):
+async def test_notify_rejects_missing_job_id():
     req = _request(payload={"process_document_url": "https://example.com/a"})
-    with caplog.at_level(logging.WARNING):
-        with patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
-            new_callable=AsyncMock,
-        ) as resolve:
-            resp = await artifact_handler_notify(req, "Agent:a")
-            assert resp.status_code == 400
-            resolve.assert_not_awaited()
-    assert "missing job_id" in caplog.text
+    with patch(
+        "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+        new_callable=AsyncMock,
+    ) as resolve:
+        resp = await artifact_handler_notify(req, "Agent:a")
+        assert resp.status_code == 400
+        resolve.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_notify_rejects_missing_process_document_url(caplog):
+async def test_notify_rejects_missing_process_document_url():
     req = _request(payload={"job_id": "job-1"})
-    with caplog.at_level(logging.WARNING):
-        resp = await artifact_handler_notify(req, "Agent:a")
+    resp = await artifact_handler_notify(req, "Agent:a")
     assert resp.status_code == 400
-    assert "missing process_document_url" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -359,8 +355,7 @@ async def test_notify_imports_when_raw_record_has_job_and_cache_empty(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_notify_skips_import_for_unknown_job(caplog, monkeypatch):
-    monkeypatch.setenv("JVSPATIAL_DB_TYPE", "dynamodb")
+async def test_notify_skips_import_for_unknown_job():
     action = SimpleNamespace(
         lookup_job=AsyncMock(return_value=None),
         jvforge_job_index={},
@@ -371,33 +366,31 @@ async def test_notify_skips_import_for_unknown_job(caplog, monkeypatch):
             "job_id": "job-missing",
         }
     )
-    with caplog.at_level(logging.WARNING):
-        with (
-            patch(
-                "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
-                new_callable=AsyncMock,
-                return_value=action,
-            ),
-            patch(
-                "jvagent.core.agent.Agent.get",
-                new_callable=AsyncMock,
-                return_value=SimpleNamespace(id="Agent:a"),
-            ),
-            patch(
-                "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
-                new_callable=AsyncMock,
-            ) as import_graph,
-            patch(
-                "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
-                new_callable=AsyncMock,
-                return_value=(None, None),
-            ),
-        ):
-            resp = await artifact_handler_notify(req, "Agent:a")
-            assert resp.status_code == 503
-            assert resp.headers.get("Retry-After")
-            import_graph.assert_not_awaited()
-    assert "db_type=dynamodb" in caplog.text
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=action,
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+        ) as import_graph,
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
+    ):
+        resp = await artifact_handler_notify(req, "Agent:a")
+        assert resp.status_code == 503
+        assert resp.headers.get("Retry-After")
+        import_graph.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -537,12 +530,10 @@ async def test_scan_sibling_load_failure_logs_missing(caplog):
                 "Agent:a",
                 "job-1",
                 skip_id="action-empty",
-                skip_index_size=0,
             )
     assert found is None
     assert entry is None
     assert "load action failed" in caplog.text
-    assert "action-bad:raw=0:loaded=missing" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -586,7 +577,7 @@ async def test_scan_finds_job_in_raw_record_when_loaded_index_empty():
         ) as evict,
     ):
         found, entry = await _scan_sibling_actions_for_job(
-            "Agent:a", "job-1", skip_id="action-1", skip_index_size=0
+            "Agent:a", "job-1", skip_id="action-1"
         )
     assert found is cached
     assert entry["job_id"] == "job-1"
@@ -730,7 +721,7 @@ async def test_notify_rejects_job_for_other_agent():
 
 
 @pytest.mark.asyncio
-async def test_notify_idempotent_when_already_notified(caplog):
+async def test_notify_idempotent_when_already_notified():
     action = SimpleNamespace(
         lookup_job=AsyncMock(
             return_value={
@@ -767,12 +758,10 @@ async def test_notify_idempotent_when_already_notified(caplog):
             new_callable=AsyncMock,
         ) as send,
     ):
-        with caplog.at_level(logging.WARNING):
-            out = await artifact_handler_notify(req, "Agent:a")
+        out = await artifact_handler_notify(req, "Agent:a")
         assert out["status"] == "already_imported"
         import_graph.assert_not_awaited()
         send.assert_not_awaited()
-    assert "already_imported" in caplog.text
 
 
 def _whatsapp_job(**extra):
