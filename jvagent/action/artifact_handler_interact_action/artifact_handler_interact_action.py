@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import re
 import sys
@@ -59,6 +60,8 @@ from jvagent.tooling.tool_decorator import tool
 
 if False:
     from jvagent.action.interact.interact_walker import InteractWalker
+
+logger = logging.getLogger(__name__)
 
 
 def _register_orchestrator_vocabulary() -> None:
@@ -85,6 +88,26 @@ if str(_AGENT_ROOT) not in sys.path:
     sys.path.insert(0, str(_AGENT_ROOT))
 
 _PERSISTED_JOB_INDEX_ATTR = "jvforge_job_index"
+
+
+async def _evict_action_cache(action_id: Any) -> None:
+    """Drop request + process entity cache so the next Action.get hits Dynamo."""
+    aid = str(action_id or "").strip()
+    if not aid:
+        return
+    try:
+        from jvspatial.core.context import get_default_context
+
+        ctx = get_default_context()
+        evict = getattr(ctx, "_evict_from_cache", None)
+        if evict is not None:
+            await evict(aid)
+    except Exception:
+        logger.warning(
+            "artifact_handler cache evict failed action_id=%s",
+            aid,
+        )
+
 
 # WhatsApp MediaManager storage names like ``20260724_134410_c624a9f1.pdf``.
 _MACHINE_FILENAME_RE = re.compile(r"^\d{8}_\d{6}_[0-9a-fA-F]{6,}(\.[A-Za-z0-9]+)?$")
@@ -469,13 +492,11 @@ class ArtifactHandlerInteractAction(InteractAction):
 
     notify_webhook_url: Optional[str] = attribute(
         default=None,
-        description=(
-            "Full inbound jvforge notify URL (includes api_key query when generated)."
-        ),
+        description="Inbound jvforge notify URL (includes api_key query when generated).",
     )
     notify_webhook_api_key_id: Optional[str] = attribute(
         default=None,
-        description="API key id for the artifact_handler notify webhook URL.",
+        description="API key id bound to this action's notify webhook.",
     )
 
     binds_tools_to_visitor: bool = True
@@ -561,6 +582,11 @@ class ArtifactHandlerInteractAction(InteractAction):
                 try:
                     notification_url = await self.get_notify_webhook_url()
                 except Exception:
+                    logger.exception(
+                        "artifact_handler notify: webhook url mint failed "
+                        "agent_id=%s",
+                        getattr(self, "agent_id", None),
+                    )
                     notification_url = None
                 if not notification_url:
                     await visitor.add_directive(
@@ -669,6 +695,10 @@ class ArtifactHandlerInteractAction(InteractAction):
                             filename=display_filename,
                         )
                     except Exception:
+                        logger.exception(
+                            "artifact_handler execute: submit_ingest failed filename=%s",
+                            filename,
+                        )
                         failed.append(filename)
                         continue
 
@@ -946,6 +976,8 @@ class ArtifactHandlerInteractAction(InteractAction):
         self, allowed_ip: Optional[str] = None, regenerate: bool = False
     ) -> str:
         """Public notify URL (+ api_key) jvforge uses for ingest completion pings."""
+        from typing import Any
+
         from jvspatial.api.auth.api_key_service import APIKeyService
         from jvspatial.api.exceptions import ValidationError
         from jvspatial.core.context import GraphContext
@@ -955,10 +987,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         from jvagent.core.public_url import get_public_base_url
 
         from .webhook_auth import (
+            ALLOWED_WEBHOOK_ENDPOINT_GLOB,
             ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX,
             WEBHOOK_PERMISSION,
             get_or_create_system_user,
-            notify_endpoint_for_agent,
         )
 
         base_url = (get_public_base_url() or "").strip().rstrip("/")
@@ -974,7 +1006,6 @@ class ArtifactHandlerInteractAction(InteractAction):
             expected_url_base = (
                 f"{base_url}/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/{agent_id}"
             )
-            allowed_endpoint = notify_endpoint_for_agent(agent_id)
 
             def _key_scoped_to_agent(existing_key: Any) -> bool:
                 if existing_key is None or not getattr(
@@ -984,14 +1015,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 existing_eps = list(
                     getattr(existing_key, "allowed_endpoints", None) or []
                 )
-                if allowed_endpoint not in existing_eps:
-                    return False
-                for ep in existing_eps:
-                    if ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX not in ep:
-                        continue
-                    if ep.endswith("*"):
-                        return False
-                return True
+                return ALLOWED_WEBHOOK_ENDPOINT_GLOB in existing_eps
 
             prime_ctx = GraphContext(database=get_prime_database())
             api_key_service = APIKeyService(context=prime_ctx)
@@ -1037,7 +1061,7 @@ class ArtifactHandlerInteractAction(InteractAction):
                 permissions=[WEBHOOK_PERMISSION],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=[allowed_endpoint],
+                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
                 key_prefix="jv_",
             )
 
@@ -1093,10 +1117,32 @@ class ArtifactHandlerInteractAction(InteractAction):
             "file_url": saved_url or "",
         }
         self.jvforge_job_index = index
-        try:
-            await self.save()
-        except Exception:
-            pass
+        await self._persist_job_index(
+            job_id=job_id, op="register_job", raise_on_error=True
+        )
+        action_id = getattr(self, "id", None)
+        if not action_id:
+            return
+        from jvagent.action.base import Action
+
+        await _evict_action_cache(action_id)
+        fresh = await Action.get(action_id)
+        fresh_index = (
+            getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
+        )
+        if isinstance(fresh_index, dict) and job_id in fresh_index:
+            return
+        await self.save()
+        await _evict_action_cache(action_id)
+        fresh = await Action.get(action_id)
+        fresh_index = (
+            getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
+        )
+        if isinstance(fresh_index, dict) and job_id in fresh_index:
+            return
+        raise RuntimeError(
+            f"artifact_handler register_job did not persist job_id={job_id}"
+        )
 
     async def lookup_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         if not job_id:
@@ -1105,6 +1151,25 @@ class ArtifactHandlerInteractAction(InteractAction):
         entry = index.get(job_id)
         return dict(entry) if isinstance(entry, dict) else None
 
+    async def _persist_job_index(
+        self, *, job_id: str, op: str, raise_on_error: bool = False
+    ) -> None:
+        index = self.jvforge_job_index or {}
+        size = len(index) if isinstance(index, dict) else 0
+        try:
+            await self.save()
+        except Exception:
+            logger.exception(
+                "artifact_handler %s save failed job_id=%s agent_id=%s index_size=%s",
+                op,
+                job_id,
+                getattr(self, "agent_id", None),
+                size,
+            )
+            if raise_on_error:
+                raise
+            return
+
     async def clear_job(self, job_id: str) -> None:
         if not job_id:
             return
@@ -1112,10 +1177,7 @@ class ArtifactHandlerInteractAction(InteractAction):
         if job_id in index:
             del index[job_id]
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="clear_job")
 
     async def mark_notified(self, job_id: str) -> None:
         if not job_id:
@@ -1128,10 +1190,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             entry["notified_at"] = _utc_iso()
             index[job_id] = entry
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="mark_notified")
 
     async def mark_notifying(self, job_id: str) -> None:
         if not job_id:
@@ -1143,10 +1202,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             entry["notifying_at"] = _now_ts()
             index[job_id] = entry
             self.jvforge_job_index = index
-            try:
-                await self.save()
-            except Exception:
-                pass
+            await self._persist_job_index(job_id=job_id, op="mark_notifying")
 
     # ── Async jvforge ingest submission ──
 
@@ -1199,6 +1255,11 @@ class ArtifactHandlerInteractAction(InteractAction):
             try:
                 notify = (await self.get_notify_webhook_url() or "").strip()
             except Exception:
+                logger.exception(
+                    "artifact_handler notify: submit_ingest webhook url mint "
+                    "failed agent_id=%s",
+                    agent_id,
+                )
                 notify = ""
         if not notify:
             raise ValueError(
@@ -1275,7 +1336,39 @@ class ArtifactHandlerInteractAction(InteractAction):
                 body if isinstance(body, dict) else {"status": "unknown", "raw": body}
             )
         except Exception as exc:
+            logger.exception(
+                "artifact_handler get_job_status failed job_id=%s",
+                jid,
+            )
             return {"status": "unknown", "job_id": jid, "error": str(exc)}
+
+    async def confirm_artifact_imported(self, job_id: str) -> None:
+        """DELETE the retained jvforge artifact after a successful pull-import."""
+        import httpx
+
+        from jvagent.env import get_jvagent_jvforge_base_url
+
+        jid = (job_id or "").strip()
+        if not jid:
+            return
+        forge_base = (get_jvagent_jvforge_base_url() or "").strip().rstrip("/")
+        if not forge_base:
+            return
+        url = f"{forge_base}/v1/artifacts/{jid}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.delete(url)
+            if resp.status_code not in (204, 404):
+                logger.error(
+                    "artifact_handler artifact DELETE job_id=%s status=%s",
+                    jid,
+                    resp.status_code,
+                )
+        except Exception:
+            logger.exception(
+                "artifact_handler artifact DELETE failed job_id=%s",
+                jid,
+            )
 
     # ── LLM tools (dispatched to custom_tools.py via VaultToolContext) ──
 
