@@ -35,8 +35,8 @@ beautifulsoup4
 markdownify
 
 # From jvagent/stt_action/deepgram and jvagent/tts_action/elevenlabs
-deepgram-sdk>=7.8.1
-elevenlabs>=2.67.0
+deepgram-sdk>=7.9.0
+elevenlabs>=2.68.0
 
 # From jvagent/whatsapp
 filetype>=1.2.0
@@ -50,7 +50,7 @@ google-auth-oauthlib>=1.4.1
 google-search-results>=2.4.2
 
 # From jvagent/pageindex/pageindex_action (PageIndex 0.2.9 upstream deps)
-litellm>=1.100.0,<1.101   # pinned to one minor — see [project.optional-dependencies] litellm
+litellm>=1.101.0,<1.102   # pinned to one minor — see [project.optional-dependencies] litellm
 openai>=1.70.0
 PyPDF2>=3.0.1
 pypdfium2>=4.30.0
