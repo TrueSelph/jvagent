@@ -281,7 +281,86 @@ async def test_notify_imports_when_job_and_trusted_artifact(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_notify_skips_import_for_unknown_job():
+async def test_notify_imports_when_raw_record_has_job_and_cache_empty(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://jvforge.example",
+    )
+    raw_entry = {
+        "job_id": "job-1",
+        "agent_id": "Agent:a",
+        "notified": False,
+        "channel": "default",
+    }
+    cached = SimpleNamespace(
+        id="action-1",
+        lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+    )
+    records = [
+        {
+            "id": "action-1",
+            "context": {"jvforge_job_index": {"job-1": raw_entry}},
+        }
+    ]
+    req = _request(
+        payload={
+            "process_document_url": "https://jvforge.example/v1/artifacts/job-1",
+            "job_id": "job-1",
+        }
+    )
+
+    async def _load(_record):
+        return cached
+
+    async def _reload(action):
+        return action
+
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=cached,
+        ),
+        patch(
+            "jvagent.action.identity.find_records_by_archetype",
+            new_callable=AsyncMock,
+            return_value=records,
+        ),
+        patch(
+            "jvagent.action.identity.load_action_from_record",
+            side_effect=_load,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._reload_action",
+            side_effect=_reload,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._evict_action_cache",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="Doc.md",
+        ) as import_graph,
+    ):
+        out = await artifact_handler_notify(req, "Agent:a")
+    assert out["status"] == "imported"
+    import_graph.assert_awaited_once()
+    cached.mark_notified.assert_awaited_once_with("job-1")
+
+
+@pytest.mark.asyncio
+async def test_notify_skips_import_for_unknown_job(caplog, monkeypatch):
+    monkeypatch.setenv("JVSPATIAL_DB_TYPE", "dynamodb")
     action = SimpleNamespace(
         lookup_job=AsyncMock(return_value=None),
         jvforge_job_index={},
@@ -292,31 +371,33 @@ async def test_notify_skips_import_for_unknown_job():
             "job_id": "job-missing",
         }
     )
-    with (
-        patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
-            new_callable=AsyncMock,
-            return_value=action,
-        ),
-        patch(
-            "jvagent.core.agent.Agent.get",
-            new_callable=AsyncMock,
-            return_value=SimpleNamespace(id="Agent:a"),
-        ),
-        patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
-            new_callable=AsyncMock,
-        ) as import_graph,
-        patch(
-            "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
-            new_callable=AsyncMock,
-            return_value=(None, None),
-        ),
-    ):
-        resp = await artifact_handler_notify(req, "Agent:a")
-        assert resp.status_code == 503
-        assert resp.headers.get("Retry-After")
-        import_graph.assert_not_awaited()
+    with caplog.at_level(logging.WARNING):
+        with (
+            patch(
+                "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+                new_callable=AsyncMock,
+                return_value=action,
+            ),
+            patch(
+                "jvagent.core.agent.Agent.get",
+                new_callable=AsyncMock,
+                return_value=SimpleNamespace(id="Agent:a"),
+            ),
+            patch(
+                "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+                new_callable=AsyncMock,
+            ) as import_graph,
+            patch(
+                "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
+                new_callable=AsyncMock,
+                return_value=(None, None),
+            ),
+        ):
+            resp = await artifact_handler_notify(req, "Agent:a")
+            assert resp.status_code == 503
+            assert resp.headers.get("Retry-After")
+            import_graph.assert_not_awaited()
+    assert "db_type=dynamodb" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -461,8 +542,95 @@ async def test_scan_sibling_load_failure_logs_missing(caplog):
     assert found is None
     assert entry is None
     assert "load action failed" in caplog.text
-    assert "action-bad:missing" in caplog.text
-    assert "action-empty:0" in caplog.text
+    assert "action-bad:raw=0:loaded=missing" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_scan_finds_job_in_raw_record_when_loaded_index_empty():
+    cached = SimpleNamespace(
+        id="action-1",
+        lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
+    )
+    raw_entry = {"job_id": "job-1", "agent_id": "Agent:a", "notified": False}
+    records = [
+        {
+            "id": "action-1",
+            "context": {"jvforge_job_index": {"job-1": raw_entry}},
+        }
+    ]
+
+    async def _load(_record):
+        return cached
+
+    async def _reload(action):
+        return action
+
+    with (
+        patch(
+            "jvagent.action.identity.find_records_by_archetype",
+            new_callable=AsyncMock,
+            return_value=records,
+        ),
+        patch(
+            "jvagent.action.identity.load_action_from_record",
+            side_effect=_load,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._reload_action",
+            side_effect=_reload,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._evict_action_cache",
+            new_callable=AsyncMock,
+        ) as evict,
+    ):
+        found, entry = await _scan_sibling_actions_for_job(
+            "Agent:a", "job-1", skip_id="action-1", skip_index_size=0
+        )
+    assert found is cached
+    assert entry["job_id"] == "job-1"
+    assert "job-1" in cached.jvforge_job_index
+    evict.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scan_unknown_when_raw_maps_empty():
+    cached = SimpleNamespace(
+        id="action-1",
+        lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
+    )
+    records = [{"id": "action-1", "context": {"jvforge_job_index": {}}}]
+
+    async def _load(_record):
+        return cached
+
+    async def _reload(action):
+        return action
+
+    with (
+        patch(
+            "jvagent.action.identity.find_records_by_archetype",
+            new_callable=AsyncMock,
+            return_value=records,
+        ),
+        patch(
+            "jvagent.action.identity.load_action_from_record",
+            side_effect=_load,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._reload_action",
+            side_effect=_reload,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._evict_action_cache",
+            new_callable=AsyncMock,
+        ),
+    ):
+        found, entry = await _scan_sibling_actions_for_job("Agent:a", "job-1")
+    assert found is None
+    assert entry is None
 
 
 @pytest.mark.asyncio

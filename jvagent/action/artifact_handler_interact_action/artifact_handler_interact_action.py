@@ -89,6 +89,36 @@ if str(_AGENT_ROOT) not in sys.path:
 
 _PERSISTED_JOB_INDEX_ATTR = "jvforge_job_index"
 
+
+def _db_type_label() -> str:
+    """JVSPATIAL_DB_TYPE only (json/dynamodb/…); never table, region, or keys."""
+    raw = (os.environ.get("JVSPATIAL_DB_TYPE") or "").strip()
+    return raw or "json"
+
+
+async def _evict_action_cache(action_id: Any) -> None:
+    """Drop request + process entity cache so the next Action.get hits Dynamo."""
+    aid = str(action_id or "").strip()
+    if not aid:
+        return
+    try:
+        from jvspatial.core.context import get_default_context
+
+        ctx = get_default_context()
+        evict = getattr(ctx, "_evict_from_cache", None)
+        if evict is not None:
+            await evict(aid)
+            logger.warning(
+                "artifact_handler cache evict action_id=%s",
+                aid,
+            )
+    except Exception:
+        logger.warning(
+            "artifact_handler cache evict failed action_id=%s",
+            aid,
+        )
+
+
 # WhatsApp MediaManager storage names like ``20260724_134410_c624a9f1.pdf``.
 _MACHINE_FILENAME_RE = re.compile(r"^\d{8}_\d{6}_[0-9a-fA-F]{6,}(\.[A-Za-z0-9]+)?$")
 
@@ -661,6 +691,12 @@ class ArtifactHandlerInteractAction(InteractAction):
                 ).startswith("image/")
                 if use_async and dv_action is not None:
                     try:
+                        logger.warning(
+                            "artifact_handler execute submit_ingest action_id=%s "
+                            "db_type=%s",
+                            getattr(dv_action, "id", None),
+                            _db_type_label(),
+                        )
                         result = await dv_action.submit_ingest(
                             doc=ingest_url,
                             doc_name=doc_name,
@@ -1044,6 +1080,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             return
         from jvagent.action.base import Action
 
+        await _evict_action_cache(action_id)
         fresh = await Action.get(action_id)
         fresh_is_none = fresh is None
         fresh_index = (
@@ -1066,6 +1103,7 @@ class ArtifactHandlerInteractAction(InteractAction):
             fresh_is_none,
         )
         await self.save()
+        await _evict_action_cache(action_id)
         fresh = await Action.get(action_id)
         fresh_is_none = fresh is None
         fresh_index = (
@@ -1245,6 +1283,12 @@ class ArtifactHandlerInteractAction(InteractAction):
         )
 
         job_id = str(result.get("job_id") or "")
+        logger.warning(
+            "artifact_handler submit_ingest queued job_id=%s action_id=%s db_type=%s",
+            job_id or "-",
+            getattr(self, "id", None),
+            _db_type_label(),
+        )
         if job_id:
             await self.register_job(
                 job_id=job_id,

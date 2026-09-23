@@ -121,6 +121,40 @@ async def test_register_job_roundtrip_reload_ok():
 
 
 @pytest.mark.asyncio
+async def test_register_job_evicts_cache_before_reload(caplog):
+    action = _action()
+    action.id = "n.Action.vault1"
+    evict = AsyncMock()
+    ctx = SimpleNamespace(_evict_from_cache=evict)
+    fresh = SimpleNamespace(jvforge_job_index={"job-1": {"job_id": "job-1"}})
+    with (
+        patch(
+            "jvspatial.core.context.get_default_context",
+            return_value=ctx,
+        ),
+        patch(
+            "jvagent.action.base.Action.get",
+            new_callable=AsyncMock,
+            return_value=fresh,
+        ) as get_action,
+    ):
+        with caplog.at_level(logging.WARNING):
+            await action.register_job(
+                job_id="job-1",
+                user_id="u1",
+                conversation_id="c1",
+                session_id="s1",
+                channel="whatsapp",
+                doc_name="doc.jpg",
+                agent_id="n.Agent.a",
+            )
+    evict.assert_awaited_once_with("n.Action.vault1")
+    assert get_action.await_count >= 1
+    assert get_action.await_args_list[0][0][0] == "n.Action.vault1"
+    assert "cache evict action_id=n.Action.vault1" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_register_job_roundtrip_failed_raises():
     action = _action()
     action.id = "n.Action.vault1"
@@ -174,7 +208,7 @@ async def test_submit_ingest_fails_when_register_job_cannot_save(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_submit_ingest_registers_nested_job_id(monkeypatch):
+async def test_submit_ingest_registers_nested_job_id(monkeypatch, caplog):
     action = _action()
     action.id = "n.Action.vault1"
     page_index = SimpleNamespace(
@@ -200,16 +234,18 @@ async def test_submit_ingest_registers_nested_job_id(monkeypatch):
         new_callable=AsyncMock,
         return_value=fresh,
     ):
-        result = await action.submit_ingest(
-            doc="https://files.example/a.jpg",
-            doc_name="a.jpg",
-            user_id="u1",
-            conversation_id="c1",
-            session_id="s1",
-            channel="whatsapp",
-        )
+        with caplog.at_level(logging.WARNING):
+            result = await action.submit_ingest(
+                doc="https://files.example/a.jpg",
+                doc_name="a.jpg",
+                user_id="u1",
+                conversation_id="c1",
+                session_id="s1",
+                channel="whatsapp",
+            )
     assert result["job_id"] == "nested-job"
     assert "nested-job" in action.jvforge_job_index
+    assert "submit_ingest queued job_id=nested-job" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -244,6 +280,7 @@ async def test_submit_ingest_skip_register_when_job_id_empty(monkeypatch, caplog
         )
     assert result.get("job_id") == ""
     assert action.jvforge_job_index == {}
+    assert "submit_ingest queued job_id=-" in caplog.text
     assert "submit_ingest skip register_job" in caplog.text
 
 

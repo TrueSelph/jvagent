@@ -10,6 +10,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Artifact handler ingest/notify `db_type` and submit/evict breadcrumbs.** Execute logs before `submit_ingest`; ingest always logs queued `job_id`; cache evict logs success; notify lookup includes `JVSPATIAL_DB_TYPE` so ingest and notify Lambda requests can be correlated.
+
+- **Artifact handler notify reverse-index on warm Lambda.** `register_job` and notify evict the process entity cache before `Action.get`; notify treats `find()` raw `context.jvforge_job_index` as source of truth so a stale empty cached node cannot 503 a job Dynamo already has.
+
 - **Artifact handler Lambda reverse-index breadcrumbs.** Ingest and notify emit `logger.warning` (and `logger.exception` on catch) at empty `job_id`, persist roundtrip ok/miss, 400 missing fields, first-node hit, sibling scan sizes including the skipped node, load failures, `already_imported`, and agent-not-found after lookup.
 
 - **Artifact handler notify reverse-index across Lambda invokes.** `job_id` is read from nested jvforge 202 bodies; `register_job` reloads the action after save; notify scans every `ArtifactHandlerInteractAction` for the agent. Empty index is no longer assumed to be the first action node.
