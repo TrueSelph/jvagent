@@ -33,6 +33,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **Artifact handler notify and PageIndex webhook import.** Async ingest reverse-indexes the jvforge `job_id` (including nested 202 bodies). `register_job` fails the ingest if the index cannot be saved. Notify requires the minted `api_key` before any job lookup, reloads the action, scans sibling `ArtifactHandlerInteractAction` nodes only after that key matches, and returns **503** on an unknown `job_id` so jvforge retries. Warm Lambda evicts the process entity cache before `Action.get`; raw `find()` `context.jvforge_job_index` is source of truth so a stale empty cached node cannot 503 a job Dynamo already has. The notify route is action-loaded only and still requires a trusted jvforge `/v1/artifacts/{job_id}` URL. Import, ready-answer generate, and WhatsApp/Messenger send run in-request via sequential `jvspatial.create_task` (Shape B); a returned schedule is awaited so Lambda cannot freeze it. A failed send leaves the reverse-index job and returns **503**. PageIndex graph import uses the same await. PageIndex LLM completions use `POST /api/pageindex/interact/webhook/{agent_id}` (old retrieval path 404s). Lambda `.docx`/Office saves sniff MIME via `file`/`file-libs` + `python-magic` in `Dockerfile.base` instead of falling through to `octet-stream`. Failures stay `logger.error` / `logger.exception`. `check_ingest_status` still prefers PageIndex, then polls jvforge and pull-imports `webhook_failed` / `completed` artifacts.
+
 - **ResponseBus now enforces the single-egress latch.** The first delivered
   non-transient user stream chunk marks its `Interaction` as emitted, active
   chunks may finish that same stream, and any later independent user publish
@@ -516,6 +518,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   collapse; ``DELETE /actions/{id}`` routes through ``deregister_action``;
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
+
+## [0.1.8rc15-dev12] - 2026-09-23
+
+### Fixed
+
+- **Artifact handler ingest/notify `db_type` and submit/evict breadcrumbs.** Execute logs before `submit_ingest`; ingest always logs queued `job_id`; cache evict logs success; notify lookup includes `JVSPATIAL_DB_TYPE` so ingest and notify Lambda requests can be correlated.
+
+- **Artifact handler notify reverse-index on warm Lambda.** `register_job` and notify evict the process entity cache before `Action.get`; notify treats `find()` raw `context.jvforge_job_index` as source of truth so a stale empty cached node cannot 503 a job Dynamo already has.
+
+- **Artifact handler Lambda reverse-index breadcrumbs.** Ingest and notify emit `logger.warning` (and `logger.exception` on catch) at empty `job_id`, persist roundtrip ok/miss, 400 missing fields, first-node hit, sibling scan sizes including the skipped node, load failures, `already_imported`, and agent-not-found after lookup.
+
+- **Artifact handler notify reverse-index across Lambda invokes.** `job_id` is read from nested jvforge 202 bodies; `register_job` reloads the action after save; notify scans every `ArtifactHandlerInteractAction` for the agent. Empty index is no longer assumed to be the first action node.
 
 ## [0.1.8rc15] - 2026-09-19
 

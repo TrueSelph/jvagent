@@ -17,6 +17,27 @@ from .documents import delete_document, get_document_root, import_documents
 
 logger = logging.getLogger(__name__)
 
+
+def _job_id_from_jvforge_body(body: Any) -> str:
+    """job_id from a jvforge 200/202 body (top-level, ``data``, or ``data.result``)."""
+    if not isinstance(body, dict):
+        return ""
+    raw = body.get("job_id")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    data = body.get("data")
+    if isinstance(data, dict):
+        raw = data.get("job_id")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        result = data.get("result")
+        if isinstance(result, dict):
+            raw = result.get("job_id")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    return ""
+
+
 _JVFORGE_POST_ATTEMPTS = 5
 _JVFORGE_RETRY_BACKOFF_S = (2.0, 4.0, 8.0, 16.0)
 
@@ -475,13 +496,20 @@ async def assimilate_via_jvforge_async(
     body = r.json()
     bdict = body if isinstance(body, dict) else {}
     queued_doc = str(bdict.get("doc_name") or "").strip()
+    job_id = _job_id_from_jvforge_body(bdict)
+    if not job_id:
+        logger.warning(
+            "jvforge async response missing job_id status=%s keys=%s",
+            r.status_code,
+            sorted(bdict.keys()) if isinstance(bdict, dict) else type(bdict).__name__,
+        )
 
     # Handle both 200 (duplicate) and 202 (queued) responses
     if r.status_code == 200:
         # Document already in queue
         return {
             "status": "already_queued",
-            "job_id": bdict.get("job_id"),
+            "job_id": job_id or None,
             "queue_position": bdict.get(
                 "queue_position", {"overall": 0, "per_agent": 0}
             ),
@@ -494,7 +522,7 @@ async def assimilate_via_jvforge_async(
         # Successfully queued
         return {
             "status": "queued",
-            "job_id": bdict.get("job_id"),
+            "job_id": job_id or None,
             "queue_position": bdict.get(
                 "queue_position", {"overall": 0, "per_agent": 0}
             ),
