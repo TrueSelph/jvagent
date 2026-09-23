@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -80,6 +81,67 @@ async def test_register_job_save_failure_raises():
 
 
 @pytest.mark.asyncio
+async def test_register_job_empty_job_id_logs(caplog):
+    action = _action()
+    action.id = "n.Action.vault1"
+    with caplog.at_level(logging.WARNING):
+        await action.register_job(
+            job_id="",
+            user_id="u1",
+            conversation_id="c1",
+            session_id="s1",
+            channel="whatsapp",
+            doc_name="doc.jpg",
+            agent_id="n.Agent.a",
+        )
+    assert "register_job skipped empty job_id" in caplog.text
+    assert action.jvforge_job_index == {}
+
+
+@pytest.mark.asyncio
+async def test_register_job_roundtrip_reload_ok():
+    action = _action()
+    action.id = "n.Action.vault1"
+    fresh = SimpleNamespace(jvforge_job_index={"job-1": {"job_id": "job-1"}})
+    with patch(
+        "jvagent.action.base.Action.get",
+        new_callable=AsyncMock,
+        return_value=fresh,
+    ):
+        await action.register_job(
+            job_id="job-1",
+            user_id="u1",
+            conversation_id="c1",
+            session_id="s1",
+            channel="whatsapp",
+            doc_name="doc.jpg",
+            agent_id="n.Agent.a",
+        )
+    assert "job-1" in action.jvforge_job_index
+
+
+@pytest.mark.asyncio
+async def test_register_job_roundtrip_failed_raises():
+    action = _action()
+    action.id = "n.Action.vault1"
+    with patch(
+        "jvagent.action.base.Action.get",
+        new_callable=AsyncMock,
+        return_value=SimpleNamespace(jvforge_job_index={}),
+    ):
+        with pytest.raises(RuntimeError, match="did not persist"):
+            await action.register_job(
+                job_id="job-1",
+                user_id="u1",
+                conversation_id="c1",
+                session_id="s1",
+                channel="whatsapp",
+                doc_name="doc.jpg",
+                agent_id="n.Agent.a",
+            )
+
+
+@pytest.mark.asyncio
 async def test_submit_ingest_fails_when_register_job_cannot_save(monkeypatch):
     action = _action(save=AsyncMock(side_effect=RuntimeError("db down")))
     page_index = SimpleNamespace(
@@ -109,6 +171,80 @@ async def test_submit_ingest_fails_when_register_job_cannot_save(monkeypatch):
             session_id="s1",
             channel="whatsapp",
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_ingest_registers_nested_job_id(monkeypatch):
+    action = _action()
+    action.id = "n.Action.vault1"
+    page_index = SimpleNamespace(
+        get_webhook_url=AsyncMock(return_value="https://example/llm")
+    )
+    action.get_action = AsyncMock(return_value=page_index)
+    action.get_notify_webhook_url = AsyncMock(return_value="https://example/notify")
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://forge.example",
+    )
+
+    async def fake_assimilate(**_kwargs):
+        return {"job_id": "nested-job", "status": "queued"}
+
+    monkeypatch.setattr(
+        "jvagent.action.pageindex.jvforge_assimilate.assimilate_via_jvforge_async",
+        fake_assimilate,
+    )
+    fresh = SimpleNamespace(jvforge_job_index={"nested-job": {"job_id": "nested-job"}})
+    with patch(
+        "jvagent.action.base.Action.get",
+        new_callable=AsyncMock,
+        return_value=fresh,
+    ):
+        result = await action.submit_ingest(
+            doc="https://files.example/a.jpg",
+            doc_name="a.jpg",
+            user_id="u1",
+            conversation_id="c1",
+            session_id="s1",
+            channel="whatsapp",
+        )
+    assert result["job_id"] == "nested-job"
+    assert "nested-job" in action.jvforge_job_index
+
+
+@pytest.mark.asyncio
+async def test_submit_ingest_skip_register_when_job_id_empty(monkeypatch, caplog):
+    action = _action()
+    action.id = "n.Action.vault1"
+    page_index = SimpleNamespace(
+        get_webhook_url=AsyncMock(return_value="https://example/llm")
+    )
+    action.get_action = AsyncMock(return_value=page_index)
+    action.get_notify_webhook_url = AsyncMock(return_value="https://example/notify")
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://forge.example",
+    )
+
+    async def fake_assimilate(**_kwargs):
+        return {"status": "queued", "job_id": ""}
+
+    monkeypatch.setattr(
+        "jvagent.action.pageindex.jvforge_assimilate.assimilate_via_jvforge_async",
+        fake_assimilate,
+    )
+    with caplog.at_level(logging.WARNING):
+        result = await action.submit_ingest(
+            doc="https://files.example/a.jpg",
+            doc_name="a.jpg",
+            user_id="u1",
+            conversation_id="c1",
+            session_id="s1",
+            channel="whatsapp",
+        )
+    assert result.get("job_id") == ""
+    assert action.jvforge_job_index == {}
+    assert "submit_ingest skip register_job" in caplog.text
 
 
 @pytest.mark.asyncio

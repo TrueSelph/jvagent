@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +16,7 @@ from jvagent.action.artifact_handler_interact_action.artifact_handler_interact_a
 )
 from jvagent.action.artifact_handler_interact_action.endpoints import (
     _is_trusted_notify_artifact_url,
+    _scan_sibling_actions_for_job,
     _send_whatsapp_notifications,
     artifact_handler_notify,
 )
@@ -151,15 +153,26 @@ async def _inline_create_task(coro_or_type, payload=None, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_notify_rejects_missing_job_id():
+async def test_notify_rejects_missing_job_id(caplog):
     req = _request(payload={"process_document_url": "https://example.com/a"})
-    with patch(
-        "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
-        new_callable=AsyncMock,
-    ) as resolve:
+    with caplog.at_level(logging.WARNING):
+        with patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+        ) as resolve:
+            resp = await artifact_handler_notify(req, "Agent:a")
+            assert resp.status_code == 400
+            resolve.assert_not_awaited()
+    assert "missing job_id" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_notify_rejects_missing_process_document_url(caplog):
+    req = _request(payload={"job_id": "job-1"})
+    with caplog.at_level(logging.WARNING):
         resp = await artifact_handler_notify(req, "Agent:a")
-        assert resp.status_code == 400
-        resolve.assert_not_awaited()
+    assert resp.status_code == 400
+    assert "missing process_document_url" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -294,11 +307,224 @@ async def test_notify_skips_import_for_unknown_job():
             "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
             new_callable=AsyncMock,
         ) as import_graph,
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
+            new_callable=AsyncMock,
+            return_value=(None, None),
+        ),
     ):
         resp = await artifact_handler_notify(req, "Agent:a")
         assert resp.status_code == 503
         assert resp.headers.get("Retry-After")
         import_graph.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_notify_finds_job_on_sibling_action(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://jvforge.example",
+    )
+    empty = SimpleNamespace(
+        id="action-empty",
+        lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+    )
+    holder = SimpleNamespace(
+        id="action-holder",
+        lookup_job=AsyncMock(
+            return_value={
+                "job_id": "job-1",
+                "agent_id": "Agent:a",
+                "notified": False,
+                "channel": "default",
+            }
+        ),
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+        jvforge_job_index={"job-1": {}},
+    )
+    req = _request(
+        payload={
+            "process_document_url": "https://jvforge.example/v1/artifacts/job-1",
+            "job_id": "job-1",
+        }
+    )
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=empty,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
+            new_callable=AsyncMock,
+            return_value=(
+                holder,
+                {
+                    "job_id": "job-1",
+                    "agent_id": "Agent:a",
+                    "notified": False,
+                    "channel": "default",
+                },
+            ),
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="Doc.md",
+        ) as import_graph,
+    ):
+        out = await artifact_handler_notify(req, "Agent:a")
+    assert out["status"] == "imported"
+    import_graph.assert_awaited_once()
+    holder.mark_notified.assert_awaited_once_with("job-1")
+    holder.clear_job.assert_awaited_once_with("job-1")
+    empty.mark_notified.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scan_sibling_actions_finds_job_on_second_node():
+    empty = SimpleNamespace(
+        id="action-empty",
+        lookup_job=AsyncMock(return_value=None),
+        jvforge_job_index={},
+    )
+    holder = SimpleNamespace(
+        id="action-holder",
+        lookup_job=AsyncMock(return_value={"job_id": "job-1", "agent_id": "Agent:a"}),
+        jvforge_job_index={"job-1": {"job_id": "job-1"}},
+    )
+    records = [{"id": "action-empty"}, {"id": "action-holder"}]
+    by_id = {"action-empty": empty, "action-holder": holder}
+
+    async def _load(record):
+        return by_id[record["id"]]
+
+    async def _reload(action):
+        return action
+
+    with (
+        patch(
+            "jvagent.action.identity.find_records_by_archetype",
+            new_callable=AsyncMock,
+            return_value=records,
+        ),
+        patch(
+            "jvagent.action.identity.load_action_from_record",
+            side_effect=_load,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._reload_action",
+            side_effect=_reload,
+        ),
+    ):
+        found, entry = await _scan_sibling_actions_for_job("Agent:a", "job-1")
+    assert found is holder
+    assert entry["job_id"] == "job-1"
+    empty.lookup_job.assert_awaited_once_with("job-1")
+    holder.lookup_job.assert_awaited_once_with("job-1")
+
+
+@pytest.mark.asyncio
+async def test_scan_sibling_load_failure_logs_missing(caplog):
+    records = [{"id": "action-bad"}]
+
+    async def _load(_record):
+        raise RuntimeError("load boom")
+
+    with caplog.at_level(logging.WARNING):
+        with (
+            patch(
+                "jvagent.action.identity.find_records_by_archetype",
+                new_callable=AsyncMock,
+                return_value=records,
+            ),
+            patch(
+                "jvagent.action.identity.load_action_from_record",
+                side_effect=_load,
+            ),
+        ):
+            found, entry = await _scan_sibling_actions_for_job(
+                "Agent:a",
+                "job-1",
+                skip_id="action-empty",
+                skip_index_size=0,
+            )
+    assert found is None
+    assert entry is None
+    assert "load action failed" in caplog.text
+    assert "action-bad:missing" in caplog.text
+    assert "action-empty:0" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_notify_finds_job_when_resolve_action_missing(monkeypatch):
+    monkeypatch.setattr(
+        "jvagent.env.get_jvagent_jvforge_base_url",
+        lambda: "https://jvforge.example",
+    )
+    holder = SimpleNamespace(
+        id="action-holder",
+        lookup_job=AsyncMock(
+            return_value={
+                "job_id": "job-1",
+                "agent_id": "Agent:a",
+                "notified": False,
+                "channel": "default",
+            }
+        ),
+        mark_notified=AsyncMock(),
+        clear_job=AsyncMock(),
+        jvforge_job_index={"job-1": {}},
+    )
+    req = _request(
+        payload={
+            "process_document_url": "https://jvforge.example/v1/artifacts/job-1",
+            "job_id": "job-1",
+        }
+    )
+    with (
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._resolve_action",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._scan_sibling_actions_for_job",
+            new_callable=AsyncMock,
+            return_value=(
+                holder,
+                {
+                    "job_id": "job-1",
+                    "agent_id": "Agent:a",
+                    "notified": False,
+                    "channel": "default",
+                },
+            ),
+        ),
+        patch(
+            "jvagent.core.agent.Agent.get",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="Agent:a"),
+        ),
+        patch(
+            "jvagent.action.artifact_handler_interact_action.endpoints._download_and_import_graph",
+            new_callable=AsyncMock,
+            return_value="Doc.md",
+        ) as import_graph,
+    ):
+        out = await artifact_handler_notify(req, "Agent:a")
+    assert out["status"] == "imported"
+    import_graph.assert_awaited_once()
+    holder.mark_notified.assert_awaited_once_with("job-1")
 
 
 @pytest.mark.asyncio
@@ -336,7 +562,7 @@ async def test_notify_rejects_job_for_other_agent():
 
 
 @pytest.mark.asyncio
-async def test_notify_idempotent_when_already_notified():
+async def test_notify_idempotent_when_already_notified(caplog):
     action = SimpleNamespace(
         lookup_job=AsyncMock(
             return_value={
@@ -373,10 +599,12 @@ async def test_notify_idempotent_when_already_notified():
             new_callable=AsyncMock,
         ) as send,
     ):
-        out = await artifact_handler_notify(req, "Agent:a")
+        with caplog.at_level(logging.WARNING):
+            out = await artifact_handler_notify(req, "Agent:a")
         assert out["status"] == "already_imported"
         import_graph.assert_not_awaited()
         send.assert_not_awaited()
+    assert "already_imported" in caplog.text
 
 
 def _whatsapp_job(**extra):

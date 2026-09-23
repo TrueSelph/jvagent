@@ -1000,6 +1000,10 @@ class ArtifactHandlerInteractAction(InteractAction):
         file_url: Optional[str] = None,
     ) -> None:
         if not job_id:
+            logger.warning(
+                "artifact_handler register_job skipped empty job_id action_id=%s",
+                getattr(self, "id", None),
+            )
             return
         question = (pending_question or "").strip() or None
         display_name = (filename or "").strip() or None
@@ -1022,6 +1026,69 @@ class ArtifactHandlerInteractAction(InteractAction):
         self.jvforge_job_index = index
         await self._persist_job_index(
             job_id=job_id, op="register_job", raise_on_error=True
+        )
+        action_id = getattr(self, "id", None)
+        index_size = len(self.jvforge_job_index or {})
+        logger.warning(
+            "artifact_handler register_job job_id=%s action_id=%s index_size=%s",
+            job_id,
+            action_id,
+            index_size,
+        )
+        if not action_id:
+            logger.warning(
+                "artifact_handler register_job skipped reload (no action_id) "
+                "job_id=%s",
+                job_id,
+            )
+            return
+        from jvagent.action.base import Action
+
+        fresh = await Action.get(action_id)
+        fresh_is_none = fresh is None
+        fresh_index = (
+            getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
+        )
+        if isinstance(fresh_index, dict) and job_id in fresh_index:
+            logger.warning(
+                "artifact_handler register_job roundtrip ok job_id=%s action_id=%s "
+                "index_size=%s",
+                job_id,
+                action_id,
+                index_size,
+            )
+            return
+        logger.warning(
+            "artifact_handler register_job reload missing job_id=%s action_id=%s "
+            "fresh_is_none=%s; retrying save",
+            job_id,
+            action_id,
+            fresh_is_none,
+        )
+        await self.save()
+        fresh = await Action.get(action_id)
+        fresh_is_none = fresh is None
+        fresh_index = (
+            getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
+        )
+        if isinstance(fresh_index, dict) and job_id in fresh_index:
+            logger.warning(
+                "artifact_handler register_job roundtrip ok job_id=%s action_id=%s "
+                "index_size=%s",
+                job_id,
+                action_id,
+                index_size,
+            )
+            return
+        logger.warning(
+            "artifact_handler register_job roundtrip failed job_id=%s action_id=%s "
+            "fresh_is_none=%s",
+            job_id,
+            action_id,
+            fresh_is_none,
+        )
+        raise RuntimeError(
+            f"artifact_handler register_job did not persist job_id={job_id}"
         )
 
     async def lookup_job(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -1190,6 +1257,13 @@ class ArtifactHandlerInteractAction(InteractAction):
                 pending_question=pending_question,
                 filename=filename,
                 file_url=file_url,
+            )
+        else:
+            logger.warning(
+                "artifact_handler submit_ingest skip register_job agent_id=%s "
+                "action_id=%s",
+                agent_id,
+                getattr(self, "id", None),
             )
         return result
 

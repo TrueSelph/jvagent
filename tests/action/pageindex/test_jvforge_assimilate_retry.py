@@ -155,3 +155,49 @@ async def test_assimilate_via_jvforge_async_retries_read_error() -> None:
     assert result["status"] == "queued"
     assert result["job_id"] == "job-1"
     assert mock_client.post.await_count == 3
+
+
+def test_job_id_from_jvforge_body_nested_data() -> None:
+    from jvagent.action.pageindex.jvforge_assimilate import _job_id_from_jvforge_body
+
+    assert _job_id_from_jvforge_body({"job_id": "top"}) == "top"
+    assert _job_id_from_jvforge_body({"data": {"job_id": "nested"}}) == "nested"
+    assert _job_id_from_jvforge_body({"data": {"result": {"job_id": "deep"}}}) == "deep"
+    assert _job_id_from_jvforge_body({"data": {}}) == ""
+
+
+@pytest.mark.asyncio
+async def test_assimilate_via_jvforge_async_reads_nested_job_id() -> None:
+    resp = MagicMock()
+    resp.status_code = 202
+    resp.json.return_value = {
+        "success": True,
+        "data": {"job_id": "nested-job", "status": "queued"},
+    }
+    resp.text = ""
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "jvagent.action.pageindex.jvforge_assimilate.httpx.AsyncClient",
+        return_value=mock_client,
+    ):
+        result = await assimilate_via_jvforge_async(
+            base_url="http://jvforge.test",
+            agent_id="agent-1",
+            doc_name="doc.docx",
+            model=None,
+            if_add_node_summary=False,
+            collection_name="agent-1",
+            metadata=None,
+            doc_description=None,
+            doc_url=None,
+            convert_to_markdown=True,
+            ocr=False,
+            llm_webhook_url="http://localhost/webhook",
+            filename="doc.docx",
+            content=b"%docx",
+        )
+    assert result["job_id"] == "nested-job"
