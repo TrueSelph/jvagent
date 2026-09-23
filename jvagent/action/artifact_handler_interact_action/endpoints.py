@@ -26,6 +26,10 @@ from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
 
+from .artifact_handler_interact_action import (
+    _db_type_label,
+    _evict_action_cache,
+)
 from .ready_message import (  # noqa: F401 — re-export for tests / notify
     _canned_ready_message,
     _canned_ready_message_multi,
@@ -90,6 +94,7 @@ async def _reload_action(action: Any) -> Any:
     try:
         from jvagent.action.base import Action
 
+        await _evict_action_cache(action_id)
         fresh = await Action.get(action_id)
         return fresh if fresh is not None else action
     except Exception:
@@ -103,6 +108,19 @@ async def _reload_action(action: Any) -> Any:
 def _action_index_size(action: Any) -> int:
     index = getattr(action, "jvforge_job_index", None) or {}
     return len(index) if isinstance(index, dict) else 0
+
+
+def _job_index_from_record(record: Any) -> Dict[str, Any]:
+    """``jvforge_job_index`` from a raw find() node document (not entity cache)."""
+    if not isinstance(record, dict):
+        return {}
+    ctx = record.get("context")
+    if not isinstance(ctx, dict):
+        ctx = {}
+    idx = ctx.get("jvforge_job_index")
+    if idx is None:
+        idx = record.get("jvforge_job_index")
+    return idx if isinstance(idx, dict) else {}
 
 
 async def _scan_sibling_actions_for_job(
@@ -132,14 +150,18 @@ async def _scan_sibling_actions_for_job(
     if not isinstance(records, list):
         records = []
     sizes: List[str] = []
-    loaded: List[Tuple[Any, str, int]] = []
-    if skip_id:
-        skip_size = skip_index_size if skip_index_size is not None else "?"
-        sizes.append(f"{skip_id}:{skip_size}")
+    loaded: List[Tuple[Any, str, int, Dict[str, Any]]] = []
     for record in records:
         rid = str((record or {}).get("id") or "")
-        if skip_id and rid == skip_id:
+        raw_index = _job_index_from_record(record)
+        raw_size = len(raw_index)
+        raw_hit = bool(job_id) and job_id in raw_index
+        if skip_id and rid == skip_id and not raw_hit:
+            skip_loaded = skip_index_size if skip_index_size is not None else "?"
+            sizes.append(f"{skip_id}:raw={raw_size}:loaded={skip_loaded}")
             continue
+        if raw_hit:
+            await _evict_action_cache(rid)
         try:
             other = await load_action_from_record(record)
         except Exception:
@@ -152,13 +174,32 @@ async def _scan_sibling_actions_for_job(
             )
             other = None
         if other is None:
-            sizes.append(f"{rid or '?'}:missing")
+            sizes.append(f"{rid or '?'}:raw={raw_size}:loaded=missing")
+            if raw_hit:
+                raw_entry = raw_index.get(job_id)
+                if isinstance(raw_entry, dict):
+                    logger.warning(
+                        "artifact_handler_notify: job_id=%s agent_id=%s raw hit "
+                        "action_id=%s raw_index_size=%s loaded_index_size=missing",
+                        job_id,
+                        agent_id,
+                        rid or "?",
+                        raw_size,
+                    )
             continue
         other = await _reload_action(other)
-        size = _action_index_size(other)
+        loaded_size = _action_index_size(other)
         oid = str(getattr(other, "id", None) or rid or "?")
-        sizes.append(f"{oid}:{size}")
-        loaded.append((other, oid, size))
+        sizes.append(f"{oid}:raw={raw_size}:loaded={loaded_size}")
+        loaded.append((other, oid, loaded_size, raw_index))
+        logger.warning(
+            "artifact_handler_notify: scan action_id=%s job_id=%s "
+            "raw_index_size=%s loaded_index_size=%s",
+            oid,
+            job_id,
+            raw_size,
+            loaded_size,
+        )
     logger.warning(
         "artifact_handler_notify: lookup job_id=%s agent_id=%s record_count=%s "
         "actions=%s",
@@ -167,8 +208,15 @@ async def _scan_sibling_actions_for_job(
         len(records),
         ",".join(sizes) or "-",
     )
-    for other, oid, size in loaded:
+    for other, oid, size, raw_index in loaded:
         entry = await other.lookup_job(job_id)
+        if not entry:
+            raw_entry = raw_index.get(job_id)
+            if isinstance(raw_entry, dict):
+                merged = dict(getattr(other, "jvforge_job_index", None) or {})
+                merged[job_id] = dict(raw_entry)
+                other.jvforge_job_index = merged
+                entry = dict(raw_entry)
         if entry:
             logger.warning(
                 "artifact_handler_notify: job_id=%s agent_id=%s found on "
@@ -908,11 +956,12 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     index_size = _action_index_size(action) if action is not None else 0
     logger.warning(
         "artifact_handler_notify: lookup job_id=%s agent_id=%s action_id=%s "
-        "index_size=%s",
+        "index_size=%s db_type=%s",
         job_id,
         agent_id,
         action_id or "-",
         index_size,
+        _db_type_label(),
     )
     entry = await action.lookup_job(job_id) if action is not None else None
     if entry:
