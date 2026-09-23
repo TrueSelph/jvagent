@@ -10,6 +10,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **PageIndex webhook graph import uses `jvspatial.create_task`.** `process_document_url` import is Shape B so Lambda awaits the import in the request instead of dropping `asyncio.create_task` when the Function URL returns. LLM completions were already in-request.
+
 - **Artifact handler notify webhook 403 on Lambda.** Notify API keys are minted with `/api/artifact_handler_action/notify/*` like Drive/WhatsApp/PageIndex, so jvspatial webhook auth no longer 403s when the request path does not byte-match an exact agent id. The handler still hmac-binds the key id to this action. Exact-path keys remint on the next vault submit.
 
 - **Artifact handler notify awaits `create_task` return and time-bounds ready-answer generate.** After inline import, generate then send run as two sequential `jvspatial.create_task` calls; a non-None return is awaited so Lambda cannot 200-and-freeze the ready message. PageIndex desc lookup (5s) and ready-answer generate (12s) time out to a canned message, then the channel send still runs.
