@@ -492,11 +492,11 @@ class ArtifactHandlerInteractAction(InteractAction):
 
     notify_webhook_url: Optional[str] = attribute(
         default=None,
-        description="Inbound jvforge notify URL (no api_key query).",
+        description="Inbound jvforge notify URL (includes api_key query when generated).",
     )
     notify_webhook_api_key_id: Optional[str] = attribute(
         default=None,
-        description="Unused. Kept for existing action nodes that stored a notify key id.",
+        description="API key id bound to this action's notify webhook.",
     )
 
     binds_tools_to_visitor: bool = True
@@ -975,14 +975,24 @@ class ArtifactHandlerInteractAction(InteractAction):
     async def get_notify_webhook_url(
         self, allowed_ip: Optional[str] = None, regenerate: bool = False
     ) -> str:
-        """Public notify URL jvforge uses for ingest completion pings (no api_key)."""
+        """Public notify URL (+ api_key) jvforge uses for ingest completion pings."""
+        from typing import Any
+
+        from jvspatial.api.auth.api_key_service import APIKeyService
         from jvspatial.api.exceptions import ValidationError
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_prime_database
+        from jvspatial.exceptions import DatabaseError
 
         from jvagent.core.public_url import get_public_base_url
 
-        from .webhook_auth import ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX
+        from .webhook_auth import (
+            ALLOWED_WEBHOOK_ENDPOINT_GLOB,
+            ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX,
+            WEBHOOK_PERMISSION,
+            get_or_create_system_user,
+        )
 
-        del allowed_ip
         base_url = (get_public_base_url() or "").strip().rstrip("/")
         if not base_url.startswith(("http://", "https://")):
             raise ValidationError(
@@ -990,18 +1000,85 @@ class ArtifactHandlerInteractAction(InteractAction):
                 details={"JVAGENT_PUBLIC_BASE_URL": base_url or "(empty)"},
             )
 
-        agent = await self.get_agent()
-        agent_id = str(agent.id)
-        expected = f"{base_url}/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/{agent_id}"
-        cached = (self.notify_webhook_url or "").split("?", 1)[0]
-        if not regenerate and cached == expected:
-            if self.notify_webhook_url != expected:
-                self.notify_webhook_url = expected
-                await self.save()
-            return expected
-        self.notify_webhook_url = expected
-        await self.save()
-        return expected
+        try:
+            agent = await self.get_agent()
+            agent_id = str(agent.id)
+            expected_url_base = (
+                f"{base_url}/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/{agent_id}"
+            )
+
+            def _key_scoped_to_agent(existing_key: Any) -> bool:
+                if existing_key is None or not getattr(
+                    existing_key, "is_active", False
+                ):
+                    return False
+                existing_eps = list(
+                    getattr(existing_key, "allowed_endpoints", None) or []
+                )
+                return ALLOWED_WEBHOOK_ENDPOINT_GLOB in existing_eps
+
+            prime_ctx = GraphContext(database=get_prime_database())
+            api_key_service = APIKeyService(context=prime_ctx)
+
+            if (
+                not regenerate
+                and self.notify_webhook_url
+                and "?api_key=" in self.notify_webhook_url
+                and self.notify_webhook_url.startswith(expected_url_base)
+                and self.notify_webhook_api_key_id
+            ):
+                try:
+                    existing_key = await api_key_service.get_key(
+                        self.notify_webhook_api_key_id
+                    )
+                    if _key_scoped_to_agent(existing_key):
+                        if allowed_ip is not None:
+                            requested_ips = [allowed_ip] if allowed_ip else []
+                            existing_ips = (
+                                getattr(existing_key, "allowed_ips", None) or []
+                            )
+                            if requested_ips == existing_ips:
+                                return self.notify_webhook_url
+                        else:
+                            return self.notify_webhook_url
+                except Exception:
+                    pass
+
+            system_user_id = await get_or_create_system_user()
+
+            if self.notify_webhook_api_key_id:
+                try:
+                    await api_key_service.revoke_key(
+                        self.notify_webhook_api_key_id, system_user_id
+                    )
+                except Exception:
+                    pass
+
+            agent_name = getattr(agent, "name", None) or agent_id
+            plaintext_key, api_key = await api_key_service.generate_key(
+                user_id=system_user_id,
+                name=f"ArtifactHandler notify webhook — {agent_name}",
+                permissions=[WEBHOOK_PERMISSION],
+                expires_in_days=None,
+                allowed_ips=[allowed_ip] if allowed_ip else [],
+                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
+                key_prefix="jv_",
+            )
+
+            self.notify_webhook_api_key_id = api_key.id
+            self.notify_webhook_url = f"{expected_url_base}?api_key={plaintext_key}"
+            await self.save()
+            return self.notify_webhook_url
+
+        except DatabaseError:
+            raise
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise ValidationError(
+                message=f"Notify webhook URL generation failed: {e}",
+                details={},
+            )
 
     # ── Reverse-index API ──
 

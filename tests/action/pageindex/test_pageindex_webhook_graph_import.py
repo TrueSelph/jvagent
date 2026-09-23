@@ -46,13 +46,19 @@ async def test_schedule_runs_import_when_create_task_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_schedule_does_not_await_returned_task():
-    """Long-running Shape B: helper does not await the scheduled Task."""
+async def test_schedule_awaits_returned_task():
+    """A scheduled object from create_task is awaited before the helper returns."""
     import_ran = []
 
+    class _Scheduled:
+        def __init__(self, coro):
+            self._coro = coro
+
+        def __await__(self):
+            return self._coro.__await__()
+
     async def fake_create_task(coro, name=""):
-        coro.close()
-        return object()
+        return _Scheduled(coro)
 
     with (
         patch(
@@ -75,5 +81,5 @@ async def test_schedule_does_not_await_returned_task():
             purge=False,
             process_url="https://jvforge.example/v1/artifacts/job-1",
         )
-    assert import_ran == []
-    delete_staged.assert_not_awaited()
+    assert import_ran == [True]
+    delete_staged.assert_awaited_once_with("staged/graph.json")

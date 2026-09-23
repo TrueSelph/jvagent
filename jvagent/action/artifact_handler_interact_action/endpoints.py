@@ -178,6 +178,24 @@ async def _scan_sibling_actions_for_job(
     return None, None
 
 
+def _presented_notify_key_id(request: Request) -> str:
+    """API key id jvspatial put on the request after webhook_auth."""
+    user = getattr(request.state, "user", None) or {}
+    if isinstance(user, dict):
+        return str(user.get("api_key_id") or "").strip()
+    return str(getattr(user, "api_key_id", "") or "").strip()
+
+
+def _notify_key_matches(action: Any, presented: str) -> bool:
+    """True when the presented key id is this action's minted notify key."""
+    import hmac
+
+    expected = str(getattr(action, "notify_webhook_api_key_id", None) or "").strip()
+    if not expected or not presented:
+        return False
+    return hmac.compare_digest(expected, presented)
+
+
 def _is_trusted_notify_artifact_url(process_document_url: str, job_id: str) -> bool:
     """True when the URL is this job's jvforge artifact on the configured forge origin."""
     from jvagent.action.pageindex.url_guard import (
@@ -807,12 +825,13 @@ async def _notify_and_close_job(
     methods=["POST"],
     webhook=True,
     auth=False,
+    webhook_auth="api_key",
     tags=["ArtifactHandlerInteractAction"],
     summary="jvforge async ingest completion callback (import + notification)",
     description=(
+        "Authenticate with **api_key** query parameter or header. "
         "jvforge POSTs ``process_document_url`` when an async ingest job finishes. "
-        "Authorization is a known reverse-index ``job_id`` plus a trusted "
-        "jvforge ``/v1/artifacts/{job_id}`` URL."
+        "The presented key must match this action's minted notify key."
     ),
     response=success_response(
         data={
@@ -835,16 +854,17 @@ async def artifact_handler_notify(request: Request, agent_id: str):
         }
 
     Flow:
-        1. Resolve the ArtifactHandlerInteractAction and reload from DB.
-        2. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
-        3. Require ``process_document_url`` to be this job's trusted jvforge artifact.
-        4. Download artifact from ``process_document_url`` and import into PageIndex.
-        5. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
-        6. For WhatsApp/Messenger: two sequential ``create_task`` calls
+        1. Reject a missing API key before any action or job lookup.
+        2. Bind the presented key to this action's minted notify key.
+        3. Require a known ``job_id`` in the reverse index (blocks replay/spam import).
+        4. Require ``process_document_url`` to be this job's trusted jvforge artifact.
+        5. Download artifact from ``process_document_url`` and import into PageIndex.
+        6. Mark the job as ``ready`` in conversation ``pending_ingest_jobs``.
+        7. For WhatsApp/Messenger: two sequential ``create_task`` calls
            (generate, then send). If a call returns a scheduled object it is
            awaited before 200 so Lambda cannot freeze the send.
            ``mark_notified`` / ``clear_job`` run only after a successful send.
-        7. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
+        8. Return 200 on success, 503 + Retry-After on failure (so jvforge retries).
            A failed channel send leaves the reverse-index job in place.
     """
     try:
@@ -874,6 +894,18 @@ async def artifact_handler_notify(request: Request, agent_id: str):
             content={"detail": "job_id is required"},
         )
 
+    presented_key = _presented_notify_key_id(request)
+    if not presented_key:
+        logger.error(
+            "artifact_handler_notify: missing api key agent_id=%s job_id=%s",
+            agent_id,
+            job_id,
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "API key required"},
+        )
+
     action = await _resolve_action(agent_id)
     if action is not None:
         action = await _reload_action(action)
@@ -884,17 +916,22 @@ async def artifact_handler_notify(request: Request, agent_id: str):
     # return a different node than the ingest Lambda saved. 503 so jvforge
     # retries when the reverse-index save is not yet visible.
     action_id = str(getattr(action, "id", None) or "") if action is not None else ""
-    entry = await action.lookup_job(job_id) if action is not None else None
+    authorized = action is not None and _notify_key_matches(action, presented_key)
+    entry = await action.lookup_job(job_id) if authorized else None
     if not entry:
         other, other_entry = await _scan_sibling_actions_for_job(
             agent_id,
             job_id,
             skip_id=action_id or None,
         )
-        if other is not None and other_entry:
+        if (
+            other is not None
+            and other_entry
+            and _notify_key_matches(other, presented_key)
+        ):
             action = other
             entry = other_entry
-        else:
+        elif authorized:
             logger.error(
                 "artifact_handler_notify: unknown job_id=%s agent_id=%s "
                 "action_id=%s",
@@ -906,6 +943,17 @@ async def artifact_handler_notify(request: Request, agent_id: str):
                 status_code=503,
                 content={"detail": "unknown job_id"},
                 headers={"Retry-After": str(_RETRY_AFTER_SECONDS)},
+            )
+        else:
+            logger.error(
+                "artifact_handler_notify: API key not authorized agent_id=%s "
+                "job_id=%s",
+                agent_id,
+                job_id,
+            )
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "API key not authorized for this agent"},
             )
 
     entry_agent = str(entry.get("agent_id") or "").strip()

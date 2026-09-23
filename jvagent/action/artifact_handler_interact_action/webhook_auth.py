@@ -1,11 +1,23 @@
-"""Notify webhook path helper for artifact_handler jvforge callbacks.
+"""API key scope helper for artifact_handler jvforge notify webhook URLs.
 
 Inbound route: ``/api/artifact_handler_action/notify/{agent_id}``.
-No API key is minted; jvforge POSTs this path with a known job_id and
-trusted ``/v1/artifacts/{job_id}`` URL.
+Credentials are persisted on ``ArtifactHandlerInteractAction``.
+
+Keys are minted with ``ALLOWED_WEBHOOK_ENDPOINT_GLOB`` (``…/notify/*``).
+The handler binds the presented key id to ``notify_webhook_api_key_id``
+before any job lookup.
 """
 
+from jvagent.action.utils.webhook_system_user import webhook_system_user_factory
+
+SYSTEM_USER_EMAIL = "artifact-handler-action-service@system.internal"
+WEBHOOK_PERMISSION = "webhook:artifact_handler_action"
 ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX = "artifact_handler_action/notify"
+ALLOWED_WEBHOOK_ENDPOINT_GLOB = f"/api/{ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX}/*"
+
+get_or_create_system_user = webhook_system_user_factory(
+    SYSTEM_USER_EMAIL, WEBHOOK_PERMISSION
+)
 
 
 def notify_endpoint_for_agent(agent_id: str) -> str:
@@ -15,6 +27,10 @@ def notify_endpoint_for_agent(agent_id: str) -> str:
 
 
 __all__ = [
+    "get_or_create_system_user",
+    "SYSTEM_USER_EMAIL",
+    "WEBHOOK_PERMISSION",
     "ARTIFACT_HANDLER_NOTIFY_ROUTE_PREFIX",
+    "ALLOWED_WEBHOOK_ENDPOINT_GLOB",
     "notify_endpoint_for_agent",
 ]
