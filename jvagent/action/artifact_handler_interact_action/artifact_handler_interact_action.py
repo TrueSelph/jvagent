@@ -90,12 +90,6 @@ if str(_AGENT_ROOT) not in sys.path:
 _PERSISTED_JOB_INDEX_ATTR = "jvforge_job_index"
 
 
-def _db_type_label() -> str:
-    """JVSPATIAL_DB_TYPE only (json/dynamodb/…); never table, region, or keys."""
-    raw = (os.environ.get("JVSPATIAL_DB_TYPE") or "").strip()
-    return raw or "json"
-
-
 async def _evict_action_cache(action_id: Any) -> None:
     """Drop request + process entity cache so the next Action.get hits Dynamo."""
     aid = str(action_id or "").strip()
@@ -108,10 +102,6 @@ async def _evict_action_cache(action_id: Any) -> None:
         evict = getattr(ctx, "_evict_from_cache", None)
         if evict is not None:
             await evict(aid)
-            logger.warning(
-                "artifact_handler cache evict action_id=%s",
-                aid,
-            )
     except Exception:
         logger.warning(
             "artifact_handler cache evict failed action_id=%s",
@@ -691,12 +681,6 @@ class ArtifactHandlerInteractAction(InteractAction):
                 ).startswith("image/")
                 if use_async and dv_action is not None:
                     try:
-                        logger.warning(
-                            "artifact_handler execute submit_ingest action_id=%s "
-                            "db_type=%s",
-                            getattr(dv_action, "id", None),
-                            _db_type_label(),
-                        )
                         result = await dv_action.submit_ingest(
                             doc=ingest_url,
                             doc_name=doc_name,
@@ -1036,10 +1020,6 @@ class ArtifactHandlerInteractAction(InteractAction):
         file_url: Optional[str] = None,
     ) -> None:
         if not job_id:
-            logger.warning(
-                "artifact_handler register_job skipped empty job_id action_id=%s",
-                getattr(self, "id", None),
-            )
             return
         question = (pending_question or "").strip() or None
         display_name = (filename or "").strip() or None
@@ -1064,67 +1044,25 @@ class ArtifactHandlerInteractAction(InteractAction):
             job_id=job_id, op="register_job", raise_on_error=True
         )
         action_id = getattr(self, "id", None)
-        index_size = len(self.jvforge_job_index or {})
-        logger.warning(
-            "artifact_handler register_job job_id=%s action_id=%s index_size=%s",
-            job_id,
-            action_id,
-            index_size,
-        )
         if not action_id:
-            logger.warning(
-                "artifact_handler register_job skipped reload (no action_id) "
-                "job_id=%s",
-                job_id,
-            )
             return
         from jvagent.action.base import Action
 
         await _evict_action_cache(action_id)
         fresh = await Action.get(action_id)
-        fresh_is_none = fresh is None
         fresh_index = (
             getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
         )
         if isinstance(fresh_index, dict) and job_id in fresh_index:
-            logger.warning(
-                "artifact_handler register_job roundtrip ok job_id=%s action_id=%s "
-                "index_size=%s",
-                job_id,
-                action_id,
-                index_size,
-            )
             return
-        logger.warning(
-            "artifact_handler register_job reload missing job_id=%s action_id=%s "
-            "fresh_is_none=%s; retrying save",
-            job_id,
-            action_id,
-            fresh_is_none,
-        )
         await self.save()
         await _evict_action_cache(action_id)
         fresh = await Action.get(action_id)
-        fresh_is_none = fresh is None
         fresh_index = (
             getattr(fresh, "jvforge_job_index", None) or {} if fresh is not None else {}
         )
         if isinstance(fresh_index, dict) and job_id in fresh_index:
-            logger.warning(
-                "artifact_handler register_job roundtrip ok job_id=%s action_id=%s "
-                "index_size=%s",
-                job_id,
-                action_id,
-                index_size,
-            )
             return
-        logger.warning(
-            "artifact_handler register_job roundtrip failed job_id=%s action_id=%s "
-            "fresh_is_none=%s",
-            job_id,
-            action_id,
-            fresh_is_none,
-        )
         raise RuntimeError(
             f"artifact_handler register_job did not persist job_id={job_id}"
         )
@@ -1283,12 +1221,6 @@ class ArtifactHandlerInteractAction(InteractAction):
         )
 
         job_id = str(result.get("job_id") or "")
-        logger.warning(
-            "artifact_handler submit_ingest queued job_id=%s action_id=%s db_type=%s",
-            job_id or "-",
-            getattr(self, "id", None),
-            _db_type_label(),
-        )
         if job_id:
             await self.register_job(
                 job_id=job_id,
@@ -1301,13 +1233,6 @@ class ArtifactHandlerInteractAction(InteractAction):
                 pending_question=pending_question,
                 filename=filename,
                 file_url=file_url,
-            )
-        else:
-            logger.warning(
-                "artifact_handler submit_ingest skip register_job agent_id=%s "
-                "action_id=%s",
-                agent_id,
-                getattr(self, "id", None),
             )
         return result
 

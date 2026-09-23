@@ -8,14 +8,6 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
-### Fixed
-
-- **PageIndex webhook graph import uses `jvspatial.create_task`.** `process_document_url` import is Shape B so Lambda awaits the import in the request instead of dropping `asyncio.create_task` when the Function URL returns. LLM completions were already in-request.
-
-- **Artifact handler notify webhook 403 on Lambda.** Notify API keys are minted with `/api/artifact_handler_action/notify/*` like Drive/WhatsApp/PageIndex, so jvspatial webhook auth no longer 403s when the request path does not byte-match an exact agent id. The handler still hmac-binds the key id to this action. Exact-path keys remint on the next vault submit.
-
-- **Artifact handler notify awaits `create_task` return and time-bounds ready-answer generate.** After inline import, generate then send run as two sequential `jvspatial.create_task` calls; a non-None return is awaited so Lambda cannot 200-and-freeze the ready message. PageIndex desc lookup (5s) and ready-answer generate (12s) time out to a canned message, then the channel send still runs.
-
 ### Added
 
 - **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.
@@ -41,17 +33,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
-- **Artifact handler notify has no API key.** `POST /api/artifact_handler_action/notify/{agent_id}` is a public webhook. Authorization is a known reverse-index `job_id` plus a trusted jvforge `/v1/artifacts/{job_id}` URL. `get_notify_webhook_url` no longer mints `?api_key=`.
-
-- **Artifact handler notify is action-loaded only.** Core/cli/embed no longer import or remount `POST /api/artifact_handler_action/notify/{agent_id}`. The route registers when `ArtifactHandlerInteractAction` is loaded (same as WhatsApp/PageIndex); jvspatial `@endpoint` remounts if `get_app()` already ran.
-
-- **Artifact handler notify logs.** Dropped breadcrumb `logger.warning` traces (entered, remint, import start, send ok, canned fallback, `create_task` scheduled). Failures stay as `logger.error` / `logger.exception`.
-
-- **PageIndex LLM webhook path.** `POST /api/pageindex/interact/webhook/{agent_id}` replaces `/api/pageindex_retrieval_interact_action/interact/webhook/{agent_id}`. Keys remint on the next `get_webhook_url`. Old URLs 404; ship with matching jvforge.
-
-- **Artifact handler notify awaits channel send.** WhatsApp/Messenger ready messages are sent in the notify request (not `asyncio.create_task`) so Lambda does not freeze the send when the Function URL returns. A failed send leaves the job in the reverse index and returns **503** so jvforge retries.
-
-- **Artifact handler notify + ingest status.** `register_job` now fails the ingest when the reverse-index cannot be saved (instead of swallowing `save()` and leaving chats stuck on `queued`). The notify webhook reloads the action from the DB before `lookup_job`, logs unknown jobs, and returns **503** so jvforge retries. `check_ingest_status` still consults PageIndex first, then polls jvforge and pull-imports `webhook_failed` / `completed` artifacts; jvforge `failed` marks the vault job failed. Pending and vault entry statuses stay in sync via `apply_ingest_job_status`.
+- **`artifact_bug` — WhatsApp vault, notify, PageIndex webhook.** Async ingest reverse-indexes the jvforge `job_id` (including nested 202 bodies). `register_job` fails the ingest if the index cannot be saved. Notify reloads the action, scans every `ArtifactHandlerInteractAction` for the agent, and returns **503** on unknown `job_id` so jvforge retries. Warm Lambda evicts the process entity cache before `Action.get`; raw `find()` `context.jvforge_job_index` is source of truth so a stale empty cached node cannot 503 a job Dynamo already has. The notify route is public (no `?api_key=`), glob-minted (`/api/artifact_handler_action/notify/*`), action-loaded only, and requires a trusted jvforge `/v1/artifacts/{job_id}` URL. Import, ready-answer generate, and WhatsApp/Messenger send run in-request via sequential `jvspatial.create_task` (Shape B); a failed send leaves the reverse-index job and returns **503**. PageIndex LLM completions use `POST /api/pageindex/interact/webhook/{agent_id}` (old retrieval path 404s). Lambda `.docx`/Office saves sniff MIME via `file`/`file-libs` + `python-magic` in `Dockerfile.base` instead of falling through to `octet-stream`. Diagnosis `logger.warning` breadcrumbs are gone; failures stay `logger.error` / `logger.exception`. `check_ingest_status` still prefers PageIndex, then polls jvforge and pull-imports `webhook_failed` / `completed` artifacts.
 
 - **ResponseBus now enforces the single-egress latch.** The first delivered
   non-transient user stream chunk marks its `Interaction` as emitted, active
