@@ -519,6 +519,19 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc16] - 2026-09-24
+
+### Changed
+
+- **Artifact handler notify requires the minted API key (#240).** Missing keys
+  are rejected before job lookup. A sibling job is accepted only when that
+  action's key matches. PageIndex graph import awaits a returned
+  `create_task` schedule so Lambda cannot freeze it.
+
+- **`litellm` pin moves to one minor at 1.101 (#238).** Every declaration is
+  `litellm>=1.101.0,<1.102`, including the action `info.yaml` auto-install
+  specs.
+
 ## [0.1.8rc15-dev12] - 2026-09-23
 
 ### Fixed
