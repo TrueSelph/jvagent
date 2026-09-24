@@ -38,7 +38,7 @@ This scales to large document bases without full-corpus scans. When the lexical 
 
 - `assimilate_document()` – ingestion (programmatic); builds lexical index during persist
 - `search_documents()` – retrieval (programmatic)
-- `PageIndexAction` – core graph action: ingest, `search`, list, delete, **jvforge LLM webhook URL** (`get_webhook_url` / `handle_webhook_payload`; legacy webhook path preserved for jvforge clients)
+- `PageIndexAction` – core graph action: ingest, `search`, list, delete, **jvforge LLM webhook URL** (`get_webhook_url` / `handle_webhook_payload`; path `/api/pageindex/interact/webhook/{agent_id}`)
 - `lexical_index` – inverted index (tokenizer, ranking, index CRUD)
 - REST endpoints under `/pageindex/`
 - Orchestrator tools: `pageindex__search`, `pageindex__assimilate`, etc.

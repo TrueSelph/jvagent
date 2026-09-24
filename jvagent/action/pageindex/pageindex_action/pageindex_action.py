@@ -51,11 +51,10 @@ class PageIndexAction(Action):
 
     # AUDIT-actions XC-4: admin-facing pageindex routes under
     # /agents/{agent_id}/pageindex/. ~18 routes; per-agent grouping.
-    # The /pageindex_retrieval_interact_action/interact/webhook/{agent_id}
-    # webhook also lives here for ingestion callbacks.
+    # The /pageindex/interact/webhook/{agent_id} LLM webhook also lives here.
     additional_endpoint_path_templates: ClassVar[List[str]] = [
         "/agents/{agent_id}/pageindex/",
-        "/pageindex_retrieval_interact_action/interact/webhook/{agent_id}",
+        "/pageindex/interact/webhook/{agent_id}",
     ]
 
     strategy: str = attribute(

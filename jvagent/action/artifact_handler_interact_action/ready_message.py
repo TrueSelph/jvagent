@@ -7,8 +7,11 @@ when chunks are empty.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 _IMAGE_EXTENSIONS = frozenset(
     {
@@ -468,6 +471,10 @@ async def _generate_ready_message(
 
         text = await call_model(vault_action, user_prompt, system_prompt)
     except Exception:
+        logger.exception(
+            "_generate_ready_message: call_model failed doc=%s",
+            internal_doc_name,
+        )
         return None
 
     if not isinstance(text, str) or not text.strip():
