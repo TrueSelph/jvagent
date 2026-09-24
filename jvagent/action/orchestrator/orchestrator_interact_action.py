@@ -50,6 +50,7 @@ from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.catalog import (
     _ToolSurfaceCacheEntry,
+    build_capability_catalog_tools,
     build_catalog_tools,
     build_skill_meta_tools,
     compute_tool_surface_config_hash,
@@ -841,7 +842,7 @@ class OrchestratorInteractAction(
         "a tool the user named is deflected once. It does NOT block the model "
         "from calling a real tool that lean surfacing merely hid: naming a real "
         "tool is valid intent, so it is auto-promoted and run (an implicit "
-        "load_tool). Only an unknown/hallucinated name is bounced to find_tool.",
+        "load_tool). Only an unknown/hallucinated name is bounced to find_capability.",
     )
     tool_tier: str = attribute(
         default="standard",
@@ -1604,6 +1605,19 @@ class OrchestratorInteractAction(
             gated={
                 n: gate.owners_for(n) for n in gated if not gate.is_open(n, activated)
             },
+        ).items():
+            tools[name] = t
+            visible.add(name)
+
+        # Primary discovery (ADR-0055): skills then tools in one observation.
+        _closed_gate = {
+            n: gate.owners_for(n) for n in gated if not gate.is_open(n, activated)
+        }
+        for name, t in build_capability_catalog_tools(
+            tools,
+            docs,
+            gated=_closed_gate,
+            blocked_docs=blocked_docs,
         ).items():
             tools[name] = t
             visible.add(name)
@@ -2805,7 +2819,7 @@ class OrchestratorInteractAction(
     def _plan_drain_nudge(open_steps: str) -> Dict[str, Any]:
         """The deflection observation when a turn-ending decision hits an open
         plan. Actionable: redirect the model to DO the next step (discovering the
-        tool with find_tool if needed) rather than narrate it or dump the result
+        tool with find_capability if needed) rather than narrate it or dump the result
         as a chat message — the observed failure mode."""
         return {
             "tool": "(guard)",
@@ -2819,9 +2833,9 @@ class OrchestratorInteractAction(
                 "instead of completing the step. Prefer tools already on your "
                 "surface (e.g. pageindex__assimilate with the report markdown in "
                 "`doc`, web_fetch__fetch, reply). If you truly cannot see the "
-                "tool, call find_tool with the *capability* "
-                "(e.g. find_tool('assimilate into knowledge base'), "
-                "find_tool('ingest document')) — do NOT search for 'write file' "
+                "tool, call find_capability with the *capability* "
+                "(e.g. find_capability('assimilate into knowledge base'), "
+                "find_capability('ingest document')) — do NOT search for 'write file' "
                 "or invent a filesystem detour; text you already produced can be "
                 "passed straight into tool args. When the work is genuinely done, "
                 "mark the steps done/skipped with update_plan, then reply.)"
