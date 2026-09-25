@@ -35,7 +35,7 @@ Active-flow detection reads persisted state only. With `lock_active_flow=False` 
 
 The orchestrator and every action on its tool surface follow the **[thin harness principle](thin-harness.md)**: the server exposes primitives (tools, session state, validation gates, raw JSON results); the model and skill SOP own intent, routing, extraction, and multi-step chaining. The orchestrator must not classify user intent, inject prep observations that pre-select tools, auto-store extracted values on skill activation, inline multi-step tool results, or post-process one action's outputs to force follow-up calls. Turn-lock ([ADR-0013](../.planning/adr/0013-togglable-deterministic-turn-lock.md)) is a mechanical surface restriction — not semantic routing.
 
-**Admission snapshot (ADR-0054).** Target contract: one immutable `ToolSurfaceSnapshot` per turn, keyed by `snapshot_id` + `(agent_id, user_id, session_id)`. Lean discovery (`find_tool` / `load_tool` / `find_skill` / `use_skill`) stays. Host tools/skills enter only through `HostCapabilityProvider`, never via Orchestrator imports. Types: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py). Runtime snapshot cache is HP-03; today's tool surface cache is still per-agent ([`catalog.py`](../jvagent/action/orchestrator/catalog.py)).
+**Admission snapshot (ADR-0054).** Target contract: one immutable `ToolSurfaceSnapshot` per turn, keyed by `snapshot_id` + `(agent_id, user_id, session_id)`. Lean discovery (`find_capability` primary; `find_tool` / `load_tool` / `find_skill` / `use_skill`) stays. Host tools/skills enter only through `HostCapabilityProvider`, never via Orchestrator imports. Types: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py). Runtime snapshot cache is HP-03; today's tool surface cache is still per-agent ([`catalog.py`](../jvagent/action/orchestrator/catalog.py)).
 
 **SESSION CONTEXT** ([ADR-0042](../.planning/adr/0042-session-context-ground-truth.md)) is turn-stable environment ground truth (current date/time via `App.now()`, channel), injected into the system prompt each turn — the same class as the former CURRENT CHANNEL line. It is **not** prep steering: relative time must use that clock; `get_current_datetime` remains for mid-turn refresh only.
 
@@ -154,7 +154,7 @@ Everything the agent can do is reachable as a tool, so there is no separate rout
 | **IA-as-tools** | an `InteractAction`'s own `get_tools()` | Forwards to `execute(visitor)` with the `visitor` passed through from the Orchestrator. The tool *description* is built from the IA's manifest (`purpose` + `activates_on`, via `routing_triggers()`) so the model routes on intent. |
 | **Plain action tools** | each enabled `Action.get_tools()` | Ordinary capability tools. |
 | **Core tools** | [`core_tools.py`](../jvagent/action/orchestrator/core_tools.py) | Built-in orchestrator services. |
-| **Skills + meta-tools** | skills (two specs: JV + Claude) + catalog | `find_skill` / `use_skill` and `find_tool` / `load_tool` for progressive disclosure (ADR-0017). |
+| **Skills + meta-tools** | skills (two specs: JV + Claude) + catalog | `find_capability` (primary) / `use_skill` / `load_tool`; `find_tool` / `find_skill` aliases (ADR-0055). |
 
 ### Manifest as the routing signal
 
@@ -170,9 +170,9 @@ visibility gate. First-entry and continuation are both model-judged.
 
 ### Progressive disclosure (the tool catalog)
 
-A **tool catalog** (mirroring the skills catalog) exposes `find_tool` / `load_tool` so the prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows. The skills meta-tools (`find_skill` / `use_skill`) work the same way for both skill specs (JV + Claude).
+A **capability catalog** exposes `find_capability` (primary — skills then tools), plus `load_tool` / `use_skill`. `find_tool` / `find_skill` remain aliases (ADR-0055). The prompt carries a slim index rather than every tool schema — bounding prompt size as the surface grows.
 
-**Lean tool surfacing (ADR-0018).** The catalog only helps if tools are actually hidden. When the count of hideable capability tools (action + MCP) exceeds `lean_tool_threshold` (default 15), the prompt lists only the always-on core (egress, meta-tools, core tools, an active-flow tool) plus a per-turn **relevance pre-surface** — the `lean_presurface_k` (default 6) tools whose name+description best overlap the user's message (cheap token match, no model call). The long tail stays on the full surface, reachable via `find_tool` (output grouped by namespace), and a one-line hint tells the model the list is partial. Below the threshold every tool is listed (unchanged); `lean_tool_threshold: 0` disables it. Dispatch already resolves against the full surface, so hiding a tool from the prompt never makes it uncallable — only the listing shrinks, keeping each tick small on large-surface agents.
+**Lean tool surfacing (ADR-0018).** The catalog only helps if tools are actually hidden. When the count of hideable capability tools (action + MCP) exceeds `lean_tool_threshold` (default 15), the prompt lists only the always-on core (egress, meta-tools, core tools, an active-flow tool) plus a per-turn **relevance pre-surface** — the `lean_presurface_k` (default 6) tools whose name+description best overlap the user's message (cheap token match, no model call). The long tail stays on the full surface, reachable via `find_capability` (ADR-0055; `find_tool` remains an alias), and a one-line hint tells the model the list is partial. Below the threshold every tool is listed (unchanged); `lean_tool_threshold: 0` disables it. Dispatch already resolves against the full surface, so hiding a tool from the prompt never makes it uncallable — only the listing shrinks, keeping each tick small on large-surface agents.
 
 Two further knobs/notes:
 
@@ -508,7 +508,7 @@ jvagent/action/orchestrator/
   ├─ tools.py                            # SkillTool primitives + wrap/parse/render helpers
   ├─ core_tools.py                       # built-in orchestrator core tools
   ├─ proactive_tools.py                  # proactive-message tools
-  ├─ catalog.py                          # tool catalog (find_tool/load_tool) + lean surfacing
+  ├─ catalog.py                          # find_capability + find_tool/load_tool + lean
   ├─ skills.py                           # skill discovery (JV + Claude specs) + find_skill/use_skill
   ├─ skill_providers.py                  # host skill providers (register_host_skill_provider)
   ├─ skill_tasks.py                      # skill task-lock wiring

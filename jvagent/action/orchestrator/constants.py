@@ -10,7 +10,15 @@ TEXT_KEYS = ("answer", "text", "content", "message", "reply", "response")
 
 # Egress + indirection tools are never "steered".
 STEER_EXEMPT = frozenset(
-    {"reply", "respond", "find_tool", "load_tool", "find_skill", "use_skill"}
+    {
+        "reply",
+        "respond",
+        "find_capability",
+        "find_tool",
+        "load_tool",
+        "find_skill",
+        "use_skill",
+    }
 )
 NON_SUBSTANTIVE_TOOLS = STEER_EXEMPT
 
@@ -83,6 +91,7 @@ _TRUSTED_DIRECTIVE_EXACT = frozenset(
     {
         "reply",
         "use_skill",
+        "find_capability",
         "find_tool",
         "clarify",
         "memory_get",

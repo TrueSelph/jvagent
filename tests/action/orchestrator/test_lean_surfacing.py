@@ -79,8 +79,8 @@ def test_render_lean_hint_appended():
     tools = [SkillTool("a", "does a", run=None)]  # type: ignore[arg-type]
     full = render_tools_section(tools)
     lean = render_tools_section(tools, lean=True)
-    assert "find_tool" not in full
-    assert "partial list" in lean.lower() and "find_tool" in lean
+    assert "find_capability" not in full
+    assert "partial list" in lean.lower() and "find_capability" in lean
 
 
 async def test_find_tool_groups_by_namespace():
@@ -127,7 +127,8 @@ async def test_lean_engages_above_threshold(make_orchestrator, make_visitor):
     ]
     assert len(longtail_visible) <= 4
     assert "email__send" in visible  # relevance pre-surfaced
-    assert "find_tool" in visible  # discovery is always available
+    assert "find_capability" in visible  # primary discovery always available
+    assert "find_tool" in visible  # alias remains
 
 
 async def test_full_below_threshold(make_orchestrator, make_visitor):
@@ -146,7 +147,7 @@ async def test_full_below_threshold(make_orchestrator, make_visitor):
 
 async def test_essentials_only_with_presurface_zero(make_orchestrator, make_visitor):
     # Documented recipe: lean_presurface_k=0 (+ low threshold) → only egress/meta/
-    # core are visible; every capability tool is reached via find_tool.
+    # core are visible; every capability tool is reached via find_capability.
     action = _ToolsAction(_many(20))
     ex = make_orchestrator(actions=[action])
     ex.lean_tool_threshold = 1
@@ -162,7 +163,8 @@ async def test_essentials_only_with_presurface_zero(make_orchestrator, make_visi
         if n.startswith(("email", "calendar", "files", "weather", "misc"))
     ]
     assert capability_visible == []  # essentials only
-    assert "find_tool" in visible  # discovery is the way in
+    assert "find_capability" in visible  # primary discovery is the way in
+    assert "find_tool" in visible  # alias remains
 
 
 async def test_threshold_zero_disables_lean(make_orchestrator, make_visitor):
