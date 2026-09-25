@@ -10,6 +10,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
+- **UI ROUTE in SESSION CONTEXT (ADR-0056).** When ``visitor.data["page_context"]``
+  carries a host UI snapshot (Integral shape or messenger title/path),
+  ``render_session_context`` appends a compact optional-focus block — kind,
+  labels/ids, path, crumbs — so route awareness lives with clock/channel
+  instead of an utterance preamble. Facts only; no tool cues.
+
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
 
 - **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.

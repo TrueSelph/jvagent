@@ -25,22 +25,67 @@ class _FakeApp:
 @pytest.mark.asyncio
 async def test_render_session_context_includes_frozen_clock_and_channel():
     now = datetime(2026, 7, 27, 13, 45, 0, tzinfo=timezone.utc)
-    visitor = SimpleNamespace(channel="web")
+    visitor = SimpleNamespace(channel="web", data={})
     text = await render_session_context(visitor, app=_FakeApp(now))
     assert "SESSION CONTEXT" in text
     assert "2026" in text
     assert "ISO 8601: 2026-07-27T13:45:00+00:00" in text
     assert "CURRENT CHANNEL: web" in text
     assert "training cutoff" in text.lower() or "guessed year" in text
+    assert "UI ROUTE" not in text
 
 
 @pytest.mark.asyncio
 async def test_render_session_context_omits_channel_when_empty():
     now = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-    visitor = SimpleNamespace(channel="")
+    visitor = SimpleNamespace(channel="", data={})
     text = await render_session_context(visitor, app=_FakeApp(now))
     assert "CURRENT CHANNEL" not in text
     assert "2026" in text
+
+
+@pytest.mark.asyncio
+async def test_render_session_context_includes_ui_route_from_page_context():
+    from jvagent.action.orchestrator.session_context import format_ui_route
+
+    now = datetime(2026, 9, 24, 12, 0, 0, tzinfo=timezone.utc)
+    page = {
+        "url": "/apps/n.WorkspaceApp.abc",
+        "route_path": "/apps/n.WorkspaceApp.abc",
+        "page_kind": "app_dashboards",
+        "breadcrumbs": [
+            {"label": "Business Admin"},
+            {"label": "Apps"},
+            {"label": "Sales"},
+        ],
+        "focused_app_id": "n.WorkspaceApp.abc",
+        "metadata": {"app_name": "Sales", "focused_dashboard_id": "n.Dashboard.1"},
+    }
+    visitor = SimpleNamespace(channel="integral", data={"page_context": page})
+    text = await render_session_context(visitor, app=_FakeApp(now))
+    assert "UI ROUTE (optional focus — not default answer scope):" in text
+    assert 'app="Sales"' in text
+    assert "app_id=n.WorkspaceApp.abc" in text
+    assert "kind=app_dashboards" in text
+    assert "crumbs=Business Admin › Apps › Sales" in text
+    assert "dashboard_id=n.Dashboard.1" in text
+    assert "merely because it is on screen" in text
+    # Compact block is also unit-testable alone.
+    block = format_ui_route(page)
+    assert block is not None
+    assert "Visible" not in block
+
+
+@pytest.mark.asyncio
+async def test_format_ui_route_messenger_fallback():
+    from jvagent.action.orchestrator.session_context import format_ui_route
+
+    block = format_ui_route({"title": "Pricing", "path": "/pricing"})
+    assert block is not None
+    assert 'title="Pricing"' in block
+    assert "path=/pricing" in block
+    assert format_ui_route({}) is None
+    assert format_ui_route(None) is None
 
 
 @pytest.mark.asyncio
