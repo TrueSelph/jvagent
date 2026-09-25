@@ -183,7 +183,13 @@ def salvage_partial_answer(observations: Any) -> str:
                 if isinstance(result, str) and result.strip():
                     chunks.append(result.strip())
             continue
-        if tool in ("find_tool", "load_tool", "use_skill", "update_plan"):
+        if tool in (
+            "find_capability",
+            "find_tool",
+            "load_tool",
+            "use_skill",
+            "update_plan",
+        ):
             continue
         obs = row.get("observation")
         if not isinstance(obs, str):
@@ -204,6 +210,7 @@ def salvage_partial_answer(observations: Any) -> str:
             "Ask me to continue and I will finish from here."
         )
     substantive = (
+        "find_capability",
         "find_tool",
         "load_tool",
         "use_skill",

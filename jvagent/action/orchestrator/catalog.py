@@ -1,20 +1,20 @@
 """Progressive-disclosure catalogs for the Orchestrator (ADR-0012 §2.2).
 
 The full tool surface can be large, so the prompt only lists a *visible* subset.
-``find_tool`` searches the whole surface and ``load_tool`` promotes a tool into
-the visible set (so it appears in subsequent steps). By default dispatch resolves
-against the full surface, so a tool the model names is callable even before it
-is loaded — the catalog is a discovery aid, not a gate. (The exception is
-``block_raw_tool_invocation``: when that executive flag is on, dispatch is
-restricted to the *visible* set, so hidden tools must first be loaded via
-``find_tool`` or surfaced by a skill.)
+Primary discovery is ``find_capability`` — one query ranked over skills then
+tools (ADR-0055). ``find_tool`` / ``find_skill`` remain thin aliases.
+``load_tool`` promotes a tool into the visible set; ``use_skill`` activates a
+SOP. By default dispatch resolves against the full surface, so a tool the model
+names is callable even before it is loaded — the catalog is a discovery aid,
+not a gate. (The exception is ``block_raw_tool_invocation``: when that
+executive flag is on, dispatch is restricted to the *visible* set, so hidden
+tools must first be loaded via ``load_tool`` / ``find_capability`` or surfaced
+by a skill.)
 
-``find_skill`` / ``use_skill`` mirror this for native SOP skills: only names +
-descriptions are surfaced up front. ``use_skill`` returns a short activation
-note (plus any activate-hook payload) as an observation — tool steps stay
-contiguous under "Steps taken this turn". The skill PROCEDURE body is surfaced
-via the system ``skills_section`` (task-lock or post-activation), not inside
-the observation.
+``use_skill`` returns a short activation note (plus any activate-hook payload)
+as an observation — tool steps stay contiguous under "Steps taken this turn".
+The skill PROCEDURE body is surfaced via the system ``skills_section``
+(task-lock or post-activation), not inside the observation.
 """
 
 from __future__ import annotations
@@ -212,6 +212,199 @@ def _gate_marker(name: str, gated: Optional[Dict[str, Tuple[str, ...]]]) -> str:
     return f" (via skill: {', '.join(owning)})"
 
 
+def _skill_search_text(doc: SkillDoc) -> str:
+    """Name + description + tags used for skill matching."""
+    tags: List[str] = []
+    meta = getattr(doc, "metadata", None) or {}
+    if isinstance(meta, dict):
+        raw_tags = meta.get("tags") or []
+        if isinstance(raw_tags, str):
+            tags = [raw_tags] if raw_tags.strip() else []
+        elif isinstance(raw_tags, (list, tuple)):
+            tags = [str(t) for t in raw_tags if str(t).strip()]
+    return (doc.name + " " + (doc.description or "") + " " + " ".join(tags)).lower()
+
+
+def _rank_skills(query: str, docs: List[SkillDoc]) -> List[SkillDoc]:
+    """Skills matching *query*, best first (same token rules as ``_rank_tools``)."""
+    if not query:
+        return list(docs)
+    tokens = significant_tokens(query)
+    scored: List[Tuple[int, str, SkillDoc]] = []
+    for doc in docs:
+        haystack = _skill_search_text(doc)
+        score = 0
+        if query in haystack:
+            score += 5
+        if tokens:
+            searchable = significant_tokens(
+                doc.name.replace("_", " ")
+                + " "
+                + (doc.description or "")
+                + " "
+                + haystack
+            )
+            score += len(tokens & searchable)
+        if score:
+            scored.append((score, doc.name, doc))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [doc for _, _, doc in scored]
+
+
+# Meta / egress names omitted from capability tool rankings (noise).
+_DISCOVERY_TOOL_SKIP = frozenset(
+    {
+        "find_capability",
+        "find_tool",
+        "load_tool",
+        "find_skill",
+        "use_skill",
+        "reply",
+        "respond",
+        "clarify",
+    }
+)
+
+FIND_CAPABILITY_SKILL_CAP = 10
+FIND_CAPABILITY_TOOL_CAP = 20
+
+
+def _format_capability_observation(
+    query: str,
+    skill_hits: List[SkillDoc],
+    tool_hits: List[SkillTool],
+    gated: Optional[Dict[str, Tuple[str, ...]]],
+    *,
+    all_tools: Dict[str, SkillTool],
+) -> str:
+    """Render the unified find_capability observation."""
+    if not skill_hits and not tool_hits:
+        namespaces = sorted({n.split("__", 1)[0] for n in all_tools if "__" in n})
+        hint = f" Available tool groups: {', '.join(namespaces)}." if namespaces else ""
+        return (
+            f"(no capability matches {query!r}.{hint} Try ONE different keyword — "
+            "the single most distinctive noun for the capability. If nothing "
+            "fits, this agent cannot do that step: say so plainly and deliver "
+            "what you already have. Do NOT repeat this search.)"
+        )
+
+    lines: List[str] = []
+    if skill_hits:
+        lines.append(
+            "Preferred: activate a matching skill with use_skill before ad-hoc tools."
+        )
+        lines.append("Skills (call use_skill to activate):")
+        shown = skill_hits[:FIND_CAPABILITY_SKILL_CAP]
+        for doc in shown:
+            summary = _summarize(doc.description or "")
+            cue = f' → use_skill("{doc.name}")'
+            lines.append(
+                f"- {doc.name}: {summary}{cue}" if summary else f"- {doc.name}{cue}"
+            )
+        if len(skill_hits) > len(shown):
+            lines.append(
+                f"(showing {len(shown)} of {len(skill_hits)} skills — "
+                "narrow the query to see others)"
+            )
+
+    if tool_hits:
+        if lines:
+            lines.append("")
+        lines.append("Tools (call load_tool for full description, then call the tool):")
+        shown_t = tool_hits[:FIND_CAPABILITY_TOOL_CAP]
+        for t in shown_t:
+            summary = _summarize(t.description)
+            marker = _gate_marker(t.name, gated)
+            owners = (gated or {}).get(t.name) if gated else None
+            if owners:
+                cue = f' → use_skill("{owners[0]}") then call {t.name}'
+            else:
+                cue = f' → load_tool("{t.name}")'
+            body = (
+                f"- {t.name}: {summary}{marker}{cue}"
+                if summary
+                else f"- {t.name}{marker}{cue}"
+            )
+            lines.append(body)
+        if len(tool_hits) > len(shown_t):
+            lines.append(
+                f"(showing {len(shown_t)} of {len(tool_hits)} tools — "
+                "narrow the query to see others)"
+            )
+    return "\n".join(lines)
+
+
+def build_capability_catalog_tools(
+    all_tools: Dict[str, SkillTool],
+    skill_docs: List[SkillDoc],
+    gated: Optional[Dict[str, Tuple[str, ...]]] = None,
+    blocked_docs: Optional[List[SkillDoc]] = None,
+) -> Dict[str, SkillTool]:
+    """``find_capability`` — primary discovery over skills then tools (ADR-0055)."""
+
+    blocked = list(blocked_docs or [])
+    docs = list(skill_docs or [])
+
+    async def _find(args: Dict[str, Any]) -> str:
+        q = ((args or {}).get("query") or "").strip().lower()
+        if q:
+            blocked_hits = [
+                d
+                for d in blocked
+                if q in _skill_search_text(d)
+                and (getattr(d, "deny_access_directive", "") or "").strip()
+            ]
+            if blocked_hits:
+                return "\n\n".join(
+                    _channel_deny_observation(d) for d in blocked_hits[:3]
+                )
+        skill_hits = _rank_skills(q, docs) if q else []
+        # Empty query: list skills (discovery aid) without dumping the whole
+        # tool surface — model should still pass a capability phrase.
+        if not q:
+            skill_hits = list(docs)[:FIND_CAPABILITY_SKILL_CAP]
+            return _format_capability_observation(
+                q or "(empty)",
+                skill_hits,
+                [],
+                gated,
+                all_tools=all_tools,
+            )
+        searchable_tools = {
+            n: t for n, t in all_tools.items() if n not in _DISCOVERY_TOOL_SKIP
+        }
+        tool_hits = _rank_tools(q, searchable_tools)
+        return _format_capability_observation(
+            q, skill_hits, tool_hits, gated, all_tools=all_tools
+        )
+
+    return {
+        "find_capability": SkillTool(
+            name="find_capability",
+            description=(
+                "Primary discovery: search skills and tools by capability. "
+                "Prefer this over find_tool / find_skill. Activate a matching "
+                "skill with use_skill before calling ad-hoc tools."
+            ),
+            run=_find,
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "The capability you need, in a few words "
+                            "(e.g. 'adjust dashboard', 'add to knowledge base', "
+                            "'fetch url')."
+                        ),
+                    }
+                },
+                "required": ["query"],
+            },
+        )
+    }
+
+
 def build_catalog_tools(
     all_tools: Dict[str, SkillTool],
     visible: Set[str],
@@ -291,7 +484,9 @@ def build_catalog_tools(
     return {
         "find_tool": SkillTool(
             name="find_tool",
-            description="Search the full tool surface by query when the tool you need isn't listed.",
+            description=(
+                "Alias: search tools only. Prefer find_capability (skills + tools)."
+            ),
             run=_find,
             parameters_schema={
                 "type": "object",
@@ -316,26 +511,15 @@ def build_catalog_tools(
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Exact tool name (from find_tool).",
+                        "description": (
+                            "Exact tool name (from find_capability or find_tool)."
+                        ),
                     }
                 },
                 "required": ["name"],
             },
         ),
     }
-
-
-def _skill_search_text(doc: SkillDoc) -> str:
-    """Name + description + tags used for ``find_skill`` matching."""
-    tags: List[str] = []
-    meta = getattr(doc, "metadata", None) or {}
-    if isinstance(meta, dict):
-        raw_tags = meta.get("tags") or []
-        if isinstance(raw_tags, str):
-            tags = [raw_tags] if raw_tags.strip() else []
-        elif isinstance(raw_tags, (list, tuple)):
-            tags = [str(t) for t in raw_tags if str(t).strip()]
-    return (doc.name + " " + (doc.description or "") + " " + " ".join(tags)).lower()
 
 
 def _channel_deny_observation(doc: SkillDoc) -> str:
@@ -404,11 +588,20 @@ def build_skill_meta_tools(
                 return "\n\n".join(
                     _channel_deny_observation(d) for d in blocked_hits[:3]
                 )
-        hits = [d for d in docs if not q or q in _skill_search_text(d)] or list(docs)
+        if not q:
+            hits = list(docs)
+        else:
+            hits = _rank_skills(q, docs)
         if not hits:
-            return "(no skills matched)"
+            return (
+                f"(no skills matched {q!r}. Prefer find_capability for a "
+                "combined skills+tools search, or try ONE different keyword.)"
+            )
         lines = [f"- {d.name}: {d.description}" for d in hits[:10]]
-        return "Available skills (call use_skill to load one):\n" + "\n".join(lines)
+        return (
+            "Available skills (call use_skill to load one; prefer "
+            "find_capability for skills+tools):\n" + "\n".join(lines)
+        )
 
     async def _use(args: Dict[str, Any]) -> str:
         name = ((args or {}).get("name") or "").strip()
@@ -470,7 +663,9 @@ def build_skill_meta_tools(
     return {
         "find_skill": SkillTool(
             name="find_skill",
-            description="Search available skills (standard operating procedures) by query.",
+            description=(
+                "Alias: search skills only. Prefer find_capability (skills + tools)."
+            ),
             run=_find,
             parameters_schema={
                 "type": "object",
@@ -505,6 +700,7 @@ def build_skill_meta_tools(
 
 
 __all__ = [
+    "build_capability_catalog_tools",
     "build_catalog_tools",
     "build_skill_meta_tools",
     "compute_tool_surface_config_hash",

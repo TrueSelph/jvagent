@@ -300,9 +300,9 @@ def render_tools_section(tools: List[Any], *, lean: bool = False) -> str:
     if lean:
         body += (
             "\n\n(This is a PARTIAL list of your most relevant tools. If the "
-            "exact tool a step needs isn't here, call find_tool(query) to "
-            "discover it — e.g. find_tool('add to knowledge base'), "
-            "find_tool('fetch url'), find_tool('send email') — then call the "
+            "exact tool a step needs isn't here, call find_capability(query) "
+            "to discover it — e.g. find_capability('add to knowledge base'), "
+            "find_capability('adjust dashboard') — then use_skill or load_tool / "
             "tool it returns. Do NOT substitute a similar-looking tool from "
             "this list (a read/search tool when you need to write/save will "
             "fail). Prefer passing gathered text in tool args over inventing "
