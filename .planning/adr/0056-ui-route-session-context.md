@@ -1,55 +1,50 @@
-# ADR 0056 — UI ROUTE in SESSION CONTEXT
+# ADR 0056 — Host SESSION CONTEXT extras via visitor.data
 
 **Status**: Accepted
 **Date**: 2026-09-24
-**Relation**: Extends [ADR-0042](0042-session-context-ground-truth.md) (SESSION
-CONTEXT ground truth) and [ADR-0049](0049-session-context-placement-and-cache-telemetry.md)
-(placement). Aligns with [thin-harness](../../docs/thin-harness.md) invariant 3
-(environment facts ≠ prep steering).
+**Relation**: Extends [ADR-0042](0042-session-context-ground-truth.md) and
+[ADR-0049](0049-session-context-placement-and-cache-telemetry.md). Aligns with
+[thin-harness](../../docs/thin-harness.md) invariant 3 and invariant 8
+(foundation stays domain-agnostic).
 
 ---
 
 ## 1. Context
 
-Hosts such as Integral already place a UI snapshot on
-``visitor.data["page_context"]`` (path, page kind, breadcrumbs, focused
-resource ids, display titles). Integral previously **prepended** a delimited
-prose stub onto the **user utterance** so the model could see the route. That
-channel treats on-screen Apps as *topic*, bloats the transcript, and invites
-overfitting (e.g. answering personal-expense questions from a Sales board).
-
-SESSION CONTEXT already carries turn-stable environment facts (clock, channel).
-UI location is the same class of fact.
+Hosts often need turn-stable **environment** facts beyond clock and channel
+(e.g. where the user is in a product UI). Those facts already travel on
+``visitor.data``, which is intentionally flexible — but **nothing in the
+Orchestrator dumps that dict into the prompt**. Hosts were forced either to
+prepend prose onto the user utterance (wrong channel; topic pollution) or to
+ask the framework to parse a host-specific schema.
 
 ## 2. Decision
 
-When ``visitor.data`` contains a usable ``page_context`` dict,
-``render_session_context`` appends a compact **UI ROUTE** block inside
-SESSION CONTEXT:
+``render_session_context`` appends an optional host block when
+``visitor.data["session_context_extra"]`` is a non-empty string (or a list of
+strings joined with newlines). The harness:
 
-- Dense lines: ``kind``, human labels + ids for focused app/track/view/entry
-  (and optional ``dashboard_id`` from metadata), ``path``, ``crumbs``
-- Fixed authority line: focused ids are **optional** — apply only for
-  this/here/crumb match or a clear resource match; do not answer from the
-  focused resource merely because it is on screen
-- **No** visible entry/track lists (hosts expose those via a page-context tool)
-- **No** tool names or next-step cues (thin-harness)
-- Messenger-style ``title`` + ``path`` remains a thin fallback
+- Trims and length-caps the text
+- Does **not** inspect keys, ids, or product nouns inside it
+- Places it inside SESSION CONTEXT (same authority class as clock/channel)
 
-Hosts that previously injected utterance preambles should stop; the snapshot
-on ``visitor.data`` is enough.
+Hosts own formatting and policy wording (e.g. “optional focus — not default
+answer scope”). Rich snapshots for tools stay on host-chosen keys
+(``page_context``, etc.) and are **not** read by this path.
 
 ## 3. Consequences
 
-- Route awareness survives without polluting the user message
-- Always-on cost stays small (~3–5 lines) — no soft/minimal utterance gate
-- Integral (and similar hosts) keep a tool for on-screen lists / full snapshot
-- Prompt-cache prefix above SESSION CONTEXT unchanged (ADR-0049)
+- Framework stays schema-free; Integral (or any embedder) maps domain → prose
+- Utterance stays clean; route awareness can live in the system prompt
+- A buggy host can still inject up to the cap — treat as trusted host process
+  (same trust as other ``visitor.data`` fields)
 
 ## 4. Alternatives considered
 
-- Utterance prepend with HTML delimiters — rejected (topic pollution)
-- Tool-only awareness — rejected (extra tick for every deixis)
-- Reuse messenger ``PageContextInteractAction`` — rejected (wrong schema;
-  response parameters, not system ground truth)
-- Soft/minimal utterance gate — transitional only; superseded by this ADR
+- Parse Integral ``page_context`` inside jvagent — rejected (domain bleed;
+  collides with messenger ``page_context`` shape)
+- Tool-only awareness — rejected for always-on deixis cost
+- Host InteractAction only — workable with zero core change, but SESSION
+  CONTEXT placement (ADR-0049) is the right channel for env facts; a one-key
+  append is thinner than another InteractAction for every host
+- Auto-dump entire ``visitor.data`` — rejected (PII / bloat / not facts)

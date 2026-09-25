@@ -10,11 +10,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Added
 
-- **UI ROUTE in SESSION CONTEXT (ADR-0056).** When ``visitor.data["page_context"]``
-  carries a host UI snapshot (Integral shape or messenger title/path),
-  ``render_session_context`` appends a compact optional-focus block — kind,
-  labels/ids, path, crumbs — so route awareness lives with clock/channel
-  instead of an utterance preamble. Facts only; no tool cues.
+- **Host SESSION CONTEXT extras (ADR-0056).** ``visitor.data["session_context_extra"]``
+  (string or list of strings) is appended verbatim into SESSION CONTEXT after
+  clock/channel. Harness does not parse host schemas — hosts render their own
+  UI-route (or other env) prose. Caps length; empty omitted.
 
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
 
