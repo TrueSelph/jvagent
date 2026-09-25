@@ -69,10 +69,12 @@ for you.
 - **Look it up.** For factual lookups, current events, specific data, or \
 calculations, call the matching tool rather than answering from memory. If a \
 request matches a structured flow's tool (e.g. a signup interview), call it.
-- **Find the exact tool.** The tool list may be PARTIAL. If you don't see the \
-EXACT tool a step needs, call ``find_tool(query)`` first, then call the name it \
-returns (``load_tool`` gives you its full description). Never substitute a \
-near-match — a read/search tool used where you need to write/save will fail.
+- **Find the capability.** The tool list may be PARTIAL. If you don't see the \
+EXACT tool or skill a step needs, call ``find_capability(query)`` first — it \
+searches skills and tools together. Prefer ``use_skill`` when a skill matches; \
+otherwise ``load_tool`` then call the tool. Never substitute a near-match — a \
+read/search tool used where you need to write/save will fail. (``find_tool`` / \
+``find_skill`` remain as aliases.)
 - **Act, don't announce — and finish before replying.** Never say what you are \
 "about to" or "will now" do and then stop; that ENDS your turn. If work remains, \
 your step MUST be the tool call that does it. For multi-step tasks (e.g. research \
@@ -103,10 +105,11 @@ applied for you.
 - **Look it up.** For factual lookups, current events, specific data, or \
 calculations, call the matching tool rather than answering from memory. If a \
 request matches a structured flow's tool (e.g. a signup interview), call it.
-- **Find the exact tool.** The tool list may be PARTIAL. If you don't see the \
-EXACT tool a step needs, call ``find_tool`` first, then call the tool it \
-returns (``load_tool`` gives you its full description). Never substitute a \
-near-match — a read/search tool used where you need to write/save will fail.
+- **Find the capability.** The tool list may be PARTIAL. If you don't see the \
+EXACT tool or skill a step needs, call ``find_capability`` first — it searches \
+skills and tools together. Prefer ``use_skill`` when a skill matches; otherwise \
+``load_tool`` then call the tool. Never substitute a near-match. (``find_tool`` / \
+``find_skill`` remain as aliases.)
 - **Act, don't announce — and finish before replying.** Never say what you are \
 "about to" or "will now" do and then stop; a text reply ENDS your turn. If work \
 remains, your step MUST be the tool call that does it. For multi-step tasks \
@@ -135,7 +138,7 @@ ORCHESTRATOR_STABLE_SYSTEM_PROMPT = """\
 
 {extra_section}
 WHAT YOU CAN DO — your capabilities for the user. This list is COMPLETE even \
-when only some appear as callable tools below (reach the rest with find_tool). \
+when only some appear as callable tools below (reach the rest with find_capability). \
 When a request matches one, you CAN do it — start the matching tool/skill/flow \
 and say so plainly. Never tell the user you "can't" do something covered here, \
 and don't hedge with "I can't directly…":
@@ -172,7 +175,7 @@ ORCHESTRATOR_SYSTEM_PROMPT_PRE_0049 = """\
 
 {extra_section}
 WHAT YOU CAN DO — your capabilities for the user. This list is COMPLETE even \
-when only some appear as callable tools below (reach the rest with find_tool). \
+when only some appear as callable tools below (reach the rest with find_capability). \
 When a request matches one, you CAN do it — start the matching tool/skill/flow \
 and say so plainly. Never tell the user you "can't" do something covered here, \
 and don't hedge with "I can't directly…":
@@ -469,7 +472,7 @@ def render_capabilities_section(capabilities: list) -> str:
     becomes one ``- statement`` line (first line, length-capped, de-duplicated).
     Because it's sourced from the actions/skills themselves — not the lean-
     surfaced tool list — the digest stays complete even when most callable tools
-    are hidden behind ``find_tool``, so the model never under-claims an ability.
+    are hidden behind ``find_capability``, so the model never under-claims an ability.
     """
     lines: list = []
     seen: set = set()

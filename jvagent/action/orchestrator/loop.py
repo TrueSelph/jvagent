@@ -1398,9 +1398,9 @@ class OrchestratorLoopMixin:
             # letting it guess again.
             obs: Any = (
                 f"(no such tool: {tool_name}. Call "
-                "find_tool(query) to find the right tool by "
-                "capability — e.g. find_tool('add to knowledge "
-                "base'), find_tool('fetch url') — then call the "
+                "find_capability(query) to find the right skill "
+                "or tool — e.g. find_capability('add to knowledge "
+                "base'), find_capability('fetch url') — then "
                 "exact name it returns. Pass gathered text in "
                 "tool args; do not invent a write-file detour.)"
             )

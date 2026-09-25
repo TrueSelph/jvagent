@@ -862,6 +862,7 @@ def _detect_drop_cutoff_claims(text: str) -> str:
 # are ordinary English, and dropping every sentence containing "reply" would
 # maim normal speech. That is the false-positive direction that matters.
 _CORE_TOOL_NAMES = (
+    "find_capability",
     "find_skill",
     "find_tool",
     "get_artifact",
