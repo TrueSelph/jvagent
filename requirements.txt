@@ -3,7 +3,7 @@
 # Test-only deps (incl. Docling for PageIndex): pyproject.toml
 # [project.optional-dependencies] test — install with: pip install -e ".[test]"
 aiohttp>=3.9.0
-jvspatial @ git+https://github.com/TrueSelph/jvspatial.git@948635b8e080e37da45a0c3f6b6a149533b76d3b
+jvspatial==0.1.0
 pydantic[email]>=2.13.5
 python-dotenv>=1.0.0
 pyyaml>=6.0.0

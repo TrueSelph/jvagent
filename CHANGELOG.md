@@ -8,6 +8,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.8rc19] - 2026-09-27
+
 ### Added
 
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
@@ -94,7 +96,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
-- **jvspatial security-branch compatibility.** Runtime action and walker state is declared with Pydantic `PrivateAttr`; instance patches of declared private helpers continue to work, and stale interview mocks for a removed helper are gone. JsonDB test doubles use a missing conversation ID instead of an invalid `MagicMock` ID. The dependency is temporarily pinned to the exact security-review commit for reproducible fresh installs; replace that Git pin with a published version before a jvagent release.
+- **jvspatial 0.1.0 security compatibility.** Runtime action and walker state is declared with Pydantic `PrivateAttr`; instance patches of declared private helpers continue to work, and stale interview mocks for a removed helper are gone. JsonDB test doubles use a missing conversation ID instead of an invalid `MagicMock` ID. Fresh installs require the published `jvspatial==0.1.0` release.
 
 - **Atomic per-interaction egress claim across ResponseBus instances.** A
   process-wide `InteractionEgressRecord` (keyed by `interaction_id`) is the
