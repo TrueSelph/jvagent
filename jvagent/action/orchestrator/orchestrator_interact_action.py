@@ -42,6 +42,7 @@ from typing import (
 )
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.utils.uploads import DEFAULT_UPLOAD_KEYS
@@ -293,6 +294,9 @@ class OrchestratorInteractAction(
     InteractAction,
 ):
     """The sole pattern orchestrator (ADR-0012), weight ``-200``."""
+
+    _actions_enum_failed: bool = PrivateAttr(default=False)
+    _max_tokens_fallback_warned: bool = PrivateAttr(default=False)
 
     weight: int = attribute(
         default=-200,

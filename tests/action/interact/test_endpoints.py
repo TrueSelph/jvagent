@@ -242,6 +242,7 @@ class TestResponseBuilder:
             interaction.events = []
             interaction.observability_metrics = []
             interaction.streamed = False
+            interaction.conversation_id = None
 
             report = [{"test": "report"}]
 
@@ -370,6 +371,7 @@ class TestResponseBuilder:
             interaction.events = []
             interaction.observability_metrics = []
             interaction.streamed = False
+            interaction.conversation_id = None
 
             response = await build_interact_response(
                 user_id="usr_123",

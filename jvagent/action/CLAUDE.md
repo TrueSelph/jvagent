@@ -49,6 +49,7 @@ The plugin-loadable extension surface of jvagent:
 3. **`get_action()` is `O(1)`; `get_action_by_base_class()` is `O(n)`.** Don't use the latter in hot paths.
 4. **Lifecycle hooks MUST not swallow exceptions** ([`base.py:694`](base.py)). The framework's `enable()`/`disable()`/`reload()` wrappers log errors automatically with the action context — silencing them hides bugs.
 5. **`Action.metadata` is owned by the loader.** Mutations to it are not persisted across restarts. Use `attribute(...)` fields for persistent state.
+   Declare runtime-only underscore state with Pydantic `PrivateAttr`; jvspatial rejects undeclared instance attributes.
 6. **Child Nodes attached via outgoing edges are cascade-deleted** when the action is deleted ([`base.py:300`](base.py)). Always connect via `await self.connect(child, direction="out")`.
 7. **`is_singleton` default is `True`** ([`base.py:296`](base.py)). Override `config.singleton: false` in `info.yaml` if multiple instances per agent are allowed.
 8. **Thin harness** — Actions expose capabilities via `get_tools()`; they must not classify user intent, inject prep steering, auto-store extracted values, or inline multi-step workflows. Put judgment in skill SOPs and domain logic in skill extensions. See [`docs/thin-harness.md`](../../docs/thin-harness.md).

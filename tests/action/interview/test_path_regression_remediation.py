@@ -105,7 +105,6 @@ async def test_activation_awaiting_fields_only_first_field(signup_action):
     visitor = SimpleNamespace(conversation=conv)
 
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
 
     result = json.loads(
         await action._handle_start("signup_interview", visitor, user_message=_OPENING)
@@ -125,7 +124,6 @@ async def test_activation_opening_extracts_user_name(signup_action):
     visitor = SimpleNamespace(conversation=conv, utterance=_OPENING)
 
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
 
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 

@@ -6,7 +6,7 @@
 # Must stay in sync with [project] dependencies in pyproject.toml —
 # enforced by tests/test_requirements_sync.py.
 aiohttp>=3.9.0
-jvspatial==0.0.21
+jvspatial @ git+https://github.com/TrueSelph/jvspatial.git@b46309556d87c42077a5d6d69d1c94276d8f31ec
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
 httpx>=0.27.0
