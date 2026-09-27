@@ -30,6 +30,9 @@ async def wire(tmp_path, monkeypatch):
     from jvagent.core.app_context import clear_app_root, set_app_root
 
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    # The wire fixture bootstraps directly, bypassing the CLI's runtime default.
+    # Preserve the UTF-8 prompt text that production jvagent persists.
+    monkeypatch.setenv("JVSPATIAL_TEXT_NORMALIZATION_ENABLED", "false")
     app_root = write_app(tmp_path)
     set_app_root(app_root)
     try:

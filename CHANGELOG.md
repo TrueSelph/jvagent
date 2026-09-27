@@ -96,6 +96,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **Wire prompt-contract fixture.** Direct graph bootstrap now applies jvagent's UTF-8 persistence default, so the wire tests measure the same prompt text as the normal CLI startup instead of jvspatial's ASCII-folding default.
+
 - **jvspatial 0.1.0 security compatibility.** Runtime action and walker state is declared with Pydantic `PrivateAttr`; instance patches of declared private helpers continue to work, and stale interview mocks for a removed helper are gone. JsonDB test doubles use a missing conversation ID instead of an invalid `MagicMock` ID. Fresh installs require the published `jvspatial==0.1.0` release.
 
 - **Atomic per-interaction egress claim across ResponseBus instances.** A
