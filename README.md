@@ -275,13 +275,13 @@ jvagent resolves configuration by precedence (highest first):
 
 ### For AI agents & contributors
 
-Agent-facing design docs live under [`.planning/`](https://github.com/TrueSelph/jvagent/blob/main/.planning/README.md); the root [`CLAUDE.md`](https://github.com/TrueSelph/jvagent/blob/main/CLAUDE.md) is the entry point (also surfaced as [`AGENTS.md`](https://github.com/TrueSelph/jvagent/blob/main/AGENTS.md)).
+Agent-facing design docs live under [`.planning/`](.planning/README.md); the root [`AGENTS.md`](AGENTS.md) is the entry point.
 
 - [Project vision](https://github.com/TrueSelph/jvagent/blob/main/.planning/PROJECT.md) · [SPEC](https://github.com/TrueSelph/jvagent/blob/main/.planning/SPEC.md) · [Patterns](https://github.com/TrueSelph/jvagent/blob/main/.planning/PATTERNS.md) · [Architecture diagrams](https://github.com/TrueSelph/jvagent/blob/main/.planning/architecture.md) · [Glossary](https://github.com/TrueSelph/jvagent/blob/main/.planning/GLOSSARY.md)
 - [Action authoring](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/action-authoring.md) · [Memory & pruning](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/memory-and-pruning.md) · [Observability](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/observability.md) · [jvspatial integration](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/jvspatial-integration.md)
 - [Decision records (ADRs)](https://github.com/TrueSelph/jvagent/tree/main/.planning/adr/) · [Specs](https://github.com/TrueSelph/jvagent/tree/main/.planning/specs/) · [Plans](https://github.com/TrueSelph/jvagent/tree/main/.planning/plans/)
 - Runbooks: [local dev](https://github.com/TrueSelph/jvagent/blob/main/.planning/runbooks/local-dev.md) · [add an action](https://github.com/TrueSelph/jvagent/blob/main/.planning/runbooks/add-action.md)
-- Per-subsystem guides: [`core`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/core/CLAUDE.md) · [`memory`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/memory/CLAUDE.md) · [`action`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/CLAUDE.md) · [`interact`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/action/interact/CLAUDE.md) · [`cli`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/cli/CLAUDE.md) · [`logging`](https://github.com/TrueSelph/jvagent/blob/main/jvagent/logging/CLAUDE.md) · [`tests`](https://github.com/TrueSelph/jvagent/blob/main/tests/CLAUDE.md)
+- Per-subsystem guides: [`core`](jvagent/core/AGENTS.md) · [`memory`](jvagent/memory/AGENTS.md) · [`action`](jvagent/action/AGENTS.md) · [`interact`](jvagent/action/interact/AGENTS.md) · [`cli`](jvagent/cli/AGENTS.md) · [`logging`](jvagent/logging/AGENTS.md) · [`tests`](tests/AGENTS.md)
 - [Changelog](https://github.com/TrueSelph/jvagent/blob/main/CHANGELOG.md)
 
 ## Authors & maintainers

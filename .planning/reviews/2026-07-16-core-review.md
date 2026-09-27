@@ -151,7 +151,7 @@ Lower-severity items (equal-timestamp chain infinite loop `interaction.py:741-75
 
 ### Phase 5 — Test debt (blocks regressions in all of the above)
 - **Concurrency suite** (currently zero): duplicate User/Conversation/action creation; lock-lease expiry mid-turn; contextvar reentrancy; proactive double-claim; concurrent turns on one conversation.
-- **Pruning regression suite**: the two test files `memory/CLAUDE.md` references **do not exist**; `_prune_old_interactions` (cap, chain rewiring, `last_interaction_id`, limit-sync) is essentially untested.
+- **Pruning regression suite**: the two test files `memory/AGENTS.md` references **do not exist**; `_prune_old_interactions` (cap, chain rewiring, `last_interaction_id`, limit-sync) is essentially untested.
 - **Interact auth**: `log`-mode no-leak, streaming-path identity guard parity, rate-limiter spoofing/isolation.
 - **Repair multi-tick resume**, **loop-lifecycle** (scheduler actually fires after `run_server`), **reply endpoint authz**, **`get_model_action` fallback**, deregistration cleanup paths.
 
@@ -160,6 +160,6 @@ Lower-severity items (equal-timestamp chain infinite loop `interaction.py:741-75
 ## 3. Suggested sequencing for review
 
 - **Ship now as isolated security patches:** Phase 0 items 1–4 (rate limiter, reply authz, reason leak, log-mode token). Each is small and independently testable.
-- **One design ADR** for Phase 1+2 (identity + locking substrate) — it changes contracts in `core/CLAUDE.md` and `memory/CLAUDE.md` and supersedes the "compound index rejects on save" claim, which is false on the default adapter.
+- **One design ADR** for Phase 1+2 (identity + locking substrate) — it changes contracts in `core/AGENTS.md` and `memory/AGENTS.md` and supersedes the "compound index rejects on save" claim, which is false on the default adapter.
 - **Phase 3/4** as per-subsystem PRs behind the substrate work.
 - Treat **Phase 5** as acceptance criteria, not a follow-up: the high-severity band is entirely untested today.

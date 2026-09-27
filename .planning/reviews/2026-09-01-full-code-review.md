@@ -27,7 +27,7 @@ The codebase is well-engineered where invariants are mechanically checkable (asy
 | **pytest** (`pytest tests/ -p no:randomly`) | **PASS** (exit 0) | 3,558 tests collected |
 | **mypy dev venv** (`mypy jvagent/`) | **FAIL** | **270 errors in 48 files** (local mypy 1.20.1 with jvspatial installed) |
 
-**Mypy gap:** CLAUDE.md asserts the pre-commit hook and bare `mypy jvagent/` are aligned; they are not. Inside the isolated pre-commit env every jvspatial type is `Any`, so boundary errors like `"Object" has no attribute "name"` (`cli/agent_commands.py:248`) and `AuthConfig` keyword mismatches (`cli/server_config.py:418`) are invisible to the enforced gate. Representative errors live precisely at the jvagent↔jvspatial boundary — the area most likely to hide real runtime bugs.
+**Mypy gap:** AGENTS.md asserts the pre-commit hook and bare `mypy jvagent/` are aligned; they are not. Inside the isolated pre-commit env every jvspatial type is `Any`, so boundary errors like `"Object" has no attribute "name"` (`cli/agent_commands.py:248`) and `AuthConfig` keyword mismatches (`cli/server_config.py:418`) are invisible to the enforced gate. Representative errors live precisely at the jvagent↔jvspatial boundary — the area most likely to hide real runtime bugs.
 
 ---
 
@@ -280,7 +280,7 @@ Memory user-listing returns HTTP 200 with `total=0` on backend outage; `_send_to
 
 Pre-commit passes; dev venv reports 270 errors. Hook lacks jvspatial/pydantic/httpx stubs, so boundary types are unchecked — precisely where integration bugs live.
 
-**Fix theme:** Add jvspatial (and key deps) to hook `additional_dependencies`, or pin a shared stub package; align CLAUDE.md claim with reality.
+**Fix theme:** Add jvspatial (and key deps) to hook `additional_dependencies`, or pin a shared stub package; align AGENTS.md claim with reality.
 
 ---
 
@@ -387,7 +387,7 @@ Most HIGH and MEDIUM items from the 2026-09-01 review are now addressed. Remaini
 
 - Prior core review: [2026-07-16-core-review.md](2026-07-16-core-review.md) (H19 = C3)
 - Prior once-over: [2026-07-17-once-over.md](2026-07-17-once-over.md)
-- Agent guide: [CLAUDE.md](../../CLAUDE.md)
+- Agent guide: [AGENTS.md](../../AGENTS.md)
 - Orchestrator design: [docs/ORCHESTRATOR.md](../../docs/ORCHESTRATOR.md)
 - Thin harness: [docs/thin-harness.md](../../docs/thin-harness.md)
 
