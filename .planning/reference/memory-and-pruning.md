@@ -1,6 +1,6 @@
 # Memory & Pruning
 
-> Deep dive on `User` / `Conversation` / `Interaction` lifecycle and the rolling-window pruning mechanism. Companion to [`SPEC.md`](../SPEC.md) §5, [`jvagent/memory/CLAUDE.md`](../../jvagent/memory/CLAUDE.md), [`adr/0003-interaction-limit-pruning.md`](../adr/0003-interaction-limit-pruning.md).
+> Deep dive on `User` / `Conversation` / `Interaction` lifecycle and the rolling-window pruning mechanism. Companion to [`SPEC.md`](../SPEC.md) §5, [`jvagent/memory/AGENTS.md`](../../jvagent/memory/AGENTS.md), [`adr/0003-interaction-limit-pruning.md`](../adr/0003-interaction-limit-pruning.md).
 
 ---
 

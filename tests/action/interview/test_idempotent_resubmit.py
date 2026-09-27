@@ -37,7 +37,6 @@ async def _start(action):
     conv.save = AsyncMock()
     visitor = SimpleNamespace(conversation=conv, utterance="My name is Eldon Marks")
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     await action._handle_start(
         "signup_interview", visitor, user_message="My name is Eldon Marks"
     )

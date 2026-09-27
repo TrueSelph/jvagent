@@ -155,7 +155,6 @@ async def test_set_field_stores_cleaned_tracking_number(pre_alert_action):
 async def test_init_does_not_auto_store_tracking_from_user_message(pre_alert_action):
     action, contract = pre_alert_action
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
     result = json.loads(
@@ -174,7 +173,6 @@ async def test_init_does_not_auto_store_tracking_from_user_message(pre_alert_act
 async def test_init_without_extractable_data_asks_first_question(pre_alert_action):
     action, contract = pre_alert_action
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
     result = json.loads(
@@ -226,7 +224,6 @@ async def test_next_field_falls_back_to_phone_question_off_whatsapp(
 async def test_init_does_not_auto_store_phone_from_user_message(onboarding_action):
     action, contract = onboarding_action
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
     result = json.loads(

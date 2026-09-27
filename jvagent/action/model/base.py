@@ -15,6 +15,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, TypeVar
 
 import httpx
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
 
@@ -106,6 +107,9 @@ class BaseModelAction(Action, ABC):
         total_cost: Estimated cost in USD
         total_duration: Cumulative query duration in seconds
     """
+
+    _deadline_coherence_warned: bool = PrivateAttr(default=False)
+    _last_result: Any = PrivateAttr(default=None)
 
     # Common configuration attributes. API credentials are resolved
     # exclusively from environment variables via ``api_key_from_context()``;

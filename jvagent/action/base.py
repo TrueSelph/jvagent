@@ -25,6 +25,7 @@ from typing import (
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
+from pydantic import PrivateAttr
 
 if TYPE_CHECKING:
     from jvagent.action.manifest import Manifest
@@ -130,6 +131,8 @@ class Action(Node):
         them via outgoing edges. When an action is deleted, all child nodes
         reachable via outgoing edges are cascade-deleted.
     """
+
+    _property_override_keys: set[str] = PrivateAttr(default_factory=set)
 
     # Core Attributes
     agent_id: str = attribute(

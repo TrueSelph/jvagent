@@ -37,6 +37,7 @@ def _visitor(conversation, utterance="I'm busy now"):
 
 async def test_triggers_proactive_task_from_spec_v2(monkeypatch):
     conversation = MagicMock()
+    conversation.id = None  # In-memory fixture: do not refresh from JsonDB.
     conversation.tasks = []
     conversation.save = AsyncMock()
 

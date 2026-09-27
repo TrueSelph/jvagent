@@ -119,4 +119,4 @@ If you add one of these, document it here and in [`/docs/logging.md`](../../docs
 - [`/docs/logging.md`](../../docs/logging.md) (734 lines) — comprehensive logging architecture
 - [`/docs/error-logging.md`](../../docs/error-logging.md) (401 lines) — error rollup mechanics
 - [`/docs/interaction-logging.md`](../../docs/interaction-logging.md) (275 lines) — turn-level events + INTERACTION level
-- Local subsystem guide: [`/jvagent/logging/CLAUDE.md`](../../jvagent/logging/CLAUDE.md)
+- Local subsystem guide: [`/jvagent/logging/AGENTS.md`](../../jvagent/logging/AGENTS.md)

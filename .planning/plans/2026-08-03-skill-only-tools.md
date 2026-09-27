@@ -26,7 +26,7 @@
 
 Why a new module rather than more lines in `orchestrator_interact_action.py`: that file is already 3388 lines, and the repo's established pattern is one concern per module (`access.py`, `egress.py`, `catalog.py`, `continuation.py`). The gate is a closed, testable unit with no orchestrator dependencies.
 
-**Conventions for every task:** the commit gate in [CLAUDE.md](../../CLAUDE.md) §6 is mandatory — `pre-commit run --all-files` **and** the affected pytest slice must pass before each commit. Do not use `--no-verify`. Commits are authored as the repo user with no Claude co-author trailer.
+**Conventions for every task:** the commit gate in [AGENTS.md](../../AGENTS.md) §6 is mandatory — `pre-commit run --all-files` **and** the affected pytest slice must pass before each commit. Do not use `--no-verify`. Commits are authored as the repo user with no Claude co-author trailer.
 
 ---
 

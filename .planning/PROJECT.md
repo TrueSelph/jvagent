@@ -166,6 +166,6 @@ This document evolves at phase transitions and milestone boundaries.
 This document and its siblings are *agent-maintained*. They succeed when:
 
 - A fresh AI agent dropped into the repo can answer *"what is jvagent for?"* by reading this file alone.
-- A fresh AI agent dropped into a subsystem (`jvagent/core/`, `jvagent/action/orchestrator/`, etc.) can do correct local work by reading the local `CLAUDE.md` alone.
+- A fresh AI agent dropped into a subsystem (`jvagent/core/`, `jvagent/action/orchestrator/`, etc.) can do correct local work by reading the local `AGENTS.md` alone.
 - Every claim about runtime behavior in [`SPEC.md`](SPEC.md) cites a file:line in the source.
 - Every load-bearing design decision is captured in an [`adr/`](adr/).

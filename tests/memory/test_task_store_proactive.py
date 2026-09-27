@@ -12,6 +12,7 @@ from jvagent.memory.task_store import TaskStore
 
 def _make_store():
     conv = MagicMock()
+    conv.id = None  # In-memory fixture: no persisted conversation to refresh.
     conv.tasks = []
     conv.save = AsyncMock()
     return TaskStore(conv), conv

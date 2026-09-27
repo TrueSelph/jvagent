@@ -9,6 +9,7 @@ from deepgram import AsyncDeepgramClient
 from deepgram.core.api_error import ApiError
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
+from pydantic import PrivateAttr
 
 from jvagent.action.stt_action.base import BaseSTTAction
 
@@ -35,6 +36,9 @@ ALLOWED_STT_MIME_TYPES = frozenset(
 
 class DeepgramSTTAction(BaseSTTAction):
     """Speech-to-text action using the Deepgram API."""
+
+    _deepgram_client: Optional[AsyncDeepgramClient] = PrivateAttr(default=None)
+    _deepgram_client_key: Optional[str] = PrivateAttr(default=None)
 
     model: str = attribute(
         default="nova-2",

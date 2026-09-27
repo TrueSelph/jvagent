@@ -52,5 +52,5 @@
   },
   "project_code": "jvagent",
   "agent_skills": {},
-  "claude_md_path": "./CLAUDE.md"
+  "claude_md_path": "./AGENTS.md"
 }

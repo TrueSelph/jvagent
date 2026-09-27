@@ -91,5 +91,5 @@ Subsystem profiles should list concrete test files that guard their contract.
 ## See also
 
 - [`.planning/reference/action-authoring.md`](../.planning/reference/action-authoring.md) — building new actions on this contract
-- [`jvagent/action/CLAUDE.md`](../jvagent/action/CLAUDE.md) — action subsystem guide
+- [`jvagent/action/AGENTS.md`](../jvagent/action/AGENTS.md) — action subsystem guide
 - [`jvagent/skills/README.md`](../jvagent/skills/README.md) — skill placement and specs
