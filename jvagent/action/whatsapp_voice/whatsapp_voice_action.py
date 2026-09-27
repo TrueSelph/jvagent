@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
 from jvagent.action.interact.webhook_pipeline import get_conversation_with_lock
@@ -29,6 +30,9 @@ class WhatsAppVoiceAction(Action):
     A standalone jvvoice deployment must be running and registered under ``agent_name``
     to handle realtime audio and bridge utterances to the jvagent Orchestrator.
     """
+
+    _active_calls: Dict[str, str] = PrivateAttr(default_factory=dict)
+    _jvvoice: Optional[JvvoiceClient] = PrivateAttr(default=None)
 
     jvvoice_base_url: str = attribute(
         default="",

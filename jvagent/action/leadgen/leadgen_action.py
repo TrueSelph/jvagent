@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict, List
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
 
@@ -64,9 +65,7 @@ class LeadGenAction(Action):
         ),
     )
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._registry = LeadGenRegistry()
+    _registry: LeadGenRegistry = PrivateAttr(default_factory=LeadGenRegistry)
 
     async def on_register(self):
         await super().on_register()

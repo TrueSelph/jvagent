@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.model.base import BaseModelAction
 
@@ -30,6 +31,9 @@ class EmbeddingModelAction(BaseModelAction, ABC):
         >>> vector = await embedding_model.embed("Hello world")
         >>> print(f"Embedding dimensions: {len(vector)}")
     """
+
+    _calling_action_name: Optional[str] = PrivateAttr(default=None)
+    _recorded_usage_tokens: int = PrivateAttr(default=0)
 
     embedding_dimensions: int = attribute(
         default=0, description="Expected embedding dimensions (0 = auto-detect)", ge=0

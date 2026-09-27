@@ -32,7 +32,6 @@ def signup_action():
 async def test_on_skill_activate_notes_skill_procedure(signup_action):
     action, _spec = signup_action
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
     note = await action.on_skill_activate(
@@ -58,7 +57,6 @@ async def test_activation_set_fields_then_model_chains_next_field(signup_action)
     visitor = SimpleNamespace(conversation=conv, utterance=_OPENING)
 
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
 
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 
@@ -82,7 +80,6 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
     visitor = SimpleNamespace(conversation=conv, utterance=_OPENING)
 
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
 
     await action._handle_start("signup_interview", visitor, user_message=_OPENING)
 

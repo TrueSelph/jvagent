@@ -80,11 +80,11 @@ Today ReplyAction applies the directives/params already on the interaction in it
 `scaffold/builtin_profiles/{minimal,orchestrator,research}.yaml` and `examples/jvagent_app/.../agent.yaml` — replace PersonaAction with ReplyAction in the action set; update READMEs/architecture docs.
 
 ### 5.7 Delete PersonaAction
-Remove `jvagent/action/persona/` (action, endpoints, prompt_builder, prompts, info.yaml, README) and its dedicated tests (`test_persona_*.py`). Update `tests/CLAUDE.md`, `action/CLAUDE.md`, `interact/CLAUDE.md` egress decision trees to ReplyAction.
+Remove `jvagent/action/persona/` (action, endpoints, prompt_builder, prompts, info.yaml, README) and its dedicated tests (`test_persona_*.py`). Update `tests/AGENTS.md`, `action/AGENTS.md`, `interact/AGENTS.md` egress decision trees to ReplyAction.
 
 ## 6. Files touched
 
-Modify: `reply/reply_action.py` (history subsume, gather, N=1 publish), `reply/history.py` (new helper), `memory/interaction.py` (standalone flag), `base.py` (`get_responder`, docstrings), `interact/base.py` (respond collapse), `handoff_interact_action.py`, `parameters.py`, `model/context.py`, `core/agent.py`, `core/profiling.py`, scaffold profiles, examples, CLAUDE.md egress trees.
+Modify: `reply/reply_action.py` (history subsume, gather, N=1 publish), `reply/history.py` (new helper), `memory/interaction.py` (standalone flag), `base.py` (`get_responder`, docstrings), `interact/base.py` (respond collapse), `handoff_interact_action.py`, `parameters.py`, `model/context.py`, `core/agent.py`, `core/profiling.py`, scaffold profiles, examples, AGENTS.md egress trees.
 Delete: `jvagent/action/persona/**`, `tests/action/test_persona_*.py`.
 ADR: refine ADR-0024 / new ADR-0025 "ReplyAction is the single output contract."
 
@@ -95,7 +95,7 @@ ADR: refine ADR-0024 / new ADR-0025 "ReplyAction is the single output contract."
 - **C — `get_responder` → ReplyAction only**; remove PersonaAction fallback + isinstance.
 - **D — migrate direct consumers** (handoff history, parameters/model/agent/profiling references).
 - **E — scaffold profiles + examples → ReplyAction**.
-- **F — delete `persona/` + dedicated tests**; update CLAUDE.md egress trees.
+- **F — delete `persona/` + dedicated tests**; update AGENTS.md egress trees.
 - **G — full verification** + ADR.
 
 Each phase keeps the suite green (excluding the unrelated `web_fetch` dep gap). Phases A-C make ReplyAction sufficient before any deletion.

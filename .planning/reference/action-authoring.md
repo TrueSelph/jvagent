@@ -472,6 +472,15 @@ async def on_register(self):
 
 ## 13. Common pitfalls
 
+Actions inherit jvspatial's protected entity setter. Declare persisted state with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr` on the class. Do this for clients, registries, caches, and per-turn flags set after initialization. Declared private methods may be replaced on an instance in tests; undeclared `_name` assignments raise `AttributeError`. Keep test doubles on real IDs when exercising JsonDB, which now rejects malformed entity IDs.
+
+```python
+from pydantic import PrivateAttr
+
+class MyAction(Action):
+    _registry: dict[str, object] = PrivateAttr(default_factory=dict)
+```
+
 | Mistake | Fix |
 |---|---|
 | Forgetting `from . import endpoints` in `__init__.py` | Endpoints don't register. Add the import. |
@@ -479,6 +488,7 @@ async def on_register(self):
 | Top-level `InteractAction` not routing to children | Child actions never execute. Call `await visitor.visit(child)` from `execute()`. |
 | Long sync work inside `execute()` | Blocks the response. Use `run_in_background=True` for non-critical work, or enqueue a `PROACTIVE` task via `TaskStore.enqueue_proactive` / `TaskMonitor`. |
 | Mutating `self.metadata` directly | Lost on next load — `metadata` is rebuilt from `info.yaml`. Use `attribute(...)` fields for persistent state. |
+| Assigning `self._registry` without declaring it | jvspatial rejects the undeclared name. Add a typed Pydantic `PrivateAttr` on the class. |
 | Swallowing exceptions in lifecycle hooks | Errors go silent. Let them propagate — the framework's `enable()`/`disable()` wrappers log them. |
 | Hard-coding API keys | Use `attribute(default="")` + agent.yaml `${ENV_VAR}` indirection. |
 | Skipping `info.yaml` | Loader skips the action package. Always ship one. |

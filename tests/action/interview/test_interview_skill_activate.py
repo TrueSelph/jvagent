@@ -30,7 +30,6 @@ def _interview_action_with_contracts() -> InterviewAction:
         _SKILLS_DIR / "pre_alert_interview"
     )
     action._get_conversation = AsyncMock(return_value=None)
-    action._ensure_active_task = AsyncMock()
     return action
 
 

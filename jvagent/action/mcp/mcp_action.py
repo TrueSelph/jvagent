@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
 from jvagent.action.mcp.client import MCPClientWrapper
@@ -309,9 +310,7 @@ class MCPAction(Action):
         description="Optional override for sandbox root; defaults to jvspatial files root (JVSPATIAL_FILES_ROOT_PATH).",
     )
 
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._servers_by_name: Dict[str, _ServerEntry] = {}
+    _servers_by_name: Dict[str, _ServerEntry] = PrivateAttr(default_factory=dict)
 
     def _strip_trailing_path_arg(self, args: List[str]) -> List[str]:
         """Delegate to :func:`strip_trailing_path_arg` (keeps e.g. ``@scope/pkg``)."""

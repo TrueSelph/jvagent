@@ -2,8 +2,8 @@
 
 Thanks for your interest in contributing! This guide covers the practical
 workflow. For the architecture and where things live, start with
-[`CLAUDE.md`](CLAUDE.md) (the agent/contributor map) and the per-subsystem
-`CLAUDE.md` files.
+[`AGENTS.md`](AGENTS.md) (the agent/contributor map) and the per-subsystem
+`AGENTS.md` files.
 
 ## Code of Conduct
 
@@ -46,7 +46,7 @@ no changes — a "files were modified by this hook" result is a failure. Do not
 jvagent validate examples/jvagent_app # app YAML stays valid
 ```
 
-Conventions (see [`CLAUDE.md` §6](CLAUDE.md)):
+Conventions (see [`AGENTS.md` §6](AGENTS.md)):
 
 - **Type-annotate everything** — Pydantic and jvspatial rely on it.
 - **Use `attribute(...)`** for all persisted Node fields (plain class
