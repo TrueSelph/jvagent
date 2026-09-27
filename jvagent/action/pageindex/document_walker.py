@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from jvspatial.core import Walker, on_visit
+from pydantic import PrivateAttr
 
 from .models import (
     DocumentContentEdge,
@@ -32,6 +33,13 @@ class DocumentWalker(Walker):
     Follows DocumentContentEdge to traverse parent-child hierarchy.
     Stops traversal when report size reaches limit (early termination).
     """
+
+    _query: str = PrivateAttr(default="")
+    _query_lower: str = PrivateAttr(default="")
+    _query_regex: Optional[re.Pattern] = PrivateAttr(default=None)
+    _limit: Optional[int] = PrivateAttr(default=None)
+    _only_enabled: bool = PrivateAttr(default=True)
+    _include: Optional[List[str]] = PrivateAttr(default=None)
 
     def __init__(
         self,

@@ -14,7 +14,7 @@ nothing is billed and nothing leaves the process.
 Each test bootstraps its own app (~1s). That is deliberate: jvspatial objects
 bind to the event loop that created them, and a session-scoped graph shared
 across pytest-asyncio's per-test loops produces "attached to different loop" —
-see the trap table in the root CLAUDE.md.
+see the trap table in the root AGENTS.md.
 """
 
 from __future__ import annotations
@@ -30,6 +30,9 @@ async def wire(tmp_path, monkeypatch):
     from jvagent.core.app_context import clear_app_root, set_app_root
 
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    # The wire fixture bootstraps directly, bypassing the CLI's runtime default.
+    # Preserve the UTF-8 prompt text that production jvagent persists.
+    monkeypatch.setenv("JVSPATIAL_TEXT_NORMALIZATION_ENABLED", "false")
     app_root = write_app(tmp_path)
     set_app_root(app_root)
     try:

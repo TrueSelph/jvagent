@@ -9,7 +9,7 @@
 > [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md). This file is retained only to
 > preserve the original design intent, mirroring how ADR-0010 itself is kept.
 >
-> Paste this to Claude Code (or any coding agent) at the repo root of `jvagent`. It is self-contained but assumes the repo's `CLAUDE.md`, `.planning/SPEC.md`, and `.planning/adr/0010-executive-centers-architecture.md` are present.
+> Paste this to Claude Code (or any coding agent) at the repo root of `jvagent`. It is self-contained but assumes the repo's `AGENTS.md`, `.planning/SPEC.md`, and `.planning/adr/0010-executive-centers-architecture.md` are present.
 
 ---
 
@@ -17,7 +17,7 @@
 
 Implement the **Executive + Centers** deployment pattern specified in `.planning/adr/0010-executive-centers-architecture.md`. It is a new, additive pattern that ships **alongside** the Rails pattern — no forced migration, no harness subsumption. ADR-0010 is the **source of truth**; if anything below conflicts with it, the ADR wins and you flag the conflict.
 
-Read first, in order: `CLAUDE.md`, `.planning/adr/0010-executive-centers-architecture.md`, `.planning/SPEC.md` (§3.3–§3.4, §11).
+Read first, in order: `AGENTS.md`, `.planning/adr/0010-executive-centers-architecture.md`, `.planning/SPEC.md` (§3.3–§3.4, §11).
 
 ## Mental model (so you make correct judgment calls)
 
@@ -63,7 +63,7 @@ A brain. One **Executive** (prefrontal cortex, light model) engages trivial conv
 
 **M8 — Scaffolder profile + example.** `executive` profile in `jvagent/scaffold/builtin_profiles/`; `examples/jvagent_app/agents/jvagent/executive_agent/`. *Tests:* scaffold smoke; `jvagent ... validate` passes; a second orchestrator at `-200` rejected. *Exit:* `jvagent app create --profile executive` yields a working agent.
 
-**M9 — Observability + docs + parity.** Activation-trace events on `Interaction`; `docs/ORCHESTRATOR.md`; `PATTERNS.md` + `GLOSSARY.md` + top-level `CLAUDE.md` updated; a smoke harness (`tests/action/executive/smoke_executive.py`) running the 6-utterance suite, archived under `baselines/`. *Exit:* a turn is fully traceable from one log query; smoke runs clean; pattern documented as a peer.
+**M9 — Observability + docs + parity.** Activation-trace events on `Interaction`; `docs/ORCHESTRATOR.md`; `PATTERNS.md` + `GLOSSARY.md` + top-level `AGENTS.md` updated; a smoke harness (`tests/action/executive/smoke_executive.py`) running the 6-utterance suite, archived under `baselines/`. *Exit:* a turn is fully traceable from one log query; smoke runs clean; pattern documented as a peer.
 
 ## Testing & verification
 

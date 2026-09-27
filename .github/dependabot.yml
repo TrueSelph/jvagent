@@ -1,5 +1,5 @@
 version: 2
-# All updates open against `dev` — the integration branch (see CLAUDE.md §6);
+# All updates open against `dev` — the integration branch (see AGENTS.md §6);
 # `main` only receives promotion PRs.
 updates:
   - package-ecosystem: "pip"

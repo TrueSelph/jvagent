@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: declared in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.0.21`.
+- **Pip install**: [`pyproject.toml`](../../pyproject.toml) and both requirements files temporarily pin the exact patched jvspatial Git commit. Replace all three refs with the published patched version before publishing jvagent; a fresh `pip install -e '.[test]'` must resolve the reviewed commit in `jvspatial`'s `direct_url.json`.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
@@ -20,8 +20,8 @@
 Object  ── persistence-capable Pydantic-style base
   └── Node          ── graph node, has edges + visitor support
         ├── Edge    ── relationship between two Nodes
-        └── Walker  ── traverses a graph, visits Nodes
-              └── Root  ── singleton Node, anchor for everything
+        └── Root    ── singleton Node, anchor for everything
+Walker  ── separate traversal class; visits Nodes
 ```
 
 - `Object` (`jvspatial/core/entities/object.py:19`) — base persistence-capable class with id, entity type, graph context. All entity types inherit. Pydantic-aware.
@@ -29,6 +29,8 @@ Object  ── persistence-capable Pydantic-style base
 - `Edge` (`jvspatial/core/entities/edge.py:29`) — relationship. Has `source`/`target` Node IDs. Directional or bidirectional.
 - `Walker` (`jvspatial/core/entities/walker.py:83`) — traversal agent. Visit queue + trail. Built-in protection: `max_steps=10000`, `max_visits_per_node=100`, `max_execution_time=300s`, `max_queue_size=1000`.
 - `Root` (`jvspatial/core/entities/root.py:11`) — singleton; id fixed at `"n.Root.root"`. Created once.
+
+`Object.__setattr__` rejects undeclared fields, including new underscore names. Use `attribute(...)` for persisted state and Pydantic `PrivateAttr` for action-local runtime state (for example a registry, client, or cached dispatch state). A private method already declared on the class can be replaced on an instance for a test double; this does not allow an arbitrary new `_helper`. Do not bypass the setter with `object.__setattr__`.
 
 ### 2.2 Walker API (read by every InteractAction author)
 
@@ -77,6 +79,8 @@ async def my_handler(...): ...
 - `roles=[...]` restricts to those roles.
 - Endpoints inside an action package's `endpoints.py` are auto-discovered at action register time.
 
+With auth enabled, jvspatial caps register, login, forgot-password, and reset-password at five requests per 60 seconds per IP even when its global limiter is off. Test hosts or applications with an equivalent trusted limiter may explicitly set `RateLimitConfig(auth_entrypoint_rate_limit_enabled=False)`; do not assume the global limiter flag covers those routes. Authenticated mounted ASGI and raw FastAPI routes may lack jvspatial endpoint metadata and remain reachable after authentication; built-in `/status`, `/logs`, and `/graph` routes still require admin roles.
+
 ### 2.5 Persistence
 
 jvspatial supports five backends usable from jvagent, selected via env vars:
@@ -100,7 +104,7 @@ await node.save()                              # Required after property mutatio
 results = await MyNode.find({"context.x": 1}) # Mongo-style query
 ```
 
-`Object.count()` does not exist — use `len(await Entity.find(query))` (jvspatial SPEC.md). For high-cardinality counts, design indexes accordingly.
+`Object.count(query)` is available; use it instead of loading every matching entity just to count them.
 
 ### 2.6 Context
 

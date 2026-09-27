@@ -6,7 +6,7 @@ each turn via skill ``SKILL.md`` procedures. Live skills live in app-local
 package has no ``skills/`` subdir. Reference templates are under ``examples/``
 (not discovered). Declare ``extends: action:jvagent/interview``.
 
-Documentation: ``README.md``, ``CLAUDE.md``, ``docs/``.
+Documentation: ``README.md``, ``AGENTS.md``, ``docs/``.
 """
 
 from .interview_action import InterviewAction

@@ -8,6 +8,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.8rc19] - 2026-09-27
+
 ### Added
 
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
@@ -34,6 +36,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   changes.
 
 ### Changed
+
+- **Agent guide migration.** Root and scoped `AGENTS.md` files now contain the former `CLAUDE.md` guidance. The `CLAUDE.md` files are removed; contributor and tool references point to `AGENTS.md`.
 
 - **Artifact handler notify and PageIndex webhook import.** Async ingest reverse-indexes the jvforge `job_id` (including nested 202 bodies). `register_job` fails the ingest if the index cannot be saved. Notify requires the minted `api_key` before any job lookup, reloads the action, scans sibling `ArtifactHandlerInteractAction` nodes only after that key matches, and returns **503** on an unknown `job_id` so jvforge retries. Warm Lambda evicts the process entity cache before `Action.get`; raw `find()` `context.jvforge_job_index` is source of truth so a stale empty cached node cannot 503 a job Dynamo already has. The notify route is action-loaded only and still requires a trusted jvforge `/v1/artifacts/{job_id}` URL. Import, ready-answer generate, and WhatsApp/Messenger send run in-request via sequential `jvspatial.create_task` (Shape B); a returned schedule is awaited so Lambda cannot freeze it. A failed send leaves the reverse-index job and returns **503**. PageIndex graph import uses the same await. PageIndex LLM completions use `POST /api/pageindex/interact/webhook/{agent_id}` (old retrieval path 404s). Lambda `.docx`/Office saves sniff MIME via `file`/`file-libs` + `python-magic` in `Dockerfile.base` instead of falling through to `octet-stream`. Failures stay `logger.error` / `logger.exception`. `check_ingest_status` still prefers PageIndex, then polls jvforge and pull-imports `webhook_failed` / `completed` artifacts.
 
@@ -91,6 +95,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   timeout, an 8-minute install timeout and one `npm ci` retry.
 
 ### Fixed
+
+- **Wire prompt-contract fixture.** Direct graph bootstrap now applies jvagent's UTF-8 persistence default, so the wire tests measure the same prompt text as the normal CLI startup instead of jvspatial's ASCII-folding default.
+
+- **jvspatial 0.1.0 security compatibility.** Runtime action and walker state is declared with Pydantic `PrivateAttr`; instance patches of declared private helpers continue to work, and stale interview mocks for a removed helper are gone. JsonDB test doubles use a missing conversation ID instead of an invalid `MagicMock` ID. Fresh installs require the published `jvspatial==0.1.0` release.
 
 - **Atomic per-interaction egress claim across ResponseBus instances.** A
   process-wide `InteractionEgressRecord` (keyed by `interaction_id`) is the

@@ -7,6 +7,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
 from jvagent.action.parameters import SCOPE_ORCHESTRATION, SCOPE_RESPONSE
@@ -111,9 +112,7 @@ class InterviewAction(Action):
     def get_capabilities(self) -> List[str]:
         return [self.description] if self.description else []
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._registry = InterviewRegistry()
+    _registry: InterviewRegistry = PrivateAttr(default_factory=InterviewRegistry)
 
     # -- discovery ----------------------------------------------------------
 

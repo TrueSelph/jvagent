@@ -28,7 +28,6 @@ def signup_action():
     action = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
     spec = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
     action._registry._specs[spec.name] = spec
-    action._ensure_active_task = AsyncMock()
     action._close_task = AsyncMock()
     return action, spec
 
@@ -43,7 +42,6 @@ async def _activate(action):
         await save_session(conversation, session)
 
     action._save_session = _persist
-    action._ensure_active_task = AsyncMock()
     await action.on_skill_activate(
         "signup_interview", visitor, user_message=visitor.utterance
     )

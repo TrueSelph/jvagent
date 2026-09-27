@@ -18,7 +18,7 @@
 
 ## Checklist
 
-- [ ] I read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and (for subsystem work) the local `CLAUDE.md`.
+- [ ] I read [`CONTRIBUTING.md`](../CONTRIBUTING.md) and (for subsystem work) the local `AGENTS.md`.
 - [ ] `pre-commit run --all-files` passes.
 - [ ] `pytest tests/` passes; I added/updated tests for new behavior.
 - [ ] Bug fixes cite `file:line` in the description.

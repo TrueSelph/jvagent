@@ -24,6 +24,8 @@ pip install -e ".[dev]"
 pre-commit install                  # one-time hook setup (pre-commit + pre-push)
 ```
 
+On the security compatibility branch, the dependency files temporarily pin a specific jvspatial Git commit. Do not replace it with an editable sibling checkout or an older PyPI version when validating this branch: a fresh install must use the pinned commit. After the patched jvspatial release, replace the Git ref in `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` together, then rerun the full install and tests.
+
 `pre-commit run --all-files` checks **tracked** files only; stage new files
 (`git add -A`) before running it or they are silently skipped. The installed
 commit-time hook covers staged files, so keep the hooks installed
@@ -209,7 +211,7 @@ jvagent .
 |---|---|---|
 | `KeyError: 'JVAGENT_ADMIN_PASSWORD'` | `.env` not loaded or var missing | Confirm `.env` is at app root; `cat .env \| grep JVAGENT_ADMIN_PASSWORD` |
 | `RuntimeError: attached to different loop` | jvspatial entity cached from a prior event loop | Restart the process; this often resolves on warm path |
-| `Unknown argument: --foo` | Flag not recognized by `cli/main.py` | `jvagent --help` or read [`jvagent/cli/CLAUDE.md`](../../jvagent/cli/CLAUDE.md) |
+| `Unknown argument: --foo` | Flag not recognized by `cli/main.py` | `jvagent --help` or read [`jvagent/cli/AGENTS.md`](../../jvagent/cli/AGENTS.md) |
 | `--source and --merge require --update` | Misused flags | Add `--update` or drop the modifier |
 | `--purge` exits with "only allowed in development mode" | `JVSPATIAL_ENVIRONMENT` not `development` | `export JVSPATIAL_ENVIRONMENT=development` |
 | `action package not found: namespace/foo` | dir layout mismatch with `info.yaml` name | Match `info.yaml:package.name` to dir path |
@@ -220,7 +222,7 @@ jvagent .
 
 ## 13. Reading list (after this runbook)
 
-- [`/CLAUDE.md`](../../CLAUDE.md) — agent guide
+- [`/AGENTS.md`](../../AGENTS.md) — agent guide
 - [`.planning/architecture.md`](../architecture.md) — diagrams
 - [`/docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) — Executive pattern deep dive
 - [`/docs/scaffolding.md`](../../docs/scaffolding.md) — `jvagent app create` reference

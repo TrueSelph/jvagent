@@ -1,7 +1,7 @@
 # .planning — agent-facing design docs
 
 Reference material for **AI agents and human contributors** working on jvagent.
-The repo-root [`CLAUDE.md`](../CLAUDE.md) is the agent entry point; this folder
+The repo-root [`AGENTS.md`](../AGENTS.md) is the agent entry point; this folder
 holds the deeper normative specs, reference guides, runbooks, and decision
 records it links into. User-facing onboarding lives in the root
 [`README.md`](../README.md).

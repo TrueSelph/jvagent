@@ -93,7 +93,7 @@ Two defects had to be fixed upstream, both shipped in 0.0.16 ([TrueSelph/jvspati
 
    File-backed adapters never notice this. It is the same class of bug as the per-event-loop lock pattern jvagent already uses at [`core/app.py:100-124`](../jvagent/core/app.py).
 
-Per [`CLAUDE.md`](../CLAUDE.md) §4 and [`adr/0006`](../.planning/adr/0006-jvspatial-dependency.md), database adapter behavior is jvspatial's to own — if Postgres misbehaves, fix it there rather than working around it in jvagent.
+Per [`AGENTS.md`](../AGENTS.md) §4 and [`adr/0006`](../.planning/adr/0006-jvspatial-dependency.md), database adapter behavior is jvspatial's to own — if Postgres misbehaves, fix it there rather than working around it in jvagent.
 
 ---
 

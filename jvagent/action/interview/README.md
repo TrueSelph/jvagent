@@ -4,7 +4,7 @@ LLM-driven interview framework for structured data collection. The orchestrator 
 
 **Custom interview skills** are two-file packages under `agents/<ns>/<agent>/skills/<name>/` ([ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)). Copy [`examples/example_interview/`](examples/example_interview/) as a template, set `extends: action:jvagent/interview`, `requires-actions: [InterviewAction]`, and `task-lock: true` for turn-lock.
 
-**Agent entry point:** [CLAUDE.md](CLAUDE.md)
+**Agent entry point:** [AGENTS.md](AGENTS.md)
 
 ## Documentation
 
@@ -14,7 +14,7 @@ LLM-driven interview framework for structured data collection. The orchestrator 
 |----------|------------|
 | **Building a new interview skill** | [Quick start](#quick-start) → [docs/extending.md](docs/extending.md) → [examples/example_interview/](examples/example_interview/) |
 | **Per-item subpart questions (`for_each`)** | [docs/frontmatter-schema.md](docs/frontmatter-schema.md#per-item-subparts-fieldsfor_each) → [docs/extending.md](docs/extending.md#per-item-subparts-for_each) → [examples/example_for_each_interview/](examples/example_for_each_interview/) |
-| **AI agent editing this package** | [CLAUDE.md](CLAUDE.md) |
+| **AI agent editing this package** | [AGENTS.md](AGENTS.md) |
 | **Debugging a stuck turn** | [docs/troubleshooting.md](docs/troubleshooting.md) → [docs/multi-turn-flow.md](docs/multi-turn-flow.md) |
 | **Authoring `SKILL.md` body only** | [docs/skill_custom_instructions.md](docs/skill_custom_instructions.md) (base SOP: [SKILL.md](SKILL.md)) |
 

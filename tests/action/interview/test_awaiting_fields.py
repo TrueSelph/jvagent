@@ -35,7 +35,6 @@ async def test_activation_includes_awaiting_fields_not_field_definitions(signup_
     visitor = SimpleNamespace(conversation=conv)
 
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
 
     result = json.loads(
         await action._handle_start("signup_interview", visitor, user_message="sign up")
@@ -60,7 +59,6 @@ async def test_activation_includes_awaiting_fields_not_field_definitions(signup_
 async def test_on_skill_activate_includes_awaiting_fields(signup_action):
     action, _spec = signup_action
     action._save_session = AsyncMock()
-    action._ensure_active_task = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
     note = await action.on_skill_activate("signup_interview", user_message="sign up")
