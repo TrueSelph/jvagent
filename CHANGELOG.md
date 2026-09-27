@@ -521,6 +521,13 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   ``get_access_control_action`` / ``get_action_by_type`` heal duplicates on
   read; graph repair uses the same keeper heuristic as bootstrap dedupe.
 
+## [0.1.8rc18] - 2026-09-26
+
+### Changed
+
+- **Require `jvspatial==0.0.22`.** Picks up public `graph_transaction` so a
+  multi-write facet can commit or roll back as one unit.
+
 ## [0.1.8rc17] - 2026-09-24
 
 ### Added
