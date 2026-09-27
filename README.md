@@ -190,7 +190,7 @@ The graph is the source of truth. Top-level `InteractAction`s are visited by the
 
 ### Actions
 
-An **Action** is a namespaced plugin (`namespace/action_name`) declared by an `info.yaml`. **Persisted fields use `attribute(...)`** so they live on the graph; plain class attributes do not persist. Actions expose tools via `get_tools()`, discover peers with `get_action()`, and honor lifecycle hooks. **InteractActions** additionally participate in a turn and can be dispatched as tools by the Orchestrator. To build one, start with the [action authoring contract](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/action-authoring.md).
+An **Action** is a namespaced plugin (`namespace/action_name`) declared by an `info.yaml`. **Persisted fields use `attribute(...)`** so they live on the graph; runtime-only underscore fields use Pydantic `PrivateAttr` because jvspatial rejects undeclared entity attributes. Actions expose tools via `get_tools()`, discover peers with `get_action()`, and honor lifecycle hooks. **InteractActions** additionally participate in a turn and can be dispatched as tools by the Orchestrator. To build one, start with the [action authoring contract](https://github.com/TrueSelph/jvagent/blob/main/.planning/reference/action-authoring.md).
 
 ### The turn
 

@@ -24,6 +24,8 @@ pip install -e ".[dev]"
 pre-commit install                  # one-time hook setup (pre-commit + pre-push)
 ```
 
+On the security compatibility branch, the dependency files temporarily pin a specific jvspatial Git commit. Do not replace it with an editable sibling checkout or an older PyPI version when validating this branch: a fresh install must use the pinned commit. After the patched jvspatial release, replace the Git ref in `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` together, then rerun the full install and tests.
+
 `pre-commit run --all-files` checks **tracked** files only; stage new files
 (`git add -A`) before running it or they are silently skipped. The installed
 commit-time hook covers staged files, so keep the hooks installed

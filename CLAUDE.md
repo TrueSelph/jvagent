@@ -10,6 +10,8 @@
 
 A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-integration.md)'s object-spatial graph framework.
 
+**Security-branch compatibility:** the current dependency is an exact jvspatial Git commit until its patched release is published. Keep `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` on the same ref, and verify a fresh install before updating the pin. jvspatial rejects undeclared instance attributes on entity subclasses: declare persisted fields with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr`. See [the integration reference](.planning/reference/jvspatial-integration.md) and [action authoring](.planning/reference/action-authoring.md).
+
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).
 - Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Orchestrator** action (weight `-200`) runs the whole turn in one `execute()`: a deterministic **continuation check** (resume an active flow from the conversation `TaskStore`), then a bounded **think-act-observe loop** over a unified tool surface. Routing = tool selection; turn-lock = an active flow that hasn't returned `COMPLETE`/`YIELD`.
