@@ -2,7 +2,7 @@
 
 > This file is the entry point for **AI agents** (Claude Code, Codex CLI, Gemini CLI, etc.) working on jvagent. Human contributors should start with [`README.md`](README.md). Both audiences are welcome here, but agent-targeted reference docs live under [`.planning/`](.planning/) and per-subsystem `CLAUDE.md` files are scattered through the source tree.
 >
-> **AGENTS.md** at the repo root is a one-line pointer to this file.
+> **AGENTS.md** at the repo root points to this guide and highlights the current jvspatial compatibility rule.
 
 ---
 
