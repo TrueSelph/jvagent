@@ -120,7 +120,9 @@ class LeadGenAction(Action):
 
         from .store import LeadRecord
 
-        record = await LeadRecord.get_or_create_for_user(user)
+        record = await LeadRecord.get_or_create_for_user(
+            user, required_fields=spec.get_required_fields() or None
+        )
         fn = load_hook_function(spec, tdef.function or tdef.name)
         if fn is None:
             return json.dumps({"error": f"hook {tdef.function} not found"})
@@ -144,4 +146,9 @@ class LeadGenAction(Action):
             return json.dumps(
                 {"ok": True, "messages": result.messages, "extra": result.extra}
             )
+        # A dict result is the tool's own payload (e.g. handle_sync_to_sheet
+        # returns {"ok": False, "error": ...}). Surface it verbatim so a failure
+        # reaches the model instead of being hidden under an outer "ok": true.
+        if isinstance(result, dict):
+            return json.dumps(result, default=str)
         return json.dumps({"ok": True, "result": str(result)})

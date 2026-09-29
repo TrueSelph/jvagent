@@ -53,7 +53,13 @@ class LeadRecordNode(Node):
 
     __entity_name__: ClassVar[Optional[str]] = "LeadProfileNode"
 
-    user_node_id: str = attribute(indexed=True, default="")
+    # Not ``indexed=True``: a single-field index on ``context.user_node_id``
+    # would take the same auto-generated name as LeadRecord's *unique* index on
+    # the same field, and the two entities would fight over one physical index
+    # (the section node's save then REPLACEs the anchor row). The compound
+    # ``user_node_category`` index below leads with ``user_node_id``, so
+    # section lookups stay indexed without the collision.
+    user_node_id: str = attribute(default="")
     user_id: str = attribute(indexed=True, default="")
     category: str = attribute(indexed=True, default="")
     title: str = attribute(default="")
@@ -79,10 +85,19 @@ class LeadRecord(Node):
 
     __entity_name__: ClassVar[Optional[str]] = "LeadProfile"
 
+    # Unique per user, but the partial filter MUST scope to this entity.
+    # ``LeadRecordNode`` (entity ``LeadProfileNode``) also stores
+    # ``context.user_node_id``; without ``entity == "LeadProfile"`` the two
+    # share one physical unique index and the section node's save REPLACEs the
+    # anchor row via ``INSERT OR REPLACE``, wiping ``yaml_frontmatter`` to ``{}``.
+    # (Same shape as ConversationHealthState's ``conversation_health_state_agent``.)
     user_node_id: str = attribute(
         indexed=True,
         index_unique=True,
-        index_partial_filter_expression={"context.user_node_id": {"$gt": ""}},
+        index_partial_filter_expression={
+            "entity": "LeadProfile",
+            "context.user_node_id": {"$gt": ""},
+        },
         default="",
     )
     user_id: str = attribute(indexed=True, default="")
@@ -203,15 +218,30 @@ class LeadRecord(Node):
 
     @classmethod
     async def get_for_user(cls, user: "User") -> Optional["LeadRecord"]:
+        """Return the user's LeadRecord.
+
+        Resolves by the indexed ``user_node_id`` first: that column is the
+        authoritative key and keeps working even when the ``User -> LeadRecord``
+        edge set has drifted (dangling edges from replaced rows, duplicate
+        connections), which the graph traversal alone cannot see. Falls back to
+        traversal only for legacy rows written before ``user_node_id`` was
+        backfilled.
+        """
+        user_node_id = getattr(user, "id", None)
+        if user_node_id:
+            record = await cls.find_one(user_node_id=user_node_id)
+            if record:
+                return record
         return await user.node(node=LeadRecord, direction="out")
 
     @classmethod
     async def get_or_create_for_user(
         cls, user: "User", required_fields: Optional[List[str]] = None
     ) -> "LeadRecord":
-        existing = await cls.get_for_user(user)
         field_list = required_fields or list(DEFAULT_REQUIRED_FIELDS)
         fields_csv = ", ".join(field_list)
+
+        existing = await cls.get_for_user(user)
 
         if existing:
             if not existing.user_node_id:
@@ -229,6 +259,9 @@ class LeadRecord(Node):
                 await existing.save()
             return existing
 
+        # No match by key or edge. Re-check by the indexed key before creating:
+        # a second create for the same ``user_node_id`` would REPLACE the live
+        # row (unique index) and orphan its edges, losing captured fields.
         race = await cls.find_one(user_node_id=user.id)
         if race:
             return race
