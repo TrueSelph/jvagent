@@ -351,15 +351,33 @@ def _migrate_flat_to_service_tokens(
     return out
 
 
+def _row_recency(index: int, row: Any) -> tuple:
+    """Sort key: newest ``node.updated`` wins; equal stamps keep the later row."""
+    node = row.get("node") if isinstance(row, dict) else None
+    updated = getattr(node, "updated", None) if node is not None else None
+    if isinstance(updated, datetime):
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        stamp = updated
+    else:
+        stamp = datetime.min.replace(tzinfo=timezone.utc)
+    return (stamp, index)
+
+
 def oauth_bindings_from_tokens(
     server_name: str,
     rows: Sequence[Any],
 ) -> Dict[str, Dict[str, str]]:
-    """Map stored MCP tokens to ``{service: {email}}`` without leaking secrets."""
+    """Map stored MCP tokens to ``{service: {email}}`` without leaking secrets.
+
+    When more than one token still lists a service, the newest ``node.updated``
+    is the connection the panel shows. That is the same row ``token_row_for_service``
+    uses to send.
+    """
     from .hydrate import account_email_from_token
 
-    bindings: Dict[str, Dict[str, str]] = {}
-    for row in rows or []:
+    chosen: Dict[str, tuple[tuple, str]] = {}
+    for index, row in enumerate(rows or []):
         if not isinstance(row, dict):
             continue
         token = row.get("token")
@@ -369,9 +387,12 @@ def oauth_bindings_from_tokens(
         email = account_email_from_token(token, account)
         if not email:
             continue
+        rank = _row_recency(index, row)
         for svc in token_services(token, server_name):
-            bindings[svc] = {"email": email}
-    return bindings
+            prev = chosen.get(svc)
+            if prev is None or rank >= prev[0]:
+                chosen[svc] = (rank, email)
+    return {svc: {"email": email} for svc, (_rank, email) in chosen.items()}
 
 
 def apply_service_rebind(
@@ -478,10 +499,15 @@ def token_row_for_service(
     service: str,
     fallback_account: str = "integral",
 ) -> tuple[Optional[str], Optional[Dict[str, Any]], Any]:
-    """Pick the token that owns ``service``. Never steal another service's row."""
+    """Pick the token that owns ``service``. Never steal another service's row.
+
+    If several rows still list ``service``, the newest ``node.updated`` wins so
+    a reconnect replaces the mailbox the next send uses.
+    """
     svc = (service or "").strip()
     if svc:
-        for row in rows or []:
+        matches: List[tuple[tuple, Any, Dict[str, Any]]] = []
+        for index, row in enumerate(rows or []):
             if not isinstance(row, dict):
                 continue
             token = row.get("token")
@@ -492,8 +518,11 @@ def token_row_for_service(
             payload = service_token_payload(token, svc, server_name)
             if payload is None:
                 continue
-            return row.get("account_name"), payload, row.get("node")
-        return None, None, None
+            matches.append((_row_recency(index, row), row, payload))
+        if not matches:
+            return None, None, None
+        _rank, row, payload = max(matches, key=lambda item: item[0])
+        return row.get("account_name"), payload, row.get("node")
     for row in rows or []:
         if not isinstance(row, dict):
             continue
@@ -670,6 +699,31 @@ class MCPOAuthAction(Action):
         )
         for acc, tok in updates:
             await self.save_oauth_token(server_name, acc, tok)
+        await self._clear_cached_google_clients(service)
+
+    async def _clear_cached_google_clients(self, service: Optional[str]) -> None:
+        """Drop in-process Google API clients so the next call loads the new token."""
+        from .scopes import GOOGLE_ACTION_SERVICES
+
+        wanted = (service or "").strip()
+        try:
+            agent = await self.get_agent()
+        except Exception as exc:
+            logger.debug("No agent while clearing Google client cache: %s", exc)
+            return
+        if agent is None:
+            return
+        for type_name, svc_name in GOOGLE_ACTION_SERVICES:
+            if wanted and svc_name != wanted:
+                continue
+            try:
+                action = await agent.get_action_by_type(type_name)
+            except Exception as exc:
+                logger.debug("Google action lookup failed for %s: %s", type_name, exc)
+                continue
+            clear = getattr(action, "_clear_cached_services", None)
+            if callable(clear):
+                clear()
 
     async def get_oauth_token(
         self,
