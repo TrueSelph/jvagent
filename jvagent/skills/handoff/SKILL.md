@@ -1,9 +1,11 @@
 ---
 name: handoff
 description: >-
-  Reach a human teammate, give the team's contact details, or change the
-  phone or email replies are sent to. Use when the user asks for a person,
-  wants a callback, or you cannot answer from the knowledge base or catalog.
+  Reach a human teammate, give the team's phone, email, or office hours on
+  request, or change the phone or email replies are sent to. Use when the user
+  asks for a person, wants a callback, or you cannot answer from the knowledge
+  base or catalog. A question the knowledge base cannot answer is never a
+  request for contact details.
 allowed-tools:
   - handoff__contact_details
   - handoff__update_contact
@@ -29,9 +31,9 @@ Call `use_skill` for this skill before any of its tools.
 
 ## Tools
 
-- `handoff__contact_details` — user wants the team's details only; return contact number and office hours only.
+- `handoff__contact_details` — use only when the user explicitly requests a contact channel (phone or email) or office hours. It returns no business information; any question the knowledge base cannot answer is not a contact-details request and goes to `handoff__staff_lookup`.
 - `handoff__update_contact` — the user wants to change the phone or email replies are sent to. Pass one `phone_number` or one `email`.
-- `handoff__staff_lookup` — you cannot answer or the request is outside the assortment. Records a pending question and notifies staff.
+- `handoff__staff_lookup` — owns every request the knowledge base cannot answer: anything outside the assortment or any business fact no document provides. Records a pending question and notifies staff.
 - `handoff__agent_escalation` — the user wants a person now.
 - `handoff__scheduled_callback` — the user wants to be reached later.
 
@@ -61,5 +63,7 @@ Do not put handling notes in sentence 1. Do not mention WhatsApp or tell staff t
    email and call the same tool again, do that. If it does not, do not ask
    again and do not call the tool a second time.
 
-If the user only wants the team's details (not a notification), use
-`handoff__contact_details` and relay the block exactly as returned.
+Use `handoff__contact_details` only for an explicit request for a contact
+channel (phone or email) or office hours. Any other question the knowledge base
+cannot answer is not a contact-details request; use `handoff__staff_lookup`.
+Relay the tool's returned block exactly as returned.

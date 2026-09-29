@@ -653,7 +653,7 @@ class HandoffAction(Action):
 
     @tool(name="handoff__contact_details")
     async def contact_details(self) -> str:
-        """Return the team's email, phone, and office hours. Use when the user wants those details and no notification should be sent."""
+        """Return the team's email, phone, and office hours. Use only when the user explicitly requests a contact channel or office hours. It returns no business information; do not use it for any other unanswerable question (use handoff__staff_lookup)."""
         phone, emails = await self._public_contacts()
         return _render_direct_contact(
             self.direct_contact_prompt,
@@ -720,7 +720,7 @@ class HandoffAction(Action):
             "True if the user refused to share a phone or email.",
         ] = None,
     ) -> ToolResult:
-        """Record a question you cannot answer and notify staff. Use after a search returned nothing useful."""
+        """Record a question you cannot answer and notify staff. Use for any request the knowledge base cannot answer, including questions outside the assortment and any business fact no document provides."""
         return await self._dispatch_handoff(
             "staff_lookup",
             message,
