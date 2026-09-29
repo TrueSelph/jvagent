@@ -1,0 +1,23 @@
+package:
+  name: jvagent/handoff_action
+  author: Tharick Jairam
+  archetype: HandoffAction
+  version: 1.0.0
+  meta:
+    title: Handoff Action
+    description: >-
+      Human-support capability tools, skill-gated: return contact details
+      (handoff__contact_details), notify staff for escalation
+      (handoff__agent_escalation), a callback (handoff__scheduled_callback),
+      or a staff lookup (handoff__staff_lookup), and save an answer to a
+      pending question (handoff__pending_questions / handoff__save_answer) into
+      a public PageIndex document (handoff.md).
+    group: jvagent
+    type: action
+  config:
+    order:
+      weight: 0
+  dependencies:
+    jvagent: ~0.1.7
+    actions: []
+    pip: []
