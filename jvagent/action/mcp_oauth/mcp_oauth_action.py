@@ -192,18 +192,21 @@ def _services_from_scopes(token: Dict[str, Any], server_name: str) -> List[str]:
 
 
 def token_services(token: Dict[str, Any], server_name: str) -> List[str]:
-    """Services this token owns. Prefer ``mcp_services``; else infer from scopes."""
-    raw = token.get("mcp_services")
-    if isinstance(raw, list):
+    """Services this token owns. Prefer ``mcp_services``; else infer from scopes.
+
+    An explicit empty ``mcp_services`` list means this token owns nothing.
+    A missing key still falls through to ``service_tokens`` and then scopes,
+    so a legacy flat token keeps working.
+    """
+    if "mcp_services" in token and isinstance(token.get("mcp_services"), list):
         seen: set[str] = set()
         out: List[str] = []
-        for item in raw:
+        for item in token["mcp_services"]:
             svc = str(item).strip()
             if svc and svc not in seen:
                 seen.add(svc)
                 out.append(svc)
-        if out:
-            return out
+        return out
     st = _service_tokens_map(token)
     if st:
         return list(st)

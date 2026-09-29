@@ -9,6 +9,8 @@ from jvagent.action.mcp_oauth.mcp_oauth_action import (
     mcp_oauth_state_action_id,
     oauth_bindings_from_tokens,
     parse_mcp_oauth_state_action_id,
+    token_row_for_service,
+    token_services,
 )
 from jvagent.action.mcp_oauth.scopes import google_services_from_scopes
 
@@ -193,6 +195,38 @@ def test_mcp_oauth_state_action_id_roundtrip():
     )
     assert parse_mcp_oauth_state_action_id("mcp_oauth:integral") == ("integral", "")
     assert parse_mcp_oauth_state_action_id("") == ("integral", "")
+
+
+def test_empty_mcp_services_does_not_reclaim_sheets_from_scopes():
+    """A cleared binding must stay cleared even if the refresh scopes include Sheets.
+
+    Otherwise the older account still matches ``token_row_for_service`` and a
+    later sync writes the Sheets binding back onto it.
+    """
+    old = {
+        "email": "jtharick@gmail.com",
+        "refresh_token": "rt-old",
+        "scopes": SHEETS_SCOPES,
+        "mcp_services": [],
+    }
+    new = {
+        "email": "other@example.com",
+        "refresh_token": "rt-new",
+        "scopes": SHEETS_SCOPES,
+        "mcp_services": ["sheets"],
+    }
+    assert token_services(old, "google_workspace") == []
+    assert token_services({"scopes": SHEETS_SCOPES}, "google_workspace") == ["sheets"]
+    account, payload, _node = token_row_for_service(
+        [
+            {"account_name": "jtharick@gmail.com", "token": old},
+            {"account_name": "other@example.com", "token": new},
+        ],
+        "google_workspace",
+        "sheets",
+    )
+    assert account == "other@example.com"
+    assert payload["refresh_token"] == "rt-new"
 
 
 def test_drive_mcp_services_does_not_bind_sheets():
