@@ -1,3 +1,3 @@
 """Version information for jvagent package."""
 
-__version__ = "0.1.8rc12-dev0"
+__version__ = "0.1.8rc12-dev1"
