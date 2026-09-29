@@ -100,6 +100,9 @@ metadata:
 | `extends` | JV | SOP inheritance only (body composition). `action:<namespace>/<action>` loads `<action_dir>/SKILL.md` body; `skill:<name>` inherits another skill's composed body. Separate from `requires-actions`. When `extends: action:…` is set, that action ref is also the **preferred lifecycle binder** for skill hooks (`on_skill_activate`, `prepare_task_lock_turn`, `resolve_task_lock_skill`, etc.). |
 | `allowed-channels` | both | List of canonical channel names the skill is surfaced on (e.g. `[whatsapp]`). Empty/absent = all channels. Channel is normalized via `normalize_channel` (`web`→`default`). |
 | `denied-channels` | both | List of canonical channel names the skill is hidden from. Subtracted from `allowed-channels` when both are set. |
+| `access-action` | both | AccessControlAction `user_groups` scope (usually an action class name, e.g. `HandoffAction`). Required when `allowed-groups` / `denied-groups` are set. |
+| `allowed-groups` | both | Show the skill only if the visitor `user_id` is in at least one of these groups under `access-action` (merged with `default`). |
+| `denied-groups` | both | Hide the skill if the visitor `user_id` is in any of these groups under `access-action`. |
 | `parameters` | both | Standing behavioural rules that apply **while this skill is driving the turn** (ADR-0037). Same `{scope?, condition?, response}` shape an Action declares programmatically, pooled onto the same interaction so the loop prompt and the reply compose read them through one path. `scope` is `response` (default) or `orchestration`. A bare string is an unconditional rule. Contributed only when the skill is **in force** — `always-active`, the active task-lock, or activated this turn — never merely because it is listed. |
 | `deny-access-directive` | both | Message the model relays verbatim when the user asks for the skill on a non-allowed channel (the skill is hidden; this note is surfaced in `skills_section`). |
 | `license`, `metadata` | both | Claude-standard fields. `metadata.version` / `metadata.tags` for tracking + discovery cues. |
@@ -139,6 +142,32 @@ deny-access-directive: >-
   Please use WhatsApp to get a quotation. We will be able to connect to your
   account and give you a better quote based on your discounts, etc.
 ```
+
+### Identity gating (AccessControl groups)
+
+Restrict a skill by who the visitor is with `access-action` plus
+`allowed-groups` and/or `denied-groups`. Membership is resolved through
+`AccessControlAction.user_groups` for that action label (merged with
+`default`), the same nesting other actions already use.
+
+```yaml
+access-action: HandoffAction
+allowed-groups:
+  - staff
+```
+
+```yaml
+access-action: HandoffAction
+denied-groups:
+  - staff
+```
+
+When those keys are set, the skill is **hidden from the whole surface** unless
+the visitor passes the gate. Fail closed: missing AccessControlAction, policy
+not enforcing, empty `user_id`, or a user not in an allowed group hides a gated
+skill. Skills that declare neither groups key are unchanged. Declared
+`allowed-tools` on a hidden skill are dropped for that turn (shared tool
+namespaces are not wiped by skill-name prefix).
 
 ### Orchestrator `auto_start_skills_on_new_user`
 

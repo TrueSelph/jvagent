@@ -315,8 +315,6 @@ async def test_assemble_tools_filters_blocked_skill_and_hides_its_tools(
         OrchestratorInteractAction, "get_responder", AsyncMock(return_value=None)
     )
 
-    from jvagent.action.orchestrator.skill_tasks import compose_skill_activate_hooks
-
     monkeypatch.setattr(
         "jvagent.action.orchestrator.skill_tasks.compose_skill_activate_hooks",
         lambda *a, **k: (None, None),
@@ -537,3 +535,65 @@ def test_real_quotation_and_pre_alert_hidden_on_default_channel(
     )
     assert "Message me on WhatsApp for a quote" in section
     assert "Message me on WhatsApp to check a tracking number" in section
+
+
+# ---------------------------------------------------------------------------
+# AccessControl group gating
+# ---------------------------------------------------------------------------
+
+
+def _access_doc(
+    *,
+    allowed: Optional[tuple] = None,
+    denied: Optional[tuple] = None,
+    action: str = "HandoffAction",
+    name: str = "gated",
+) -> SkillDoc:
+    return SkillDoc(
+        name=name,
+        description="d",
+        body="b",
+        access_action=action,
+        allowed_groups=tuple(allowed or ()),
+        denied_groups=tuple(denied or ()),
+    )
+
+
+class _FakeACA:
+    def __init__(self, groups, enforce=True):
+        self._groups = groups
+        self._enforce = enforce
+
+    def policy_applies(self):
+        return self._enforce
+
+    def get_user_groups(self, action_label=None):
+        return dict(self._groups.get(action_label, {}))
+
+
+def test_access_gate_passes_when_undeclared() -> None:
+    doc = SkillDoc(name="open", description="d", body="b")
+    assert OrchestratorInteractAction._skill_access_control_allowed(doc, "anyone", None)
+
+
+def test_access_gate_allowed_groups() -> None:
+    doc = _access_doc(allowed=("staff",))
+    aca = _FakeACA({"HandoffAction": {"staff": ["111"]}})
+    assert OrchestratorInteractAction._skill_access_control_allowed(doc, "111", aca)
+    assert not OrchestratorInteractAction._skill_access_control_allowed(doc, "999", aca)
+
+
+def test_access_gate_denied_groups() -> None:
+    doc = _access_doc(denied=("staff",))
+    aca = _FakeACA({"HandoffAction": {"staff": ["111"]}})
+    assert not OrchestratorInteractAction._skill_access_control_allowed(doc, "111", aca)
+    assert OrchestratorInteractAction._skill_access_control_allowed(doc, "999", aca)
+
+
+def test_access_gate_fails_closed_without_access_control() -> None:
+    doc = _access_doc(allowed=("staff",))
+    assert not OrchestratorInteractAction._skill_access_control_allowed(
+        doc, "111", None
+    )
+    aca = _FakeACA({"HandoffAction": {"staff": ["111"]}}, enforce=False)
+    assert not OrchestratorInteractAction._skill_access_control_allowed(doc, "111", aca)

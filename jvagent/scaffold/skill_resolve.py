@@ -35,11 +35,14 @@ def skill_digest(skill_dir: Union[str, Path]) -> str:
 
 _KNOWN_FRONTMATTER_KEYS = frozenset(
     {
+        "access-action",
         "allowed-channels",
+        "allowed-groups",
         "allowed-tools",
         "always-active",
         "coactivate-with",
         "denied-channels",
+        "denied-groups",
         "deny-access-directive",
         "dependencies",
         "description",
@@ -381,6 +384,28 @@ def parse_skill_bundle(
         or frontmatter.get("deny_access_directive")
         or ""
     ).strip()
+    # Identity gate via AccessControlAction groups (any action label).
+    access_action = str(
+        frontmatter.get("access-action") or frontmatter.get("access_action") or ""
+    ).strip()
+    allowed_groups = _normalize_string_list(
+        frontmatter.get("allowed-groups") or frontmatter.get("allowed_groups"),
+        skill_file,
+        key="allowed-groups",
+    )
+    denied_groups = _normalize_string_list(
+        frontmatter.get("denied-groups") or frontmatter.get("denied_groups"),
+        skill_file,
+        key="denied-groups",
+    )
+    if (allowed_groups or denied_groups) and not access_action:
+        logger.warning(
+            "Skill bundle %s declares allowed/denied-groups without access-action; "
+            "ignoring group gate",
+            skill_file,
+        )
+        allowed_groups = []
+        denied_groups = []
     scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
     if not scope_hint:
         scope_hint = description
@@ -446,6 +471,9 @@ def parse_skill_bundle(
         "allowed_channels": allowed_channels,
         "denied_channels": denied_channels,
         "deny_access_directive": deny_access_directive,
+        "access_action": access_action,
+        "allowed_groups": allowed_groups,
+        "denied_groups": denied_groups,
         "scope_hint": scope_hint,
         "source": source,
         "digest": skill_digest(skill_file),
