@@ -8,6 +8,16 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Skill identity gating via AccessControl groups.** Skills may declare
+  `access-action` plus `allowed-groups` / `denied-groups` so the orchestrator
+  shows or hides them from the skill catalog based on
+  `AccessControlAction.user_groups` for that action label. Fail closed when
+  AccessControl is missing or not enforcing. Handoff uses this for the
+  customer (`handoff`, denied `staff`) and staff (`handoff_staff`, allowed
+  `staff`) split; Silvie configures `user_groups.HandoffAction.staff`.
+
 ## [0.1.8rc19] - 2026-09-27
 
 ### Added

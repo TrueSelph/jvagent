@@ -1137,6 +1137,50 @@ class OrchestratorInteractAction(
             return False
         return True
 
+    @staticmethod
+    def _skill_declares_access_gate(doc: Any) -> bool:
+        action = (getattr(doc, "access_action", "") or "").strip()
+        allowed = tuple(getattr(doc, "allowed_groups", ()) or ())
+        denied = tuple(getattr(doc, "denied_groups", ()) or ())
+        return bool(action and (allowed or denied))
+
+    @staticmethod
+    def _skill_access_control_allowed(
+        doc: Any, user_id: str, access_control: Any
+    ) -> bool:
+        """Identity gate via AccessControlAction groups (any action label).
+
+        Skills with no ``access-action`` / groups pass. Gated skills fail closed
+        when AccessControl is missing, not enforcing, or the user is absent /
+        not in an allowed group / in a denied group.
+        """
+        if not OrchestratorInteractAction._skill_declares_access_gate(doc):
+            return True
+        if (
+            access_control is None
+            or not getattr(access_control, "policy_applies", lambda: False)()
+        ):
+            return False
+        uid = (user_id or "").strip()
+        if not uid:
+            return False
+        label = (getattr(doc, "access_action", "") or "").strip()
+        try:
+            groups = access_control.get_user_groups(action_label=label) or {}
+        except Exception:
+            return False
+        if not isinstance(groups, dict):
+            return False
+        allowed = tuple(getattr(doc, "allowed_groups", ()) or ())
+        denied = tuple(getattr(doc, "denied_groups", ()) or ())
+        if allowed:
+            if not any(uid in (groups.get(name) or []) for name in allowed):
+                return False
+        if denied:
+            if any(uid in (groups.get(name) or []) for name in denied):
+                return False
+        return True
+
     # ------------------------------------------------------------------
     # Tool surface (per-turn; binds the visitor)
     # ------------------------------------------------------------------
@@ -1535,6 +1579,18 @@ class OrchestratorInteractAction(
         # ``deny-access-directive`` are collected so their message can be
         # surfaced in skills_section (the model relays it verbatim when the
         # user's intent matched the blocked skill).
+        # Identity gate: skills with access-action + allowed/denied-groups are
+        # shown only when AccessControlAction places the visitor in the right
+        # groups. Fail closed when AccessControl is absent or not enforcing.
+        access_control = await self._resolve_action("AccessControlAction")
+        access_hidden = [
+            d
+            for d in docs
+            if not self._skill_access_control_allowed(
+                d, getattr(visitor, "user_id", "") or "", access_control
+            )
+        ]
+        docs = [d for d in docs if d not in access_hidden]
         channel = getattr(visitor, "channel", "default") or "default"
         allowed_docs: List[Any] = []
         blocked_docs: List[Any] = []
@@ -1548,11 +1604,15 @@ class OrchestratorInteractAction(
         # so other interviews keep working. Also drop any name the skill listed
         # in its ``requires_tools``/``allowed-tools`` so a blocked JV skill's
         # referenced tools aren't surfaced on its behalf.
-        if blocked_docs:
+        hidden_docs = list(blocked_docs) + access_hidden
+        if hidden_docs:
+            # Prefix drop is only for a channel-blocked skill's own
+            # ``<name>__*`` custom tools. Shared tool namespaces (e.g.
+            # ``handoff__*``) drop only the tools each hidden skill declares.
             blocked_names = {getattr(d, "name", "") for d in blocked_docs}
             blocked_prefixes = tuple(f"{n}__" for n in blocked_names if n)
             drop_names: Set[str] = set()
-            for d in blocked_docs:
+            for d in hidden_docs:
                 drop_names |= {t for t in getattr(d, "requires_tools", ()) or () if t}
             for name in list(tools.keys()):
                 if name in drop_names or (
