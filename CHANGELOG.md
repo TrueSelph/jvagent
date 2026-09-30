@@ -8,11 +8,23 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Added
+
+- **Skill identity gating via AccessControl groups.** Skills may declare
+  `access-action` plus `allowed-groups` / `denied-groups` so the orchestrator
+  shows or hides them from the skill catalog based on
+  `AccessControlAction.user_groups` for that action label. Fail closed when
+  AccessControl is missing or not enforcing. Handoff uses this for the
+  customer (`handoff`, denied `staff`) and staff (`handoff_staff`, allowed
+  `staff`) split; Silvie configures `user_groups.HandoffAction.staff`.
+
 ## [0.1.8rc19] - 2026-09-27
 
 ### Added
 
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
+
+- **Skill-gated handoff action (`jvagent/handoff_action`, `HandoffAction`, 1.0.0).** Human-support capability tools — `handoff__direct_contact()` (contact block), `handoff__notify(mode, message, channel, phone_numbers?, emails?)` (`agent_escalation` | `scheduled_callback` | `staff_lookup`, channel `whatsapp` | `email`; `staff_lookup` records a pending question), `handoff__staff_inbox()` and `handoff__resolve(question_id, answer)` (staff-only; append the Q&A to `<files_root>/handoff.md` and re-ingest it into PageIndex as `doc_name="handoff.md"`, `metadata={"access":"public"}`). Staff identity is the dispatch sender; only `HANDOFF_STAFF_NUMBERS` / `HANDOFF_STAFF_EMAILS` may resolve and write PageIndex, and one target is chosen at random per notification. Gated by the new library skill `jvagent/skills/handoff` (`skill_only_tools: ["handoff__*"]`), which carries the when/how SOP. The action also contributes an orchestration-scoped routing parameter (`key: handoff_routing`). Email channel requires `jvagent/email_action` + MCP Gmail/OAuth (or SendGrid/Outlook). New pending-question store (`HandoffQuestion`). The pre-existing `jvagent/handoff_interact_action` IA is unchanged.
 
 - **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.
 

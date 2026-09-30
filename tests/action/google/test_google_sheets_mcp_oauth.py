@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta, timezone
 from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -395,3 +396,79 @@ async def test_gmail_does_not_load_sheets_token():
         account, token, _node = await action._load_mcp_token()
     assert account is None
     assert token is None
+
+
+# ── expiry normalization (fresh tokens must not look already expired) ──
+
+
+def test_normalize_expiry_strips_offset_and_fraction():
+    """google-auth's parser rejects ``+00:00`` and drops fractional seconds.
+
+    We store ``datetime.now(timezone.utc).isoformat()``, so the rebuild path
+    must normalise before ``from_authorized_user_info``.
+    """
+    from jvagent.action.google.google_action import _normalize_expiry
+
+    assert _normalize_expiry("2026-09-28T21:32:47.123456+00:00") == (
+        "2026-09-28T21:32:47"
+    )
+    assert _normalize_expiry("2026-09-28T21:32:47Z") == "2026-09-28T21:32:47"
+    assert _normalize_expiry(datetime(2026, 9, 28, 21, 32, 47)) == (
+        "2026-09-28T21:32:47"
+    )
+    assert _normalize_expiry(None) is None
+    assert _normalize_expiry("not-a-date") is None
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+def test_credentials_from_payload_fresh_token_is_valid(cls):
+    """A freshly built payload (with our isoformat expiry) yields valid creds."""
+    action = cls()
+    token_data = {
+        "type": "authorized_user",
+        "refresh_token": "rtok",
+        "client_id": "cid",
+        "client_secret": "csecret",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": [*cls.SCOPES, "openid"],
+        "expiry": (datetime.now(timezone.utc) + timedelta(seconds=3540)).isoformat(),
+    }
+    creds = action._credentials_from_mcp_payload(token_data)
+    assert creds.valid is True
+    assert creds.expired is False
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+def test_credentials_from_payload_offset_without_fraction_is_valid(cls):
+    """``...:47+00:00`` (no fractional seconds) is the shape google-auth's
+    parser rejects outright; normalization must keep it parseable."""
+    action = cls()
+    token_data = {
+        "type": "authorized_user",
+        "refresh_token": "rtok",
+        "client_id": "cid",
+        "client_secret": "csecret",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": [*cls.SCOPES, "openid"],
+        "expiry": (datetime.now(timezone.utc) + timedelta(seconds=3540))
+        .replace(microsecond=0)
+        .isoformat(),
+    }
+    creds = action._credentials_from_mcp_payload(token_data)
+    assert creds.valid is True
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+def test_credentials_from_payload_without_expiry_is_expired(cls):
+    """The old shape (no expiry) is what forced the post-auth refresh."""
+    action = cls()
+    token_data = {
+        "type": "authorized_user",
+        "refresh_token": "rtok",
+        "client_id": "cid",
+        "client_secret": "csecret",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": [*cls.SCOPES, "openid"],
+    }
+    creds = action._credentials_from_mcp_payload(token_data)
+    assert creds.expired is True

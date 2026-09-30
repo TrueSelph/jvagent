@@ -65,6 +65,7 @@ Bases:
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
 | jvagent/leadgen | `LeadGenAction` | `Action` | — | Conversational lead capture (`leadgen__*` tools) with spec-driven fields, proactive contact gap-fill, and destination-agnostic auto-sync via the standard MCP interface (sync configured on the action in agent.yaml, or a skill `sync:` block). Base SOP at action-root `SKILL.md`; agent skills use `extends: action:jvagent/leadgen` + `leadgen:` frontmatter |
 | jvagent/handoff | `HandoffInteractAction` | `InteractAction` | mid | Transfer to human (provides contact details) |
+| jvagent/handoff_action | `HandoffAction` | `Action` | — | Skill-gated human-support tools (`handoff__direct_contact`, `handoff__notify`, `handoff__staff_inbox`, `handoff__resolve`). Per-mode channel (WhatsApp/email), staff allowlist + random target, staff Q&A captured into PageIndex (`handoff.md`, public). SOP via the `jvagent/skills/handoff` library skill. 1.0.0 |
 | jvagent/page_context | `PageContextInteractAction` | `InteractAction` | -250 | Surfaces the embeddable messenger's host-page context (path, title, referrer, dwell, scroll depth, repeat visit) to the model as an **orchestration-scoped** factual parameter. `visitor.data` is not otherwise visible to the model. States facts only — never a next step (thin-harness invariant 3). See [`../../docs/jvmessenger.md`](../../docs/jvmessenger.md) |
 | jvagent/suggestions | `SuggestionsInteractAction` | `InteractAction` | 100 | LLM-generated quick-reply chips for the embeddable messenger. After the reply, asks a light model for a few short follow-ups and publishes them as `metadata.suggestions` (rendered by jvmessenger). Streaming turns only; no-op without a model. See [`../../docs/jvmessenger.md`](../../docs/jvmessenger.md) |
 
@@ -197,7 +198,7 @@ The "4-file" pattern (`__init__.py`, `{name}.py`, `endpoints.py`, `info.yaml`)
 in [`action-authoring.md`](action-authoring.md) §2 is **aspirational** —
 many packages legitimately ship without an `endpoints.py` because they have
 no HTTP surface (intro, task_creation_interact_action, task_trigger_interact_action,
-handoff_interact_action, interview, mcp,
+handoff_interact_action, handoff_action, interview, mcp,
 vectorstore/typesense, web_search/*, stt_action/deepgram,
 tts_action/elevenlabs, video_generation, pageindex sub-actions). For
 packages that DO have an `endpoints.py`, registration is via one of two
@@ -220,6 +221,7 @@ Both paths are currently functional. AUDIT-actions XC-6 verified.
 | `ReplyAction` | the Agent's identity (`alias` + `role`), a `LanguageModelAction` (voicing) |
 | `WebFetchAction` | none (httpx + bs4 + markdownify; SSRF guard) |
 | `HandoffInteractAction` | `ReplyAction` (polish), `WhatsAppAction` (contact routing) |
+| `HandoffAction` | a notify action (default `WhatsAppAction`) + `EmailAction` (per-mode channel), `PageIndexAction` (Q&A ingest) |
 | `TaskCreationInteractAction` | `WhatsAppAction` (context), `ReplyAction` (formatting) |
 | Any channel adapter | `ResponseBus` (per-agent, via `Agent.get_response_bus()`) |
 

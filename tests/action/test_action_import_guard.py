@@ -48,6 +48,8 @@ _ALLOWED_SIBLING_EDGES = frozenset(
         ("microsoft", "mcp_oauth"),
         ("pageindex", "google"),
         ("artifact_handler_interact_action", "pageindex"),
+        ("handoff_action", "email_action"),
+        ("handoff_action", "pageindex"),
     }
 )
 

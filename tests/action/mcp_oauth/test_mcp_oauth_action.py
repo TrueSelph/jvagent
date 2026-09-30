@@ -9,6 +9,8 @@ from jvagent.action.mcp_oauth.mcp_oauth_action import (
     mcp_oauth_state_action_id,
     oauth_bindings_from_tokens,
     parse_mcp_oauth_state_action_id,
+    token_row_for_service,
+    token_services,
 )
 from jvagent.action.mcp_oauth.scopes import google_services_from_scopes
 
@@ -193,6 +195,77 @@ def test_mcp_oauth_state_action_id_roundtrip():
     )
     assert parse_mcp_oauth_state_action_id("mcp_oauth:integral") == ("integral", "")
     assert parse_mcp_oauth_state_action_id("") == ("integral", "")
+
+
+def test_empty_mcp_services_does_not_reclaim_sheets_from_scopes():
+    """A cleared binding must stay cleared even if the refresh scopes include Sheets.
+
+    Otherwise the older account still matches ``token_row_for_service`` and a
+    later sync writes the Sheets binding back onto it.
+    """
+    old = {
+        "email": "jtharick@gmail.com",
+        "refresh_token": "rt-old",
+        "scopes": SHEETS_SCOPES,
+        "mcp_services": [],
+    }
+    new = {
+        "email": "other@example.com",
+        "refresh_token": "rt-new",
+        "scopes": SHEETS_SCOPES,
+        "mcp_services": ["sheets"],
+    }
+    assert token_services(old, "google_workspace") == []
+    assert token_services({"scopes": SHEETS_SCOPES}, "google_workspace") == ["sheets"]
+    account, payload, _node = token_row_for_service(
+        [
+            {"account_name": "jtharick@gmail.com", "token": old},
+            {"account_name": "other@example.com", "token": new},
+        ],
+        "google_workspace",
+        "sheets",
+    )
+    assert account == "other@example.com"
+    assert payload["refresh_token"] == "rt-new"
+
+
+def test_reconnected_gmail_uses_newest_mailbox():
+    """Panel and send both follow the mailbox authorized last for that service."""
+    from datetime import datetime, timezone
+
+    gmail_scope = "https://www.googleapis.com/auth/gmail.send"
+    old_node = SimpleNamespace(updated=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    new_node = SimpleNamespace(updated=datetime(2026, 9, 29, tzinfo=timezone.utc))
+
+    def _gmail_token(email: str, refresh: str) -> dict:
+        return {
+            "email": email,
+            "refresh_token": refresh,
+            "scopes": [gmail_scope],
+            "mcp_services": ["gmail"],
+            "service_tokens": {
+                "gmail": {"refresh_token": refresh, "scopes": [gmail_scope]},
+            },
+        }
+
+    older = {
+        "account_name": "jtharick@gmail.com",
+        "token": _gmail_token("jtharick@gmail.com", "rt-old"),
+        "node": old_node,
+    }
+    newer = {
+        "account_name": "rickdeghost25@gmail.com",
+        "token": _gmail_token("rickdeghost25@gmail.com", "rt-new"),
+        "node": new_node,
+    }
+    for rows in ([older, newer], [newer, older]):
+        account, payload, _node = token_row_for_service(
+            rows, "google_workspace", "gmail"
+        )
+        assert account == "rickdeghost25@gmail.com"
+        assert payload["refresh_token"] == "rt-new"
+        bindings = oauth_bindings_from_tokens("google_workspace", rows)
+        assert bindings["gmail"]["email"] == "rickdeghost25@gmail.com"
 
 
 def test_drive_mcp_services_does_not_bind_sheets():
