@@ -10,7 +10,6 @@ allowed-tools:
   - handoff__update_chunk
 requires-actions:
   - HandoffAction
-extends: action:jvagent/handoff_action
 access-action: HandoffAction
 allowed-groups:
   - staff

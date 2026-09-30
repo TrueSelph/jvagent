@@ -14,7 +14,6 @@ allowed-tools:
   - handoff__scheduled_callback
 requires-actions:
   - HandoffAction
-extends: action:jvagent/handoff_action
 access-action: HandoffAction
 denied-groups:
   - staff

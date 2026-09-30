@@ -67,10 +67,9 @@ matrix.
 ## Skill
 
 The SOP lives in [`jvagent/skills/handoff/SKILL.md`](../../skills/handoff/SKILL.md)
-(`allowed-tools` = these four, `requires-actions: [HandoffAction]`,
-`extends: action:jvagent/handoff_action`). The action also contributes an
-always-on orchestration parameter (`key: handoff_routing`) that tells the loop
-when to hand off.
+(`allowed-tools` = these four, `requires-actions: [HandoffAction]`). The action
+also contributes an always-on orchestration parameter (`key: handoff_routing`)
+that tells the loop when to hand off.
 
 ## Orchestrator wiring (agent.yaml)
 
