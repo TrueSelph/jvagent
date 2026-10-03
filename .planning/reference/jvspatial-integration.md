@@ -7,7 +7,7 @@
 ## 1. Where jvspatial lives
 
 - **Source**: `/Users/eldonmarks/Briefcase/dev/jv/jvspatial` (sibling directory in this workspace).
-- **Pip install**: [`pyproject.toml`](../../pyproject.toml) and both requirements files temporarily pin the exact patched jvspatial Git commit. Replace all three refs with the published patched version before publishing jvagent; a fresh `pip install -e '.[test]'` must resolve the reviewed commit in `jvspatial`'s `direct_url.json`.
+- **Pip install**: [`pyproject.toml`](../../pyproject.toml) and both requirements files pin the same published jvspatial release. Verify the installed `jvspatial` version and package origin in a fresh environment before updating this pin.
 - **Own docs**: jvspatial has its own [`README.md`](../../../jvspatial/README.md) and [`SPEC.md`](../../../jvspatial/SPEC.md). Treat those as authoritative for anything below.
 
 ---
@@ -175,7 +175,7 @@ Things jvagent **owns**:
 
 ## 5. Version policy
 
-- Minimum required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==X.Y.Z`. Current: `==0.0.21`.
+- Required jvspatial: pinned in [`pyproject.toml`](../../pyproject.toml) as `jvspatial==0.1.1`.
 - When jvspatial introduces breaking changes (e.g., walker API rename, persistence shape change), bump the pin and update this section.
 - When adding a new dependency on a jvspatial feature, document the symbol + version it was introduced in. Helps downstream consumers know the floor.
 - Rationale: [`adr/0006-jvspatial-dependency.md`](../adr/0006-jvspatial-dependency.md).
