@@ -8,6 +8,8 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+## [0.1.8rc20] - 2026-10-03
+
 ### Changed
 
 - Pin the published `jvspatial==0.1.1` release across package metadata and requirements, incorporating PostgreSQL index naming and schema bootstrap fixes.
