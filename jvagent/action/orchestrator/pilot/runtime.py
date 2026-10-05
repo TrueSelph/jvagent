@@ -29,6 +29,7 @@ from pydantic_ai.usage import RequestUsage, UsageLimits
 
 from jvagent.action.model.contract import ModelRequest, ModelResponse
 from jvagent.action.orchestrator.pilot.contracts import (
+    ConversationalReply,
     EvidenceReference,
     PilotOutput,
     PilotRunContext,
@@ -146,6 +147,8 @@ class PilotEvidenceCollector:
                     "research output cited sources not returned by an Action: "
                     + ", ".join(sorted(missing)[:5])
                 )
+        elif not isinstance(output, ConversationalReply):
+            raise PilotModelAdapterError("pilot returned an unsupported output type")
 
 
 def _text_content(content: Any) -> str:
@@ -435,8 +438,8 @@ async def run_research_agent(
         ),
         timeout=run_context.max_runtime_seconds,
     )
-    if not isinstance(result.output, ResearchBrief):
-        raise PilotModelAdapterError("Pydantic AI returned an invalid research brief")
+    if not isinstance(result.output, (ResearchBrief, ConversationalReply)):
+        raise PilotModelAdapterError("Pydantic AI returned an invalid pilot output")
     if evidence is not None:
         evidence.validate(result.output)
     return result.output

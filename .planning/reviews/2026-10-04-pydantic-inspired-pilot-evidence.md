@@ -7,15 +7,16 @@ rollout or stable release.
 ## Source and environment
 
 - Repository: `/Users/eldonmarks/Briefcase/dev/jv/jvagent`
-- HEAD/base revision: `aff7f0a2cbc3a48dab66720e55452db2776545f3`
+- Pilot implementation baseline: `aff7f0a2cbc3a48dab66720e55452db2776545f3`;
+  first committed pilot revision: `564e1f4b`.
 - Runtime tested: CPython 3.10.18; `pydantic-ai-slim==2.54.0`, Pydantic
   `2.13.5`, and `jvspatial==0.1.1` in the isolated pilot environment.
 - Dependency remains optional under `pydantic-pilot`. `uv pip check` passed in
   both 153-package pilot and 60-package legacy/no-extra environments. The
   no-extra environment does not import Pydantic AI on the legacy path.
-- The working tree contains other ongoing changes. No changes have been staged
-  or committed; counts below isolate identified pilot hunks and four substantive
-  pilot modules, not every dirty-file diff.
+- The pilot baseline is committed on `codex/pydantic-inspired-skill-pilot`.
+  Counts below describe that pilot work and do not assert clean artifact,
+  deployment, or comparative evaluation evidence.
 
 ## Implemented path and evidence
 
@@ -36,8 +37,22 @@ The pilot is selected only by `skill_runtime: capability_pilot`; `legacy`
 remains the default. The experimental driver currently admits only the
 `research` skill and its existing Serper search and WebFetch read operations.
 It adapts the configured JV model Action to Pydantic AI, validates research
-citations against observed Action results, stores typed pilot snapshots in
-Conversation TaskStore, and emits through `ReplyAction.publish`.
+citations against observed Action results, allows typed conversational replies
+for non-factual requests, stores typed pilot snapshots in Conversation TaskStore,
+and emits through `ReplyAction.publish`.
+
+Browser regression (2026-10-04): the built-in “What can you do?” Messenger
+prompt first failed even though Ollama Cloud GLM-5.3 returned ordinary text.
+Because the pilot exposed only `ResearchBrief`, Pydantic AI retried output
+validation; the next provider response ended at the configured 1,024-token
+limit without text or a tool call. The adapter recorded
+`JV model returned neither text nor tool calls`, and the user saw a generic
+model-failure message. The pilot now exposes `ConversationalReply` alongside
+`ResearchBrief`, with instructions to use the former only for non-factual
+conversation and preserve Action-backed source validation for research. A
+repeat browser turn with the same prompt returned a typed conversational answer
+through Messenger. The new output variant passes focused tests; full-suite
+verification and matched research-output checks are still required.
 
 The three-turn CUCS smoke passed with real Action schemas and operations.
 Search uses a deterministic provider stub; WebFetch uses its actual validation,

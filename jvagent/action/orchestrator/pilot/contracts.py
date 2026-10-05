@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,6 +61,12 @@ class ResearchBrief(PilotModel):
     brief: str = Field(min_length=1, max_length=12000)
 
 
+class ConversationalReply(PilotModel):
+    """Short, non-factual answer for a request that needs no external research."""
+
+    answer: str = Field(min_length=1, max_length=4000)
+
+
 class PilotInvocation(PilotModel):
     """Durable intent/receipt state for one tool invocation."""
 
@@ -71,7 +77,7 @@ class PilotInvocation(PilotModel):
     result: Optional[str] = Field(default=None, max_length=16000)
 
 
-PilotOutput = ResearchBrief
+PilotOutput = Union[ResearchBrief, ConversationalReply]
 
 
 def output_user_text(
@@ -79,6 +85,8 @@ def output_user_text(
 ) -> str:
     """Return the validated brief with citations from observed Action results."""
 
+    if isinstance(output, ConversationalReply):
+        return output.answer
     cited_ids = set(output.source_ids)
     sources: list[str] = []
     seen_urls: set[str] = set()

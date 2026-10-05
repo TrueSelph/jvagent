@@ -1,10 +1,10 @@
 # Pydantic-inspired skill architecture pilot
 
 Date: 2026-10-04
-Status: Implementation in progress; the opt-in research path is smoke-tested with
-offline providers and the browser. A single live adapter call succeeded before
-the research-only output contract was tightened. Matched evaluation, production
-effect approval, browser recovery, and the simplification decision remain open.
+Status: Implementation in progress; the opt-in research path and typed
+conversational reply are smoke-tested with offline providers and the browser.
+Matched evaluation, production effect approval, browser recovery, and the
+simplification decision remain open.
 Scope: One opt-in, skill-driven execution path; existing research skill and Actions
 Decision at completion: Expand, revise, or remove the pilot based on evidence
 
@@ -528,8 +528,8 @@ data migration. Preserve pilot snapshots but leave them inactive on rollback.
 - [ ] Run live provider evaluation only with a newly rotated credential and a
   recorded bounded cost budget. One opt-in model-adapter request previously
   succeeded with the then-current `PilotReply` schema (236 tokens, about 1.825
-  seconds, estimated US$0.000122). The research path now accepts only
-  `ResearchBrief`. A one-scenario browser smoke has now completed through
+  seconds, estimated US$0.000122). Research outputs use `ResearchBrief`; brief,
+  non-factual conversational turns use `ConversationalReply`. A one-scenario browser smoke has now completed through
   Ollama Cloud GLM-5.3 with real WebFetch, evidence validation, TaskStore
   completion, and clickable citations. Search used a deterministic fixture;
   this remains a smoke, not the ten-scenario/five-run evaluation. The separate

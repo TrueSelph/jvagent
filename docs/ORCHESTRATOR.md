@@ -410,10 +410,15 @@ one Pydantic AI run at the existing Orchestrator execute boundary; the two loops
 do not nest. This pilot currently admits only the existing `research` SOP with
 the unchanged `SerperWebSearchAction.web_search__search` and
 `WebFetchAction.web_fetch__fetch` operations. Tool calls are rechecked through
-the existing AccessControl boundary, research citations must resolve to URLs
-observed in Action results, and the validated response is published through
-`ReplyAction.publish`. The pilot persists a `CAPABILITY_PILOT` task snapshot in
-the conversation TaskStore. These limits are enforced in
+the existing AccessControl boundary. Brief, non-factual conversational requests
+use a separate typed reply; factual research must use `ResearchBrief` with
+citations that resolve to URLs observed in Action results. Validated output is
+published through `ReplyAction.publish`. The output shapes are defined in
+[`contracts.py:54`](../jvagent/action/orchestrator/pilot/contracts.py) and
+[`contracts.py:64`](../jvagent/action/orchestrator/pilot/contracts.py), while
+research-source validation is in
+[`runtime.py:138`](../jvagent/action/orchestrator/pilot/runtime.py). The pilot
+persists a `CAPABILITY_PILOT` task snapshot in the conversation TaskStore. These limits are enforced in
 [`_run_capability_pilot`](../jvagent/action/orchestrator/orchestrator_interact_action.py)
 and [`PilotEvidenceCollector`](../jvagent/action/orchestrator/pilot/runtime.py).
 

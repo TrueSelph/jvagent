@@ -10,7 +10,11 @@ from pydantic_ai.messages import RetryPromptPart
 from pydantic_ai.usage import UsageLimits
 
 from jvagent.action.model.contract import ModelResponse, ToolCall, Usage
-from jvagent.action.orchestrator.pilot.contracts import ResearchBrief
+from jvagent.action.orchestrator.pilot.contracts import (
+    ConversationalReply,
+    PilotOutput,
+    ResearchBrief,
+)
 from jvagent.action.orchestrator.pilot.runtime import (
     _to_jv_messages,
     function_model_for_action,
@@ -73,6 +77,39 @@ def test_pydantic_runtime_adapts_to_the_configured_jv_model_action():
     assert result.usage.input_tokens == 20
     assert result.usage.output_tokens == 10
     assert result.usage.total_tokens == 30
+
+
+def test_pilot_accepts_typed_conversational_reply_without_research_sources():
+    class ConfiguredModelAction:
+        async def complete(self, request, *, calling_action_name=None):
+            output = next(
+                item["function"]
+                for item in request.tools
+                if "answer" in item["function"]["parameters"].get("properties", {})
+            )
+            return ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name=output["name"],
+                        arguments={"answer": "I can help with research questions."},
+                    )
+                ],
+                finish_reason="tool_calls",
+                usage=Usage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
+            )
+
+    result = asyncio.run(
+        Agent(
+            function_model_for_action(ConfiguredModelAction()),
+            output_type=PilotOutput,
+            retries=0,
+        ).run("What can you do?")
+    )
+
+    assert result.output == ConversationalReply(
+        answer="I can help with research questions."
+    )
 
 
 def test_pydantic_validation_retry_details_are_forwarded_as_text():

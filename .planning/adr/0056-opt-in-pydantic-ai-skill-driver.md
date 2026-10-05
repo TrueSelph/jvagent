@@ -38,7 +38,8 @@ recovery qualification, and the final expansion/removal decision remain open.
    Action result, 20,000 total tokens, 2,000 output tokens, and 120 seconds
    per run (`PilotRunContext` defaults in
    [`contracts.py`](../../jvagent/action/orchestrator/pilot/contracts.py)).
-5. Treat the pilot as a read-only research witness. Mutating operations remain
+5. Treat the pilot as a read-only research witness with a separate typed output
+   for brief, non-factual conversational replies. Mutating operations remain
    unavailable unless a separately qualified host effect invoker provides
    approval, idempotency, receipt, and reconciliation semantics.
 6. Preserve pilot snapshots when reverting to `legacy`; legacy continuation

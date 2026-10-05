@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("pydantic_ai")
 
 from jvagent.action.orchestrator.pilot.contracts import (
+    ConversationalReply,
     PilotCaller,
     PilotRunContext,
     ResearchBrief,
@@ -52,6 +53,13 @@ def test_research_output_must_cite_a_tool_result_url() -> None:
     forged = valid.model_copy(update={"source_ids": ("https://invented.test",)})
     with pytest.raises(PilotModelAdapterError, match="not returned by an Action"):
         collector.validate(forged)
+
+
+def test_conversational_reply_is_validated_without_fabricated_evidence():
+    collector = PilotEvidenceCollector()
+
+    collector.validate(ConversationalReply(answer="I can help with research."))
+    assert collector.snapshot() == ()
 
 
 def test_evidence_references_are_bounded_and_url_fragments_are_removed() -> None:

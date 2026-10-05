@@ -5,6 +5,7 @@ package. Install ``jvagent[pydantic-pilot]`` before selecting the pilot driver.
 """
 
 from .contracts import (
+    ConversationalReply,
     EvidenceReference,
     PilotCaller,
     PilotRunContext,
@@ -14,6 +15,7 @@ from .contracts import (
 from .state import PILOT_TASK_TYPE, PilotStateError, PilotTaskStore
 
 __all__ = [
+    "ConversationalReply",
     "EvidenceReference",
     "PilotCaller",
     "PilotRunContext",

@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from jvagent.action.orchestrator.pilot.contracts import (
+    ConversationalReply,
     EvidenceReference,
     PilotCaller,
     PilotRunContext,
@@ -138,6 +139,12 @@ def test_user_facing_brief_cites_only_validated_evidence_sources() -> None:
         "Structured results are validated.\n\n"
         "Sources: [Source 1](<https://example.test/docs?a=1&b=2>)"
     )
+
+
+def test_user_facing_conversational_reply_needs_no_external_source():
+    output = ConversationalReply(answer="I can help with research questions.")
+
+    assert output_user_text(output) == "I can help with research questions."
 
 
 def test_snapshot_approval_expiry_round_trips_as_utc_datetime() -> None:
