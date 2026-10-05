@@ -532,17 +532,19 @@ data migration. Preserve pilot snapshots but leave them inactive on rollback.
   retaining its real validation and rendering path. Reload recovery, parked-task
   resume, cancel, refusal, and controlled-final browser cases remain open. See
   the evidence report for limits.
-- [ ] Run live provider evaluation only with a newly rotated credential and a
-  recorded bounded cost budget. One opt-in model-adapter request previously
-  succeeded with the then-current `PilotReply` schema (236 tokens, about 1.825
-  seconds, estimated US$0.000122). Research outputs use `ResearchBrief`; brief,
-  non-factual conversational turns use `ConversationalReply`. A one-scenario browser smoke has now completed through
-  Ollama Cloud GLM-5.3 with real WebFetch, evidence validation, TaskStore
-  completion, and clickable citations. Search used a deterministic fixture;
-  this remains a smoke, not the ten-scenario/five-run evaluation. The separate
-  gated adapter smoke still loads the research capability, calls a deterministic
-  fixture Action, and validates its source ID; it permits at most five model
-  requests, 4,096 total tokens, and US$0.01 estimated cost. A paired
+- [ ] Run the ten-scenario/five-repeat live evaluation with an unexposed
+  provider credential and a recorded bounded cost budget. Historical opt-in
+  model calls with the earlier `PilotReply` schema do not verify the current
+  output contract. Research outputs use `ResearchBrief`; brief, non-factual
+  conversational turns use `ConversationalReply`. A one-scenario browser smoke
+  completed through Ollama Cloud GLM-5.3 with real WebFetch, evidence
+  validation, TaskStore completion, and clickable citations. Search used a
+  deterministic fixture; this remains a smoke, not the ten-scenario/five-run
+  evaluation. The separate gated adapter smoke now uses the JV Ollama Action
+  with `glm-5.3:cloud`, loads the research capability, calls a deterministic
+  fixture Action, and validates its source ID. It permits at most five model
+  requests, 4,096 total tokens, 1,024 output tokens, and US$0.01 estimated cost
+  at the standard GLM-5.3 rates. A paired
   fixed-source ten-case manifest and blind scoring rubric are prepared at
   `tests/action/orchestrator/pilot/eval/research-cases.yaml`; no live answers
   have been collected or scored against it.

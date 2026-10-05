@@ -1,7 +1,8 @@
 """Opt-in bounded smoke through the real JV model Action and pilot capability.
 
-Set ``JVAGENT_RUN_PILOT_LIVE_SMOKE=1`` and provide ``OPENAI_API_KEY`` only for
-an explicitly authorized live run. The ordinary test suite skips this test.
+Set ``JVAGENT_RUN_PILOT_LIVE_SMOKE=1`` only for an explicitly authorized live
+run. The test uses the signed-in local Ollama daemon for ``glm-5.3:cloud``; the
+ordinary test suite skips it.
 """
 
 import json
@@ -12,7 +13,7 @@ import pytest
 
 pytest.importorskip("pydantic_ai")
 
-from jvagent.action.model.language.openai.openai import OpenAILanguageModelAction
+from jvagent.action.model.language.ollama.ollama import OllamaLanguageModelAction
 from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
     PilotRunContext,
@@ -28,21 +29,19 @@ from jvagent.tooling.tool import Tool as JVTool
 
 
 @pytest.mark.asyncio
-async def test_single_live_model_call_returns_typed_pilot_output(record_property):
+async def test_bounded_live_model_smoke_returns_typed_pilot_output(record_property):
     if os.environ.get("JVAGENT_RUN_PILOT_LIVE_SMOKE") != "1":
         pytest.skip("set JVAGENT_RUN_PILOT_LIVE_SMOKE=1 to authorize this API call")
-    if not os.environ.get("OPENAI_API_KEY"):
-        pytest.fail("OPENAI_API_KEY is required for the explicitly enabled live smoke")
-
-    action = OpenAILanguageModelAction()
-    action.model = "gpt-4.1-mini"
-    action.max_tokens = 128
+    action = OllamaLanguageModelAction()
+    action.api_endpoint = "http://127.0.0.1:11434"
+    action.model = "glm-5.3:cloud"
+    action.max_tokens = 1024
     action.temperature = 0.0
     action.max_retries = 0
     calls = []
 
     class RecordingAction:
-        model = "gpt-4.1-mini"
+        model = "glm-5.3:cloud"
 
         async def complete(self, request, *, calling_action_name=None):
             started = perf_counter()
@@ -73,7 +72,7 @@ async def test_single_live_model_call_returns_typed_pilot_output(record_property
         max_model_requests=5,
         max_tool_calls=5,
         max_total_tokens=4096,
-        max_output_tokens=256,
+        max_output_tokens=1024,
         max_runtime_seconds=60,
     )
 
@@ -127,8 +126,8 @@ async def test_single_live_model_call_returns_typed_pilot_output(record_property
         run_context=context,
         access_check=access_check,
         result_observer=evidence.observe,
-        model_id="gpt-4.1-mini",
-        model_settings={"temperature": 0.0, "max_tokens": 256},
+        model_id="glm-5.3:cloud",
+        model_settings={"temperature": 0.0, "max_tokens": 1024},
     )
     started = perf_counter()
     output = await run_research_agent(
@@ -147,20 +146,22 @@ async def test_single_live_model_call_returns_typed_pilot_output(record_property
     assert len(calls) <= context.max_model_requests
     total_tokens = sum(item["total_tokens"] for item in calls)
     assert total_tokens <= context.max_total_tokens
+    # Standard-rate upper estimate from https://ollama.com/pricing, checked
+    # 2026-10-05. Treat all input as uncached and ignore off-peak discounts.
     estimated_cost_usd = (
-        sum(item["prompt_tokens"] for item in calls) * 0.40
-        + sum(item["completion_tokens"] for item in calls) * 1.60
+        sum(item["prompt_tokens"] for item in calls) * 1.40
+        + sum(item["completion_tokens"] for item in calls) * 4.40
     ) / 1_000_000
     assert estimated_cost_usd <= 0.01
     report = {
-        "provider": "OpenAI",
-        "model": "gpt-4.1-mini",
+        "provider": "Ollama Cloud",
+        "model": "glm-5.3:cloud",
         "calls": calls,
         "action_calls": len(action_calls),
         "total_tokens": total_tokens,
         "elapsed_ms": elapsed_ms,
         "estimated_cost_usd": round(estimated_cost_usd, 8),
-        "pricing_basis": "current public standard token rates; cache discount ignored",
+        "pricing_basis": "Ollama GLM-5.3 standard rates checked 2026-10-05; cached input discount ignored",
     }
     record_property("pilot_live_model_smoke", json.dumps(report, sort_keys=True))
     print(f"PILOT_LIVE_MODEL_SMOKE={json.dumps(report, sort_keys=True)}")

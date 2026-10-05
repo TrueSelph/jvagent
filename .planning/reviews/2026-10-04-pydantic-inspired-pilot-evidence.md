@@ -296,19 +296,14 @@ driver per turn. A future specialist-agent integration could be exposed as an
 explicit Action/tool, but nested runtime lifecycle, context isolation, budgets,
 cancellation, and tracing would need separate contracts and qualification.
 
-A bounded live adapter smoke was performed once through `OpenAILanguageModelAction`
-and Pydantic AI using GPT-4.1 mini. The successful request returned the then-current
-`PilotReply` output (one request, 236 total tokens, about 1.825 seconds elapsed,
-estimated cost US$0.000122 under the recorded public standard token rates). An
-earlier credential attempt returned HTTP 401. The live smoke test has since been
-strengthened to require `ResearchBrief`, with observed-source IDs, so the previous
-call does not verify the current stricter research output contract. The gated
-test now loads the research capability, calls a deterministic fixture Action,
-and validates the output's cited source against the Action receipt. The opt-in
-launcher remains `scripts/run_pilot_live_smoke.sh`; the test allows at most five
-model requests, 4,096 total tokens, 256 output tokens per request, US$0.01
-estimated cost, and a 60-second deadline. The OpenAI credential incident below
-remains unresolved, so the OpenAI endpoint was not used in the Messenger smoke.
+A bounded live adapter smoke was previously performed through
+`OpenAILanguageModelAction` and Pydantic AI using GPT-4.1 mini. That historical
+call returned the then-current `PilotReply` output (one request, 236 total
+tokens, about 1.825 seconds elapsed, estimated cost US$0.000122); it does not
+verify the current stricter research output contract. The gated test was updated
+to use the same JV Ollama Action and cloud model as the example app; the latest
+execution is recorded below. The earlier OpenAI credential incident remains
+unresolved, so no additional OpenAI call was made.
 
 The research driver now compiles only `ResearchBrief` as its output type; the
 former generic `PilotReply` alternative was removed so research completion cannot
@@ -601,3 +596,20 @@ the absent agent/sub-agent evaluation rule out expansion today.
 
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).
+
+### Ollama Cloud live adapter retest (2026-10-05)
+
+The gated adapter smoke now instantiates `OllamaLanguageModelAction`, uses the
+signed-in local Ollama daemon to call the cloud model `glm-5.3:cloud`, and
+keeps a deterministic fixture Search Action. The live run passed through
+Pydantic AI capability loading, tool invocation, and typed `ResearchBrief`
+validation: one fixture Action call, three provider calls, 2,017 total tokens,
+4.696 seconds elapsed, and an estimated US$0.0037238. The estimate applies
+standard, uncached-input rates ($1.40 per million input tokens and $4.40 per
+million output tokens) from the [Ollama pricing page](https://ollama.com/pricing),
+checked 2026-10-05. The smoke enforces five model requests, 4,096 total tokens,
+1,024 output tokens, US$0.01 estimated cost, and a 60-second run deadline.
+
+This is one live adapter/capability smoke, not the planned 10 scenarios × 5
+runs, a real Serper search, a matched legacy comparison, or a browser test. The
+focused live test passed; PIL-07 and the live-evaluation item remain partial.
