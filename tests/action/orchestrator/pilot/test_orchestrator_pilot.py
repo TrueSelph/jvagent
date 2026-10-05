@@ -23,6 +23,7 @@ from jvagent.action.reply.reply_action import ReplyAction
 from jvagent.action.web_fetch.web_fetch_action import WebFetchAction
 from jvagent.action.web_search.serper.serper import SerperWebSearchAction
 from jvagent.memory.interaction import Interaction
+from jvagent.scaffold.skill_resolve import parse_skill_bundle
 from jvagent.testing.use_case_loader import load_use_case
 
 
@@ -116,13 +117,16 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
 ):
     scenario = load_use_case(Path(__file__).parent / "cucs" / "research-followup.yaml")
     orchestrator = OrchestratorInteractAction()
+    research_path = Path(__file__).resolve().parents[4] / "jvagent/skills/research"
+    research_bundle = parse_skill_bundle(research_path, source="action")
+    assert research_bundle is not None
     skill = SkillDoc(
-        name="research",
-        description="Evidence-first research.",
-        body="Search and cite retrieved sources.",
-        requires_tools=("web_search__search", "web_fetch__fetch"),
-        requires_actions=("SerperWebSearchAction", "WebFetchAction"),
-        digest="research-sha256",
+        name=research_bundle["name"],
+        description=research_bundle["description"],
+        body=research_bundle["content"].strip(),
+        requires_tools=tuple(research_bundle["allowed_tools"]),
+        requires_actions=tuple(research_bundle["requires_actions"]),
+        digest=research_bundle["digest"],
     )
     action_calls = []
     model_request_counts = []

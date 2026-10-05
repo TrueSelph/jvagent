@@ -570,7 +570,7 @@ acceptance IDs in the approved plan's matrix:
 
 | ID | Status | Evidence and remaining limitation |
 | --- | --- | --- |
-| PIL-01 | PARTIAL | Legacy/no-extra import and Action integration checks pass; a clean package/source digest comparison against the existing research skill and both Action packages is not recorded. |
+| PIL-01 | PASS | The research skill and both Action package trees match the implementation baseline by Git-tree SHA-256; the offline driver integration now parses the repository's real `SKILL.md`, invokes the existing Serper/WebFetch Action boundaries, and exercises graph-backed snapshot reload. |
 | PIL-02 | PARTIAL | Skill activation and declared Action dispatch are exercised, and pilot instructions now defer tool selection to the active skill. The production driver still admits only the named research skill and Serper/WebFetch owners. |
 | PIL-03 | PASS | Composed-binding tests reject invalid, extra, and authority-bearing arguments before operation calls. |
 | PIL-04 | PARTIAL | Activation, current read-tool authorization, denial, and revocation are tested. Production parked-task resume and dispatch-time permission/dependency revalidation are not wired. |
@@ -598,6 +598,29 @@ the absent agent/sub-agent evaluation rule out expansion today.
 
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).
+
+### PIL-01 source compatibility fingerprints (2026-10-05)
+
+Compared baseline commit `aff7f0a2cbc3a48dab66720e55452db2776545f3` with the
+current pilot head `f2b433bf538f2f0020d3867031893ffc39be03fc`. `git diff
+--quiet` reported no source changes for the three witness trees. Their
+path-plus-blob Git-tree SHA-256 fingerprints are:
+
+| Witness tree | Files | Baseline/current SHA-256 |
+| --- | ---: | --- |
+| `jvagent/skills/research/` | 2 | `d0055e81b9d5bbf28ccccc393a41fcb197796801959c7a372a30722ef66a512a` |
+| `jvagent/action/web_search/serper/` | 3 | `dd095b27d29734dbf43923b1107f9450cd9ac9ad321b4daf82d8291346155f5c` |
+| `jvagent/action/web_fetch/` | 3 | `f1268fd8ebf1f3b4d5a2786f41a609611d75515561d40d1080169a6ce4f4fd30` |
+
+The Orchestrator integration test now parses the repository's actual research
+`SKILL.md` with `parse_skill_bundle` instead of fabricating equivalent
+frontmatter in Python. It dispatches the existing Action tool names, runs the
+WebFetch validation/rendering path over a mock transport, and retains the
+graph-backed reload tests. The focused Orchestrator integration passed, and the
+pilot test directory passed with only the three explicitly gated live-provider
+tests skipped. This establishes unchanged source/package compatibility for the
+pilot witness; it does not turn the broader live research or legacy comparison
+into a qualified result.
 
 ### Ollama Cloud live adapter retest (2026-10-05)
 
