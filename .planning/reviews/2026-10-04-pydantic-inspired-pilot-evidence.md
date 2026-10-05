@@ -231,12 +231,12 @@ Verification collected:
 
 ## Bloat and replaced responsibilities
 
-The four substantive pilot modules currently contain 1,323 lines: contracts
-(158), runtime/model adapter (452), TaskStore adapter (504), and Action
-composition (209). The package initializer adds 27, for 1,343 pilot-package
+The four substantive pilot modules currently contain 1,322 lines: contracts
+(158), runtime/model adapter (451), TaskStore adapter (504), and Action
+composition (209). The package initializer adds 27, for 1,349 pilot-package
 lines. The generic authenticated host-context helper adds another 53 production
-lines. The pilot package is 350 lines above the 1,000-line target; package plus
-host-context helper totals 1,403 lines before Orchestrator/TaskStore integration.
+lines. The pilot package is 349 lines above the 1,000-line target; package plus
+host-context helper totals 1,402 lines before Orchestrator/TaskStore integration.
 The current shared working-tree diff shows 438 insertions/65 deletions in the
 Orchestrator and 83 insertions/13 deletions in TaskStore. Those files contain
 pre-existing uncommitted work, so those figures cannot be attributed entirely
@@ -255,7 +255,7 @@ AST line accounting confirms 245 lines across `record_invocation`,
 `mark_invocation_started`, `settle_invocation`, `_update_invocation`, `park`,
 `wait_for_approval`, `require_reconciliation`, and `resume` have no production
 call sites; they are consumed by pilot state/effect/crash tests. Removing them
-would reduce the 1,350-line package to about 1,105 lines, still 105 over budget,
+would reduce the 1,349-line package to about 1,104 lines, still 104 over budget,
 and would abandon the approved PIL-08/PIL-09 contract evidence. Keep this as a
 named simplification candidate pending an explicit decision to defer those
 contracts; do not delete it as a cosmetic line-count exercise.
@@ -273,11 +273,11 @@ The current responsibility delta is narrower than a replacement-harness claim:
 
 The optional package adds exactly one pinned direct dependency,
 `pydantic-ai-slim==2.54.0`, behind `pydantic-pilot`; Pydantic is already a
-direct JV runtime dependency. The current pilot package is 1,350 lines (1,323
-across four substantive modules plus a 27-line initializer), 350 lines over
+direct JV runtime dependency. The current pilot package is 1,349 lines (1,322
+across four substantive modules plus a 27-line initializer), 349 lines over
 its 1,000-line target before counting Orchestrator integration. From the
 implementation baseline `aff7f0a2`, the current `jvagent` source diff is
-2,480 insertions and 264 deletions (net +2,216 lines). That tree-wide number
+2,497 insertions and 264 deletions (net +2,233 lines). That tree-wide number
 includes shared integrations and compatibility changes and must not be
 attributed wholly to the pilot without a per-hunk inventory. A removable-code
 decision remains required before expansion.
@@ -538,7 +538,10 @@ in the TaskStore failure detail, logs the run and task IDs, and gives output
 length and content-filter stops distinct user-facing explanations. It does not
 automatically retry the model call. Focused runtime and Orchestrator regressions
 pass; the changed path still needs a live Messenger retest after the personal
-API is restored.
+API is restored. A timeout exception with an empty message now records the
+configured runtime ceiling and logs its run/task IDs before returning the
+existing time-limit reply; the Orchestrator regression verifies the persisted
+failure detail and correlated warning.
 
 ### P-06 coordinator review and decision (2026-10-05)
 
@@ -560,12 +563,12 @@ acceptance IDs in the approved plan's matrix:
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
 | PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. Live answer quality and post-change browser behavior remain open. |
 | PIL-12 | PARTIAL | Optional dependency isolation, no-extra imports, dependency checks, and selector rollback are recorded. Preserved-snapshot and mutual task-drain exclusion still need runtime qualification. |
-| PIL-13 | FAIL | The four-module package is 1,350 lines, 350 over its target; the tree delta is net +2,216 lines. Comparative benefit and a removable-code decision are not demonstrated. |
+| PIL-13 | FAIL | The four-module package is 1,349 lines, 349 over its target; the tree delta is net +2,233 lines. Comparative benefit and a removable-code decision are not demonstrated. |
 
 Required next work before an expansion decision: restore the personal API and
 configure a real Serper key; run the planned ten-scenario/five-repeat provider
 evaluation within a recorded cost budget; complete the matched legacy/pilot
-comparison; and identify justified simplifications for the 350-line overrun.
+comparison; and identify justified simplifications for the 349-line overrun.
 Keep the read-only boundary in force. If effect-capable production behavior is
 proposed later, first wire current authority/dependency revalidation, parked
 resume, approval, and reconciliation through the existing interaction and

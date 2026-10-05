@@ -111,6 +111,7 @@ class FakeModelAction:
 @pytest.mark.asyncio
 async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     monkeypatch,
+    caplog,
     record_property,
 ):
     scenario = load_use_case(Path(__file__).parent / "cucs" / "research-followup.yaml")
@@ -512,6 +513,36 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert truncated_interaction.emitted is True
     assert len(published) == 6
 
+    async def time_out_without_message(*_args, **_kwargs):
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(pilot_runtime, "run_research_agent", time_out_without_message)
+    timeout_interaction = Interaction()
+    timeout_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="complete this request",
+        channel="default",
+        interaction=timeout_interaction,
+        conversation=conversation,
+        correlation_id="run-timeout-empty-message",
+    )
+    await orchestrator._run_capability_pilot(timeout_visitor)
+    assert conversation.tasks[-1]["status"] == "failed"
+    assert conversation.tasks[-1]["data"]["failure_reason"] == (
+        "pilot runtime limit exceeded (120s)"
+    )
+    assert "run-timeout-empty-message" in caplog.text
+    assert "pilot runtime limit exceeded (120s)" in caplog.text
+    assert published[-1] == (
+        "I couldn't complete that research within the time limit. "
+        "Try a narrower question or fewer sources."
+    )
+    assert timeout_interaction.response == published[-1]
+    assert timeout_interaction.emitted is True
+    assert len(published) == 7
+
     # Fail the durable evidence checkpoint after the read Action returns. The
     # driver must propagate that persistence error, terminate the task as
     # failed, and not ask the model to retry the tool as an ordinary tool error.
@@ -556,7 +587,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert conversation.tasks[-1]["status"] == "failed"
     assert conversation.tasks[-1]["snapshot"]["status"] == "failed"
     assert sum(model_request_counts) - requests_before_fault == 2
-    assert len(published) == 6
+    assert len(published) == 7
 
     # TaskMonitor's empty utterance is valid only when a claimed PROACTIVE task
     # is resolved from TaskStore; client-supplied context must not replace it.

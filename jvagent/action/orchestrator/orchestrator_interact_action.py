@@ -1493,10 +1493,25 @@ class OrchestratorInteractAction(
             await pilot_store.cancel(handle, cancelled, "pilot run cancelled")
             raise
         except (UsageLimitExceeded, asyncio.TimeoutError) as exc:
+            is_timeout = isinstance(exc, asyncio.TimeoutError)
+            failure_reason = (
+                f"pilot runtime limit exceeded ({context.max_runtime_seconds}s)"
+                if is_timeout
+                else str(exc).strip()
+                or "Pydantic AI usage limit exceeded without diagnostic details"
+            )
             failed = snapshot.model_copy(
                 update={"status": "failed", "evidence": evidence.snapshot()}
             )
-            await pilot_store.fail(handle, failed, str(exc))
+            await pilot_store.fail(handle, failed, failure_reason)
+            logger.warning(
+                "capability pilot stopped at a bounded run limit: "
+                "run_id=%s task_id=%s timeout=%s diagnostic=%s",
+                run_id,
+                task_id,
+                is_timeout,
+                failure_reason,
+            )
             # A budget or wall-clock stop is a normal user-facing outcome, not
             # a silent empty assistant turn. Keep the TaskStore failure state
             # while using the existing ReplyAction egress for a concise retry
@@ -1515,8 +1530,10 @@ class OrchestratorInteractAction(
                     )
                 ):
                     limit_hint = "the model token limit"
-                else:
+                elif is_timeout:
                     limit_hint = "the time limit"
+                else:
+                    limit_hint = "the run limit"
                 delivered = await responder.publish(
                     "I couldn't complete that research within "
                     f"{limit_hint}. Try a narrower question or fewer sources.",
