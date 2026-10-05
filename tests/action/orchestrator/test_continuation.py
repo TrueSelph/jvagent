@@ -14,7 +14,9 @@ import pytest
 from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
+    note_locked_flow_error,
 )
+from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
 
 
@@ -62,6 +64,41 @@ async def test_capability_pilot_task_is_not_a_legacy_active_flow():
     visitor = MagicMock()
     visitor.conversation = conversation
     assert active_flow_owner(visitor) is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_failure_abandonment_does_not_cancel_pilot_task_same_owner(
+    test_db,
+):
+    conversation = await Conversation.create(
+        session_id="legacy-failure-pilot-isolation",
+        user_id="pilot-isolation-user",
+        channel="default",
+    )
+    store = TaskStore(conversation)
+    legacy = await store.create(
+        title="legacy flow",
+        description="legacy research task",
+        task_type="SKILL",
+        owner_action="research",
+    )
+    pilot = await store.create(
+        title="pilot research",
+        description="pilot research task",
+        task_type="CAPABILITY_PILOT",
+        owner_action="research",
+    )
+    await legacy.start()
+    await pilot.start()
+
+    visitor = MagicMock()
+    visitor.conversation = conversation
+    abandoned = await note_locked_flow_error(visitor, "research", limit=1)
+
+    assert abandoned is True
+    status_by_type = {task.task_type: task.status for task in store.list()}
+    assert status_by_type["SKILL"] == "cancelled"
+    assert status_by_type["CAPABILITY_PILOT"] == "active"
 
 
 async def test_proactive_task_not_treated_as_flow():

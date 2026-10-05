@@ -236,6 +236,9 @@ async def note_locked_flow_error(
     if store is not None:
         try:
             for th in store.list(status="active") or []:
+                task_type = (getattr(th, "task_type", None) or "").strip().upper()
+                if task_type in _NON_FLOW_TASK_TYPES:
+                    continue
                 if str(getattr(th, "owner_action", "") or "") == flow_owner:
                     await th.cancel(
                         reason=(

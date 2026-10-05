@@ -510,38 +510,35 @@ matched legacy comparison remain open.
 
 ### Messenger failure follow-up (2026-10-05)
 
-Browser inspection of the user's `127.0.0.1:3102/sandbox` tab found an initial
-"What can you do?" turn with the generic unusable-model-response fallback; a
-later retry of the same prompt succeeded. Separate research turns in the same
-transcript showed the explicit bounded-limit fallback, and another research
-turn completed. This establishes intermittent turn failure and recovery in the
-visible UI, but does not prove that the generic fallback had the same cause as
-the request/tool/token-limit failures: its corresponding server diagnostic was
-not available for inspection. The completed research responses cite the local
-Serper fixture, which returns the Pydantic AI documentation regardless of
-query, so they do not qualify live search relevance.
+The saved interaction record explains the generic failure: it took 14.78
+seconds, and was not a timeout. The first Ollama `glm-5.3:cloud` model call
+completed with text. The second consumed all 1,024 configured completion
+tokens, ended with `finish_reason=length`, and returned no text or tool call.
+That earlier code version stored only the generic adapter failure reason. The
+current branch retains the normalized finish reason and token count, logs the
+run and task IDs, and gives output-length and content-filter stops distinct
+user-facing explanations. It does not automatically retry the model call.
 
-At inspection time the Messenger static server on port 3102 was running, but
-its configured API on port 8002 failed the health check (connection refused).
-Separate qualification APIs on ports 8000 and 8001 returned HTTP 200. The
-personal app's `.env` contains a blank `SERPER_API_KEY` and no
+The Messenger static server on port 3102 was running, but its API on port 8002
+had stopped after a later restart attempted the interactive destructive
+`--update --source` flow. The personal app has a configured Serper key but no
 `JVSPATIAL_JWT_SECRET_KEY`; its persisted action still targets the synthetic
-search fixture. The API restart and live follow-up are therefore pending a
-user-supplied local JWT signing key and Serper key. The graph database and
-conversation files were left untouched; destructive source sync was not
-applied.
+search fixture. The graph database and conversation files were left
+untouched; destructive source sync was not applied. For a current-branch browser
+smoke, the API was restarted against the same app data in non-destructive mode
+with authentication disabled for that loopback-only session. It returned HTTP
+200 on `/health`, and “In one sentence, what can you help me with?” received a
+complete model-generated answer in about 12 seconds. This confirms a basic live
+turn, not live research accuracy or broad latency stability. A timeout
+exception with an empty message now records the configured runtime ceiling and
+logs its run/task IDs before returning the existing time-limit reply; the
+Orchestrator regression verifies persisted failure detail and the correlated
+warning.
 
-The pilot adapter had discarded JV's normalized finish reason when a provider
-returned no text or tool calls, causing output truncation to share the generic
-model-error reply. It now retains the finish reason and completion-token count
-in the TaskStore failure detail, logs the run and task IDs, and gives output
-length and content-filter stops distinct user-facing explanations. It does not
-automatically retry the model call. Focused runtime and Orchestrator regressions
-pass; the changed path still needs a live Messenger retest after the personal
-API is restored. A timeout exception with an empty message now records the
-configured runtime ceiling and logs its run/task IDs before returning the
-existing time-limit reply; the Orchestrator regression verifies the persisted
-failure detail and correlated warning.
+Legacy locked-flow failure cleanup was also found to cancel every active task
+sharing its owner, including a `CAPABILITY_PILOT` task. Cleanup now skips
+non-flow task types, and a graph-backed regression verifies the legacy skill is
+cancelled while its same-owner pilot task remains active.
 
 ### P-06 coordinator review and decision (2026-10-05)
 
