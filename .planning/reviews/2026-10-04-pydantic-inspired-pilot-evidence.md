@@ -231,12 +231,12 @@ Verification collected:
 
 ## Bloat and replaced responsibilities
 
-The four substantive pilot modules currently contain 1,236 lines: contracts
-(129), runtime/model adapter (438), TaskStore adapter (477), and Action
-composition (192). The package initializer adds 25, for 1,261 pilot-package
+The four substantive pilot modules currently contain 1,316 lines: contracts
+(158), runtime/model adapter (445), TaskStore adapter (504), and Action
+composition (209). The package initializer adds 27, for 1,343 pilot-package
 lines. The generic authenticated host-context helper adds another 53 production
-lines. The pilot package is 261 lines above the 1,000-line target; package plus
-host-context helper totals 1,314 lines before Orchestrator/TaskStore integration.
+lines. The pilot package is 316 lines above the 1,000-line target; package plus
+host-context helper totals 1,396 lines before Orchestrator/TaskStore integration.
 The current shared working-tree diff shows 438 insertions/65 deletions in the
 Orchestrator and 83 insertions/13 deletions in TaskStore. Those files contain
 pre-existing uncommitted work, so those figures cannot be attributed entirely
@@ -264,13 +264,14 @@ The current responsibility delta is narrower than a replacement-harness claim:
 
 The optional package adds exactly one pinned direct dependency,
 `pydantic-ai-slim==2.54.0`, behind `pydantic-pilot`; Pydantic is already a
-direct JV runtime dependency. The four substantive modules are 1,236 lines and
-the package initializer is 25 lines (1,261 total), so the pilot exceeds its
-1,000-line target by 261 lines before counting Orchestrator integration. The
-current working tree is shared and dirty, so no reliable net-new production LOC
-delta can yet be assigned to the pilot's Orchestrator/TaskStore hunks. An
-isolated patch attribution and a remove-or-reduce decision remain required
-before expansion.
+direct JV runtime dependency. The current pilot package is 1,343 lines (1,316
+across four substantive modules plus a 27-line initializer), 343 lines over
+its 1,000-line target before counting Orchestrator integration. From the
+implementation baseline `aff7f0a2`, the committed `jvagent` source diff is
+2,453 insertions and 264 deletions (net +2,189 lines). That tree-wide number
+includes shared integrations and compatibility changes and must not be
+attributed wholly to the pilot without a per-hunk inventory. A removable-code
+decision remains required before expansion.
 
 The locked dependency tree contains no `pydantic-ai-harness`. The pinned Slim
 package provides the deferred-capability and typed-run APIs demonstrated by
@@ -497,6 +498,29 @@ an unrelated Pydantic AI documentation page, so this verifies request delivery,
 tool-loop completion, persistence, and egress—not research relevance or factual
 quality. The pilot remains NOT QUALIFIED; a relevant-source evaluation and
 matched legacy comparison remain open.
+
+### Messenger failure follow-up (2026-10-05)
+
+Browser inspection of the user's `127.0.0.1:3102/sandbox` tab found an initial
+"What can you do?" turn with the generic unusable-model-response fallback; a
+later retry of the same prompt succeeded. Separate research turns in the same
+transcript showed the explicit bounded-limit fallback, and another research
+turn completed. This establishes intermittent turn failure and recovery in the
+visible UI, but does not prove that the generic fallback had the same cause as
+the request/tool/token-limit failures: its corresponding server diagnostic was
+not available for inspection. The completed research responses cite the local
+Serper fixture, which returns the Pydantic AI documentation regardless of
+query, so they do not qualify live search relevance.
+
+At inspection time the Messenger static server on port 3102 was running, but
+its configured API on port 8002 failed the health check (connection refused).
+Separate qualification APIs on ports 8000 and 8001 returned HTTP 200. The
+personal app's `.env` contains a blank `SERPER_API_KEY` and no
+`JVSPATIAL_JWT_SECRET_KEY`; its persisted action still targets the synthetic
+search fixture. The API restart and live follow-up are therefore pending a
+user-supplied local JWT signing key and Serper key. The graph database and
+conversation files were left untouched; destructive source sync was not
+applied.
 
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).
