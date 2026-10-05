@@ -33,12 +33,12 @@ class PilotRunContext(PilotModel):
     skill_id: str = Field(min_length=1, max_length=128)
     skill_digest: str = Field(min_length=1, max_length=128)
     config_digest: str = Field(min_length=1, max_length=128)
-    max_model_requests: int = Field(default=16, ge=1, le=32)
-    max_tool_calls: int = Field(default=24, ge=1, le=64)
+    max_model_requests: int = Field(default=32, ge=1, le=32)
+    max_tool_calls: int = Field(default=48, ge=1, le=64)
     max_tool_result_chars: int = Field(default=4000, ge=256, le=30000)
-    max_total_tokens: int = Field(default=30000, ge=256, le=200000)
-    max_output_tokens: int = Field(default=6000, ge=64, le=32000)
-    max_runtime_seconds: int = Field(default=120, ge=1, le=600)
+    max_total_tokens: int = Field(default=100000, ge=256, le=200000)
+    max_output_tokens: int = Field(default=20000, ge=64, le=32000)
+    max_runtime_seconds: int = Field(default=300, ge=1, le=600)
 
 
 class EvidenceReference(PilotModel):

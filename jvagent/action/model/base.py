@@ -542,6 +542,9 @@ class BaseModelAction(Action, ABC):
                         value = result_metrics.get(extra_key)
                         if isinstance(value, (int, float)) and value:
                             usage[extra_key] = int(value)
+                    cost_usd = result_metrics.get("cost_usd")
+                    if isinstance(cost_usd, (int, float)) and cost_usd >= 0:
+                        usage["cost_usd"] = float(cost_usd)
                     usage_estimated = getattr(result, "_usage_estimated", False)
 
             # Get model from result if available (actual/resolved model used), otherwise fall back to self.model
@@ -602,6 +605,14 @@ class BaseModelAction(Action, ABC):
                 # canary can read to confirm the switch took.
                 "transport": self._telemetry_transport(provider),
             }
+            if isinstance(usage.get("cost_usd"), (int, float)):
+                metrics = getattr(result, "metrics", {})
+                cost_source = (
+                    metrics.get("cost_source") if isinstance(metrics, dict) else None
+                )
+                data["cost_usd"] = float(usage["cost_usd"])
+                data["cost_source"] = str(cost_source or "provider_or_adapter")
+                data["cost_estimated"] = cost_source == "jv_cost_estimator"
             if request_model:
                 data["request_model"] = request_model
 

@@ -26,6 +26,7 @@ import hashlib
 import inspect
 import json
 import logging
+import math
 import re
 import time
 import unicodedata
@@ -367,24 +368,34 @@ class OrchestratorInteractAction(
         ),
     )
     pilot_max_model_requests: int = attribute(
-        default=16,
+        default=32,
         description="Maximum provider requests in one capability-pilot run (1–32).",
         ge=1,
+        le=32,
     )
     pilot_max_tool_calls: int = attribute(
-        default=24,
+        default=48,
         description="Maximum tool calls in one capability-pilot run (1–64).",
         ge=1,
+        le=64,
     )
     pilot_max_total_tokens: int = attribute(
-        default=30000,
+        default=100000,
         description="Maximum total model tokens in one capability-pilot run.",
         ge=256,
+        le=200000,
     )
     pilot_max_output_tokens: int = attribute(
-        default=6000,
+        default=20000,
         description="Maximum generated tokens across one capability-pilot run.",
         ge=64,
+        le=32000,
+    )
+    pilot_max_runtime_seconds: int = attribute(
+        default=300,
+        description="Wall-clock limit for one capability-pilot run (1–600 seconds).",
+        ge=1,
+        le=600,
     )
     enforce_json_mode: bool = attribute(
         default=True,
@@ -1352,6 +1363,7 @@ class OrchestratorInteractAction(
                 "tool_calls": self.pilot_max_tool_calls,
                 "total_tokens": self.pilot_max_total_tokens,
                 "output_tokens": self.pilot_max_output_tokens,
+                "runtime_seconds": self.pilot_max_runtime_seconds,
             },
             "reply_parameters": responder._compose_parameters_text(None, interaction),
         }
@@ -1446,6 +1458,7 @@ class OrchestratorInteractAction(
             max_tool_calls=self.pilot_max_tool_calls,
             max_total_tokens=self.pilot_max_total_tokens,
             max_output_tokens=self.pilot_max_output_tokens,
+            max_runtime_seconds=self.pilot_max_runtime_seconds,
         )
         evidence = PilotEvidenceCollector(snapshot.evidence)
 
@@ -4527,6 +4540,14 @@ class OrchestratorInteractAction(
                 continue
             data = event.get("data") or {}
             try:
+                reported_cost = data.get("cost_usd")
+                if reported_cost is None:
+                    reported_cost = (data.get("usage") or {}).get("cost_usd")
+                if reported_cost is not None:
+                    call_cost = float(reported_cost)
+                    if math.isfinite(call_cost) and call_cost >= 0:
+                        total += call_cost
+                        continue
                 total += float(
                     estimate_cost(
                         str(data.get("model") or ""),

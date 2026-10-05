@@ -81,6 +81,38 @@ class TestInteractionComputeUsage:
         assert result["estimated_cost_usd"] > 0
         assert obj.usage == result
 
+    def test_compute_usage_uses_litellm_cost_and_estimates_missing_calls(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_call",
+                "data": {
+                    "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+                    "model": "glm-5.3:cloud",
+                    "provider": "litellm",
+                    "cost_usd": 0.0123,
+                    "cost_source": "litellm_response_cost",
+                },
+            },
+            {
+                "event_type": "model_call",
+                "data": {
+                    "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+                    "model": "glm-5.3:cloud",
+                    "provider": "litellm",
+                    "cost_usd": 0.004,
+                    "cost_source": "jv_cost_estimator",
+                    "cost_estimated": True,
+                },
+            },
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["litellm_cost_usd"] == pytest.approx(0.0123)
+        assert result["estimated_cost_usd"] == pytest.approx(0.004)
+        assert result["total_cost_usd"] == pytest.approx(0.0163)
+
     def test_compute_usage_mixed_events(self):
         """Model and embedding calls both counted."""
         obj = _make_interaction_like()

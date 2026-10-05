@@ -12,6 +12,16 @@ from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
 
 
+def test_capability_pilot_defaults_allow_routine_long_running_research():
+    action = OrchestratorInteractAction()
+
+    assert action.pilot_max_model_requests == 32
+    assert action.pilot_max_tool_calls == 48
+    assert action.pilot_max_total_tokens == 100_000
+    assert action.pilot_max_output_tokens == 20_000
+    assert action.pilot_max_runtime_seconds == 300
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("mode", "expected"),

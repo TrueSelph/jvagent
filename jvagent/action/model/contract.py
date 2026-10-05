@@ -181,6 +181,8 @@ class Usage:
     cached_write_tokens: int = 0
     thinking_tokens: int = 0
     estimated: bool = False
+    cost_usd: Optional[float] = None
+    cost_source: Optional[str] = None
 
     @classmethod
     def from_metrics(
@@ -217,6 +219,12 @@ class Usage:
             cached_write_tokens=cached_write,
             thinking_tokens=thinking,
             estimated=bool(estimated),
+            cost_usd=(
+                float(m["cost_usd"])
+                if isinstance(m.get("cost_usd"), (int, float)) and m["cost_usd"] >= 0
+                else None
+            ),
+            cost_source=(str(m["cost_source"]) if m.get("cost_source") else None),
         )
 
 

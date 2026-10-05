@@ -65,12 +65,12 @@ def test_pilot_run_uses_bounded_live_smoke_defaults() -> None:
         config_digest="config-sha256",
     )
 
-    assert context.max_model_requests == 16
-    assert context.max_tool_calls == 24
+    assert context.max_model_requests == 32
+    assert context.max_tool_calls == 48
     assert context.max_tool_result_chars == 4000
-    assert context.max_total_tokens == 30000
-    assert context.max_output_tokens == 6000
-    assert context.max_runtime_seconds == 120
+    assert context.max_total_tokens == 100000
+    assert context.max_output_tokens == 20000
+    assert context.max_runtime_seconds == 300
 
 
 def test_snapshot_is_bound_to_full_caller_and_compiled_inputs() -> None:

@@ -23,6 +23,18 @@ def test_estimate_cost_unknown_provider_returns_zero():
     assert estimate_cost("any-model", "unknown-provider", usage) == 0.0
 
 
+def test_ollama_cloud_cost_uses_published_model_rates_but_local_stays_free():
+    usage = {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000}
+    assert estimate_cost("glm-5.3:cloud", "ollama", usage) == pytest.approx(5.8)
+    assert estimate_cost("glm-5.3", "ollama", usage) == 0.0
+    cached = {
+        "prompt_tokens": 1_000_000,
+        "completion_tokens": 0,
+        "cached_tokens": 1_000_000,
+    }
+    assert estimate_cost("glm-5.3:cloud", "ollama", cached) == pytest.approx(0.26)
+
+
 # --- prompt-cache pricing --------------------------------------------------
 #
 # An agentic loop resends a large stable prefix on every tick, so cached input

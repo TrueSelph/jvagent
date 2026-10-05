@@ -436,17 +436,35 @@ actions:
     context:
       enabled: true
       skill_runtime: capability_pilot
-      pilot_max_model_requests: 16
-      pilot_max_tool_calls: 24
-      pilot_max_total_tokens: 30000
-      pilot_max_output_tokens: 6000
+      pilot_max_model_requests: 32
+      pilot_max_tool_calls: 48
+      pilot_max_total_tokens: 100000
+      pilot_max_output_tokens: 20000
+      pilot_max_runtime_seconds: 300
 ```
 
-These per-run ceilings are configurable on the Orchestrator Action. The defaults
-allow a bounded search, source retrieval, and synthesis cycle; increase them
-only when the skill's expected work justifies the added latency and model cost.
+These per-run ceilings are configurable on the Orchestrator Action. Defaults
+support longer routine research runs while preserving explicit ceilings on
+requests, tool calls, total tokens, generated tokens, and wall time. Lower them
+for cost-sensitive deployments or raise them only when the model/provider's
+context and output limits permit it and the additional spend is acceptable.
 When a ceiling is reached, Messenger reports which class of limit stopped the
 run and the failed TaskStore record retains the underlying reason.
+
+For LiteLLM calls, JV records LiteLLM's `response_cost` when the response has a
+positive priced value. Native Ollama Cloud calls have no cost field in the
+response, so JV estimates from Ollama's published per-million-token rates for
+known cloud models (including GLM-5.3); local Ollama model IDs remain free. If a
+provider returns no cost and no published rate is available, the shared local
+estimator is used where supported and marked as `jv_cost_estimator`; estimates
+are not invoice amounts and the Ollama rate snapshot may need updating when its
+pricing changes. The model-call event carries `cost_usd`, `cost_source`, and
+`cost_estimated`, and the model Action's `total_cost` accumulates the same
+per-call value. See [`litellm_lm.py`](../jvagent/action/model/language/litellm/litellm_lm.py)
+and [`cost_estimator.py`](../jvagent/action/model/cost_estimator.py). Ollama's
+current prices are published at [ollama.com/pricing](https://ollama.com/pricing).
+The base model adapter emits and records these metrics with the model Action's
+per-action `total_cost`.
 
 The pilot rejects non-default channel formatting and pending response
 directives because they require ReplyAction's model-based shaping path. It

@@ -276,6 +276,17 @@ def test_turn_cost_is_summed_from_model_call_events(make_visitor):
     assert ex._turn_budget_exhausted(v) is False
 
 
+def test_turn_cost_prefers_litellm_reported_cost_over_estimate(make_visitor):
+    ex = OrchestratorInteractAction()
+    visitor = make_visitor()
+    event = _model_call_event(prompt=1_000_000)
+    event["data"]["cost_usd"] = 0.0123
+    event["data"]["cost_source"] = "litellm_response_cost"
+    visitor.interaction.observability_metrics = [event]
+
+    assert ex._turn_cost_usd(visitor) == pytest.approx(0.0123)
+
+
 @pytest.mark.asyncio
 async def test_turn_ceiling_ends_the_loop_with_one_partial_compose(
     make_orchestrator, make_visitor, monkeypatch

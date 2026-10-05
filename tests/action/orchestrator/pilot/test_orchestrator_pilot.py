@@ -613,10 +613,10 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     await orchestrator._run_capability_pilot(timeout_visitor)
     assert conversation.tasks[-1]["status"] == "failed"
     assert conversation.tasks[-1]["data"]["failure_reason"] == (
-        "pilot runtime limit exceeded (120s)"
+        "pilot runtime limit exceeded (300s)"
     )
     assert "run-timeout-empty-message" in caplog.text
-    assert "pilot runtime limit exceeded (120s)" in caplog.text
+    assert "pilot runtime limit exceeded (300s)" in caplog.text
     assert published[-1] == (
         "I couldn't complete that research within the time limit. "
         "Try a narrower question or fewer sources."

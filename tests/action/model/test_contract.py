@@ -98,6 +98,20 @@ def test_usage_reads_every_cache_spelling():
         }
     )
     assert (anthropic.cached_read_tokens, anthropic.cached_write_tokens) == (800, 100)
+
+
+def test_usage_preserves_optional_cost_metadata():
+    usage = Usage.from_metrics(
+        {
+            "prompt_tokens": 20,
+            "completion_tokens": 4,
+            "cost_usd": 0.0123,
+            "cost_source": "litellm_response_cost",
+        }
+    )
+
+    assert usage.cost_usd == 0.0123
+    assert usage.cost_source == "litellm_response_cost"
     reasoning = Usage.from_metrics(
         {
             "prompt_tokens": 1,

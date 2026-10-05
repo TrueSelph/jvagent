@@ -82,6 +82,14 @@ actions:
       # completion tokens (reasoning can count against the budget).
       activation_budget: 40
       model_max_tokens: 8192
+      # Opt-in Pydantic AI capability-pilot ceilings for longer research runs.
+      # Set skill_runtime: capability_pilot to use these instead of the legacy
+      # Orchestrator loop. Provider/model per-call limits still apply.
+      pilot_max_model_requests: 32
+      pilot_max_tool_calls: 48
+      pilot_max_total_tokens: 100000
+      pilot_max_output_tokens: 20000
+      pilot_max_runtime_seconds: 300
       # Prior turns fed into the loop prompt (working context). The rolling
       # memory window is the agent's `interaction_limit` above.
       history_limit: 10

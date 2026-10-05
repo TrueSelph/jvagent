@@ -590,6 +590,7 @@ class Interaction(DeferredSaveMixin, Node):
         cache_write_tokens = 0
         model_call_count = 0
         estimated_cost_usd = 0.0
+        litellm_cost_usd = 0.0
         total_duration_seconds = 0.0
 
         for event in self.observability_metrics or []:
@@ -621,7 +622,18 @@ class Interaction(DeferredSaveMixin, Node):
 
             model = data.get("model", "")
             provider = data.get("provider", "unknown")
-            estimated_cost_usd += estimate_cost(model, provider, usage, event_type)
+            cost_usd = data.get("cost_usd")
+            cost_source = data.get("cost_source")
+            if cost_usd is None:
+                cost_usd = usage.get("cost_usd")
+                cost_source = usage.get("cost_source", cost_source)
+            if isinstance(cost_usd, (int, float)) and cost_usd >= 0:
+                if cost_source == "litellm_response_cost":
+                    litellm_cost_usd += float(cost_usd)
+                else:
+                    estimated_cost_usd += float(cost_usd)
+            else:
+                estimated_cost_usd += estimate_cost(model, provider, usage, event_type)
 
         now = datetime.now(timezone.utc)
         self.usage = {
@@ -632,6 +644,8 @@ class Interaction(DeferredSaveMixin, Node):
             "cache_write_tokens": cache_write_tokens,
             "model_call_count": model_call_count,
             "estimated_cost_usd": round(estimated_cost_usd, 6),
+            "litellm_cost_usd": round(litellm_cost_usd, 6),
+            "total_cost_usd": round(estimated_cost_usd + litellm_cost_usd, 6),
             "total_duration_seconds": round(total_duration_seconds, 3),
             "last_updated": now.isoformat(),
         }

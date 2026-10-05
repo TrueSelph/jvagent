@@ -24,6 +24,8 @@ type Usage = {
   total_tokens?: number;
   total_duration_seconds?: number;
   estimated_cost_usd?: number;
+  litellm_cost_usd?: number;
+  total_cost_usd?: number;
 };
 
 type MetricEntry = {
@@ -177,9 +179,11 @@ export const MessageStats: FC = () => {
             {totalTokens > 0 && (
               <span>{totalTokens.toLocaleString()} tokens</span>
             )}
-            {typeof usage.estimated_cost_usd === "number" &&
-              usage.estimated_cost_usd > 0 && (
-                <span>${usage.estimated_cost_usd.toFixed(4)}</span>
+            {typeof (usage.total_cost_usd ?? usage.estimated_cost_usd) === "number" &&
+              (usage.total_cost_usd ?? usage.estimated_cost_usd ?? 0) > 0 && (
+                <span title="Provider-reported cost plus estimated fallback cost">
+                  ${(usage.total_cost_usd ?? usage.estimated_cost_usd ?? 0).toFixed(4)}
+                </span>
               )}
           </div>
         </div>

@@ -112,6 +112,44 @@ def test_result_mapping_from_a_real_litellm_response():
     assert response.tool_calls[0].arguments == {"a": 1}
 
 
+def test_result_mapping_preserves_litellm_response_cost():
+    body = {
+        "model": "glm-5.3:cloud",
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+    }
+    response = litellm.ModelResponse(**body)
+    response._hidden_params = {"response_cost": 0.0123}
+
+    result = _action()._result_from_response(response, "ollama_chat/glm-5.3:cloud")
+
+    assert result.metrics["cost_usd"] == pytest.approx(0.0123)
+    assert result.metrics["cost_source"] == "litellm_response_cost"
+    assert result.to_response().usage.cost_usd == pytest.approx(0.0123)
+
+
+@pytest.mark.asyncio
+async def test_missing_litellm_cost_uses_marked_estimate():
+    action = _action(model="ollama_chat/glm-5.3:cloud")
+    from jvagent.action.model.language.base import ModelActionResult
+
+    result = ModelActionResult(
+        response="ok",
+        usage={"prompt_tokens": 20_000, "completion_tokens": 4_000},
+        model="glm-5.3:cloud",
+        provider="litellm",
+    )
+
+    await action.track_usage(
+        {"prompt_tokens": 20_000, "completion_tokens": 4_000, "total_tokens": 24_000},
+        result=result,
+    )
+
+    assert result.metrics["cost_usd"] > 0
+    assert result.metrics["cost_source"] == "jv_cost_estimator"
+    assert action.total_cost == pytest.approx(result.metrics["cost_usd"])
+
+
 def test_usage_and_thinking_helpers_cover_anthropic_shapes():
     usage = LiteLLMLanguageModelAction._usage_from(
         {
