@@ -800,3 +800,33 @@ The exact-retry path adds production recovery behavior and raises the measured
 pilot package from 1,047 to 1,121 lines. The current package is 121 lines over
 the 1,000-line target and the full production-source delta is +2,104 lines, so
 PIL-13 remains a material open gate rather than a formatting task.
+
+### Round qualification gate and identity-guard browser check (2026-10-05)
+
+The implementation plan now requires a real browser smoke after every
+implementation round, against the current source through Messenger or embed.
+Model-facing changes require an actual configured-provider call; each record
+must include the tested commit, visible result, persistence evidence, timing,
+usage/cost evidence, and any environment limitations. Mocks, unit tests, and
+API-only requests cannot satisfy this gate. The broad ten-scenario/five-repeat
+evaluation remains separately budget-gated.
+
+The first live round check ran the current branch source on loopback port 8003
+with the existing Messenger tab at port 3103. In a fresh chat, the user asked
+`Who are you?`. The updated Orchestrator returned a direct identity and role
+answer instead of the prior fallback; the browser displayed it and the graph
+persisted interaction `n.Interaction.1f86d355bd774c67827cd9b6` in session
+`sess_733b8af2f2dd4aba`. The API log records the public `/interact` POST as
+HTTP 200. jvchat showed `glm-5.3:cloud`, one model call, 4,037 prompt tokens,
+145 completion tokens, 4,182 total tokens, and 2.4 seconds. The uncached
+standard-rate estimate is approximately US$0.00629; actual billing/caching was
+not independently measured. This confirms the configured agent identity is
+accepted as grounding evidence on the previously failing question. It does not
+qualify the Pydantic research flow or establish a success rate.
+
+The process was launched from the Python 3.10 checkout virtualenv and did
+return `/health` 200, but startup logged dependency-installer errors because
+that virtualenv has no `pip`; optional Action requirements were therefore not
+installed during startup. The tested identity path did not depend on those
+Actions. The updated gate requires this startup limitation to be recorded and
+resolved or explicitly bounded in future browser qualification.
