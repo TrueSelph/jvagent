@@ -922,3 +922,42 @@ entries even though the final answer cites the official Pydantic page; source
 deduplication and narrower evidence retention remain quality questions. This
 single success does not replace the ten-scenario/five-repeat evaluation or
 broader recovery and deployment qualification.
+
+### Search/fetch citation provenance correction (2026-10-05)
+
+Source commit: `5fc0da13` (`fix(pilot): trust fetched sources for citations`).
+The previous collector extracted every URL from tool-result text. A fetched page
+could therefore make an unfetched link citable simply by mentioning it in its
+body. The collector now records only explicit `link`/`url` values in structured
+search results and the requested URL for a successful Fetch; links embedded in
+snippets or fetched page text do not become source receipts. Focused regressions
+prove both cases, including rejection of a citation to a link that appeared
+only inside the fetched page. The pilot slice passed 61 tests with the three
+opt-in live-provider tests skipped. The full Python 3.10 suite exited 0, and
+`pre-commit run --all-files` passed after formatting the touched files.
+
+The post-fix real Messenger smoke ran against that source commit using the
+disposable graph on port 8003 and Messenger at port 3103. The user asked for one
+official source. Search returned four explicit result URLs and Fetch then read
+`https://pydantic.dev/docs/ai/capabilities/overview/`; the persisted snapshot
+contains five unique receipts (the four Search results plus the fetched page),
+with no links from the fetched document body promoted into evidence. The typed
+`ResearchBrief` cited only the fetched official page. The browser displayed the
+answer, TaskStore persisted completed task
+`pilot_4398322d99e849d29f13e167916d2373` in session `sess_431ee4906e5143f9`, and
+the corresponding interaction is
+`n.Interaction.b1bebe140da749a29c9492f5`. The public
+`POST /api/agents/n.Agent.c7f1a2b892a24f36bfa5eadd/interact` returned HTTP 200.
+
+This run made four real, non-estimated Ollama Cloud `glm-5.3:cloud` model calls
+through `PydanticAICapabilityPilot`: 1,038 + 1,619 + 2,045 + 3,262 = 7,964
+provider-reported tokens and 8.31 seconds total model-call time. Messenger
+rounded this to 8.0k tokens and 8.3 seconds. The model invoked `load_capability`,
+`web_search__search`, and `web_fetch__fetch` with the official page URL. The API
+request and graph persistence completed successfully. No provider price or
+billable-cost value was returned. This confirms the tested provenance boundary
+and browser research flow, not overall citation quality or repeatability. The
+browser automation's first wait for the Stop button reached its selector
+deadline; the following DOM read showed the completed answer, and the public
+API request had returned 200. This was a test-observer wait issue rather than a
+JV Agent interaction failure.
