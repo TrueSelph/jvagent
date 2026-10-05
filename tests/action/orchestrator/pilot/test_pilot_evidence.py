@@ -37,11 +37,14 @@ def test_research_output_must_cite_a_tool_result_url() -> None:
             {
                 "title": "Evidence",
                 "link": "https://example.test/article?x=1",
-                "snippet": "A retrieved claim.",
+                "snippet": "A retrieved claim mentioning https://invented.test/claim.",
             }
         ]
     )
     asyncio.run(collector.observe(_context(), "web_search__search", {}, content))
+    assert [ref.source_id for ref in collector.snapshot()] == [
+        "https://example.test/article?x=1"
+    ]
     valid = ResearchBrief(
         question="q",
         findings=("A retrieved claim.",),
@@ -50,7 +53,7 @@ def test_research_output_must_cite_a_tool_result_url() -> None:
     )
     collector.validate(valid)
 
-    forged = valid.model_copy(update={"source_ids": ("https://invented.test",)})
+    forged = valid.model_copy(update={"source_ids": ("https://invented.test/claim",)})
     with pytest.raises(PilotModelAdapterError, match="not returned by an Action"):
         collector.validate(forged)
 
@@ -69,10 +72,18 @@ def test_evidence_references_are_bounded_and_url_fragments_are_removed() -> None
             _context(),
             "web_fetch__fetch",
             {"url": "https://example.test/article#section"},
-            "Page content " * 300,
+            "Page content https://example.test/unfetched-link " * 50,
         )
     )
     references = collector.snapshot()
     assert len(references) == 1
     assert references[0].source_id == "https://example.test/article"
     assert len(references[0].excerpt) <= PilotEvidenceCollector.max_excerpt_chars
+    forged = ResearchBrief(
+        question="q",
+        findings=("A claim.",),
+        source_ids=("https://example.test/unfetched-link",),
+        brief="A claim.",
+    )
+    with pytest.raises(PilotModelAdapterError, match="not returned by an Action"):
+        collector.validate(forged)

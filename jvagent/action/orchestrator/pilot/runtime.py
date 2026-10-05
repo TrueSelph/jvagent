@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -80,6 +79,11 @@ class PilotEvidenceCollector:
     ) -> None:
         """Record URLs and bounded excerpts from successful search/fetch results."""
 
+        is_search = tool_name.endswith("__search")
+        is_fetch = tool_name.endswith(("__fetch", "__get"))
+        if not is_search and not is_fetch:
+            return
+
         title = ""
         excerpt = content[: self.max_excerpt_chars]
         try:
@@ -91,47 +95,48 @@ class PilotEvidenceCollector:
             values = [item for item in decoded if isinstance(item, dict)]
         elif isinstance(decoded, dict):
             values = [decoded]
-        observed_urls = {
-            self._normalize_url(match)
-            for match in re.findall(r"https?://[^\s\"'<>]+", content)
-        }
+            for key in ("results", "organic", "organic_results"):
+                nested = decoded.get(key)
+                if isinstance(nested, list):
+                    values = [item for item in nested if isinstance(item, dict)]
+                    break
+
+        # A search result's explicit link is a source receipt. URLs that happen
+        # to appear in its snippet are not. Likewise, a fetched page proves
+        # retrieval only for the requested URL; its body may mention links that
+        # were never fetched and must not become citable evidence.
         requested_url = self._normalize_url(args.get("url"))
-        if requested_url and tool_name.endswith(("__fetch", "__get")):
-            observed_urls.add(requested_url)
         for item in values:
             item_url = self._normalize_url(item.get("link") or item.get("url"))
-            if item_url:
-                observed_urls.add(item_url)
-                title = str(item.get("title") or title)[:512]
-                snippet = str(item.get("snippet") or item.get("content") or "")
-                if snippet:
-                    excerpt = snippet[: self.max_excerpt_chars]
+            if not item_url or not is_search:
+                continue
             identifier = str(item.get("id") or "").strip()
-            if identifier:
-                ref = EvidenceReference(
-                    source_id=identifier,
-                    url=item_url,
-                    title=str(item.get("title") or "")[:512],
-                    excerpt=excerpt,
-                )
-                if (
-                    identifier in self._references
-                    or len(self._references) < self.max_references
-                ):
-                    self._references[identifier] = ref
-        for url in observed_urls:
-            if url:
-                ref = EvidenceReference(
-                    source_id=url,
-                    url=url,
-                    title=title,
-                    excerpt=excerpt,
-                )
-                if (
-                    url in self._references
-                    or len(self._references) < self.max_references
-                ):
-                    self._references[url] = ref
+            source_id = identifier or item_url
+            snippet = str(item.get("snippet") or item.get("content") or "")
+            ref = EvidenceReference(
+                source_id=source_id,
+                url=item_url,
+                title=str(item.get("title") or "")[:512],
+                excerpt=(snippet or content)[: self.max_excerpt_chars],
+            )
+            if (
+                source_id in self._references
+                or len(self._references) < self.max_references
+            ):
+                self._references[source_id] = ref
+
+        if is_fetch and requested_url:
+            ref = EvidenceReference(
+                source_id=requested_url,
+                url=requested_url,
+                title=title,
+                excerpt=excerpt[: self.max_excerpt_chars],
+            )
+            if (
+                requested_url in self._references
+                or len(self._references) < self.max_references
+            ):
+                self._references[requested_url] = ref
 
     def snapshot(self) -> tuple[EvidenceReference, ...]:
         """Return bounded references in deterministic order."""
