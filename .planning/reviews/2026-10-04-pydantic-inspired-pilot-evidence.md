@@ -231,34 +231,37 @@ Verification collected:
 
 ## Bloat and replaced responsibilities
 
-The four substantive pilot modules currently contain 1,322 lines: contracts
-(158), runtime/model adapter (451), TaskStore adapter (504), and Action
-composition (209). The package initializer adds 27, for 1,349 pilot-package
-lines. The generic authenticated host-context helper adds another 53 production
-lines. The pilot package is 349 lines above the 1,000-line target; package plus
-host-context helper totals 1,402 lines before Orchestrator/TaskStore integration.
-The current shared working-tree diff shows 438 insertions/65 deletions in the
-Orchestrator and 83 insertions/13 deletions in TaskStore. Those files contain
-pre-existing uncommitted work, so those figures cannot be attributed entirely
-to this pilot. A clean incremental count for shared-file hunks still needs
-isolation. No legacy execution responsibility has yet been removed.
+After the test-only state extraction recorded below, the four substantive pilot
+modules contain 1,067 lines: contracts (158), runtime/model adapter (451),
+TaskStore adapter (249), and Action composition (209). The minimal package
+initializer adds one line, for 1,068 pilot-package lines. The generic
+authenticated host-context helper adds another 53 production lines. The pilot
+package remains 68 lines above the 1,000-line target; package plus host-context
+helper totals 1,121 lines before Orchestrator/TaskStore integration.
+The current source diff from implementation baseline `aff7f0a2` is 2,272
+insertions and 265 deletions (net +2,007 production Python lines). This includes
+the pilot package, shared Orchestrator/TaskStore integration, and other
+compatibility changes; it is the actual tree-wide budget comparison, not a
+claim that the pilot package alone accounts for all added lines. No legacy
+execution responsibility has yet been removed.
 
 The production Orchestrator currently calls the pilot state adapter for
 completed-evidence lookup, task creation, evidence saves, and terminal
 complete/fail/cancel transitions. Invocation preparation/start/settlement,
-approval parking, reconciliation, and resume methods are currently exercised
-only by tests; model-triggered effects and a production approval flow are not
-wired. These prototype-only state methods are a primary simplification or
-removal candidate if the next phase remains read-only.
+approval parking, reconciliation, and resume methods are exercised only by
+tests; model-triggered effects and a production approval flow are not wired.
+These methods have been moved to a 270-line test-only adapter, retaining PIL-08
+and PIL-09 evidence without shipping unsupported transitions in production.
 
-AST line accounting confirms 245 lines across `record_invocation`,
+AST line accounting confirmed 245 production lines across `record_invocation`,
 `mark_invocation_started`, `settle_invocation`, `_update_invocation`, `park`,
 `wait_for_approval`, `require_reconciliation`, and `resume` have no production
-call sites; they are consumed by pilot state/effect/crash tests. Removing them
-would reduce the 1,349-line package to about 1,104 lines, still 104 over budget,
-and would abandon the approved PIL-08/PIL-09 contract evidence. Keep this as a
-named simplification candidate pending an explicit decision to defer those
-contracts; do not delete it as a cosmetic line-count exercise.
+call sites; they were consumed by pilot state/effect/crash tests. Moving them
+out of production reduced the package from 1,349 to 1,068 lines (281 fewer
+including package-init simplification), while preserving the approved PIL-08/
+PIL-09 evidence. The remaining 68-line package overrun is not being hidden or
+resolved through formatting-only compression; PIL-13 stays open until a
+responsibility-level review and matched evaluation justify further reduction.
 
 The current responsibility delta is narrower than a replacement-harness claim:
 
@@ -273,14 +276,11 @@ The current responsibility delta is narrower than a replacement-harness claim:
 
 The optional package adds exactly one pinned direct dependency,
 `pydantic-ai-slim==2.54.0`, behind `pydantic-pilot`; Pydantic is already a
-direct JV runtime dependency. The current pilot package is 1,349 lines (1,322
-across four substantive modules plus a 27-line initializer), 349 lines over
-its 1,000-line target before counting Orchestrator integration. From the
-implementation baseline `aff7f0a2`, the current `jvagent` source diff is
-2,497 insertions and 264 deletions (net +2,233 lines). That tree-wide number
-includes shared integrations and compatibility changes and must not be
-attributed wholly to the pilot without a per-hunk inventory. A removable-code
-decision remains required before expansion.
+direct JV runtime dependency. The 1,068-line pilot package remains above the
+1,000-line target, and the complete production source delta is net +2,007
+lines. These are separate measurements; shared integration is included only
+in the latter. A further responsibility-level simplification decision remains
+required before expansion.
 
 The locked dependency tree contains no `pydantic-ai-harness`. The pinned Slim
 package provides the deferred-capability and typed-run APIs demonstrated by
@@ -582,12 +582,14 @@ acceptance IDs in the approved plan's matrix:
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
 | PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. One live post-change browser conversational path now passes; live research quality and broader browser behavior remain open. |
 | PIL-12 | PASS | Fresh no-extra install/import/interaction, optional dependency checks, selector rollback, graph-backed snapshot preservation, uncertain-invocation refusal, and mutual task-drain exclusion pass. The legacy execute-boundary regression verifies active pilot work is parked before the legacy loop. |
-| PIL-13 | FAIL | The four-module package is 1,349 lines, 349 over its target; the tree delta is net +2,233 lines. Comparative benefit and a removable-code decision are not demonstrated. |
+| PIL-13 | FAIL | The package is now 1,068 lines (down 281) but remains 68 over its target; the tree delta is net +2,233 lines. The matched live sample is promising but insufficient to establish repeatable benefit. |
 
 Required next work before an expansion decision: restore the personal API and
 configure a real Serper key; run the planned ten-scenario/five-repeat provider
 evaluation within a recorded cost budget; complete the matched legacy/pilot
-comparison; and identify justified simplifications for the 349-line overrun.
+comparison; verify browser recovery after reload; and complete a
+responsibility-level review of the remaining 68-line package overrun and shared
+integration delta.
 Keep the read-only boundary in force. If effect-capable production behavior is
 proposed later, first wire current authority/dependency revalidation, parked
 resume, approval, and reconciliation through the existing interaction and
@@ -707,3 +709,16 @@ HTTP 200 and the existing Messenger tab remained connected to port 8002; its
 saved transcript, including the earlier failed turn and later successful
 retry, remained visible. No new model turn was sent after reload, so the new
 user-facing length message and live post-reload behavior remain unverified.
+
+### Test-only effect-state extraction (2026-10-05)
+
+Moved the 245-line approval/effect/reconciliation/resume state machine out of
+the production `PilotTaskStore` into
+`tests/action/orchestrator/pilot/effect_state_fixture.py`. The fixture preserves
+the approved PIL-08/PIL-09 composed-operation and subprocess crash-boundary
+tests; no production caller referenced those methods. Simplifying package
+initialization reduced the package from 1,349 to 1,068 lines (281 fewer).
+The focused state/effect/crash suite passed (23 tests), as did
+`uv run --python 3.10 pytest tests/ -q` and `pre-commit run --all-files`.
+The package remains 68 lines above the local 1,000-line target, while total
+production Python remains net +2,007 lines from baseline; PIL-13 stays FAIL.

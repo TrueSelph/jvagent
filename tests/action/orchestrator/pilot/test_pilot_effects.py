@@ -16,12 +16,12 @@ from jvagent.action.orchestrator.pilot.contracts import (
     PilotRunContext,
     PilotSnapshot,
 )
-from jvagent.action.orchestrator.pilot.state import PilotTaskStore
 from jvagent.action.orchestrator.pilot.tools import compose_skill_tools
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult
+from tests.action.orchestrator.pilot.effect_state_fixture import PilotEffectTestStore
 
 
 class DurableEffectService:
@@ -286,7 +286,7 @@ async def test_approved_composed_effect_records_task_intent_and_settled_receipt(
             return None
 
     conversation = Conversation()
-    state = PilotTaskStore(conversation)
+    state = PilotEffectTestStore(conversation)
     snapshot = PilotSnapshot(
         caller=caller,
         skill_id="test_effect",
@@ -390,7 +390,7 @@ async def test_approved_composed_effect_records_task_intent_and_settled_receipt(
     target = SimpleNamespace(deps=context)
     assert await bound.function(target, **args) == "stored:approved-value"
     assert await bound.function(target, **args) == "stored:approved-value"
-    reloaded = PilotTaskStore(Conversation(durable))
+    reloaded = PilotEffectTestStore(Conversation(durable))
     _, persisted = reloaded.load(
         handle.id,
         caller=caller,

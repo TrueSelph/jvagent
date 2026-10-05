@@ -554,9 +554,9 @@ data migration. Preserve pilot snapshots but leave them inactive on rollback.
 - [x] Write a removable-responsibility inventory and production-code/dependency
   delta. Report what this pilot actually replaces in its path, not projected
   whole-repository deletions. The evidence report records the measured package
-  and tree delta, current responsibility ownership, and 245 test-only state
-  adapter lines as a simplification candidate without silently dropping PIL-08/
-  PIL-09 evidence.
+  and tree delta, current responsibility ownership, and 245 unused production
+  state lines. Those approval/effect transitions were moved into a test-only
+  adapter, preserving PIL-08/PIL-09 evidence while removing them from production.
 
 Deliverable: `.planning/reviews/2026-10-04-pydantic-inspired-pilot-evidence.md`
 (created by execution, not this plan), with source revision, configuration,

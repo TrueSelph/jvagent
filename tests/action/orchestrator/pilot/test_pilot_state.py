@@ -21,6 +21,7 @@ from jvagent.action.orchestrator.pilot.state import (
 )
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
+from tests.action.orchestrator.pilot.effect_state_fixture import PilotEffectTestStore
 
 
 class DurableConversation:
@@ -222,7 +223,7 @@ async def test_cancellation_persists_typed_status_before_task_terminal_state():
 @pytest.mark.asyncio
 async def test_approval_parking_preserves_state_and_requires_new_decision():
     conversation = DurableConversation()
-    tasks = PilotTaskStore(conversation)
+    tasks = PilotEffectTestStore(conversation)
     handle = await tasks.create(
         _snapshot(), title="research", description="Research the question"
     )
@@ -317,7 +318,7 @@ async def test_approval_parking_preserves_state_and_requires_new_decision():
 @pytest.mark.asyncio
 async def test_started_invocation_is_parked_for_reconciliation_and_cannot_resume():
     conversation = DurableConversation()
-    tasks = PilotTaskStore(conversation)
+    tasks = PilotEffectTestStore(conversation)
     handle = await tasks.create(
         _snapshot(), title="effect", description="Run a fake effect"
     )
@@ -350,7 +351,7 @@ async def test_started_invocation_is_parked_for_reconciliation_and_cannot_resume
 async def test_settled_invocation_receipt_is_persisted_before_reuse():
     durable = []
     conversation = DurableConversation(durable=durable)
-    tasks = PilotTaskStore(conversation)
+    tasks = PilotEffectTestStore(conversation)
     handle = await tasks.create(
         _snapshot(), title="effect", description="Run a fake effect"
     )
@@ -366,7 +367,7 @@ async def test_settled_invocation_receipt_is_persisted_before_reuse():
     settled = await tasks.settle_invocation(
         handle, started, invocation.invocation_id, "fake receipt"
     )
-    reloaded = PilotTaskStore(DurableConversation(tasks=durable, durable=durable))
+    reloaded = PilotEffectTestStore(DurableConversation(tasks=durable, durable=durable))
     _, restored = reloaded.load(
         handle.id,
         caller=settled.caller,
@@ -382,7 +383,7 @@ async def test_settled_invocation_receipt_is_persisted_before_reuse():
 async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume():
     durable = []
     conversation = DurableConversation(durable=durable)
-    tasks = PilotTaskStore(conversation)
+    tasks = PilotEffectTestStore(conversation)
     parent = await tasks.create(
         _snapshot(), title="research", description="Initial research"
     )
@@ -456,7 +457,7 @@ async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_res
 
     reloaded_conversation = await Conversation.get(conversation.id)
     assert reloaded_conversation is not None
-    reloaded_store = PilotTaskStore(reloaded_conversation)
+    reloaded_store = PilotEffectTestStore(reloaded_conversation)
     parked, persisted_snapshot = reloaded_store.load(
         handle.id,
         caller=snapshot.caller,
