@@ -1133,6 +1133,10 @@ class OrchestratorInteractAction(
                 "external facts, activate the relevant skill and use only its "
                 "declared Actions; return ResearchBrief with source identifiers "
                 "observed in those results.",
+                "ResearchBrief.brief is the final user-facing response: make it "
+                "directly answer the request and follow its requested scope and "
+                "format. Use the other fields as supporting structure; do not "
+                "restate the request in place of the answer.",
             )
         )
         if proactive_directive:

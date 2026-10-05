@@ -636,3 +636,56 @@ returned 401 because this loopback smoke was started with authentication
 disabled; the response itself had already been delivered. PIL-11 remains
 partial, and the broader scenario evaluation and matched legacy comparison are
 still required.
+
+### Matched fixed-evidence sample (2026-10-05)
+
+Added opt-in live runners for the actual Pydantic capability pilot and the
+actual legacy Orchestrator loop ([pilot runner](../../tests/action/orchestrator/pilot/test_pilot_live_evaluation.py:1),
+[legacy runner](../../tests/action/orchestrator/pilot/test_pilot_live_legacy_evaluation.py:1)).
+Both used Ollama Cloud `glm-5.3:cloud`, the same research skill, prompts,
+synthetic source payloads, and Search/Fetch fixtures. A one-replicate matched
+sample covered three high-risk cases; this is evidence about those turns only,
+not the planned ten cases repeated five times. The pilot runner now uses the
+production pilot's 30,000 total-token and 6,000 generated-token limits
+([defaults](../../jvagent/action/orchestrator/orchestrator_interact_action.py:379)).
+Earlier test settings of 6,000 total and 1,024 generated tokens prematurely
+stopped the temporal case despite successful provider calls; with the
+production output budget it completed.
+
+Both paths completed all three requests without a provider or runtime error.
+The pilot used 12 model requests, 8 Search/Fetch calls, 14,411 tokens, 31.0
+seconds, and an estimated US$0.02687. Legacy used 13 model requests, 7
+Search/Fetch calls, 40,426 tokens, 49.8 seconds, and an estimated US$0.06584.
+These estimates use the uncached Ollama rates above. This is one observation
+per case; it cannot support a reliability or performance-rate claim.
+
+Manual scoring against the manifest's four 0–2 dimensions (evidence support,
+citation coverage, calibration, task adherence) found:
+
+| Case | Pilot | Legacy | Observation |
+| --- | ---: | ---: | --- |
+| Conflicting sources | 8/8 | 8/8 | Both named 1984 and 1986, disclosed the conflict, and declined to resolve it without more evidence. The pilot labeled its ceremony/construction hypothesis as inference. |
+| False premise | 8/8 | 8/8 | Both rejected universal contaminant removal and limited the conclusion to turbidity falling from 12 NTU to 4 NTU. |
+| Temporal qualification | 8/8 | 7/8 | Both gave 28 Pine Avenue effective 1 January 2025 and treated the 2022 address as superseded. Legacy did not attach an explicit source ID to the answer. |
+
+This sample supports a promising bounded read-only pilot: the pilot was more
+token- and time-efficient here, while both drivers performed well on these
+three targeted turns. It does not resolve PIL-07, establish repeatability, or
+justify generalizing to other skills or tools. A separate ten-case exploratory
+pass exposed underspecified prompts and has not been counted as matched
+qualification. Some requests asked for missing context rather than invoking the
+fixture; the manifest was clarified and the highest-risk cases above were
+retested through both drivers.
+
+The detailed per-case measurements and scores are recorded in
+[`2026-10-05-pilot-matched-smoke.json`](2026-10-05-pilot-matched-smoke.json).
+
+No further model calls should be charged against the previously bounded live
+smoke budget without rechecking authorization: recorded and conservatively
+reserved spend across this work is approximately US$0.47, and some exploratory
+legacy calls were not metered by the first draft of the runner. The corrected
+runner captures `query_messages` usage, rejects a zero-call legacy result, and
+reserves a per-run amount when a provider attempt has no returned usage. PIL-07
+remains partial; the required ten-case/five-repeat comparison, correction-turn
+measurement, browser research smoke on the reloaded process, parked-task
+re-entry, and PIL-13 simplification decision remain open.
