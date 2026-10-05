@@ -25,6 +25,24 @@ Orchestrator tick: a turn selects exactly one driver before execution starts.
 The existing execution path remains the default during the experiment. Success
 does not itself authorize a fleet rollout, legacy removal, or package release.
 
+### Per-round enterprise qualification gate
+
+Every implementation round must end with a real-world in-browser smoke of the
+current branch before work advances to the next round. Start the changed source
+in an isolated, disposable app/graph and exercise the public Messenger or embed
+journey in a real browser. When the change affects model behavior, make an actual
+call through the configured provider and record the visible result, persisted
+TaskStore/result state, request/response outcome, duration, and provider-reported
+usage or a clearly labeled estimate. When the change does not affect model
+behavior, exercise the relevant live browser workflow without adding an
+unnecessary model call. Browser evidence must identify the tested commit and
+distinguish actual provider/network behavior from deterministic fixtures; unit
+tests, API-only requests, and mocked browser flows do not satisfy this gate.
+Preserve the user's stable test app and graph, redact credentials and tokens,
+and record any failed or untested step rather than treating a green test suite
+as UX proof. Keep each live call bounded; the separately planned broad
+multi-scenario evaluation still requires its own explicit cost authorization.
+
 ## 2. Required reading and observed baseline
 
 Read root `AGENTS.md` and every applicable scoped guide before edits. Follow
