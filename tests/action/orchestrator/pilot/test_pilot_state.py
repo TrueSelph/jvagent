@@ -482,6 +482,61 @@ async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_res
 
 
 @pytest.mark.asyncio
+async def test_schema_one_task_is_preserved_and_refused_after_rollback(test_db):
+    conversation = await Conversation.create(
+        session_id="pilot-schema-one-rollback",
+        user_id="pilot-schema-one-user",
+        channel="default",
+    )
+    legacy_snapshot = _snapshot(
+        caller=PilotCaller(
+            agent_id="pilot-schema-one-agent",
+            user_id="pilot-schema-one-user",
+            session_id="pilot-schema-one-rollback",
+        )
+    ).model_dump(mode="json")
+    legacy_snapshot.update(
+        {
+            "schema_version": 1,
+            "approval_id": None,
+            "approval_payload_digest": None,
+            "approval_expires_at": None,
+            "approval_invocation_id": None,
+        }
+    )
+    task = await TaskStore(conversation).create(
+        title="legacy pilot run",
+        description="preserve old pilot task on rollback",
+        owner_action="research",
+        task_type=PILOT_TASK_TYPE,
+        initial_status="active",
+        snapshot=legacy_snapshot,
+    )
+    caller = PilotCaller(**legacy_snapshot["caller"])
+
+    assert (
+        await park_capability_pilot_tasks(SimpleNamespace(conversation=conversation))
+        == 1
+    )
+
+    preserved = TaskStore(conversation).get(task.id)
+    assert preserved is not None
+    assert preserved.status == "parked"
+    assert preserved.snapshot == legacy_snapshot
+    assert preserved.data["park_reason"].startswith("legacy driver selected")
+    with pytest.raises(PilotStateError, match="schema version 1 is unsupported"):
+        PilotTaskStore(conversation).load(
+            task.id,
+            caller=caller,
+            skill_id="research",
+            skill_digest="sha256-skill",
+            config_digest="sha256-config",
+        )
+    assert preserved.status == "parked"
+    await conversation.delete(cascade=True)
+
+
+@pytest.mark.asyncio
 async def test_missing_flush_and_flush_failure_are_not_treated_as_persistence():
     with pytest.raises(PilotStateError, match="asynchronous flush"):
         await PilotTaskStore(NoPersistenceConversation()).create(

@@ -762,6 +762,10 @@ The pilot, legacy-baseline, and continuation slice passed, with only three
 explicitly gated live-provider checks skipped. The full Python 3.10 suite
 (`uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`)
 also completed successfully; nine environment/live-gated cases were skipped.
+An additional graph-backed rollback test proves that a schema-1 task is parked
+without rewriting or deleting its snapshot, then rejected by the schema-2
+loader with the recovery instruction. The focused state/continuation tests and
+the full suite passed with this regression included.
 This narrows the production contract but does not resolve PIL-04 parked-task
 re-entry, PIL-07 live quality scoring, PIL-11 broader browser qualification, or
 PIL-13's package-size and comparative-value gates.
