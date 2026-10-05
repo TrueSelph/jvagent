@@ -610,6 +610,14 @@ million output tokens) from the [Ollama pricing page](https://ollama.com/pricing
 checked 2026-10-05. The smoke enforces five model requests, 4,096 total tokens,
 1,024 output tokens, US$0.01 estimated cost, and a 60-second run deadline.
 
+The updated `scripts/run_pilot_live_smoke.sh` was then exercised end to end.
+Its rejection path made no request; its affirmative path repeated the bounded
+smoke successfully with one fixture Action call, three provider calls, 1,973
+tokens, 4.552 seconds, and estimated US$0.0035302. Across these two
+consecutive runs, the recorded estimate is US$0.007254 under the same
+uncached-input standard rates.
+
 This is one live adapter/capability smoke, not the planned 10 scenarios × 5
 runs, a real Serper search, a matched legacy comparison, or a browser test. The
-focused live test passed; PIL-07 and the live-evaluation item remain partial.
+focused live test and launcher passed; PIL-07 and the live-evaluation item
+remain partial.
