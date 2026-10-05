@@ -83,25 +83,26 @@ two values. **`native`** (the default) uses the provider's function-calling API:
   queued and dispatched on the following ticks without a model round-trip, so
   every call the model made gets a result;
 - this turn's steps replay as a real transcript — an assistant message carrying
-  the `tool_calls` entry, then a `tool` message with the size-bounded result
-  (same caps as the digest below). A guard that stood in for a dispatch replays
-  as that call's result; server notes (prep, seeds) replay as `[harness note]`
-  user messages.
+  the `tool_calls` entry, then a `tool` message with the size-bounded result.
+  A guard that stood in for a dispatch replays as that call's result; server
+  notes (prep, seeds) are folded into labeled system context. The user role
+  carries only the user's utterance.
 
-**`json`** keeps the original contract byte for byte: tools are listed as prose,
-the model answers with one JSON object per step, and the turn's steps are
-rendered as a `Steps taken this turn` digest in the user turn. Use it for a
-provider or model without reliable function calling. `enforce_json_mode`
-applies only here.
+**`json`** keeps the decision contract: tools are listed as prose and the model
+answers with one JSON object per step. The user role carries only the utterance;
+the bounded step digest is labeled as untrusted system context. Use it for a
+provider or model without reliable function calling. `enforce_json_mode` applies
+only here.
 
 Prompt pieces come in matching variants (protocol paragraph, user template,
 safeguards reminder, finalize prompt, no-decision nudge). Because Action
 attributes persist, an agent registered before ADR-0044 still carries the
 JSON-era built-in text as its `system_prompt`/`user_prompt`; the orchestrator
 recognises a value equal to that built-in as "unchanged" and renders the
-protocol-correct built-in. An operator override is always used verbatim — an
-override that inlines the JSON contract should be updated or paired with
-`tool_protocol: json`.
+protocol-correct built-in. `user_prompt` is retained as a compatibility field
+but no longer formats model input; move custom instructions to `system_prompt`.
+An override that inlines the JSON contract in `system_prompt` should be updated
+or paired with `tool_protocol: json`.
 
 **Model faults are decisions.** A provider call that raises (after the model
 layer's retries) reaches the loop as `model_error`; a completion cut off by the
@@ -211,13 +212,14 @@ rule *text* was unchanged; only its distance from the user turn moved. Recency
 governs adherence for the safety rules specifically. Measure before moving them
 again.
 
-Restoring the position raised resistance to **~88% (22/25 runs), not 100%** — the
-first 5-run sample read as a clean 5/5 and was simply too small. `SAFEGUARDS_REMINDER`
-(`safeguards_reminder`) therefore also restates the user-content boundary in the
-user turn, the slot a model weights most: 10/10 versus 9/10 for the shorter text.
-That margin is itself underpowered; treat the reminder as defence in depth rather
-than a fix, and **do not treat prompt-level injection resistance as a guarantee** —
-it is stochastic on this model.
+The earlier evaluation found ~88% resistance (22/25 runs) with the rules at the
+end of the system prompt. A reminder was then placed in the user role to improve
+resistance, but that mixed host instructions with the user's utterance.
+Reminders and server notes now stay in system context; the user role carries
+only the user-authored utterance. The old user-role results do not qualify this
+arrangement; rerun injection and task adherence evaluations against the
+deployed model before drawing a performance conclusion. Prompt-level resistance
+is stochastic and is not a guarantee.
 
 A custom `system_prompt` override controls its own ordering. Overrides that
 include the `{extra_section}` placeholder get `system_prompt_extra` (and the
@@ -401,6 +403,44 @@ actions:
 
 Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch` reads the top sources as clean markdown — far more efficient (and better grounded) than re-searching snippets. `web_fetch` is SSRF-guarded by default (blocks loopback/private/link-local hosts) and frames fetched text as untrusted so it composes with the loop's anti-injection boundaries.
 
+### Experimental capability pilot
+
+`skill_runtime` defaults to `legacy`. Setting it to `capability_pilot` chooses
+one Pydantic AI run at the existing Orchestrator execute boundary; the two loops
+do not nest. This pilot currently admits only the existing `research` SOP with
+the unchanged `SerperWebSearchAction.web_search__search` and
+`WebFetchAction.web_fetch__fetch` operations. Tool calls are rechecked through
+the existing AccessControl boundary, research citations must resolve to URLs
+observed in Action results, and the validated response is published through
+`ReplyAction.publish`. The pilot persists a `CAPABILITY_PILOT` task snapshot in
+the conversation TaskStore. These limits are enforced in
+[`_run_capability_pilot`](../jvagent/action/orchestrator/orchestrator_interact_action.py)
+and [`PilotEvidenceCollector`](../jvagent/action/orchestrator/pilot/runtime.py).
+
+Install the optional dependency before selecting the pilot:
+
+```bash
+pip install 'jvagent[pydantic-pilot]'
+```
+
+Then configure the Orchestrator action:
+
+```yaml
+actions:
+  - action: jvagent/orchestrator
+    context:
+      enabled: true
+      skill_runtime: capability_pilot
+```
+
+The pilot rejects non-default channel formatting and pending response
+directives because they require ReplyAction's model-based shaping path. It
+remains experimental: a separate-process reload of an active typed snapshot is
+tested, while worker crash recovery, approval/effect handling, browser flows,
+and live-provider evaluation are not yet qualified.
+Returning the setting to `legacy` leaves pilot tasks stored but excluded from
+legacy skill continuation.
+
 ### Per-channel overrides (`channel_overrides`)
 
 A voice call and a web chat can run one agent with different loop knobs —
@@ -541,7 +581,7 @@ See [`jvagent/skills/README.md`](../jvagent/skills/README.md) for the full place
 
 Only `app`, `library`, and `both` are recognized; any other value (including the former `local`/`builtin`/`registry` aliases) falls back to `both`.
 
-**Host skill providers (embedded deployments)** — after filesystem discovery, [`skill_providers.py`](../jvagent/action/orchestrator/skill_providers.py) merges skills from registered host callables (`register_host_skill_provider`). Integral uses this for per-workspace App-bundled skill overlays; filesystem/app-local skills win on name collision. Host providers run regardless of `skills_source`.
+**Host skill providers (embedded deployments)** — after filesystem discovery, [`skill_providers.py`](../jvagent/action/orchestrator/skill_providers.py) merges skills from registered host callables (`register_host_skill_provider`). An embedding host can use this for workspace-specific skill overlays; filesystem/app-local skills win on name collision. Host providers run regardless of `skills_source`.
 
 **Selecting which skills** — `skills` is either `-all` (every discovered skill) or a **finite list of names** (fnmatch patterns) in the descriptor, e.g. `skills: [research, web_lookup]`. `denied_skills` subtracts; a skill with `always-active: true` in its frontmatter loads regardless of the selector.
 

@@ -59,6 +59,24 @@ def test_parse_skill_bundle_reads_hyphen_keys(tmp_path: Path) -> None:
     assert bundle["deny_access_directive"] == "Use WhatsApp."
 
 
+def test_parse_skill_bundle_surfaces_pilot_unsupported_semantics(
+    tmp_path: Path,
+) -> None:
+    skill_dir = _write_skill(
+        tmp_path,
+        "scripted",
+        "description: x\nexports: [result]\non-activate: prepare\n",
+    )
+    (skill_dir / "helper.py").write_text("def run(): pass\n", encoding="utf-8")
+    bundle = parse_skill_bundle(skill_dir, source="app")
+    assert bundle is not None
+    assert bundle["unsupported_features"] == [
+        "skill exports",
+        "bundled scripts",
+        "lifecycle hooks",
+    ]
+
+
 def test_parse_skill_bundle_reads_underscore_keys(tmp_path: Path) -> None:
     skill_dir = _write_skill(
         tmp_path,

@@ -151,7 +151,7 @@ async def test_interact_stream_emits_error_for_missing_agent(tmp_path) -> None:
 # is awkward (Agent has required pydantic fields the host normally supplies
 # via app.yaml), so the happy-path tests here are minimal: they exercise
 # the contract that missing-resource paths return clean negatives without
-# raising. End-to-end multi-user isolation is covered by integral's smoke
+# raising. End-to-end multi-user isolation is covered by the embedding host smoke
 # test against a fully bootstrapped agent.
 
 

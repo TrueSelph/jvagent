@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib import import_module
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -173,10 +174,8 @@ async def test_call_model_injected_model_action_skips_resolution():
 async def test_call_model_prebuilt_history_skips_fetch():
     action, model = _action_with_model("ok")
     prebuilt = [{"role": "user", "content": "prior"}]
-    with patch(
-        "jvagent.action.utils.call_model._load_history",
-        new=AsyncMock(),
-    ) as load:
+    call_model_module = import_module("jvagent.action.utils.call_model")
+    with patch.object(call_model_module, "_load_history", new=AsyncMock()) as load:
         await call_model(action, "hi", "sys", history=prebuilt, use_history=True)
     load.assert_not_awaited()
     assert model.generate.await_args.kwargs["history"] == prebuilt

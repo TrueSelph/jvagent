@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ``AGENTIC_LOOP`` is the orchestrator's own resumable multi-step plan (ADR-0019)
 # — it has no IA tool to route to, so it is excluded from IA-flow routing here
 # and resumed instead via ``active_plan`` / ``plan_resume_note`` below.
-_NON_FLOW_TASK_TYPES = frozenset({"PROACTIVE", "AGENTIC_LOOP"})
+_NON_FLOW_TASK_TYPES = frozenset({"PROACTIVE", "AGENTIC_LOOP", "CAPABILITY_PILOT"})
 
 # Task type the orchestrator uses for its own resumable multi-step plan.
 PLAN_TASK_TYPE = "AGENTIC_LOOP"

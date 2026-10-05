@@ -39,7 +39,7 @@ async def test_rematerialized_interaction_cannot_emit_a_second_hello():
     await bus.subscribe("s1", on_message, receive_chunks=True)
     await bus.publish(
         session_id="s1",
-        content="Hello! I'm Integral's assistant.",
+        content="Hello! I'm the workspace assistant.",
         channel="default",
         interaction=interaction,
         interaction_id=interaction.id,
@@ -49,7 +49,7 @@ async def test_rematerialized_interaction_cannot_emit_a_second_hello():
     assert twin.has_emitted() is False
     await bus.publish(
         session_id="s1",
-        content="Hello! I'm Integral's assistant.",
+        content="Hello! I'm the workspace assistant.",
         channel="default",
         interaction=twin,
         interaction_id=interaction.id,
@@ -61,7 +61,7 @@ async def test_rematerialized_interaction_cannot_emit_a_second_hello():
         for m in seen
         if m.category == "user" and m.message_type != "final" and m.content
     ]
-    assert user_text == ["Hello! I'm Integral's assistant."]
+    assert user_text == ["Hello! I'm the workspace assistant."]
 
 
 @pytest.mark.asyncio

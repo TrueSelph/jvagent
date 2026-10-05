@@ -30,6 +30,7 @@ from jvagent.core.errors import log_classified_exception, retry_if_transient
 logger = logging.getLogger(__name__)
 
 _ACTIVE_SKILL_STATUSES = frozenset({"pending", "active"})
+_NON_SKILL_TASK_TYPES = frozenset({"CAPABILITY_PILOT"})
 
 
 def task_store_for_conversation(conversation: Any) -> Optional[Any]:
@@ -48,7 +49,12 @@ def tasks_for_skill(store: Any, skill_name: str) -> List[Any]:
     if store is None or not skill_name:
         return []
     try:
-        return store.list(owner_action=skill_name) or []
+        return [
+            task
+            for task in (store.list(owner_action=skill_name) or [])
+            if str(getattr(task, "task_type", "") or "").upper()
+            not in _NON_SKILL_TASK_TYPES
+        ]
     except Exception as exc:
         logger.debug("skill_tasks: list tasks for %r failed: %s", skill_name, exc)
         return []
@@ -310,6 +316,11 @@ def _skill_task_blocked(conversation: Any, skill_name: str) -> bool:
 
     try:
         for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if (
+                str(getattr(task, "task_type", "") or "").upper()
+                in _NON_SKILL_TASK_TYPES
+            ):
+                continue
             if not prerequisites_met(store, task):
                 return True
     except Exception as exc:
@@ -399,6 +410,11 @@ async def ensure_task_lock_task(visitor: Any, doc: Any) -> None:
 def _active_skill_task(store: Any, skill_name: str) -> Optional[Any]:
     try:
         for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if (
+                str(getattr(task, "task_type", "") or "").upper()
+                in _NON_SKILL_TASK_TYPES
+            ):
+                continue
             return task
     except Exception:
         return None
@@ -641,6 +657,11 @@ async def persist_task_snapshot(
         return False
     try:
         for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if (
+                str(getattr(task, "task_type", "") or "").upper()
+                in _NON_SKILL_TASK_TYPES
+            ):
+                continue
             await task.set_snapshot(dict(snapshot or {}))
             return True
     except Exception as exc:
@@ -658,6 +679,11 @@ def task_snapshot_for_skill(conversation: Any, skill_name: str) -> dict:
         return {}
     try:
         for task in store.list(status=["pending", "active"], owner_action=skill_name):
+            if (
+                str(getattr(task, "task_type", "") or "").upper()
+                in _NON_SKILL_TASK_TYPES
+            ):
+                continue
             snap = getattr(task, "snapshot", None)
             if snap:
                 return dict(snap)

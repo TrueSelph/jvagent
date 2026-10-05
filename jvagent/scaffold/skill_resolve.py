@@ -385,9 +385,7 @@ def parse_skill_bundle(
     if not scope_hint:
         scope_hint = description
     tool_files = [
-        str(path)
-        for path in sorted(skill_dir.rglob("*.py"))
-        if path.is_file() and not path.name.startswith("_")
+        str(path) for path in sorted(skill_dir.rglob("*.py")) if path.is_file()
     ]
 
     # Parse skill-to-skill version constraints: {skill_name: ">=1.0"}
@@ -419,6 +417,76 @@ def parse_skill_bundle(
                 extends_raw,
             )
 
+    # The pilot executes only a bounded, declarative SOP subset. Preserve a
+    # concise record of semantics the resolver understands but the pilot does
+    # not execute, so downstream compilers can fail closed instead of silently
+    # dropping them.
+    unsupported_features: List[str] = []
+    for key, value, label in (
+        ("spec", spec != "jv", "non-jv spec"),
+        ("extends", extends_raw is not None, "skill inheritance"),
+        ("dispatch", bool(dispatch), "dispatch"),
+        ("exports", bool(exports), "skill exports"),
+        ("imports", bool(imports), "skill imports"),
+        ("coactivate-with", bool(coactivate_with), "skill coactivation"),
+        ("interview", interview_block is not None, "interview hooks"),
+        ("tool-files", bool(tool_files), "bundled scripts"),
+        ("requires-jvagent", bool(requires_jvagent), "version constraints"),
+        ("verbatim-final", verbatim_final, "verbatim final output"),
+        ("dependencies", bool(raw_deps), "skill dependencies"),
+        ("task-lock", task_lock, "task locking"),
+        ("lock-companions", bool(lock_companions), "lock companions"),
+        ("requires-tasks", bool(requires_tasks), "task prerequisites"),
+        ("parameters", bool(parameters), "skill parameters"),
+        (
+            "hooks",
+            any(k in frontmatter for k in ("hooks", "on-activate", "on-complete")),
+            "lifecycle hooks",
+        ),
+    ):
+        if value:
+            unsupported_features.append(label)
+    supported_frontmatter = {
+        "name",
+        "description",
+        "allowed-tools",
+        "requires-actions",
+        "always-active",
+        "allowed-channels",
+        "allowed_channels",
+        "denied-channels",
+        "denied_channels",
+        "deny-access-directive",
+        "deny_access_directive",
+        "version",
+        "license",
+        "tags",
+        "spec",
+        "extends",
+        "dispatch",
+        "exports",
+        "imports",
+        "coactivate-with",
+        "interview",
+        "requires-jvagent",
+        "verbatim-final",
+        "dependencies",
+        "task-lock",
+        "task_lock",
+        "lock-companions",
+        "lock_companions",
+        "requires-tasks",
+        "requires_tasks",
+        "parameters",
+        "hooks",
+        "on-activate",
+        "on-complete",
+    }
+    for key in frontmatter:
+        if str(key) not in supported_frontmatter:
+            unsupported_features.append(f"frontmatter key {key}")
+    unsupported_features = list(dict.fromkeys(unsupported_features))
+
     return {
         "name": name,
         "description": description,
@@ -427,6 +495,7 @@ def parse_skill_bundle(
         "interview": interview_block,
         "dir": str(skill_dir),
         "tool_files": tool_files,
+        "unsupported_features": unsupported_features,
         "allowed_tools": allowed_tools_add,
         "allowed_tools_add": allowed_tools_add,
         "disabled_tools": disabled_tools,

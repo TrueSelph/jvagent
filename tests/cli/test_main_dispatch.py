@@ -2,17 +2,20 @@
 
 import sys
 from contextlib import ExitStack
+from importlib import import_module
 from unittest.mock import patch
 
 import pytest
 
 from jvagent.cli.main import DISPATCH, _first_app_root_path
 
+CLI_MAIN = import_module("jvagent.cli.main")
+
 
 def _main_patches(**extra):
     """Patch side-effectful setup inside main() without starting a server."""
     base = {
-        "jvagent.cli.main.load_app_env": patch("jvagent.cli.main.load_app_env"),
+        "jvagent.cli.main.load_app_env": patch.object(CLI_MAIN, "load_app_env"),
         "set_app_root": patch("jvagent.core.app_context.set_app_root"),
         "reload_performance_config": patch(
             "jvagent.core.cache.reload_performance_config"
@@ -20,9 +23,9 @@ def _main_patches(**extra):
         "reload_profiling_config": patch(
             "jvagent.core.profiling.reload_profiling_config"
         ),
-        "_set_db_env_from_config": patch("jvagent.cli.main._set_db_env_from_config"),
-        "parse_stress_seed": patch(
-            "jvagent.cli.main.parse_stress_seed_for_run", return_value=(None, [])
+        "_set_db_env_from_config": patch.object(CLI_MAIN, "_set_db_env_from_config"),
+        "parse_stress_seed": patch.object(
+            CLI_MAIN, "parse_stress_seed_for_run", return_value=(None, [])
         ),
     }
     base.update(extra)
@@ -94,7 +97,7 @@ class TestMainDispatch:
         monkeypatch.delenv("JVSPATIAL_ENVIRONMENT", raising=False)
 
         patches = _main_patches(
-            purge_app_data=patch("jvagent.cli.main.purge_app_data"),
+            purge_app_data=patch.object(CLI_MAIN, "purge_app_data"),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}
@@ -112,7 +115,7 @@ class TestMainDispatch:
         monkeypatch.setenv("JVSPATIAL_ENVIRONMENT", "production")
 
         patches = _main_patches(
-            purge_app_data=patch("jvagent.cli.main.purge_app_data"),
+            purge_app_data=patch.object(CLI_MAIN, "purge_app_data"),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}
@@ -130,8 +133,8 @@ class TestMainDispatch:
         monkeypatch.setenv("JVSPATIAL_ENVIRONMENT", "development")
 
         patches = _main_patches(
-            purge_app_data=patch("jvagent.cli.main.purge_app_data"),
-            run_validate=patch("jvagent.cli.main.run_validate", return_value=0),
+            purge_app_data=patch.object(CLI_MAIN, "purge_app_data"),
+            run_validate=patch.object(CLI_MAIN, "run_validate", return_value=0),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}
@@ -150,7 +153,7 @@ class TestMainDispatch:
         monkeypatch.setattr(sys, "argv", ["jvagent", "--source"])
 
         patches = _main_patches(
-            run_server=patch("jvagent.cli.main.run_server"),
+            run_server=patch.object(CLI_MAIN, "run_server"),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}
@@ -167,7 +170,7 @@ class TestMainDispatch:
         monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source", "--merge"])
 
         patches = _main_patches(
-            run_server=patch("jvagent.cli.main.run_server"),
+            run_server=patch.object(CLI_MAIN, "run_server"),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}
@@ -184,7 +187,7 @@ class TestMainDispatch:
         monkeypatch.setattr(sys, "argv", ["jvagent", "--update", "--source", "--yes"])
 
         patches = _main_patches(
-            run_server=patch("jvagent.cli.main.run_server"),
+            run_server=patch.object(CLI_MAIN, "run_server"),
         )
         with ExitStack() as stack:
             mocks = {k: stack.enter_context(v) for k, v in patches.items()}

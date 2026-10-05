@@ -93,6 +93,8 @@ those records covered patterns (bridge/helm/cockpit) that were removed.
 | [0026](adr/0026-task-driven-turn-lock.md) | Task-driven turn-lock (work-stack orchestration) | Accepted |
 | [0027](adr/0027-conversation-use-case-spec.md) | Conversation Use Case Specification (CUCS) | Accepted |
 | [0054](adr/0054-harness-contracts.md) | Host-neutral harness contracts (NativeCaller, TurnRun, snapshot, provider) | Accepted |
+| [0055](adr/0055-unified-capability-discovery.md) | Unified capability discovery (`find_capability`) | Accepted |
+| [0056](adr/0056-opt-in-pydantic-ai-skill-driver.md) | Opt-in Pydantic AI skill driver pilot | Proposed |
 
 ## specs/ — design specs
 
@@ -113,6 +115,7 @@ Agent-authored, task-by-task implementation plans (the **how**, tracked with
 
 | Plan | Spec |
 |---|---|
+| [`plans/2026-10-04-pydantic-inspired-skill-pilot.md`](plans/2026-10-04-pydantic-inspired-skill-pilot.md) — bounded skill/Action composition pilot, agent ownership, gates, and rollback | Architecture and contracts included in the plan; implementation pending |
 | [`plans/2026-06-13-orchestrator-egress-streamline.md`](plans/2026-06-13-orchestrator-egress-streamline.md) | [design](specs/2026-06-13-orchestrator-egress-streamline-design.md) |
 | [`plans/2026-06-13-interview-multi-response.md`](plans/2026-06-13-interview-multi-response.md) | [design](specs/2026-06-13-interview-multi-response-design.md) |
 

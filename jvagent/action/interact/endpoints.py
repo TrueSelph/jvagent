@@ -6,6 +6,7 @@ replacing the legacy monolithic interact endpoint.
 
 import asyncio
 import logging
+import time
 from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
@@ -81,6 +82,23 @@ def _sse_error_event(
         "message": message or _STREAM_CLIENT_ERROR,
         "request_id": request_id,
     }
+
+
+async def _wait_for_stream_message(
+    message_queue: "asyncio.Queue[Any]",
+    last_heartbeat: float,
+    *,
+    poll_interval: float = 0.25,
+    heartbeat_interval: float = 15.0,
+) -> tuple[Any, bool, float]:
+    """Poll the response bus and report when an SSE heartbeat is due."""
+    try:
+        message = await asyncio.wait_for(message_queue.get(), timeout=poll_interval)
+        return message, False, last_heartbeat
+    except asyncio.TimeoutError:
+        now = time.monotonic()
+        heartbeat_due = now - last_heartbeat >= heartbeat_interval
+        return None, heartbeat_due, now if heartbeat_due else last_heartbeat
 
 
 # Import profiling utilities
@@ -636,6 +654,10 @@ async def interact_endpoint(
             },
         )
 
+    from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
+
+    empty_host_turn = allows_empty_host_utterance(data)
+
     # Validate utterance length
     is_valid, error_message = rate_limiter.validate_utterance_length(utterance)
     if not is_valid:
@@ -681,10 +703,13 @@ async def interact_endpoint(
                 )
 
             if not utterance or not utterance.strip():
-                raise ValidationError(
-                    message="utterance is required and cannot be empty",
-                    details={"utterance": utterance},
-                )
+                if empty_host_turn:
+                    pass
+                else:
+                    raise ValidationError(
+                        message="utterance is required and cannot be empty",
+                        details={"utterance": utterance},
+                    )
 
             # Identity guard (ADR-0020): resolve Mode A bearer / Mode B session
             # token BEFORE spawning the walker (and before any LLM cost). In
@@ -1054,6 +1079,7 @@ async def _stream_interaction(
             )
 
             try:
+                last_heartbeat = time.monotonic()
                 # Stream messages as they arrive
                 while True:
                     # Exit once walker is done and we've drained the queue
@@ -1088,15 +1114,19 @@ async def _stream_interaction(
                         walk_task.cancel()
                         return
 
-                    try:
-                        message = await asyncio.wait_for(
-                            message_queue.get(), timeout=0.25
-                        )
+                    message, heartbeat_due, last_heartbeat = (
+                        await _wait_for_stream_message(message_queue, last_heartbeat)
+                    )
+                    if message is not None:
                         yield format_sse_chunk(
                             {"type": "message", "message": message.to_dict()}
                         )
-                    except asyncio.TimeoutError:
-                        continue
+                    elif heartbeat_due:
+                        # Long model/tool calls may produce no user messages for
+                        # a while. Keep intermediary proxies and browser fetches
+                        # from treating a healthy in-flight turn as an idle
+                        # connection; the client safely ignores this event.
+                        yield format_sse_chunk({"type": "heartbeat"})
             finally:
                 # Cleanup subscription
                 await walker.response_bus.unsubscribe(

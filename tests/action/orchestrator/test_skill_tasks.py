@@ -18,13 +18,19 @@ from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.memory.task_store import TaskStore
 
 
-def _task(owner: str, status: str, updated_at: str = "2026-06-04T12:00:00Z") -> dict:
+def _task(
+    owner: str,
+    status: str,
+    updated_at: str = "2026-06-04T12:00:00Z",
+    task_type: str = "SKILL",
+) -> dict:
     return {
         "id": f"task_{owner}_{status}",
         "title": owner,
         "description": "",
         "status": status,
         "owner_action": owner,
+        "task_type": task_type,
         "updated_at": updated_at,
         "created_at": updated_at,
     }
@@ -50,6 +56,18 @@ def test_has_active_skill_task():
     store = TaskStore(conv)
     assert has_active_skill_task(store, "S") is True
     assert has_active_skill_task(store, "Other") is False
+
+
+def test_capability_pilot_tasks_do_not_appear_as_legacy_skill_tasks():
+    conv = MagicMock()
+    conv.tasks = [
+        _task("Research", "active", task_type="CAPABILITY_PILOT"),
+        _task("Research", "completed", task_type="CAPABILITY_PILOT"),
+    ]
+    store = TaskStore(conv)
+    assert has_active_skill_task(store, "Research") is False
+    assert is_skill_task_done(store, "Research") is False
+    assert pending_auto_start_skills(store, ["Research"]) == ["Research"]
 
 
 def test_pending_auto_start_skills_order():

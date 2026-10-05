@@ -569,7 +569,7 @@ class ResponseBus:
         # (ADR-0025). A live user stream may continue after its first chunk set
         # the latch, but every separate non-transient user publish is rejected
         # here at the delivery choke point. A non-stream publish while the
-        # accumulator is already open mints a new Object id; Integral splits
+        # accumulator is already open mints a new Object id; some adapters split
         # bubbles on that id, so it is suppressed even if the first chunk has
         # not latched yet (gate-held / empty).
         #
@@ -988,7 +988,7 @@ class ResponseBus:
         # Streaming publish() already flushed this turn to subscribers and
         # interaction.response; commit_pending is a safety net for abandoned
         # accumulators. Re-appending or re-emitting the same settled text
-        # duplicates bubbles downstream (integral message-boundary splits on a
+        # duplicates bubbles downstream (some adapters split message boundaries on a
         # second adhoc id carrying the same prose).
         current = (getattr(interaction, "response", "") or "") if interaction else ""
         if full_content and current.strip() and full_content.strip() in current:
@@ -1345,7 +1345,7 @@ class ResponseBus:
 
         # Streaming publish() already enqueued message_type=final under
         # acc.message_id. A second final with a new Object id is a distinct
-        # assistant identity on the wire (Integral splits bubbles on that).
+        # assistant identity on the wire (some adapters split bubbles on that).
         # try_claim_final is process-wide so a second ResponseBus cannot
         # emit another one just because this instance's buffers are empty.
         user_id = getattr(interaction, "user_id", None) if interaction else None

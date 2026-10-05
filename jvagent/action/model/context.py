@@ -19,7 +19,7 @@ PROVIDER_MODEL_ACTION_CLASSES: Dict[str, str] = {
     "litellm": "LiteLLMLanguageModelAction",
 }
 
-# Canonical model slots for resident-harness BYOK (Integral and other hosts).
+# Canonical model slots for resident-harness BYOK (embedded hosts).
 # ``default`` is required; others are optional and fall back to default.
 MODEL_SLOTS: Tuple[str, ...] = ("default", "light", "heavy", "vision")
 
@@ -33,7 +33,7 @@ ACTION_SLOT_DEFAULT: Dict[str, str] = {
     "VisionAction": "vision",
 }
 
-# Per-turn credential + model override for multi-tenant hosts (e.g. Integral BYOK).
+# Per-turn credential + model override for multi-tenant hosts (for example, host-provided credentials).
 # Canonical shape: {"slots": {slot: {provider, model, api_key?}, ...}}
 # Legacy flat keys (provider, model, api_key, light_model?, …) are normalized on read.
 # Plaintext keys live only in this ContextVar for one async task; never persist.

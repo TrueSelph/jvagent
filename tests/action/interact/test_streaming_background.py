@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 
-from jvagent.action.interact.endpoints import _run_background_actions
+from jvagent.action.interact.endpoints import (
+    _run_background_actions,
+    _wait_for_stream_message,
+)
 
 
 async def test_streaming_path_awaits_background_actions_not_fire_and_forget():
@@ -17,6 +22,48 @@ async def test_streaming_path_awaits_background_actions_not_fire_and_forget():
     assert "create_task(" not in source or "_run_background_actions" in source
     # Explicit await path must exist (no fire-and-forget task for background work).
     assert "await _run_background_actions(walker)" in source
+
+
+async def test_streaming_path_emits_heartbeats_during_idle_model_calls():
+    """Keep a slow but active model call alive across idle connection limits."""
+    import inspect
+
+    from jvagent.action.interact import endpoints
+
+    source = inspect.getsource(endpoints._stream_interaction)
+    assert '"type": "heartbeat"' in source
+    assert "_wait_for_stream_message(" in source
+    helper = inspect.getsource(endpoints._wait_for_stream_message)
+    assert "poll_interval: float = 0.25" in helper
+    assert "heartbeat_interval: float = 15.0" in helper
+
+
+async def test_stream_message_wait_reports_heartbeat_after_idle_interval():
+    queue = asyncio.Queue()
+    message, heartbeat_due, next_heartbeat = await _wait_for_stream_message(
+        queue,
+        time.monotonic() - 1,
+        poll_interval=0.001,
+        heartbeat_interval=0,
+    )
+
+    assert message is None
+    assert heartbeat_due is True
+    assert next_heartbeat > 0
+
+
+async def test_stream_message_wait_preserves_queued_messages():
+    queue = asyncio.Queue()
+    await queue.put("response")
+    last_heartbeat = time.monotonic()
+
+    message, heartbeat_due, next_heartbeat = await _wait_for_stream_message(
+        queue, last_heartbeat, heartbeat_interval=0
+    )
+
+    assert message == "response"
+    assert heartbeat_due is False
+    assert next_heartbeat == last_heartbeat
 
 
 async def test_run_background_actions_executes_deferred_actions():

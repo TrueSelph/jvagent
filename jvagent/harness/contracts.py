@@ -41,7 +41,7 @@ FORBIDDEN_AUTHORITY_KEYS = frozenset(
 )
 
 # Keys hosts may stash on walker/visitor data for resident tool callbacks.
-# Kept as a frozenset so Integral (and other embeds) can round-trip a durable
+# Kept as a frozenset so embedded hosts can round-trip a durable
 # WorkExecutionContext without inventing a second channel.
 HOST_WORK_EXECUTION_KEYS = frozenset(
     {

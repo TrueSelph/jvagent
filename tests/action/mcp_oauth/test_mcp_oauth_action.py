@@ -28,10 +28,10 @@ def test_sheets_and_drive_tools_build_two_dicts():
     callback = f"{BASE}/api/mcp/google_workspace/auth/callback"
     assert {item["redirect_uri"] for item in setup} == {callback}
     assert setup[0]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=integral&service=sheets"
+        f"{BASE}/api/mcp/google_workspace/auth?account=default&service=sheets"
     )
     assert setup[1]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=integral&service=drive"
+        f"{BASE}/api/mcp/google_workspace/auth?account=default&service=drive"
     )
     assert all(item["server"] == "google_workspace" for item in setup)
 
@@ -73,7 +73,7 @@ def test_unconfigured_google_workspace_is_generic_entry():
     assert setup[0]["server"] == "google_workspace"
     assert "service" not in setup[0]
     assert setup[0]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=integral"
+        f"{BASE}/api/mcp/google_workspace/auth?account=default"
     )
 
 
@@ -123,7 +123,7 @@ def test_sheets_scopes_do_not_bind_drive():
         "google_workspace",
         [
             {
-                "account_name": "integral",
+                "account_name": "default",
                 "token": {"email": "ops@example.com", "scopes": SHEETS_SCOPES},
             }
         ],
@@ -139,7 +139,7 @@ def test_drive_scope_binds_drive_and_email_from_payload():
         "google_workspace",
         [
             {
-                "account_name": "integral",
+                "account_name": "default",
                 "token": {"email": "ops@example.com", "scopes": scopes},
             }
         ],
@@ -184,15 +184,15 @@ def test_microsoft_files_scope_binds_onedrive_and_excel():
 
 
 def test_mcp_oauth_state_action_id_roundtrip():
-    assert mcp_oauth_state_action_id("integral", "sheets") == (
-        "mcp_oauth:integral:sheets"
+    assert mcp_oauth_state_action_id("default", "sheets") == (
+        "mcp_oauth:default:sheets"
     )
-    assert parse_mcp_oauth_state_action_id("mcp_oauth:integral:sheets") == (
-        "integral",
+    assert parse_mcp_oauth_state_action_id("mcp_oauth:default:sheets") == (
+        "default",
         "sheets",
     )
-    assert parse_mcp_oauth_state_action_id("mcp_oauth:integral") == ("integral", "")
-    assert parse_mcp_oauth_state_action_id("") == ("integral", "")
+    assert parse_mcp_oauth_state_action_id("mcp_oauth:default") == ("default", "")
+    assert parse_mcp_oauth_state_action_id("") == ("default", "")
 
 
 def test_drive_mcp_services_does_not_bind_sheets():
@@ -351,7 +351,7 @@ def test_gmail_does_not_use_sheets_only_token():
         }
     ]
     account, token, _node = token_row_for_service(
-        rows, "google_workspace", "gmail", "integral"
+        rows, "google_workspace", "gmail", "default"
     )
     assert account is None
     assert token is None
@@ -373,7 +373,7 @@ def test_poisoned_merged_token_is_not_used_for_gmail():
         }
     ]
     account, token, _node = token_row_for_service(
-        rows, "google_workspace", "gmail", "integral"
+        rows, "google_workspace", "gmail", "default"
     )
     assert account is None
     assert token is None
@@ -401,13 +401,13 @@ def test_token_row_returns_service_blob_not_sibling():
     }
     rows = [{"account_name": "a@example.com", "token": parent, "node": None}]
     account, sheets, _node = token_row_for_service(
-        rows, "google_workspace", "sheets", "integral"
+        rows, "google_workspace", "sheets", "default"
     )
     assert account == "a@example.com"
     assert sheets["refresh_token"] == "rt-sheets"
     assert sheets["client_id"] == "cid"
     assert "https://www.googleapis.com/auth/spreadsheets" in sheets["scopes"]
-    _, gmail, _ = token_row_for_service(rows, "google_workspace", "gmail", "integral")
+    _, gmail, _ = token_row_for_service(rows, "google_workspace", "gmail", "default")
     assert gmail["refresh_token"] == "rt-gmail"
     assert gmail["scopes"] == ["https://www.googleapis.com/auth/gmail.send"]
 

@@ -83,6 +83,9 @@ class SkillDoc:
     denied_channels: Tuple[str, ...] = ()
     deny_access_directive: str = ""
     digest: str = ""
+    # Resolver-recorded semantics outside the Pydantic pilot's supported SOP
+    # subset. The pilot compiler must reject these rather than ignore them.
+    unsupported_features: Tuple[str, ...] = ()
     metadata: dict = field(default_factory=dict)
 
 
@@ -220,6 +223,7 @@ def discover_skill_docs(
                 denied_channels=tuple(bundle.get("denied_channels") or ()),
                 deny_access_directive=str(bundle.get("deny_access_directive") or ""),
                 digest=str(bundle.get("digest") or ""),
+                unsupported_features=tuple(bundle.get("unsupported_features") or ()),
                 metadata=bundle.get("metadata") or {},
             )
         )

@@ -189,7 +189,7 @@ LEAK = """Tool Calls: [
 {
 "id": "call_8f2c1a91-3b4d-4e52-9f10-6a7d3f21e001",
 "type": "function",
-"name": "integral_get_track_schema",
+"name": "workspace_get_record_schema",
 "arguments": {
 "track_id": "Identity"
 }
@@ -200,7 +200,7 @@ LEAK = """Tool Calls: [
 def test_salvage_reads_the_exact_shape_from_the_report():
     calls = salvage_tool_call_text(LEAK)
     assert calls and len(calls) == 1
-    assert calls[0]["function"]["name"] == "integral_get_track_schema"
+    assert calls[0]["function"]["name"] == "workspace_get_record_schema"
     assert json.loads(calls[0]["function"]["arguments"]) == {"track_id": "Identity"}
     assert calls[0]["id"] == "call_8f2c1a91-3b4d-4e52-9f10-6a7d3f21e001"
 
@@ -241,9 +241,9 @@ async def test_tool_call_text_under_native_is_dispatched_not_replied(
             make_visitor(),
             "go",
             [],
-            [_tool("integral_get_track_schema"), _tool("reply")],
+            [_tool("workspace_get_record_schema"), _tool("reply")],
             [],
         )
     assert decision["action"] == "tool"
-    assert decision["tool"] == "integral_get_track_schema"
+    assert decision["tool"] == "workspace_get_record_schema"
     assert decision["args"] == {"track_id": "Identity"}

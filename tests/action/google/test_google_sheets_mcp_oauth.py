@@ -150,7 +150,7 @@ async def test_get_credentials_raises_with_mcp_auth_url(cls):
             "jvagent.action.mcp_oauth.hydrate.mcp_google_workspace_auth_url",
             return_value=(
                 "https://x/api/mcp/google_workspace/auth"
-                f"?account=integral&service={cls._MCP_SERVICE}"
+                f"?account=default&service={cls._MCP_SERVICE}"
             ),
         ),
     ):

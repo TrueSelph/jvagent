@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
@@ -41,6 +43,25 @@ async def test_active_flow_owner_resolved_from_task():
     v = _visitor()
     await _seed_active(v.conversation, "SignupIA")
     assert active_flow_owner(v, flow_tool_names={"SignupIA"}) == "SignupIA"
+
+
+@pytest.mark.asyncio
+async def test_capability_pilot_task_is_not_a_legacy_active_flow():
+    from jvagent.memory.task_store import TaskStore
+
+    conversation = _visitor().conversation
+    await TaskStore(conversation).create(
+        title="research",
+        description="pilot research",
+        owner_action="research",
+        task_type="CAPABILITY_PILOT",
+    )
+    task = TaskStore(conversation).list()[0]
+    await task.start()
+
+    visitor = MagicMock()
+    visitor.conversation = conversation
+    assert active_flow_owner(visitor) is None
 
 
 async def test_proactive_task_not_treated_as_flow():

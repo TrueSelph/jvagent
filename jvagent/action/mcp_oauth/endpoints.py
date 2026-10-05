@@ -411,7 +411,7 @@ async def get_mcp_auth_status(server_name: str) -> Dict[str, Any]:
     summary="Get OAuth Authorization URL for MCP Server",
 )
 async def get_mcp_auth_url(
-    server_name: str, account: str = "integral", service: str = ""
+    server_name: str, account: str = "default", service: str = ""
 ) -> HTMLResponse:
     """Generate the OAuth2 authorization page for a stdio MCP server."""
     action = await _get_mcp_oauth_action()

@@ -72,14 +72,22 @@ def test_bind_model_override_restores_prior(monkeypatch):
 async def test_concurrency_isolation_no_key_bleed(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "env-key")
     action = _StubModelAction()
-    barrier = asyncio.Barrier(2)
+    ready = asyncio.Event()
+    arrivals = 0
     results: list[str] = []
+
+    async def wait_for_both() -> None:
+        nonlocal arrivals
+        arrivals += 1
+        if arrivals == 2:
+            ready.set()
+        await ready.wait()
 
     async def run_turn(key: str) -> None:
         with bind_model_override(
             {"provider": "openai", "model": "gpt-4o-mini", "api_key": key}
         ):
-            await barrier.wait()
+            await wait_for_both()
             await asyncio.sleep(0.01)
             results.append(action.api_key_from_context("OPENAI_API_KEY"))
 

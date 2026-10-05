@@ -67,7 +67,7 @@ async def test_get_session_both_ids_creates_user_when_missing(test_db):
 async def test_get_session_resume_not_new_user_when_user_edge_missing(test_db):
     """Orphan User rows (edge dropped, row retained) must not re-trigger intro."""
     memory = await Memory.create()
-    user = await memory.get_user("integral_user_01", create_if_missing=True)
+    user = await memory.get_user("workspace_user_01", create_if_missing=True)
     conv = await user.create_conversation(
         session_id="sess_resume_after_restart", channel="default"
     )

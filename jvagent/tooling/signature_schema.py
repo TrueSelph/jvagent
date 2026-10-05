@@ -128,6 +128,14 @@ def _annotation_description(annotation: Any) -> str:
         for meta in get_args(annotation)[1:]:
             if isinstance(meta, str):
                 return meta
+        return _annotation_description(get_args(annotation)[0])
+    # Python 3.10 may add an outer Optional while resolving a defaulted
+    # ``Annotated[Optional[T], ...]`` parameter. Preserve metadata through that
+    # wrapper instead of silently dropping the description.
+    for argument in get_args(annotation):
+        description = _annotation_description(argument)
+        if description:
+            return description
     return ""
 
 

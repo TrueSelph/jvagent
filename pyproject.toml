@@ -44,6 +44,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+pydantic-pilot = [
+    "pydantic-ai-slim==2.54.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-xdist>=3.0.0",

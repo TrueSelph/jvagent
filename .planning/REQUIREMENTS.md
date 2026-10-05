@@ -58,7 +58,7 @@
 | Exactly-once for third-party side effects with no idempotency mechanism | Harness supplies invocation identity; domain tools own exactly-once |
 | Treating subprocess resource limits as a sandbox for untrusted code | Dev-only containment; untrusted scripts need an approved isolation backend |
 | Requiring active-active for every deployment | Single-process remains supported with explicitly narrower guarantees |
-| Embedding Integral or any other product's model in tests | HP-08 uses a small independent host fixture; `examples/jvagent_app` is the native reference |
+| Embedding any product's model in tests | HP-08 uses a small independent host fixture; `examples/jvagent_app` is the native reference |
 
 ## Traceability
 

@@ -47,7 +47,7 @@ class Agent(Node):
         # Scope uniqueness to Agent entities only. Without the entity
         # discriminator, embedded jvagent deployments that share the
         # ``node`` collection with the host's nodes hit E11000 the moment
-        # any non-Agent node carries ``context.name`` (e.g. integral has
+        # any non-Agent node carries ``context.name`` (for example, an embedder has
         # nodes named "Default"). The partial filter must match every
         # row that the unique constraint applies to — adding
         # ``entity == "Agent"`` keeps the constraint correct without

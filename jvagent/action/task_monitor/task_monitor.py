@@ -303,7 +303,7 @@ class TaskMonitor(Action):
             scoped_convs = []
             seen_conv_ids = set()
             for conv in due_convs:
-                user = await conv.node(direction="in", node=User)
+                user = await conv.node(direction="in", node=User)  # type: ignore[attr-defined]
                 if user and (
                     user.memory_id == memory.id or await memory.is_connected_to(user)
                 ):
@@ -347,7 +347,7 @@ class TaskMonitor(Action):
                     for conv in await Conversation.find(iv_query):
                         if conv.id in seen_conv_ids:
                             continue
-                        user = await conv.node(direction="in", node=User)
+                        user = await conv.node(direction="in", node=User)  # type: ignore[attr-defined]
                         if user and (
                             user.memory_id == memory.id
                             or await memory.is_connected_to(user)
@@ -513,13 +513,16 @@ class TaskMonitor(Action):
                 await h.fail(reason="invalid proactive spec")
             return False
 
-        utterance = f"[PROACTIVE_TASK:{handle.id}] {spec.directive}"
         response_bus = await agent.get_response_bus()
         from jvagent.action.interact.interact_walker import InteractWalker
 
         walker = InteractWalker(
             agent_id=agent.id,
-            utterance=utterance,
+            # This is an agent-initiated run, not a user turn. The task
+            # objective is carried in trusted dispatch context below and is
+            # loaded by the orchestrator; keep Interaction.utterance reserved
+            # for content actually supplied by the user.
+            utterance="",
             channel=spec.channel or conversation.channel or "default",
             session_id=conversation.session_id,
             user_id=conversation.user_id,
@@ -529,6 +532,7 @@ class TaskMonitor(Action):
                 "proactive_task_id": handle.id,
                 "proactive_directive": spec.directive,
                 "proactive_skill": spec.skill,
+                "proactive_context": spec.context,
             },
         )
         walker.conversation = conversation
@@ -581,6 +585,7 @@ async def attach_proactive_to_visitor(visitor: Any, handle: Any) -> None:
     data["proactive_task_id"] = handle.id
     data["proactive_directive"] = spec.directive
     data["proactive_skill"] = spec.skill
+    data["proactive_context"] = spec.context
     data["is_proactive"] = True
     await visitor.add_directive(directive)
 

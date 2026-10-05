@@ -1,0 +1,466 @@
+# Pydantic-Inspired JV Agent Pilot — Evidence (In Progress)
+
+**Status: NOT QUALIFIED.** This report records implementation and test evidence
+collected on `codex/pydantic-inspired-skill-pilot`. It does not approve a wider
+rollout or stable release.
+
+## Source and environment
+
+- Repository: `/Users/eldonmarks/Briefcase/dev/jv/jvagent`
+- HEAD/base revision: `aff7f0a2cbc3a48dab66720e55452db2776545f3`
+- Runtime tested: CPython 3.10.18; `pydantic-ai-slim==2.54.0`, Pydantic
+  `2.13.5`, and `jvspatial==0.1.1` in the isolated pilot environment.
+- Dependency remains optional under `pydantic-pilot`. `uv pip check` passed in
+  both 153-package pilot and 60-package legacy/no-extra environments. The
+  no-extra environment does not import Pydantic AI on the legacy path.
+- The working tree contains other ongoing changes. No changes have been staged
+  or committed; counts below isolate identified pilot hunks and four substantive
+  pilot modules, not every dirty-file diff.
+
+## Implemented path and evidence
+
+ADR-0056 is now recorded as **Proposed**. It documents the opt-in driver
+semantics, preserves ADR-0012 and ADR-0054, and makes qualification a prerequisite
+for adoption.
+
+A new deterministic baseline test exercises the legacy research loop with stub
+model decisions and stub read Actions. It records four model-loop turns, skill
+activation (`research`), exact Search and Fetch operation arguments, one egress,
+and no TaskStore tasks for this non-locking skill. The prompt-surface proxy
+records 3,522, 3,700, 3,920, and 4,063 serialized characters by turn. These are
+not provider token counts or cost: the test replaces `_run_model`, so provider
+request serialization and usage reporting are bypassed. This provides a
+repeatable operational baseline while the live matched comparison remains open.
+
+The pilot is selected only by `skill_runtime: capability_pilot`; `legacy`
+remains the default. The experimental driver currently admits only the
+`research` skill and its existing Serper search and WebFetch read operations.
+It adapts the configured JV model Action to Pydantic AI, validates research
+citations against observed Action results, stores typed pilot snapshots in
+Conversation TaskStore, and emits through `ReplyAction.publish`.
+
+The three-turn CUCS smoke passed with real Action schemas and operations.
+Search uses a deterministic provider stub; WebFetch uses its actual validation,
+pinned-request, streaming, and rendering path over an offline HTTP transport.
+The initial runs made 12 fake model requests, 6 Action calls, and 18 Conversation
+saves, at 58.27 ms and 55.26 ms total. A 72.21 ms rerun reproduced the same
+counts. Inspection showed one redundant write when creating an already-active
+pilot task and one when persisting the validated final snapshot separately from
+the TaskStore completion transition.
+
+TaskStore now supports active-at-create and snapshot-bearing lifecycle
+transitions. The pilot writes the final snapshot and terminal status together;
+failed persistence restores the in-memory task view to its previous status and
+snapshot. The post-change smoke passed in 100.11 ms total (67.29, 16.16, and
+16.66 ms by turn), then passed again in 86.16 ms (26.23, 14.50, and 45.43 ms
+by turn). Both runs made the same 12 model requests and 6 Action calls but 12
+Conversation saves. The elapsed-time variation is noise at this sample size;
+the two-save-per-turn reduction is deterministic. These offline figures exclude
+provider and public-network latency, contain no token usage, and are not a
+legacy comparison. A focused rerun on the current checkout completed in 60.72 ms
+(30.27, 14.68, and 15.77 ms by turn), again with 12 model requests, 6 Action
+calls, and 12 Conversation saves. This confirms repeatability of the call and
+write counts while further illustrating that elapsed time is too noisy here to
+use as a performance claim.
+
+The integration test cancels while the composed Search Action is blocked, then
+verifies cancellation reaches the operation, persists the terminal TaskStore
+and snapshot status, and publishes no false reply. A synthetic runtime failure
+also persists failure without a reply. A separate-process restart test reloads
+the graph-backed Conversation and verifies the active task, caller, question,
+and evidence snapshot.
+Focused dispatch tests prove Action errors and cancellation do not get reported
+to the model or recorded as evidence. A storage-fault test confirms a failed
+snapshot flush cannot transition a pilot task to completed.
+Pilot state now persists prepared, started, and settled invocation records,
+including bounded result receipts. Approval parking binds the approval ID,
+payload digest, expiry, invocation, and TaskStore caller; resume rejects changed
+callers or payloads and expired approval. An unsettled started invocation parks
+with reconciliation required and cannot resume. The SQLite fake now exercises
+the composed Action path with TaskStore-backed approval and settled receipt
+round-tripping.
+Rehydration now also cross-checks the typed snapshot lifecycle against the
+TaskStore status (running/active, parked-or-waiting/reconciliation/parked, and
+terminal statuses). A regression test corrupts that pairing and confirms load
+fails closed. The focused pilot directory passed 38 tests after this change;
+current dependency and permission revalidation for parked work remain open.
+Review found that the parked-task `resume()` API used the snapshot's persisted
+skill ID as its own expected value. It now requires the current compiled skill
+ID and rejects a changed ID before resuming. A regression test covers that
+case; the state, effect, and crash-recovery test subset passes 21 tests. Current
+Action dependencies and permissions still require dispatch-time revalidation,
+and production parked-task continuation is not wired.
+
+The restart test exposed a TaskStore durability defect: its flush-first path
+could lose direct `Conversation.tasks` mutations because jvspatial `flush()`
+returns early when a node is not dirty. TaskStore now calls `save()` before
+`flush()`. The pilot restart test and the memory/pilot state suites pass with
+this correction.
+
+The new in-run storage fault test exposed a second TaskStore edge: a failed
+`TaskHandle.set_snapshot()` write left the uncommitted snapshot in the in-memory
+task. The method now restores the previous task/snapshot view on any persistence
+failure, matching its lifecycle-transition methods. A regression verifies both
+the handle and Conversation view roll back; TaskStore and pilot focused suites
+pass. The new test was mutation-checked: removing the rollback made it fail on
+the stale in-memory snapshot, then the implementation was restored. The
+complete `pytest tests/ -q` suite then exited 0 at 100%, with seven
+optional-dependency/fixture or live-call skips. Targeted pre-commit and mypy
+passed for TaskStore and its regression test.
+
+Separate worker-kill tests now cover three test-service boundaries. Killing
+after TaskStore records a prepared invocation leaves no external effect. Killing
+after the fake service records a business write but before its receipt leaves
+the TaskStore invocation `started`; restart parks the task for reconciliation
+and resume is refused. Killing after the service and TaskStore persist the
+settled receipt reloads that result. These tests use graph-backed JSON storage
+and a test-only SQLite effect service; they do not verify a production effect
+integration, approval UI, or real external-system reconciliation.
+
+Verification collected:
+
+- Current-turn smoke: the pilot directory, host-context tests, and deterministic
+  legacy baseline passed 50
+  tests; one live-model test skipped because its explicit opt-in flag was not
+  set. The new legacy baseline then passed independently and emitted the trace
+  summarized above.
+- Full `tests/` suite completed at 100% with no failures on Python 3.10 after
+  the latest atomic TaskStore lifecycle changes; six tests were skipped for
+  optional dependencies/fixtures. The full run exited successfully after
+  reaching 100%; earlier exact-count runs predate the two new TaskStore tests.
+- After adding TaskStore/snapshot lifecycle consistency validation, the complete
+  `uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`
+  suite again reached 100% and exited 0, with six skips for unavailable optional
+  dependencies/fixtures.
+- After adding the three separate-worker crash-boundary tests, the same full
+  Python 3.10 suite again reached 100% and exited 0, with six optional
+  dependency/fixture skips. The focused pilot directory passes 41 tests;
+  Black, isort, and flake8 pass for the new crash test.
+- After requiring the current skill ID for parked-task resume, the full
+  `uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`
+  suite again reached 100% and exited 0, with the same six skips. The focused
+  pilot directory remains at 41 passing tests; state/effect/crash tests also
+  pass directly (21 tests).
+- Pilot, memory, continuation, TaskMonitor, signature schema, wire, and embed
+  regression slice completed at 100% with no failures. The latest pilot
+  directory run passed 41 tests, including subprocess restart, three separate
+  worker-kill effect boundaries, blocked-Action cancellation, and the
+  SQLite-backed effect fixture with TaskStore-backed approval binding, expiry,
+  revalidation, settled receipt, repeated delivery, and uncertain-outcome
+  refusal; it skipped the gated live-model test. The full suite then reached
+  100% with no failures; pytest exited
+  successfully with six optional-dependency/fixture skips. The full suite
+  result predates the three new crash-boundary cases; the pilot directory
+  result includes them.
+- After narrowing research output to `ResearchBrief` and propagating normalized
+  provider token counts into Pydantic AI's run usage, the full `pytest tests/ -q`
+  suite passed at 100% with seven skips for unavailable optional dependencies/
+  fixtures and the gated live call. A regression proves a provider-reported
+  over-budget response raises `UsageLimitExceeded` after one request. The
+  focused pilot and host-context tests passed (47 passed, one gated live test
+  skipped). `uv pip check` passed for the 153-package pilot environment;
+  `uv lock --check`, Black, isort, flake8, targeted mypy, `git diff --check`,
+  and pre-commit hooks over tracked and new files also passed. The no-pilot-extra
+  environment and legacy import remain covered by the earlier isolated run.
+- The skill resolver/compiler boundary now records and rejects unsupported
+  frontmatter, bundled Python scripts, lifecycle hooks, non-`jv` specs,
+  inheritance, chaining/dispatch, task-flow rules, parameters, and output
+  overrides. Only the declarative SOP subset documented in P-01 is admitted.
+  The pilot plus skill-channel resolver slice passed; the full suite again
+  completed at 100% with no failures and seven optional-dependency/fixture or
+  gated-live skips. Black initially requested formatting for three touched
+  files; those files were formatted and the focused slice rerun cleanly.
+- The discovery adapter now has a regression proving resolver-reported
+  unsupported semantics survive conversion into `SkillDoc`. Mutation-checking
+  removal of that mapping made the new test fail; the mapping was restored and
+  the focused test passes.
+- A ten-case fixed-source quality manifest is prepared at
+  `tests/action/orchestrator/pilot/eval/research-cases.yaml`. It covers direct
+  extraction, multi-source comparison, conflicts, missing evidence, numeric
+  precision, source injection, false premises, bounded calculation, temporal
+  qualification, and format adherence, with a blind four-dimension rubric and
+  paired operational metrics. A structural test confirms ten independent case
+  IDs, source references, and rubric dimensions. No model answers have yet been
+  generated or scored; this preparation is not live evaluation evidence.
+- Run diagnostics now retain a stable map: each pilot TaskStore record carries
+  the turn correlation ID, and guarded Action dispatch emits structured debug
+  fields for correlation ID, task ID, skill ID, Pydantic tool-call ID, and tool
+  name. Arguments and prompt content are omitted. Unit and Orchestrator tests
+  verify the mapping; removing the dispatch log made the unit regression fail,
+  and the log was restored. No separate trace store was added. After this integration,
+  the full `pytest tests/ -q` suite again exited 0 at 100% with seven
+  optional-dependency/fixture and gated-live skips. Targeted pre-commit and
+  mypy passed for the changed modules.
+- An end-to-end persistence-fault injection now fails the research evidence
+  checkpoint after a composed Action returns. The Orchestrator propagates the
+  storage error, persists failed TaskStore/snapshot status on the recovery
+  write, emits no user reply, and makes exactly two model requests (load
+  capability and invoke search), with no ordinary model retry. The targeted
+  Orchestrator smoke passed. Cancellation and storage-failure qualification in
+  P-05 now have direct integration evidence; the broader open live/model,
+  browser-recovery, and legacy-comparison gates remain.
+- A Chrome DevTools smoke exercised the bundled jvmessenger demo host and iframe
+  against a disposable copy of the reference example app configuration. Only
+  Orchestrator, Reply, Search, and Fetch were installed, and the pilot selector
+  was set only in that copy. Profile, session-open, two streamed interact turns,
+  and session refresh all returned HTTP 200. The embedded UI rendered the
+  validated cited reply after each turn. The graph-backed Conversation contained
+  two completed `CAPABILITY_PILOT` tasks; the follow-up linked to the first and
+  both snapshots retained the observed source. The model and Search Action were
+  deterministic local stubs; WebFetch kept its production validation and
+  rendering path over a MockTransport. Provider credentials were removed from
+  the server process. The browser made no model-provider or Search-provider
+  calls. The browser console had no errors and reported one iframe sandbox
+  warning about the existing `allow-scripts` plus `allow-same-origin` policy.
+  Browser reload recovery and parked-task resume remain untested.
+
+## Bloat and replaced responsibilities
+
+The four substantive pilot modules currently contain 1,236 lines: contracts
+(129), runtime/model adapter (438), TaskStore adapter (477), and Action
+composition (192). The package initializer adds 25, for 1,261 pilot-package
+lines. The generic authenticated host-context helper adds another 53 production
+lines. The pilot package is 261 lines above the 1,000-line target; package plus
+host-context helper totals 1,314 lines before Orchestrator/TaskStore integration.
+The current shared working-tree diff shows 438 insertions/65 deletions in the
+Orchestrator and 83 insertions/13 deletions in TaskStore. Those files contain
+pre-existing uncommitted work, so those figures cannot be attributed entirely
+to this pilot. A clean incremental count for shared-file hunks still needs
+isolation. No legacy execution responsibility has yet been removed.
+
+The production Orchestrator currently calls the pilot state adapter for
+completed-evidence lookup, task creation, evidence saves, and terminal
+complete/fail/cancel transitions. Invocation preparation/start/settlement,
+approval parking, reconciliation, and resume methods are currently exercised
+only by tests; model-triggered effects and a production approval flow are not
+wired. These prototype-only state methods are a primary simplification or
+removal candidate if the next phase remains read-only.
+
+The current responsibility delta is narrower than a replacement-harness claim:
+
+| Responsibility | Pilot path evidence | Net status |
+| --- | --- | --- |
+| Model/tool iteration | Pydantic AI performs the bounded tool loop | Delegated on this path; legacy implementation remains |
+| Tool argument validation and typed output parsing | Pydantic AI schemas and output model | Delegated on this path; JV binding/access guards remain |
+| Skill discovery, Action ownership, authorization, caller identity | Existing JV compiler inputs and guarded Action dispatch | Still JV-owned |
+| Durable task ownership and evidence checkpointing | Existing graph-backed TaskStore through a pilot adapter | Still JV-owned; adapter is new code |
+| Approval suspension, effect receipts, reconciliation, parked resume | Test-only TaskStore adapter methods and fixtures | No production responsibility replaced; prime removal candidate while effects stay excluded |
+| Final response publication and channel policy | Existing ReplyAction/ResponseBus path | Still JV-owned |
+
+The optional package adds exactly one pinned direct dependency,
+`pydantic-ai-slim==2.54.0`, behind `pydantic-pilot`; Pydantic is already a
+direct JV runtime dependency. The four substantive modules are 1,236 lines and
+the package initializer is 25 lines (1,261 total), so the pilot exceeds its
+1,000-line target by 261 lines before counting Orchestrator integration. The
+current working tree is shared and dirty, so no reliable net-new production LOC
+delta can yet be assigned to the pilot's Orchestrator/TaskStore hunks. An
+isolated patch attribution and a remove-or-reduce decision remain required
+before expansion.
+
+The locked dependency tree contains no `pydantic-ai-harness`. The pinned Slim
+package provides the deferred-capability and typed-run APIs demonstrated by
+the no-network spike; no provider SDK or second model configuration was added.
+The scoped `uv tree --locked --package pydantic-ai-slim --no-dev
+--group pydantic-pilot --depth 2` inspection shows its direct and second-level
+requirements, including `httpx2`, `pydantic-graph`, and the Pydantic version
+already present in JV's runtime.
+
+Delegated agents are not implemented or evaluated by this pilot. Its explicit
+composition seam remains a skill plus Action operations, with one selected
+driver per turn. A future specialist-agent integration could be exposed as an
+explicit Action/tool, but nested runtime lifecycle, context isolation, budgets,
+cancellation, and tracing would need separate contracts and qualification.
+
+A bounded live adapter smoke was performed once through `OpenAILanguageModelAction`
+and Pydantic AI using GPT-4.1 mini. The successful request returned the then-current
+`PilotReply` output (one request, 236 total tokens, about 1.825 seconds elapsed,
+estimated cost US$0.000122 under the recorded public standard token rates). An
+earlier credential attempt returned HTTP 401. The live smoke test has since been
+strengthened to require `ResearchBrief`, with observed-source IDs, so the previous
+call does not verify the current stricter research output contract. The gated
+test now loads the research capability, calls a deterministic fixture Action,
+and validates the output's cited source against the Action receipt. The opt-in
+launcher remains `scripts/run_pilot_live_smoke.sh`; the test allows at most five
+model requests, 4,096 total tokens, 256 output tokens per request, US$0.01
+estimated cost, and a 60-second deadline. The OpenAI credential incident below
+remains unresolved, so the OpenAI endpoint was not used in the Messenger smoke.
+
+The research driver now compiles only `ResearchBrief` as its output type; the
+former generic `PilotReply` alternative was removed so research completion cannot
+bypass evidence-reference validation. The JV-to-Pydantic adapter also carries
+normalized prompt, completion, and cache token usage forward so Pydantic AI's
+configured limits use provider-reported counts rather than estimates when those
+counts are available. Regression and full-suite checks cover these changes, but
+the stricter output contract still requires a repeat live smoke.
+
+Responsibilities demonstrably delegated to Pydantic AI on this path are typed
+research-output validation, tool argument validation, and the bounded agent/tool loop.
+JV remains responsible for app configuration and provider selection, skill and
+Action discovery, access checks, TaskStore ownership, and user-facing egress.
+The bridge also adds message conversion, run-context enforcement, source
+validation, and state adaptation; those costs must be counted in any net-benefit
+claim.
+
+## In-browser smoke — Ollama Cloud GLM-5.3 (2026-10-04)
+
+JV Messenger completed one fresh, authenticated browser turn against
+`glm-5.3:cloud` through `OllamaLanguageModelAction`. The pilot loaded the
+app-local script-free `research` skill, called the existing search and fetch
+Actions, validated a `ResearchBrief`, persisted a completed `CAPABILITY_PILOT`
+TaskStore item, and published the reply through `ReplyAction`. The response
+included clickable citations to the fetched Pydantic AI output and tools pages.
+The captured interaction reports 6 model calls, 14,448 prompt tokens, 1,558
+completion tokens, 16,006 total tokens, and 56.9 seconds aggregate model-call
+time. Cost was not reported by this Ollama path.
+
+The first browser attempts exposed three real gaps: built-in `research` was
+correctly rejected because it bundles unsupported scripts; `RetryPromptPart`
+validation details were not converted to model-readable text; and large Action
+results could exceed the 12,000-token default. The pilot now uses Pydantic AI's
+`RetryPromptPart.model_response()`, caps each Action result at 4,000 characters,
+and defaults to a still-bounded 20,000 total tokens. The browser run then
+completed. A regression also fixes an egress gap discovered in that run:
+validated source IDs are now rendered as citations from the observed evidence.
+The full Python 3.10 suite after these refinements passed: 4,133 passed,
+7 skipped, 31 warnings in 133.30 seconds. The focused pilot suite passed
+51 tests with one gated live-call skip.
+
+Search results in this smoke were supplied by a deterministic local Serper
+fixture, which returns the Pydantic AI documentation regardless of query. The
+subsequent WebFetch requests reached the public documentation site and followed
+its redirects. This verifies provider-to-Action-to-TaskStore-to-Messenger wiring
+for one research scenario; it is not a live search-provider evaluation, a
+latency distribution, a matched legacy comparison, or broad provider
+qualification. The Messenger remains available locally at
+`http://127.0.0.1:3100/sandbox` for hands-on review.
+
+## Open qualification gates
+
+### Task snapshot rehydration
+
+`PilotTaskStore._read_snapshot` now distinguishes unsupported schema versions
+from malformed version-1 data and returns a recovery instruction: preserve the
+task and start a new pilot run. It does not mutate or migrate the unsupported
+task. Existing rehydration checks still bind caller, skill ID/digest,
+configuration digest, and TaskStore lifecycle status. The added unsupported
+version case passes with the state and crash/restart suites (16 passed); current
+dependency/permission revalidation for parked production work remains open.
+
+### Live request stability recheck (2026-10-04)
+
+To avoid changing the user's original local service or its database, the updated
+code was started against a disposable copy of the Messenger smoke app and graph
+on ports 8001/3101. A one-request test proxy delayed the first call for 16
+seconds, then forwarded it to the configured `glm-5.3:cloud` endpoint through
+Ollama. A raw SSE client observed `start` at 0.16 seconds, `heartbeat` at 15.31
+seconds, then message and final events at 22.83 seconds. The interaction
+completed with a validated brief after 5 model calls and 8,317 total tokens.
+Search used the existing deterministic local fixture; WebFetch reached the
+public documentation site. This verifies the heartbeat on the actual Cloud
+model request path with an intentionally delayed transport.
+
+A fresh Messenger browser session then completed the same brief research path
+in 3.3 seconds with 4 model calls and 5,806 tokens. It returned a clickable
+citation to the official overview page. The browser also visibly rendered the
+bounded limit message on the separate over-budget turn above. The successful
+browser turn, delayed raw-SSE turn, and over-budget user-visible failure cover
+success, a long in-flight response, and a bounded failure on the isolated
+current-code service. The focused interaction and pilot suites now pass 190
+tests with one opt-in live-model test skipped; targeted pre-commit hooks pass.
+
+The isolated Messenger browser also reproduced total-token exhaustion on a
+longer 8-call turn (21,482 tokens, 24.9 seconds). Before the handling fix, this
+failure left only the user message in the widget. After the fix, the browser
+rendered the explicit limit response and the TaskStore retained a failed task;
+the turn did not remain blank or run indefinitely. This is an expected bounded
+failure, not a successful research answer. The original service on port 8000
+and its smoke database were left running and unchanged.
+
+### Request stability follow-up (2026-10-04)
+
+Inspection of the persistent Messenger smoke graph found two additional turns.
+The successful research turn completed in about 60 seconds; one of its six
+GLM-5.3 Cloud calls took 50.58 seconds. A later short "What's your name?" turn
+closed without a persisted response after its last model call returned
+`finish_reason=length` at 1,024 completion tokens and no text/tool call. The
+adapter rejects that empty model response and the streaming endpoint emits its
+client-safe error event. The latter is a failed turn, rather than evidence of
+an HTTP timeout; the slow successful turn is consistent with an idle-stream
+timeout at a client or intermediary.
+
+The SSE wait loop now emits an ignored `heartbeat` event every 15 seconds while
+retaining 250 ms disconnect checks. Focused interaction and pilot suites passed
+(188 passed, 1 skipped), targeted pre-commit hooks passed, and `git diff
+--check` passed. The API process used for the browser smoke predates this edit,
+so the heartbeat has not yet been verified over a live browser stream. A fresh
+browser run against the reloaded server remains an open qualification gate.
+
+### Reloaded-service recovery check (2026-10-04)
+
+After the empty-response recovery change, the isolated API was restarted on
+port 8001 and health returned 200. One bounded live Ollama Cloud GLM-5.3
+streamed interact request completed over HTTP 200 in about 7.8 seconds, made
+four model requests, called the deterministic local search fixture and public
+WebFetch, and returned a source citation. This confirms the reloaded provider
+and SSE path still completes a live turn. It was an API-level check, not a
+browser verification of the new empty-response branch.
+
+The response text was “One-sentence definition of Pydantic AI with official
+source citation.” It repeats the requested format instead of explaining the
+subject. The typed `ResearchBrief` and valid citation therefore do not establish
+answer quality; this is a concrete quality failure to include in the matched
+legacy/pilot evaluation, not a successful-answer sample. A separate regression
+now verifies that an empty/invalid JV model response persists a failed pilot
+task and publishes a bounded retry response through `ReplyAction`. The pilot
+and streaming regression slice passed 59 tests with one opt-in test skipped.
+The complete Python 3.10 suite after this change passes 4,137 tests with seven
+optional/live skips; Black, isort, flake8, and `git diff --check` pass for the
+changed Orchestrator and regression test.
+The visible browser branch remains unverified: the original tab inspection
+timed out, and the second tab is at the Messenger login screen.
+
+The pilot now carries proactive context separately from ordinary user text.
+For a scheduler turn with an empty utterance it requires a claimed PROACTIVE
+task resolved from the conversation TaskStore; on a user turn it preserves the
+user question and adds an active research objective as structured system
+context. The typed snapshot records the associated proactive task ID. A
+regression creates and claims a real graph-backed task and proves spoofed
+`visitor.data` fields do not replace its directive or ID. The TaskMonitor,
+pilot, streaming, state, contract, and crash-recovery subset passed 59 tests
+(one opt-in live test skipped); the full suite then passed 4,137 tests with
+seven skips. This verifies the Orchestrator-to-TaskStore handoff locally, not a
+live scheduler tick or the resulting Messenger delivery; those remain open.
+
+- The current `ResearchBrief` path has one successful end-to-end GLM-5.3 Cloud
+  browser smoke. The broader provider evaluation and matched legacy comparison
+  remain open. The OpenAI credential in the incident below should be revoked
+  before any further OpenAI use.
+- The before-effect, after-effect/before-receipt, and settled-effect worker-kill
+  boundaries are covered by subprocess tests against a test-only SQLite effect
+  service and graph-backed TaskStore. These tests establish conservative task
+  state behavior for that fixture; they do not qualify a production effect
+  integration. The pilot currently admits read-only operations and the
+  Orchestrator installs no effect invoker. TaskStore approval/receipt methods
+  exist, but model-triggered effects and an operator approval interaction are
+  not wired in production. The optional effect-invoker interface fails closed
+  when absent.
+- Storage-fault injection during a running pilot, including interruption while
+  persisting intermediate invocation state, remains open. A narrower test does
+  prove that a failed final snapshot flush cannot be reported as successful
+  completion.
+- Legacy-versus-pilot matched quality, token, latency, failure, and correction
+  measurements are absent. The offline CUCS figures are not comparative proof.
+- The complete removable-responsibility/dependency inventory and P-06 decision
+  remain open. Rollback by restoring `skill_runtime: legacy` is structurally
+  available; preservation and mutual task-drain exclusion still need runtime
+  qualification.
+
+Credential handling note: an attempted key entry was interpreted as a shell
+command and appeared in the terminal transcript before returning HTTP 401. The
+matching shell-history entry was removed without printing the value. Revoke that
+credential before further live calls; the transcript may still contain it. No
+credential value is stored in this report or the repository. The successful
+single adapter call described above used a subsequent hidden-input entry.
+
+See the implementation checklist and acceptance matrix in
+[`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).

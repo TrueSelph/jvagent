@@ -130,6 +130,25 @@ Server-minted HS256 JWT that authorizes resuming one web `Conversation` on the p
 ### Skill
 A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure (`find_skill` / `use_skill`, [`jvagent/action/orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)). A skill is *judgment over capability* — distinct from `Action`s. Two specs (ADR-0017), set by a `spec` frontmatter key: **JV** (`spec: jv`, default) coordinates existing action/IA tools by `namespace__tool` name (no code); **Claude** (`spec: claude`) is a standard Anthropic Agent Skills folder whose bundled `scripts/` the model runs via the `code_execution__bash` substrate, staged into the caller's per-user sandbox. See [`adr/0017-two-skill-specs-code-execution-substrate.md`](adr/0017-two-skill-specs-code-execution-substrate.md), [`adr/0011-skills-two-kinds.md`](adr/0011-skills-two-kinds.md), and [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
+### Compiled skill contract (pilot proposal)
+An immutable, validated binding of an existing skill's SOP, Action dependencies,
+tool schemas, lifecycle bindings, state/output models, and limits. Proposed in
+the [Pydantic-inspired pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md#4-composition-contract-and-ownership);
+it is not a new skill authoring format or an implemented runtime guarantee.
+
+### Capability Pilot task (pilot proposal)
+A `CAPABILITY_PILOT` task is a proposed TaskStore task type for one opt-in,
+Pydantic AI-driven skill run. Legacy skill-task continuation filters it out so
+the two drivers cannot claim the same task. The pilot implementation is
+experimental and is not yet integrated at the Orchestrator execute boundary.
+See the [pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md).
+
+### Skill run context (pilot proposal)
+Fresh server-created state for one skill execution, containing native caller
+identity, channel, capability snapshot, run/invocation services, and cancellation.
+It is distinct from installed Action configuration and the persistent task
+snapshot. See the [pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md#4-composition-contract-and-ownership).
+
 ### InterviewAction
 `Action` (not `InteractAction`) that registers `interview__*` tools and runs the interview session pipeline for skills with `interview:` frontmatter and `extends: action:jvagent/interview`. Source: [`jvagent/action/interview/`](../jvagent/action/interview/). Follows the *thin harness* design — session + hooks + raw tools only; the model drives turns via the composed SOP.
 

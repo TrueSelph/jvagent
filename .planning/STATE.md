@@ -42,7 +42,7 @@ Progress: [██████████] 100%
 - Authority server-side, never in model payloads
 - HostCapabilityProvider methods are async
 - `turn_cache` ContextVar kept
-- Fake host fixture, not Integral
+- Independent fake host fixture
 - Same-session policy is **lease**
 - TurnRun is a journal Object (I-GRAPH-02), not a conversation Node
 - JSON/SQLite active-active is unsupported

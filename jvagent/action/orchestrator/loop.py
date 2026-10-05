@@ -1719,6 +1719,25 @@ class OrchestratorLoopMixin:
                 return
             emitted = self._turn_delivered(interaction)
 
+        # A hard stop before gathering anything cannot be repaired by another
+        # model call. Tell the user the turn stopped instead of falling through
+        # to clarify_text, which incorrectly frames a timeout/guard as confusion.
+        if (
+            not emitted
+            and not state.observations
+            and state.ended_via
+            in (
+                "budget",
+                "duration",
+                "no_decision",
+                "repeat_guard",
+                "unknown",
+                BUDGET_EXHAUSTED,
+            )
+        ):
+            await self._notify_unanswered_stop(visitor, state)
+            return
+
         # Budget/time ran out mid-task. Rather than dropping to the generic
         # clarify fallback (which discards the work and misreports the cause),
         # force ONE compose so the user gets the agent's best answer from what
@@ -1736,27 +1755,48 @@ class OrchestratorLoopMixin:
             )
             and state.observations
         ):
-            decision = await self._run_model(
-                visitor,
-                state.utterance,
-                state.history,
-                [],
-                state.observations,
-                skills_section=state.skills_section,
-                finalize=True,
-                gear=state.last_gear,
-                capabilities_section=state.capabilities_section,
-                parameters_section=state.parameters_section,
-            )
-            answer = _text_candidate(decision) if decision else ""
-            # Finalize must be text-only. Models often ignore STEP LIMIT and emit
-            # another tool call. Never fall through to clarify_text when we
-            # already gathered work.
-            if not answer:
-                answer = _salvage_partial_answer(state.observations)
-            if answer:
-                await self._maybe_emit_final(visitor, answer)
-                state.ended_via = f"{state.ended_via}_finalized"
+            await self._finalize_partial_observations(visitor, state)
+
+    async def _finalize_partial_observations(
+        self, visitor: "InteractWalker", state: TurnState
+    ) -> None:
+        """Compose one answer from work gathered before the turn's hard stop."""
+        decision = await self._run_model(
+            visitor,
+            state.utterance,
+            state.history,
+            [],
+            state.observations,
+            skills_section=state.skills_section,
+            finalize=True,
+            gear=state.last_gear,
+            capabilities_section=state.capabilities_section,
+            parameters_section=state.parameters_section,
+        )
+        answer = _text_candidate(decision) if decision else ""
+        # Finalize must be text-only. Models often ignore STEP LIMIT and emit
+        # another tool call. Never fall through to clarify_text when we
+        # already gathered work.
+        if not answer:
+            answer = _salvage_partial_answer(state.observations)
+        if answer:
+            await self._maybe_emit_final(visitor, answer)
+            state.ended_via = f"{state.ended_via}_finalized"
+        else:
+            await self._notify_unanswered_stop(visitor, state)
+
+    async def _notify_unanswered_stop(
+        self, visitor: "InteractWalker", state: TurnState
+    ) -> None:
+        """Tell the user when a guarded turn has no answer to deliver."""
+        interaction = getattr(visitor, "interaction", None)
+        await self._send_reply(
+            visitor,
+            "I couldn't complete that request within this turn. "
+            "Please try a shorter or more specific request.",
+        )
+        if self._turn_delivered(interaction):
+            state.ended_via = f"{state.ended_via}_notice"
 
     async def _close_turn(self, visitor: "InteractWalker", state: TurnState) -> None:
         """Always runs: cancel the ack, settle the plan, record the activation."""

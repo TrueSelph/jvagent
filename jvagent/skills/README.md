@@ -308,7 +308,7 @@ docstrings for the full posture.
 5. **Host providers** (optional):
 embedders register callables via `register_host_skill_provider()` in
 `jvagent.action.orchestrator.skill_providers`; merged after filesystem discovery
-(filesystem wins on name collision). Integral documents the workspace overlay pattern in `docs/backend/workspace-agent-profile.md`.
+(filesystem wins on name collision). Embedding applications can provide workspace-specific skill overlays through the host provider interface.
 
 ```yaml
 - action: jvagent/orchestrator
@@ -365,7 +365,6 @@ from jvagent.scaffold.skill_resolve import (
 ## See also
 
 - [ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)
-- [Integral skill profile](../../.planning/reference/integral-skill-profile.md) — Integral platform extension (7-section bar, `integral_*` namespace, manifest sync)
 - [Orchestrator](../../docs/ORCHESTRATOR.md) — the loop and skill lifecycle
 - [`jvagent/code_execution`](../action/code_execution) — the sandbox substrate
 - [`jvagent/core/sandbox.py`](../core/sandbox.py) — the per-user FS convention

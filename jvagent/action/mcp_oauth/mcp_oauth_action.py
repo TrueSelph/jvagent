@@ -49,7 +49,7 @@ def build_oauth_setup(
     *,
     google_enabled_services: Optional[Iterable[str]] = None,
     microsoft_enabled_services: Optional[Iterable[str]] = None,
-    account: str = "integral",
+    account: str = "default",
 ) -> List[Dict[str, Any]]:
     """Per-service OAuth endpoints for configured Google/Microsoft MCP servers."""
     from .hydrate import mcp_google_workspace_auth_url
@@ -140,7 +140,7 @@ def build_oauth_setup(
 
 def mcp_oauth_state_action_id(account: str, service: str = "") -> str:
     """``mcp_oauth:{account}`` or ``mcp_oauth:{account}:{service}`` for OAuth state."""
-    name = (account or "integral").strip() or "integral"
+    name = (account or "default").strip() or "default"
     svc = (service or "").strip()
     if svc:
         return f"mcp_oauth:{name}:{svc}"
@@ -150,7 +150,7 @@ def mcp_oauth_state_action_id(account: str, service: str = "") -> str:
 def parse_mcp_oauth_state_action_id(action_id: str) -> tuple[str, str]:
     """Return ``(account, service)`` from an MCP OAuth state action_id."""
     parts = (action_id or "").split(":")
-    account = parts[1] if len(parts) > 1 and parts[1] else "integral"
+    account = parts[1] if len(parts) > 1 and parts[1] else "default"
     service = parts[2] if len(parts) > 2 else ""
     return account, service
 
@@ -473,7 +473,7 @@ def token_row_for_service(
     rows: Sequence[Any],
     server_name: str,
     service: str,
-    fallback_account: str = "integral",
+    fallback_account: str = "default",
 ) -> tuple[Optional[str], Optional[Dict[str, Any]], Any]:
     """Pick the token that owns ``service``. Never steal another service's row."""
     svc = (service or "").strip()

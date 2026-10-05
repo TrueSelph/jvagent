@@ -31,7 +31,7 @@ class GoogleAction(Action):
     SCOPES: ClassVar[List[str]] = []
 
     _MCP_SERVER: ClassVar[str] = "google_workspace"
-    _MCP_ACCOUNT: ClassVar[str] = "integral"
+    _MCP_ACCOUNT: ClassVar[str] = "default"
     _MCP_SERVICE: ClassVar[str] = ""
 
     async def _apply_env_defaults(self) -> None:

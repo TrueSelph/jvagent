@@ -137,7 +137,7 @@ async def test_nonstream_during_open_stream_does_not_mint_a_second_identity():
     """A live user accumulator owns the turn.
 
     Non-stream publish() mints a fresh Object id. If that is allowed while
-    chunks are in flight, Integral's translator splits on the new id and the
+    chunks are in flight, a downstream translator splits on the new id and the
     browser shows two assistant bubbles for one answer.
     """
     bus = ResponseBus()
@@ -217,7 +217,7 @@ async def test_nonstream_while_gate_holds_does_not_mint_a_second_identity():
 async def test_finalize_does_not_mint_a_second_user_identity():
     """Streaming already enqueues message_type=final under acc.message_id.
     finalize_interaction must not emit another user-category frame with a
-    new Object id — Integral treats that as a message-boundary.
+    new Object id — adapters may treat that as a message boundary.
     """
     bus = ResponseBus()
     interaction = Interaction()

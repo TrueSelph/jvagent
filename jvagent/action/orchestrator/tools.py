@@ -517,8 +517,8 @@ _NATIVE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _NATIVE_NAME_BAD_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
 # OpenAI caps a function description at 1024 characters.
 NATIVE_DESCRIPTION_MAX_CHARS = 1024
-# Marker prefix for harness-authored notes replayed as user-role messages.
-HARNESS_NOTE_PREFIX = "[harness note] "
+# Marker prefix for harness-authored context carried in the system message.
+HARNESS_NOTE_PREFIX = "[harness context] "
 
 
 def native_tool_name(name: str) -> str:
@@ -618,7 +618,7 @@ def render_observation_messages(
     - Any ``assistant_text`` recorded on a step is the prose the model emitted
       with it and rides as the assistant message's ``content``.
     - Every other observation (server-generated framing: guards, prep notes,
-      seeds) becomes a user-role harness note. Consecutive notes merge.
+      seeds) becomes a system-role harness context note. Consecutive notes merge.
 
     The same count/size caps as :func:`render_observations_section` apply, so
     the two protocols bill comparably. ``alias_for`` maps loop tool names to
@@ -633,7 +633,7 @@ def render_observation_messages(
         view = view[-max_observations:]
         messages.append(
             {
-                "role": "user",
+                "role": "system",
                 "content": f"{HARNESS_NOTE_PREFIX}(…{truncated} earlier tool results omitted)",
             }
         )
@@ -654,14 +654,14 @@ def render_observation_messages(
                 text = HARNESS_NOTE_PREFIX + note
                 if (
                     messages
-                    and messages[-1].get("role") == "user"
+                    and messages[-1].get("role") == "system"
                     and str(messages[-1].get("content", "")).startswith(
                         HARNESS_NOTE_PREFIX
                     )
                 ):
                     messages[-1]["content"] = f"{messages[-1]['content']}\n{text}"
                 else:
-                    messages.append({"role": "user", "content": text})
+                    messages.append({"role": "system", "content": text})
             i += 1
             continue
         # A group of model-issued calls returned together.

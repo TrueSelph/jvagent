@@ -111,7 +111,8 @@ async def interact(
         agent_id: jvspatial node id of the target Agent. Use
             :func:`get_agent_id_by_name` to resolve from a dotted
             ``namespace/name`` instead.
-        utterance: User's input text. Must be non-empty.
+        utterance: User's input text. May be empty only when ``data`` carries
+            authenticated host context for a host-initiated turn.
         user_id: Optional user identifier. If omitted, jvagent creates an
             anonymous User on demand and returns the generated id in the
             response.
@@ -131,8 +132,8 @@ async def interact(
 
     Raises:
         ResourceNotFoundError: ``agent_id`` does not resolve.
-        ValidationError: ``utterance`` is empty / whitespace-only or the
-            walker fails to produce an Interaction.
+        ValidationError: ``utterance`` is empty / whitespace-only without
+            valid authenticated host context, or the walker fails to produce an Interaction.
         Anything the InteractWalker raises during traversal propagates
         unchanged so the host can apply its own error mapping.
 
@@ -144,10 +145,13 @@ async def interact(
           endpoint until a streaming embed callable lands.
     """
     if not utterance or not utterance.strip():
-        raise ValidationError(
-            message="utterance is required and cannot be empty",
-            details={"utterance": utterance},
-        )
+        from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
+
+        if not allows_empty_host_utterance(data):
+            raise ValidationError(
+                message="utterance is required and cannot be empty",
+                details={"utterance": utterance},
+            )
 
     if data:
         from jvagent.harness.contracts import (
@@ -308,7 +312,7 @@ async def get_agent_id_by_name(
     """Resolve an Agent node id from its ``name`` (and optional ``namespace``).
 
     Convenience wrapper around :func:`list_agents` for hosts that wire
-    chat threads against a stable dotted identifier (``"integral/integral_agent"``)
+    chat threads against a stable dotted identifier (``"workspace/agent"``)
     rather than a jvspatial node id, which changes per environment.
 
     Accepts either:
@@ -377,17 +381,18 @@ async def interact_stream(
             first-token latency low, large enough to avoid CPU spin.
 
     Raises:
-        ValidationError: ``utterance`` is empty / whitespace-only. Raised
-            *before* the generator yields its first envelope.
+        ValidationError: ``utterance`` is empty / whitespace-only without
+            valid authenticated host context. Raised *before* the generator yields
+            its first envelope.
     """
     if not utterance or not utterance.strip():
-        trigger = (data or {}).get("trigger")
-        if trigger != "agent_workstream":
+        from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
+
+        if not allows_empty_host_utterance(data):
             raise ValidationError(
                 message="utterance is required and cannot be empty",
                 details={"utterance": utterance},
             )
-        utterance = (data or {}).get("system_utterance") or "[agent workstream]"
 
     from jvspatial import create_task, flush_deferred_entities
 
@@ -728,7 +733,7 @@ async def list_user_conversations(
     """Return jvagent ``Conversation`` summaries for a host user.
 
     Useful for admin / debug surfaces that want to see what the agent
-    "knows" about a user's conversation history. The host (integral)
+    "knows" about a user's conversation history. The embedding host
     already keeps its own thread list keyed on the same identifiers; this
     is the agent-side complement.
 
