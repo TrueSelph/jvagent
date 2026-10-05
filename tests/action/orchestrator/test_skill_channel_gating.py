@@ -77,6 +77,17 @@ def test_parse_skill_bundle_surfaces_pilot_unsupported_semantics(
     ]
 
 
+def test_parse_skill_bundle_ignores_python_package_markers(tmp_path: Path) -> None:
+    skill_dir = _write_skill(tmp_path, "package_skill", "description: x\n")
+    (skill_dir / "__init__.py").write_text('"""Package marker."""\n')
+
+    bundle = parse_skill_bundle(skill_dir, source="builtin")
+
+    assert bundle is not None
+    assert bundle["tool_files"] == []
+    assert "bundled scripts" not in bundle["unsupported_features"]
+
+
 def test_parse_skill_bundle_reads_underscore_keys(tmp_path: Path) -> None:
     skill_dir = _write_skill(
         tmp_path,

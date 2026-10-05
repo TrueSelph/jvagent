@@ -384,8 +384,13 @@ def parse_skill_bundle(
     scope_hint = ", ".join(str(tag) for tag in tags if str(tag).strip())
     if not scope_hint:
         scope_hint = description
+    # ``__init__.py`` files are package markers for built-in skills, not
+    # bundled executables a skill asks the harness to run. Treat actual Python
+    # files as unsupported tool files while keeping these markers transparent.
     tool_files = [
-        str(path) for path in sorted(skill_dir.rglob("*.py")) if path.is_file()
+        str(path)
+        for path in sorted(skill_dir.rglob("*.py"))
+        if path.is_file() and path.name != "__init__.py"
     ]
 
     # Parse skill-to-skill version constraints: {skill_name: ">=1.0"}
