@@ -1358,21 +1358,7 @@ class OrchestratorInteractAction(
         config_digest = hashlib.sha256(
             json.dumps(config_material, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()
-        task_id = f"pilot_{uuid.uuid4().hex}"
         run_id = str(getattr(visitor, "correlation_id", "") or uuid.uuid4().hex)
-        context = PilotRunContext(
-            caller=caller,
-            task_id=task_id,
-            run_id=run_id,
-            channel=channel,
-            skill_id=skill.name,
-            skill_digest=skill.digest,
-            config_digest=config_digest,
-            max_model_requests=self.pilot_max_model_requests,
-            max_tool_calls=self.pilot_max_tool_calls,
-            max_total_tokens=self.pilot_max_total_tokens,
-            max_output_tokens=self.pilot_max_output_tokens,
-        )
         snapshot = PilotSnapshot(
             caller=caller,
             skill_id=skill.name,
@@ -1387,22 +1373,79 @@ class OrchestratorInteractAction(
             ),
         )
         pilot_store = PilotTaskStore(conversation)
-        previous = pilot_store.latest_completed(
+        question = pilot_question[:2000]
+        parked = None
+        if proactive_context is None:
+            parked = pilot_store.parked_retry(
+                caller=caller,
+                skill_id=skill.name,
+                skill_digest=skill.digest,
+                config_digest=config_digest,
+                question=question,
+            )
+        if parked is not None:
+            handle, parked_snapshot = parked
+            for tool_name in sorted(required_names):
+                if not await is_tool_allowed(
+                    agent,
+                    label=delegate_resource_label(tool_name),
+                    user_id=caller.user_id,
+                    channel=channel,
+                ):
+                    delivered = await responder.publish(
+                        "I can’t resume that research because access to a required "
+                        "Action has changed. Review permissions, then retry.",
+                        visitor=visitor,
+                    )
+                    if not delivered:
+                        raise RuntimeError(
+                            "ReplyAction did not deliver the pilot access notice"
+                        )
+                    return
+            snapshot = await pilot_store.resume_parked_retry(
+                handle,
+                parked_snapshot,
+                caller=caller,
+                skill_id=skill.name,
+                skill_digest=skill.digest,
+                config_digest=config_digest,
+                question=question,
+                correlation_id=run_id,
+            )
+            task_id = handle.id
+        else:
+            previous = pilot_store.latest_completed(
+                caller=caller,
+                skill_id=skill.name,
+                skill_digest=skill.digest,
+                config_digest=config_digest,
+            )
+            parent_task_id = previous[0].id if previous else None
+            if previous:
+                snapshot = snapshot.model_copy(
+                    update={"evidence": previous[1].evidence}
+                )
+            task_id = f"pilot_{uuid.uuid4().hex}"
+            handle = await pilot_store.create(
+                snapshot,
+                task_id=task_id,
+                title=f"Capability pilot: {skill.name}",
+                description=question,
+                parent_task_id=parent_task_id,
+                correlation_id=run_id,
+            )
+        context = PilotRunContext(
             caller=caller,
+            task_id=task_id,
+            run_id=run_id,
+            channel=channel,
             skill_id=skill.name,
             skill_digest=skill.digest,
             config_digest=config_digest,
-        )
-        parent_task_id = previous[0].id if previous else None
-        if previous:
-            snapshot = snapshot.model_copy(update={"evidence": previous[1].evidence})
-        handle = await pilot_store.create(
-            snapshot,
-            task_id=task_id,
-            title=f"Capability pilot: {skill.name}",
-            description=pilot_question[:2000],
-            parent_task_id=parent_task_id,
-            correlation_id=run_id,
+            max_model_requests=self.pilot_max_model_requests,
+            max_tool_calls=self.pilot_max_tool_calls,
+            max_total_tokens=self.pilot_max_total_tokens,
+            max_output_tokens=self.pilot_max_output_tokens,
         )
         evidence = PilotEvidenceCollector(snapshot.evidence)
 

@@ -92,6 +92,86 @@ async def test_pilot_task_snapshot_survives_recreation_and_is_caller_scoped():
 
 
 @pytest.mark.asyncio
+async def test_parked_retry_requires_exact_caller_and_current_configuration():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = _snapshot()
+    handle = await tasks.create(
+        snapshot, title="research", description="Retry the same question"
+    )
+    parked = snapshot.model_copy(update={"status": "parked", "park_reason": "legacy"})
+    await handle.park(snapshot=parked.model_dump(mode="json"), reason="legacy")
+
+    candidate = tasks.parked_retry(
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+        question=snapshot.question,
+    )
+    assert candidate is not None
+    assert candidate[0].id == handle.id
+    assert candidate[1] == parked
+    assert (
+        tasks.parked_retry(
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest="changed-config",
+            question=snapshot.question,
+        )
+        is None
+    )
+    assert (
+        tasks.parked_retry(
+            caller=PilotCaller(agent_id="a1", user_id="u2", session_id="s1"),
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+            question=snapshot.question,
+        )
+        is None
+    )
+    assert (
+        tasks.parked_retry(
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+            question="different request",
+        )
+        is None
+    )
+    duplicate = await tasks.create(
+        snapshot, title="research duplicate", description="Duplicate parked retry"
+    )
+    await duplicate.park(snapshot=parked.model_dump(mode="json"), reason="legacy")
+    assert (
+        tasks.parked_retry(
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+            question=snapshot.question,
+        )
+        is None
+    )
+
+    resumed = await tasks.resume_parked_retry(
+        handle,
+        parked,
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+        question=snapshot.question,
+    )
+    assert handle.status == "active"
+    assert resumed.status == "running"
+    assert resumed.park_reason is None
+
+
+@pytest.mark.asyncio
 async def test_rehydrate_rejects_task_snapshot_status_mismatch():
     conversation = DurableConversation()
     tasks = PilotTaskStore(conversation)

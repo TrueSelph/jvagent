@@ -132,6 +132,80 @@ class PilotTaskStore:
             return handle, snapshot
         return None
 
+    def parked_retry(
+        self,
+        *,
+        caller: PilotCaller,
+        skill_id: str,
+        skill_digest: str,
+        config_digest: str,
+        question: str,
+    ) -> tuple[TaskHandle, PilotSnapshot] | None:
+        """Find the unique parked read-only run explicitly repeated by its caller."""
+
+        self._require_durable_conversation()
+        matches: list[tuple[TaskHandle, PilotSnapshot]] = []
+        for handle in reversed(
+            self._store.list(status="parked", owner_action=skill_id)
+        ):
+            if handle.task_type != PILOT_TASK_TYPE:
+                continue
+            try:
+                snapshot = self._read_snapshot(handle)
+                validate_snapshot_for_run(
+                    snapshot,
+                    caller=caller,
+                    skill_id=skill_id,
+                    skill_digest=skill_digest,
+                    config_digest=config_digest,
+                )
+            except (PilotStateError, ValueError):
+                continue
+            if (
+                snapshot.status == "parked"
+                and snapshot.proactive_task_id is None
+                and snapshot.question == question
+            ):
+                matches.append((handle, snapshot))
+        return matches[0] if len(matches) == 1 else None
+
+    async def resume_parked_retry(
+        self,
+        handle: TaskHandle,
+        snapshot: PilotSnapshot,
+        *,
+        caller: PilotCaller,
+        skill_id: str,
+        skill_digest: str,
+        config_digest: str,
+        question: str,
+        correlation_id: str = "",
+    ) -> PilotSnapshot:
+        """Resume one exact read-only retry after fresh identity/input checks."""
+
+        self._require_durable_conversation()
+        self._require_pilot_task(handle)
+        current = self._read_snapshot(handle)
+        if current != snapshot or handle.status != "parked":
+            raise PilotStateError("parked pilot run changed before it could resume")
+        try:
+            validate_snapshot_for_run(
+                current,
+                caller=caller,
+                skill_id=skill_id,
+                skill_digest=skill_digest,
+                config_digest=config_digest,
+            )
+        except ValueError as exc:
+            raise PilotStateError(str(exc)) from exc
+        if current.question != question or current.proactive_task_id is not None:
+            raise PilotStateError("pilot retry does not match the parked request")
+        resumed = current.model_copy(update={"status": "running", "park_reason": None})
+        if correlation_id:
+            await handle.update(pilot_correlation_id=correlation_id[:128])
+        await handle.resume_parked(snapshot=resumed.model_dump(mode="json"))
+        return resumed
+
     async def save(self, handle: TaskHandle, snapshot: PilotSnapshot) -> None:
         """Validate task ownership and persist the complete typed snapshot."""
 

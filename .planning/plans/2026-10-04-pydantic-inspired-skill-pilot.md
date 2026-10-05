@@ -1,9 +1,9 @@
 # Pydantic-inspired skill architecture pilot
 
 Date: 2026-10-04
-Status: Implementation in progress; the opt-in research path and typed
-conversational reply are smoke-tested with offline providers and the browser.
-Matched evaluation, production effect approval, browser recovery, and the
+Status: Implementation in progress; the opt-in research path, typed reply,
+rollback-safe exact-request retry, and typed conversational flow are smoke-tested
+offline. Matched live evaluation, browser research recovery, and the
 simplification decision remain open.
 Scope: One opt-in, skill-driven execution path; existing research skill and Actions
 Decision at completion: Expand, revise, or remove the pilot based on evidence
@@ -337,11 +337,10 @@ of the same contracts. Do not implement both alternatives in parallel.
   versions in the configuration digest; a version-change smoke starts a new
   task without inheriting the prior evidence.
 - [x] Create/load/finish pilot-owned tasks for non-locking research explicitly;
-  test waiting, completion, follow-up linkage, delivery failure, and rollback.
-  Persist approval payload digest, caller, expiry, and invocation ID. Provide
-  TaskStore interfaces for receipt lookup and reconciliation-required state.
-  Typed invocation records now persist prepared/started/settled state and a
-  bounded result; started-but-unsettled work parks pending reconciliation.
+  test completion, follow-up linkage, delivery failure, rollback, and exact
+  read-only retry. Approval and effect receipts remain in test-only models;
+  production pilot snapshots do not advertise write approval or reconciliation
+  state because the production driver admits only Search and Fetch.
 - [x] Wrap `TaskHandle.snapshot` / `set_snapshot` with validation and explicit
   missing-task/storage failure. Check that the real Conversation has a working
   durable flush/save method; never accept a no-op fake as persistence proof.
@@ -356,11 +355,11 @@ of the same contracts. Do not implement both alternatives in parallel.
   and directs the operator to start a new run; there is no generic migration
   engine. Caller, skill, and digest mismatch plus unsupported-version tests
   cover these checks.
-- [ ] Revalidate current dependencies and permissions for parked work. Ordinary
-  read-only pilot dispatch checks current access; parked approval/effect resume
-  is not wired into the production driver, so current dependency/permission
-  revalidation for that work remains unqualified. Approval payload, expiry, and
-  caller binding exist in the state adapter tests only.
+- [x] Revalidate current dependencies and permissions for parked read-only
+  work. Resume requires one parked task matching the exact repeated question,
+  full caller, skill digest, and current compiled configuration digest. Current
+  access to every required Action is checked before resume and again at each
+  dispatch. Approval/effect resume remains test-only.
 - [x] Add real graph save/reload tests and separate-process restart tests.
   A fresh interpreter reloads a graph-backed Conversation and validates the
   pilot TaskHandle plus its evidence snapshot. This exposed that TaskStore's
@@ -432,20 +431,21 @@ claimed.
   remains default. Missing optional dependencies yield an explicit config error.
 - [x] Keep one model/tool loop per turn. The pilot does not call the legacy
   `_run_loop` and the legacy driver does not activate upstream capabilities.
-- [ ] Implement skill discovery/loading, allowed operations, bounded retries,
-  deadlines, cancellation cleanup, typed output validation, and settled-state
-  continuation through P-01 public interfaces.
-- [ ] Wire waiting-for-approval and reconciliation outcomes to persisted state
-  and existing interaction/egress surfaces. No automatic replay of uncertain
-  effects.
+- [x] Implement skill discovery/loading, allowed operations, bounded retries,
+  deadlines, cancellation cleanup, typed output validation, and explicit
+  settled-state read-only retry through P-01 public interfaces.
+- [x] Keep approval/reconciliation states out of the production runtime. The
+  production capability admits only read operations; fake effects remain in
+  test fixtures and no uncertain production effect is replayed.
 - [x] Add narrowly scoped exclusions in legacy continuation and task drains;
   verify neither driver consumes the other's tasks. A pilot task type cannot be
   registered to the legacy generic runner. Selecting legacy parks active pilot
   tasks, preserves supported snapshots, and marks unsettled invocations for
   reconciliation. Graph-backed tests verify the legacy loop sees only parked
-  pilot state. `PilotTaskStore.resume` validates caller/skill/configuration
-  identity, but reentry from the Orchestrator driver remains unwired and is
-  tracked in the unchecked waiting/reconciliation item.
+  pilot state. Orchestrator re-entry requires an exact repeated user question,
+  unique matching parked task, unchanged caller/skill/configuration, and fresh
+  permission checks for every required Action. Ambiguous or stale parked tasks
+  remain untouched and a fresh run is created.
 - [x] Retain the original user utterance and structured host/proactive context.
   The pilot reloads verified host and session context server-side. For an empty
   TaskMonitor utterance it requires a claimed PROACTIVE task resolved from the

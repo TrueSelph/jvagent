@@ -573,7 +573,7 @@ acceptance IDs in the approved plan's matrix:
 | PIL-01 | PASS | The research skill and both Action package trees match the implementation baseline by Git-tree SHA-256; the offline driver integration now parses the repository's real `SKILL.md`, invokes the existing Serper/WebFetch Action boundaries, and exercises graph-backed snapshot reload. |
 | PIL-02 | PARTIAL | Skill activation and declared Action dispatch are exercised, and pilot instructions now defer tool selection to the active skill. The production driver still admits only the named research skill and Serper/WebFetch owners. |
 | PIL-03 | PASS | Composed-binding tests reject invalid, extra, and authority-bearing arguments before operation calls. |
-| PIL-04 | PARTIAL | Activation, current read-tool authorization, denial, and revocation are tested. Production parked-task resume and dispatch-time permission/dependency revalidation are not wired. |
+| PIL-04 | PASS | The production driver resumes only one exact-question parked read-only run with the same caller, skill, and configuration digests; it rechecks each required Action permission before resume and on each dispatch. Offline integration proves revoked access leaves the task parked with no model or Action call, then restored access resumes and completes the same task. |
 | PIL-05 | PASS | Typed caller-scoped snapshots survive graph and separate-process reload; lifecycle and digest mismatch tests fail closed. |
 | PIL-06 | PASS | Fresh run contexts and configuration identity are tested across independent sessions and rehydration. |
 | PIL-07 | PARTIAL | Typed output, observed-source citation checks, and bounded limits pass deterministic tests. Live output has included irrelevant sources and a malformed “definition” response; no scored live evaluation exists. |
@@ -582,18 +582,18 @@ acceptance IDs in the approved plan's matrix:
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
 | PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. One live post-change browser conversational path now passes; live research quality and broader browser behavior remain open. |
 | PIL-12 | PASS | Fresh no-extra install/import/interaction, optional dependency checks, selector rollback, graph-backed snapshot preservation, uncertain-invocation refusal, and mutual task-drain exclusion pass. The legacy execute-boundary regression verifies active pilot work is parked before the legacy loop. |
-| PIL-13 | FAIL | The package is now 1,068 lines (down 281) but remains 68 over its target; the tree delta is net +2,233 lines. The matched live sample is promising but insufficient to establish repeatable benefit. |
+| PIL-13 | FAIL | The package is now 1,119 lines (down 230 from its 1,349-line peak) and 119 over its target; the production tree delta is net +2,102 lines. The matched live sample is promising but insufficient to establish repeatable benefit. |
 
 Required next work before an expansion decision: restore the personal API and
 configure a real Serper key; run the planned ten-scenario/five-repeat provider
 evaluation within a recorded cost budget; complete the matched legacy/pilot
 comparison; verify browser recovery after reload; and complete a
-responsibility-level review of the remaining 68-line package overrun and shared
+responsibility-level review of the remaining 119-line package overrun and shared
 integration delta.
 Keep the read-only boundary in force. If effect-capable production behavior is
-proposed later, first wire current authority/dependency revalidation, parked
-resume, approval, and reconciliation through the existing interaction and
-TaskStore surfaces, then repeat crash-boundary qualification. These gaps and
+proposed later, first wire current authority/dependency revalidation, approval,
+and reconciliation through the existing interaction and TaskStore surfaces,
+then repeat crash-boundary qualification. These gaps and
 the absent agent/sub-agent evaluation rule out expansion today.
 
 See the implementation checklist and acceptance matrix in
@@ -771,6 +771,32 @@ pilot package to 1,047 lines (47 above its 1,000-line target) and the baseline
 production-tree delta by another 20 lines, to +1,987 lines. The
 focused state/continuation tests and the full suite passed with both legacy
 schema versions covered.
-This narrows the production contract but does not resolve PIL-04 parked-task
-re-entry, PIL-07 live quality scoring, PIL-11 broader browser qualification, or
-PIL-13's package-size and comparative-value gates.
+This narrows the production contract but does not resolve PIL-07 live quality
+scoring, PIL-11 broader browser qualification, or PIL-13's package-size and
+comparative-value gates.
+
+### Exact-request read-only retry (2026-10-05)
+
+The production pilot can now resume a parked research task after the user
+repeats the exact question. Selection requires a unique TaskStore match for the
+full caller, current research skill digest, current action/model/config digest,
+and a user-originated task; proactive tasks are excluded. Before changing the
+TaskStore task back to active, the Orchestrator checks current access to every
+required Action, then the composed tool checks authority again on each call.
+Changed or ambiguous state stays parked and a fresh task is created. Resumption
+reuses the same TaskStore identity and evidence snapshot under a fresh run
+context and correlation ID.
+
+The offline Orchestrator integration parks an interrupted research task,
+revokes a required Action and verifies the refusal makes no model or Action
+call, restores access, repeats the same question, and verifies the same task
+completes. State tests cover changed caller/configuration/question, duplicate
+parked matches, and successful transition. The focused pilot/legacy/continuation
+suite passed with only the three explicitly gated live-provider tests skipped;
+the full Python 3.10 suite also passed, with nine optional/environment/live
+cases skipped. No additional live model call or browser UX claim is included.
+
+The exact-retry path adds production recovery behavior and raises the measured
+pilot package from 1,047 to 1,119 lines. The current package is 119 lines over
+the 1,000-line target and the full production-source delta is +2,102 lines, so
+PIL-13 remains a material open gate rather than a formatting task.
