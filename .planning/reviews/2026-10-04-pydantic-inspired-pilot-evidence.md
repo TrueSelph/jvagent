@@ -582,13 +582,13 @@ acceptance IDs in the approved plan's matrix:
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
 | PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. One live post-change browser conversational path now passes; live research quality and broader browser behavior remain open. |
 | PIL-12 | PASS | Fresh no-extra install/import/interaction, optional dependency checks, selector rollback, graph-backed snapshot preservation, uncertain-invocation refusal, and mutual task-drain exclusion pass. The legacy execute-boundary regression verifies active pilot work is parked before the legacy loop. |
-| PIL-13 | FAIL | The package is now 1,119 lines (down 230 from its 1,349-line peak) and 119 over its target; the production tree delta is net +2,102 lines. The matched live sample is promising but insufficient to establish repeatable benefit. |
+| PIL-13 | FAIL | The package is now 1,121 lines (down 228 from its 1,349-line peak) and 121 over its target; the production tree delta is net +2,104 lines. The matched live sample is promising but insufficient to establish repeatable benefit. |
 
 Required next work before an expansion decision: restore the personal API and
 configure a real Serper key; run the planned ten-scenario/five-repeat provider
 evaluation within a recorded cost budget; complete the matched legacy/pilot
 comparison; verify browser recovery after reload; and complete a
-responsibility-level review of the remaining 119-line package overrun and shared
+responsibility-level review of the remaining 121-line package overrun and shared
 integration delta.
 Keep the read-only boundary in force. If effect-capable production behavior is
 proposed later, first wire current authority/dependency revalidation, approval,
@@ -797,6 +797,6 @@ the full Python 3.10 suite also passed, with nine optional/environment/live
 cases skipped. No additional live model call or browser UX claim is included.
 
 The exact-retry path adds production recovery behavior and raises the measured
-pilot package from 1,047 to 1,119 lines. The current package is 119 lines over
-the 1,000-line target and the full production-source delta is +2,102 lines, so
+pilot package from 1,047 to 1,121 lines. The current package is 121 lines over
+the 1,000-line target and the full production-source delta is +2,104 lines, so
 PIL-13 remains a material open gate rather than a formatting task.
