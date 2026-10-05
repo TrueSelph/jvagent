@@ -128,14 +128,22 @@ class OrchestratorLoopMixin:
         history: List[Dict[str, str]],
         observations: List[Dict[str, Any]],
         session_context: str = "",
+        identity_section: str = "",
     ) -> str:
         """Everything the agent can legitimately answer from this turn: the user's
-        message, the conversation so far, this turn's tool results — and the
-        SESSION CONTEXT block (ADR-0042), which the harness itself declares
-        authoritative. Without it a correct "it is 2026" read straight from the
-        clock was deflected as an invented year, twice per time question, live.
+        message, the conversation so far, this turn's tool results, the agent's
+        configured identity, and the SESSION CONTEXT block (ADR-0042), which the
+        harness itself declares authoritative. The identity must be included:
+        otherwise a correct first-person answer using the configured agent name
+        is treated as an unsupported claim. Without the session context, a
+        correct "it is 2026" read straight from the clock was deflected as an
+        invented year, twice per time question, live.
         """
-        parts: List[str] = [session_context or "", utterance or ""]
+        parts: List[str] = [
+            identity_section or "",
+            session_context or "",
+            utterance or "",
+        ]
         for message in history or []:
             parts.append(str(message.get("content", "")))
         for obs in observations or []:
@@ -1039,6 +1047,7 @@ class OrchestratorLoopMixin:
                     state.history,
                     state.observations,
                     str(get_prompt_cache().get("session_context") or ""),
+                    str(get_prompt_cache().get("identity") or ""),
                 ),
                 visitor,
             )
@@ -1287,6 +1296,7 @@ class OrchestratorLoopMixin:
                     state.history,
                     state.observations,
                     str(get_prompt_cache().get("session_context") or ""),
+                    str(get_prompt_cache().get("identity") or ""),
                 ),
                 visitor,
             )
