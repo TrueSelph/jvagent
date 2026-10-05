@@ -251,6 +251,15 @@ only by tests; model-triggered effects and a production approval flow are not
 wired. These prototype-only state methods are a primary simplification or
 removal candidate if the next phase remains read-only.
 
+AST line accounting confirms 245 lines across `record_invocation`,
+`mark_invocation_started`, `settle_invocation`, `_update_invocation`, `park`,
+`wait_for_approval`, `require_reconciliation`, and `resume` have no production
+call sites; they are consumed by pilot state/effect/crash tests. Removing them
+would reduce the 1,350-line package to about 1,105 lines, still 105 over budget,
+and would abandon the approved PIL-08/PIL-09 contract evidence. Keep this as a
+named simplification candidate pending an explicit decision to defer those
+contracts; do not delete it as a cosmetic line-count exercise.
+
 The current responsibility delta is narrower than a replacement-harness claim:
 
 | Responsibility | Pilot path evidence | Net status |
@@ -530,6 +539,38 @@ length and content-filter stops distinct user-facing explanations. It does not
 automatically retry the model call. Focused runtime and Orchestrator regressions
 pass; the changed path still needs a live Messenger retest after the personal
 API is restored.
+
+### P-06 coordinator review and decision (2026-10-05)
+
+**Decision: revise the named gaps before expansion.** The optional driver stays
+experimental and is not qualified for adoption. The audit below covers all
+acceptance IDs in the approved plan's matrix:
+
+| ID | Status | Evidence and remaining limitation |
+| --- | --- | --- |
+| PIL-01 | PARTIAL | Legacy/no-extra import and Action integration checks pass; a clean package/source digest comparison against the existing research skill and both Action packages is not recorded. |
+| PIL-02 | PARTIAL | Skill activation and declared Action dispatch are exercised, and pilot instructions now defer tool selection to the active skill. The production driver still admits only the named research skill and Serper/WebFetch owners. |
+| PIL-03 | PASS | Composed-binding tests reject invalid, extra, and authority-bearing arguments before operation calls. |
+| PIL-04 | PARTIAL | Activation, current read-tool authorization, denial, and revocation are tested. Production parked-task resume and dispatch-time permission/dependency revalidation are not wired. |
+| PIL-05 | PASS | Typed caller-scoped snapshots survive graph and separate-process reload; lifecycle and digest mismatch tests fail closed. |
+| PIL-06 | PASS | Fresh run contexts and configuration identity are tested across independent sessions and rehydration. |
+| PIL-07 | PARTIAL | Typed output, observed-source citation checks, and bounded limits pass deterministic tests. Live output has included irrelevant sources and a malformed “definition” response; no scored live evaluation exists. |
+| PIL-08 | PASS, test-only | The composed test fixture checks approval/payload/caller/expiry binding and duplicate delivery; the production driver admits no effect tools or approval UI. |
+| PIL-09 | PASS, test-only | Separate-process fake-service tests cover pre-effect, uncertain post-effect, and settled receipt recovery; no production write integration is claimed. |
+| PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
+| PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. Live answer quality and post-change browser behavior remain open. |
+| PIL-12 | PARTIAL | Optional dependency isolation, no-extra imports, dependency checks, and selector rollback are recorded. Preserved-snapshot and mutual task-drain exclusion still need runtime qualification. |
+| PIL-13 | FAIL | The four-module package is 1,350 lines, 350 over its target; the tree delta is net +2,216 lines. Comparative benefit and a removable-code decision are not demonstrated. |
+
+Required next work before an expansion decision: restore the personal API and
+configure a real Serper key; run the planned ten-scenario/five-repeat provider
+evaluation within a recorded cost budget; complete the matched legacy/pilot
+comparison; and identify justified simplifications for the 350-line overrun.
+Keep the read-only boundary in force. If effect-capable production behavior is
+proposed later, first wire current authority/dependency revalidation, parked
+resume, approval, and reconciliation through the existing interaction and
+TaskStore surfaces, then repeat crash-boundary qualification. These gaps and
+the absent agent/sub-agent evaluation rule out expansion today.
 
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).

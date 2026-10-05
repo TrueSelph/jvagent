@@ -542,9 +542,12 @@ data migration. Preserve pilot snapshots but leave them inactive on rollback.
 - [ ] Compare legacy/pilot on identical model, settings, sources, and scenarios:
   source support, output validity, Action call count, model calls, input/output
   tokens, p50/p95 latency, failures, and user correction effort.
-- [ ] Write a removable-responsibility inventory and production-code/dependency
+- [x] Write a removable-responsibility inventory and production-code/dependency
   delta. Report what this pilot actually replaces in its path, not projected
-  whole-repository deletions.
+  whole-repository deletions. The evidence report records the measured package
+  and tree delta, current responsibility ownership, and 245 test-only state
+  adapter lines as a simplification candidate without silently dropping PIL-08/
+  PIL-09 evidence.
 
 Deliverable: `.planning/reviews/2026-10-04-pydantic-inspired-pilot-evidence.md`
 (created by execution, not this plan), with source revision, configuration,
@@ -553,9 +556,14 @@ rollback verification. Qualification agent reports findings to the coordinator.
 
 ### P-06 — Decide expansion or removal
 
-- [ ] Review every acceptance requirement and the bloat budget below.
-- [ ] Choose one outcome: expand with a bounded next plan; revise named gaps;
+- [x] Review every acceptance requirement and the bloat budget below. The
+  coordinator audit is recorded in
+  `../reviews/2026-10-04-pydantic-inspired-pilot-evidence.md` and covers PIL-01
+  through PIL-13 plus the 1,000-line budget.
+- [x] Choose one outcome: expand with a bounded next plan; revise named gaps;
   or remove the optional driver/dependency and retain useful tested contracts.
+  Decision: revise the named live-evaluation, matched-comparison, recovery, and
+  simplification gaps before expansion; the pilot remains unqualified.
 - [ ] Do not ship two permanent equivalent execution frameworks. An expansion
   plan must name legacy responsibilities to retire, compatibility adapters, and
   evidence needed for retirement. Actual deprecations are later scoped work.
