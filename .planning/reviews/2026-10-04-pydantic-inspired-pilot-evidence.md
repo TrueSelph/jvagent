@@ -878,3 +878,47 @@ qualification, or clean optional-Action deployment qualification. The
 TaskStore item is labeled research even though the model correctly selected a
 conversational output; matching skill/task selection remains a question for
 the pilot's narrow one-skill architecture.
+
+### Live research capability round (2026-10-05)
+
+Tested source tree: branch `codex/pydantic-inspired-skill-pilot`, HEAD
+`67a06e53` (production source includes fix `62340bd3`; the intervening HEAD
+change only updates this evidence report). The disposable app graph remained on
+loopback port 8003 and the real jvchat Messenger browser at port 3103. The
+Orchestrator used `capability_pilot` with an 8-request, 8-tool-call,
+12,000-total-token, 1,500-output-token ceiling. The stable app graph was not
+used.
+
+The first real research turn used a 3,000-total-token ceiling. It called
+`load_capability` and `web_search__search`, then stopped at 4,696 cumulative
+tokens before Fetch. Messenger showed the bounded-limit response and the graph
+persisted a failed research TaskStore record. This was a configured usage-limit
+failure, not an HTTP timeout. For one bounded retry, the test-only graph's
+ceiling was raised to 12,000 tokens and the prompt narrowed to one official
+Pydantic AI source.
+
+The retry requested: “Using exactly one official Pydantic AI source, explain
+in one concise sentence what a capability does and cite its URL.” The browser
+rendered a response linking to
+`https://pydantic.dev/docs/ai/capabilities/overview/`. Debug state persisted
+interaction `n.Interaction.d895bb41ad784fc6a45c2028` in session
+`sess_9aa2c56fc1ce412f` and completed TaskStore record
+`pilot_31f691b096d94604b82d481f06e20be5`, with `task_type=CAPABILITY_PILOT`,
+`owner_action=research`, `driver=capability_pilot`, and `status=completed`.
+The saved research snapshot is complete and contains the fetched official page,
+research findings, and cited source. The public Messenger
+`POST /api/agents/n.Agent.c7f1a2b892a24f36bfa5eadd/interact` returned HTTP 200.
+
+This was a real Ollama Cloud `glm-5.3:cloud` call through
+`PydanticAICapabilityPilot`, plus live Search and Fetch Actions. Debug usage
+records four non-estimated model calls: 1,032 + 1,605 + 2,071 + 3,335 = 8,043
+provider-reported tokens, over 7.44 seconds of model-call time; Messenger
+rounded this to 8.0k tokens and 7.4 seconds, with 73.4 tokens/second. No
+provider price or billable-cost report was returned, so cost is unknown. The
+response is functional evidence for Search → Fetch → typed result → cited
+Messenger output and persisted completion, not a quality score or repeatability
+claim. The search snapshot retains multiple third-party and duplicate source
+entries even though the final answer cites the official Pydantic page; source
+deduplication and narrower evidence retention remain quality questions. This
+single success does not replace the ten-scenario/five-repeat evaluation or
+broader recovery and deployment qualification.
