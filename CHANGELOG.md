@@ -18,6 +18,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   customer (`handoff`, denied `staff`) and staff (`handoff_staff`, allowed
   `staff`) split; Silvie configures `user_groups.HandoffAction.staff`.
 
+### Changed
+
+- Pin the published `jvspatial==0.1.1` release across package metadata and requirements, incorporating PostgreSQL index naming and schema bootstrap fixes.
+
 ## [0.1.8rc19] - 2026-09-27
 
 ### Added
