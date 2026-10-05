@@ -475,10 +475,16 @@ live scheduler tick or the resulting Messenger delivery; those remain open.
   completion.
 - Legacy-versus-pilot matched quality, token, latency, failure, and correction
   measurements are absent. The offline CUCS figures are not comparative proof.
-- The complete removable-responsibility/dependency inventory and P-06 decision
-  remain open. Rollback by restoring `skill_runtime: legacy` is structurally
-  available; preservation and mutual task-drain exclusion still need runtime
-  qualification.
+- The source/dependency inventory and P-06 revise decision are recorded.
+  Selecting `skill_runtime: legacy` now parks active pilot tasks without
+  importing the optional pilot package, preserves supported snapshot fields,
+  and marks any started-but-unsettled invocation for reconciliation. The legacy
+  runner registry refuses the reserved pilot task type. Graph-backed tests
+  cover snapshot reload and refusal to resume uncertain work; the legacy
+  execute-boundary test verifies parking occurs before `_run_loop`.
+  `PilotTaskStore.resume` validates caller/skill/configuration identity, but the
+  Orchestrator does not yet re-enter a parked pilot task automatically; that
+  production continuation remains open under PIL-04.
 
 Credential handling note: an attempted key entry was interpreted as a shell
 command and appeared in the terminal transcript before returning HTTP 401. The
@@ -540,6 +546,27 @@ sharing its owner, including a `CAPABILITY_PILOT` task. Cleanup now skips
 non-flow task types, and a graph-backed regression verifies the legacy skill is
 cancelled while its same-owner pilot task remains active.
 
+### Rollback isolation retest (2026-10-05)
+
+The legacy driver now parks active `CAPABILITY_PILOT` tasks before entering the
+legacy loop. The adapter uses generic TaskStore JSON so it does not import the
+optional Pydantic AI package. It preserves schema-v1 snapshot fields, marks
+`started` invocation records as requiring reconciliation, and leaves terminal
+tasks alone. `CAPABILITY_PILOT` is reserved from legacy runner registration and
+excluded from the runnable registry. Tests prove the execute boundary parks
+before `_run_loop`, same-owner failure cleanup cannot cancel pilot work, and
+legacy task drains cannot claim it.
+
+In a fresh Python 3.10 environment installed with `.[test]` and without the
+`pydantic-pilot` extra, `uv pip check` passed, `pydantic_ai` was absent, legacy
+Orchestrator/continuation imports passed, and the focused task-drain/driver tests
+passed (21 tests). With the pilot extra, the focused typed-state and rollback
+regressions passed (34 tests); a real JsonDB Conversation reload retained the
+typed snapshot and refused resume when an invocation was unsettled. This
+qualifies rollback isolation, not Orchestrator-level pilot continuation: the
+legacy-selected Orchestrator still does not resume parked work when pilot mode
+is re-enabled.
+
 ### P-06 coordinator review and decision (2026-10-05)
 
 **Decision: revise the named gaps before expansion.** The optional driver stays
@@ -559,7 +586,7 @@ acceptance IDs in the approved plan's matrix:
 | PIL-09 | PASS, test-only | Separate-process fake-service tests cover pre-effect, uncertain post-effect, and settled receipt recovery; no production write integration is claimed. |
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
 | PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. Live answer quality and post-change browser behavior remain open. |
-| PIL-12 | PARTIAL | Optional dependency isolation, no-extra imports, dependency checks, and selector rollback are recorded. Preserved-snapshot and mutual task-drain exclusion still need runtime qualification. |
+| PIL-12 | PASS | Fresh no-extra install/import/interaction, optional dependency checks, selector rollback, graph-backed snapshot preservation, uncertain-invocation refusal, and mutual task-drain exclusion pass. The legacy execute-boundary regression verifies active pilot work is parked before the legacy loop. |
 | PIL-13 | FAIL | The four-module package is 1,349 lines, 349 over its target; the tree delta is net +2,233 lines. Comparative benefit and a removable-code decision are not demonstrated. |
 
 Required next work before an expansion decision: restore the personal API and

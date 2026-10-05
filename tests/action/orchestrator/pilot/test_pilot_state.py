@@ -2,9 +2,11 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
+from jvagent.action.orchestrator.continuation import park_capability_pilot_tasks
 from jvagent.action.orchestrator.pilot.contracts import (
     EvidenceReference,
     PilotCaller,
@@ -18,6 +20,7 @@ from jvagent.action.orchestrator.pilot.state import (
     PilotTaskStore,
 )
 from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_store import TaskStore
 
 
 class DurableConversation:
@@ -412,6 +415,69 @@ async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume(
     )
     assert followup.status == "active"
     assert resumed.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_resume(
+    test_db,
+):
+    conversation = await Conversation.create(
+        session_id="pilot-rollback-graph",
+        user_id="pilot-rollback-user",
+        channel="default",
+    )
+    tasks = PilotTaskStore(conversation)
+    snapshot = _snapshot(
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/source",
+                title="Persisted source",
+                excerpt="Evidence retained across rollback.",
+            ),
+        ),
+        invocations=(
+            PilotInvocation(
+                invocation_id="call-1",
+                tool_name="web_search__search",
+                payload_digest="sha256-payload",
+                status="started",
+            ),
+        ),
+    )
+    handle = await tasks.create(
+        snapshot, title="research", description="Rollback safety"
+    )
+
+    assert (
+        await park_capability_pilot_tasks(SimpleNamespace(conversation=conversation))
+        == 1
+    )
+
+    reloaded_conversation = await Conversation.get(conversation.id)
+    assert reloaded_conversation is not None
+    reloaded_store = PilotTaskStore(reloaded_conversation)
+    parked, persisted_snapshot = reloaded_store.load(
+        handle.id,
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+    assert parked.status == "parked"
+    assert persisted_snapshot.status == "parked"
+    assert persisted_snapshot.evidence == snapshot.evidence
+    assert persisted_snapshot.invocations == snapshot.invocations
+    assert persisted_snapshot.requires_reconciliation is True
+
+    with pytest.raises(PilotStateError, match="effect reconciliation"):
+        await reloaded_store.resume(
+            parked,
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+        )
 
 
 @pytest.mark.asyncio

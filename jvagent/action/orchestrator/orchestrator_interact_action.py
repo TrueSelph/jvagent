@@ -1064,6 +1064,7 @@ class OrchestratorInteractAction(
         with bind_dispatch_context(visitor):
             runtime_mode = str(self.skill_runtime or "legacy").strip().lower()
             if runtime_mode == "legacy":
+                await continuation.park_capability_pilot_tasks(visitor)
                 await self._run_loop(visitor)
             elif runtime_mode == "capability_pilot":
                 await self._run_capability_pilot(visitor)

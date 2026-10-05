@@ -157,3 +157,35 @@ async def test_drain_leaves_skill_tasks_to_the_skill_path(make_orchestrator, tes
     finally:
         clear_task_runners()
         await conv.delete(cascade=True)
+
+
+@pytest.mark.asyncio
+async def test_legacy_runner_drain_cannot_claim_capability_pilot_tasks(
+    make_orchestrator, test_db
+):
+    """Pilot work remains owned by its selected driver, even with a legacy runner
+    registration attempt for its reserved TaskStore type."""
+    clear_task_runners()
+    visitor, conv = await _visitor_with_store()
+    try:
+        store = TaskStore(conv)
+        pilot_task = await store.create(
+            title="pilot research",
+            description="pilot-owned work",
+            task_type="CAPABILITY_PILOT",
+            owner_action="research",
+        )
+        await pilot_task.start()
+
+        async def pilot_runner(ctx: RunContext) -> TaskRunResult:
+            raise AssertionError("legacy drain must not run pilot work")
+
+        with pytest.raises(ValueError, match="reserved for its own execution driver"):
+            register_task_runner("capability_pilot", pilot_runner)
+
+        assert "CAPABILITY_PILOT" not in runnable_task_types()
+        assert await make_orchestrator()._drain_runnable_tasks(visitor, []) is None
+        assert TaskStore(conv).get(pilot_task.id).status == "active"
+    finally:
+        clear_task_runners()
+        await conv.delete(cascade=True)

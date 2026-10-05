@@ -28,6 +28,10 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 # the generic runner drain leaves them to the loop and only dispatches other types.
 BUILTIN_SKILL_TYPE = "SKILL"
 BUILTIN_LOOP_ADVANCED = frozenset({"SKILL", "PROACTIVE"})
+# These task types belong to another execution driver and may never be claimed by
+# the legacy Orchestrator's generic runner drain. Keep the pilot optional at import
+# time: its task type is a stable string contract, not a runtime import dependency.
+RUNNER_RESERVED_TASK_TYPES = frozenset({"CAPABILITY_PILOT"})
 
 
 @dataclass
@@ -64,6 +68,8 @@ def register_task_runner(task_type: str, runner: TaskRunner) -> None:
     key = _norm(task_type)
     if not key:
         raise ValueError("task_type is required")
+    if key in RUNNER_RESERVED_TASK_TYPES:
+        raise ValueError(f"{key} is reserved for its own execution driver")
     if key == BUILTIN_SKILL_TYPE:
         raise ValueError(
             "SKILL is advanced by the orchestrator loop; it has no external runner"
@@ -83,7 +89,12 @@ def runnable_task_types() -> frozenset:
 
     ``pick_top_runnable(store, task_types=runnable_task_types())`` therefore only
     surfaces work the orchestrator actually knows how to advance."""
-    return frozenset({*BUILTIN_LOOP_ADVANCED, *_RUNNERS.keys()})
+    return frozenset(
+        {
+            *BUILTIN_LOOP_ADVANCED,
+            *(_RUNNERS.keys() - RUNNER_RESERVED_TASK_TYPES),
+        }
+    )
 
 
 def clear_task_runners() -> None:

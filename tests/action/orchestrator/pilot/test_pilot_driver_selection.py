@@ -8,6 +8,8 @@ import pytest
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
+from jvagent.memory.conversation import Conversation
+from jvagent.memory.task_store import TaskStore
 
 
 @pytest.mark.asyncio
@@ -59,3 +61,45 @@ async def test_unknown_skill_runtime_fails_closed(monkeypatch):
 
     with pytest.raises(ValueError, match="skill_runtime"):
         await ex._execute_turn(SimpleNamespace(interaction=object()))
+
+
+@pytest.mark.asyncio
+async def test_legacy_selection_parks_pilot_work_before_loop(monkeypatch, test_db):
+    ex = OrchestratorInteractAction()
+    ex.skill_runtime = "legacy"
+    conversation = await Conversation.create(
+        session_id="legacy-driver-selects-pilot-rollback",
+        user_id="pilot-rollback-user",
+        channel="default",
+    )
+    task = await TaskStore(conversation).create(
+        title="pilot run",
+        description="snapshot survives rollback",
+        task_type="CAPABILITY_PILOT",
+        owner_action="research",
+        initial_status="active",
+        snapshot={"schema_version": 1, "status": "running", "evidence": []},
+    )
+
+    async def record(*_args, **_kwargs):
+        return None
+
+    async def legacy_loop(_action, visitor):
+        assert TaskStore(visitor.conversation).get(task.id).status == "parked"
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_curate_walk_path", record)
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_loop", legacy_loop)
+    monkeypatch.setattr(OrchestratorInteractAction, "_run_capability_pilot", record)
+    monkeypatch.setattr(OrchestratorInteractAction, "_settle_conversation_cost", record)
+    monkeypatch.setattr(OrchestratorInteractAction, "_finalize_proactive_task", record)
+    monkeypatch.setattr(OrchestratorInteractAction, "_egress", record)
+
+    await ex._execute_turn(
+        SimpleNamespace(interaction=object(), conversation=conversation)
+    )
+
+    parked = TaskStore(conversation).get(task.id)
+    assert parked is not None
+    assert parked.status == "parked"
+    assert parked.snapshot["status"] == "parked"
+    assert parked.snapshot["evidence"] == []

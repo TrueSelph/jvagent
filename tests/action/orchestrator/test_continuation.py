@@ -15,6 +15,7 @@ from jvagent.action.orchestrator.continuation import (
     active_flow_note,
     active_flow_owner,
     note_locked_flow_error,
+    park_capability_pilot_tasks,
 )
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
@@ -99,6 +100,46 @@ async def test_legacy_failure_abandonment_does_not_cancel_pilot_task_same_owner(
     status_by_type = {task.task_type: task.status for task in store.list()}
     assert status_by_type["SKILL"] == "cancelled"
     assert status_by_type["CAPABILITY_PILOT"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_legacy_driver_parks_pilot_snapshot_and_flags_uncertain_invocation(
+    test_db,
+):
+    conversation = await Conversation.create(
+        session_id="legacy-driver-pilot-rollback",
+        user_id="pilot-rollback-user",
+        channel="default",
+    )
+    store = TaskStore(conversation)
+    snapshot = {
+        "schema_version": 1,
+        "driver": "capability_pilot",
+        "status": "running",
+        "evidence": [{"source_id": "source-1"}],
+        "invocations": [{"invocation_id": "call-1", "status": "started"}],
+        "requires_reconciliation": False,
+    }
+    task = await store.create(
+        title="pilot research",
+        description="preserve this snapshot on rollback",
+        task_type="CAPABILITY_PILOT",
+        owner_action="research",
+        initial_status="active",
+        snapshot=snapshot,
+    )
+    visitor = MagicMock()
+    visitor.conversation = conversation
+
+    assert await park_capability_pilot_tasks(visitor) == 1
+
+    persisted = TaskStore(conversation).get(task.id)
+    assert persisted is not None
+    assert persisted.status == "parked"
+    assert persisted.snapshot["status"] == "parked"
+    assert persisted.snapshot["evidence"] == snapshot["evidence"]
+    assert persisted.snapshot["invocations"] == snapshot["invocations"]
+    assert persisted.snapshot["requires_reconciliation"] is True
 
 
 async def test_proactive_task_not_treated_as_flow():

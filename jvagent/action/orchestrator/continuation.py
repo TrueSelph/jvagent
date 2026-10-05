@@ -498,6 +498,42 @@ async def cancel_orphan_flow_tasks(
     return cancelled
 
 
+async def park_capability_pilot_tasks(visitor: Any) -> int:
+    """Park pilot-owned work before the legacy driver handles a turn.
+
+    This compatibility boundary uses only TaskStore and plain JSON snapshots so
+    legacy mode remains importable without the optional Pydantic AI dependency.
+    An unsettled invocation is marked for reconciliation and can never be treated
+    as safe to replay after the driver changes back.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    store = _store(conversation)
+    if store is None:
+        return 0
+    parked = 0
+    for task in store.list(status="active") or []:
+        task_type = (getattr(task, "task_type", None) or "").strip().upper()
+        if task_type != "CAPABILITY_PILOT":
+            continue
+        reason = "legacy driver selected; pilot state preserved for explicit review"
+        raw_snapshot = getattr(task, "snapshot", None)
+        snapshot = None
+        if isinstance(raw_snapshot, dict) and raw_snapshot.get("schema_version") == 1:
+            snapshot = dict(raw_snapshot)
+            invocations = snapshot.get("invocations")
+            unsettled = isinstance(invocations, list) and any(
+                isinstance(invocation, dict) and invocation.get("status") == "started"
+                for invocation in invocations
+            )
+            snapshot["status"] = "parked"
+            snapshot["park_reason"] = reason
+            if unsettled:
+                snapshot["requires_reconciliation"] = True
+        await task.park(snapshot=snapshot, reason=reason)
+        parked += 1
+    return parked
+
+
 def completed_tool_observation(
     tool_name: str, args: Optional[Mapping[str, Any]] = None
 ) -> Optional[str]:

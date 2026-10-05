@@ -436,9 +436,16 @@ claimed.
   deadlines, cancellation cleanup, typed output validation, and settled-state
   continuation through P-01 public interfaces.
 - [ ] Wire waiting-for-approval and reconciliation outcomes to persisted state
-  and existing interaction/egress surfaces. Add narrowly scoped exclusions in
-  legacy continuation/task drains; verify neither driver consumes the other's
-  tasks. No automatic replay of uncertain effects.
+  and existing interaction/egress surfaces. No automatic replay of uncertain
+  effects.
+- [x] Add narrowly scoped exclusions in legacy continuation and task drains;
+  verify neither driver consumes the other's tasks. A pilot task type cannot be
+  registered to the legacy generic runner. Selecting legacy parks active pilot
+  tasks, preserves supported snapshots, and marks unsettled invocations for
+  reconciliation. Graph-backed tests verify the legacy loop sees only parked
+  pilot state. `PilotTaskStore.resume` validates caller/skill/configuration
+  identity, but reentry from the Orchestrator driver remains unwired and is
+  tracked in the unchecked waiting/reconciliation item.
 - [x] Retain the original user utterance and structured host/proactive context.
   The pilot reloads verified host and session context server-side. For an empty
   TaskMonitor utterance it requires a claimed PROACTIVE task resolved from the
