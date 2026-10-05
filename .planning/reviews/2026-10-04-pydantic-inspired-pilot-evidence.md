@@ -580,7 +580,7 @@ acceptance IDs in the approved plan's matrix:
 | PIL-08 | PASS, test-only | The composed test fixture checks approval/payload/caller/expiry binding and duplicate delivery; the production driver admits no effect tools or approval UI. |
 | PIL-09 | PASS, test-only | Separate-process fake-service tests cover pre-effect, uncertain post-effect, and settled receipt recovery; no production write integration is claimed. |
 | PIL-10 | PASS | Cancellation and persistence-fault tests preserve terminal state and avoid false success or ordinary model retry. |
-| PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. Live answer quality and post-change browser behavior remain open. |
+| PIL-11 | PARTIAL | Offline public Messenger flow verifies the emitted envelope and citations; unsupported channel shaping is rejected. One live post-change browser conversational path now passes; live research quality and broader browser behavior remain open. |
 | PIL-12 | PASS | Fresh no-extra install/import/interaction, optional dependency checks, selector rollback, graph-backed snapshot preservation, uncertain-invocation refusal, and mutual task-drain exclusion pass. The legacy execute-boundary regression verifies active pilot work is parked before the legacy loop. |
 | PIL-13 | FAIL | The four-module package is 1,349 lines, 349 over its target; the tree delta is net +2,233 lines. Comparative benefit and a removable-code decision are not demonstrated. |
 
@@ -621,3 +621,18 @@ This is one live adapter/capability smoke, not the planned 10 scenarios × 5
 runs, a real Serper search, a matched legacy comparison, or a browser test. The
 focused live test and launcher passed; PIL-07 and the live-evaluation item
 remain partial.
+
+### Messenger repeat after reported generic failure (2026-10-05)
+
+The current Messenger tab contains an earlier saved `What can you do?` failure
+with the generic model-error message, followed by a later identical request
+that completed with a model-generated answer. The live API log confirms the
+later `/interact` returned HTTP 200, the Ollama Cloud request completed, and
+the assistant response was appended. This is a successful single conversational
+repeat on the current branch; it does not establish a failure rate or explain
+the original saved turn beyond the separately recorded output-length exhaustion
+diagnostic. A session-refresh request immediately after the successful reply
+returned 401 because this loopback smoke was started with authentication
+disabled; the response itself had already been delivered. PIL-11 remains
+partial, and the broader scenario evaluation and matched legacy comparison are
+still required.
