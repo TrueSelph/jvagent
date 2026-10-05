@@ -91,6 +91,9 @@ async def test_pilot_instructions_include_only_verified_host_context(
     assert "Agent identity." in instructions
     assert "Response policy." in instructions
     assert "SESSION CONTEXT: trusted clock and channel." in instructions
+    assert "activate the relevant skill" in instructions
+    assert "declared Actions" in instructions
+    assert "use the research Actions" not in instructions
     if channel == "workspace-chat":
         assert "Configured channel policy." in instructions
     if trusted:
