@@ -10,7 +10,6 @@ from jvagent.action.orchestrator.continuation import park_capability_pilot_tasks
 from jvagent.action.orchestrator.pilot.contracts import (
     EvidenceReference,
     PilotCaller,
-    PilotInvocation,
     PilotSnapshot,
     ResearchBrief,
 )
@@ -21,7 +20,11 @@ from jvagent.action.orchestrator.pilot.state import (
 )
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
-from tests.action.orchestrator.pilot.effect_state_fixture import PilotEffectTestStore
+from tests.action.orchestrator.pilot.effect_state_fixture import (
+    EffectPilotInvocation,
+    EffectPilotSnapshot,
+    PilotEffectTestStore,
+)
 
 
 class DurableConversation:
@@ -116,12 +119,12 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         _snapshot(), title="research", description="Research the question"
     )
     unsupported = deepcopy(handle.snapshot)
-    unsupported["schema_version"] = 3
+    unsupported["schema_version"] = 4
     await handle.set_snapshot(unsupported)
 
     with pytest.raises(
         PilotStateError,
-        match=r"schema version 3 is unsupported.*Preserve the task and start a new pilot run",
+        match=r"schema version 4 is unsupported.*Preserve the task and start a new pilot run",
     ):
         tasks.load(
             handle.id,
@@ -132,7 +135,7 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["schema_version"] == 3
+    assert handle.snapshot["schema_version"] == 4
 
 
 @pytest.mark.asyncio
@@ -227,7 +230,7 @@ async def test_approval_parking_preserves_state_and_requires_new_decision():
     handle = await tasks.create(
         _snapshot(), title="research", description="Research the question"
     )
-    invocation = PilotInvocation(
+    invocation = EffectPilotInvocation(
         invocation_id="invocation-1",
         tool_name="fake_service__write",
         payload_digest="payload-sha256",
@@ -322,7 +325,7 @@ async def test_started_invocation_is_parked_for_reconciliation_and_cannot_resume
     handle = await tasks.create(
         _snapshot(), title="effect", description="Run a fake effect"
     )
-    invocation = PilotInvocation(
+    invocation = EffectPilotInvocation(
         invocation_id="invocation-uncertain",
         tool_name="fake_service__write",
         payload_digest="payload-sha256",
@@ -355,7 +358,7 @@ async def test_settled_invocation_receipt_is_persisted_before_reuse():
     handle = await tasks.create(
         _snapshot(), title="effect", description="Run a fake effect"
     )
-    invocation = PilotInvocation(
+    invocation = EffectPilotInvocation(
         invocation_id="invocation-settled",
         tool_name="fake_service__write",
         payload_digest="payload-sha256",
@@ -427,8 +430,8 @@ async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_res
         user_id="pilot-rollback-user",
         channel="default",
     )
-    tasks = PilotTaskStore(conversation)
-    snapshot = _snapshot(
+    tasks = PilotEffectTestStore(conversation)
+    base_snapshot = _snapshot(
         evidence=(
             EvidenceReference(
                 source_id="source-1",
@@ -437,14 +440,19 @@ async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_res
                 excerpt="Evidence retained across rollback.",
             ),
         ),
-        invocations=(
-            PilotInvocation(
-                invocation_id="call-1",
-                tool_name="web_search__search",
-                payload_digest="sha256-payload",
-                status="started",
+    )
+    snapshot = EffectPilotSnapshot.model_validate(
+        {
+            **base_snapshot.model_dump(mode="json"),
+            "invocations": (
+                EffectPilotInvocation(
+                    invocation_id="call-1",
+                    tool_name="web_search__search",
+                    payload_digest="sha256-payload",
+                    status="started",
+                ).model_dump(mode="json"),
             ),
-        ),
+        }
     )
     handle = await tasks.create(
         snapshot, title="research", description="Rollback safety"
@@ -482,7 +490,10 @@ async def test_legacy_rollback_preserves_graph_snapshot_and_blocks_uncertain_res
 
 
 @pytest.mark.asyncio
-async def test_schema_one_task_is_preserved_and_refused_after_rollback(test_db):
+@pytest.mark.parametrize("legacy_version", [1, 2])
+async def test_old_schema_task_is_preserved_and_refused_after_rollback(
+    test_db, legacy_version
+):
     conversation = await Conversation.create(
         session_id="pilot-schema-one-rollback",
         user_id="pilot-schema-one-user",
@@ -497,11 +508,13 @@ async def test_schema_one_task_is_preserved_and_refused_after_rollback(test_db):
     ).model_dump(mode="json")
     legacy_snapshot.update(
         {
-            "schema_version": 1,
+            "schema_version": legacy_version,
             "approval_id": None,
             "approval_payload_digest": None,
             "approval_expires_at": None,
             "approval_invocation_id": None,
+            "requires_reconciliation": False,
+            "invocations": [],
         }
     )
     task = await TaskStore(conversation).create(
@@ -524,7 +537,9 @@ async def test_schema_one_task_is_preserved_and_refused_after_rollback(test_db):
     assert preserved.status == "parked"
     assert preserved.snapshot == legacy_snapshot
     assert preserved.data["park_reason"].startswith("legacy driver selected")
-    with pytest.raises(PilotStateError, match="schema version 1 is unsupported"):
+    with pytest.raises(
+        PilotStateError, match=f"schema version {legacy_version} is unsupported"
+    ):
         PilotTaskStore(conversation).load(
             task.id,
             caller=caller,

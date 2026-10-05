@@ -39,7 +39,7 @@ def test_snapshot_round_trip_is_json_safe_and_immutable() -> None:
     restored = PilotSnapshot.model_validate_json(original.model_dump_json())
 
     assert restored == original
-    assert restored.schema_version == 2
+    assert restored.schema_version == 3
     with pytest.raises(ValidationError):
         original.status = "complete"  # type: ignore[misc]
 
@@ -51,6 +51,8 @@ def test_production_snapshot_excludes_unimplemented_approval_contracts() -> None
         PilotSnapshot.model_validate({**payload, "status": "waiting_approval"})
     with pytest.raises(ValidationError):
         PilotSnapshot.model_validate({**payload, "approval_id": "approval-1"})
+    with pytest.raises(ValidationError):
+        PilotSnapshot.model_validate({**payload, "invocations": []})
 
 
 def test_pilot_run_uses_bounded_live_smoke_defaults() -> None:

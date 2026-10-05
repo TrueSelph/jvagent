@@ -7,12 +7,22 @@ from pydantic import Field
 
 from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
-    PilotInvocation,
+    PilotModel,
     PilotSnapshot,
     validate_snapshot_for_run,
 )
 from jvagent.action.orchestrator.pilot.state import PilotStateError, PilotTaskStore
 from jvagent.memory.task_store import TaskHandle
+
+
+class EffectPilotInvocation(PilotModel):
+    """Test-only invocation receipt omitted from production pilot tasks."""
+
+    invocation_id: str = Field(min_length=1, max_length=256)
+    tool_name: str = Field(min_length=1, max_length=256)
+    payload_digest: str = Field(min_length=1, max_length=128)
+    status: Literal["prepared", "started", "settled"] = "prepared"
+    result: Optional[str] = Field(default=None, max_length=16000)
 
 
 class EffectPilotSnapshot(PilotSnapshot):
@@ -31,6 +41,8 @@ class EffectPilotSnapshot(PilotSnapshot):
     approval_payload_digest: Optional[str] = Field(default=None, max_length=128)
     approval_expires_at: Optional[datetime] = None
     approval_invocation_id: Optional[str] = Field(default=None, max_length=256)
+    requires_reconciliation: bool = False
+    invocations: tuple[EffectPilotInvocation, ...] = Field(default=(), max_length=100)
 
 
 class PilotEffectTestStore(PilotTaskStore):
@@ -71,7 +83,7 @@ class PilotEffectTestStore(PilotTaskStore):
         self,
         handle: TaskHandle,
         snapshot: PilotSnapshot,
-        invocation: PilotInvocation,
+        invocation: EffectPilotInvocation,
     ) -> PilotSnapshot:
         """Persist invocation intent before any effect may begin."""
 

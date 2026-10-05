@@ -748,24 +748,29 @@ production Python remains net +2,007 lines from baseline; PIL-13 stays FAIL.
 
 ### Production snapshot contract narrowing (2026-10-05)
 
-Removed approval identifiers, expiry, and approval-only waiting statuses from
-the production `PilotSnapshot` and `PilotTaskStore` lifecycle map. The fake
-effect witness now uses a test-only `EffectPilotSnapshot`, retaining approval
+Removed approval identifiers, expiry, invocation receipts, reconciliation
+flags, and effect-only statuses from the production `PilotSnapshot` and
+`PilotTaskStore` lifecycle map. The fake effect witness now uses test-only
+`EffectPilotInvocation` and `EffectPilotSnapshot` models, retaining approval
 binding, replay, and crash-boundary coverage without making unsupported effect
 policy part of the runtime contract. The persisted pilot snapshot is now schema
-version 2; schema 1 remains explicitly unsupported and is preserved with the
-existing recovery instruction rather than silently interpreted under the
-narrower model. The legacy rollback bridge now parks schema-2 pilot tasks.
-Production tests assert that approval-only fields and states are rejected.
+version 3. Schema-1 and schema-2 tasks are explicitly unsupported and remain
+parked with their original snapshots after rollback; they are not silently
+interpreted under the narrower model. The legacy rollback bridge parks current
+schema-3 pilot tasks and marks test-fixture unsettled invocations for review.
+Production tests assert that approval and invocation fields are rejected.
 
 The pilot, legacy-baseline, and continuation slice passed, with only three
 explicitly gated live-provider checks skipped. The full Python 3.10 suite
 (`uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`)
 also completed successfully; nine environment/live-gated cases were skipped.
-An additional graph-backed rollback test proves that a schema-1 task is parked
-without rewriting or deleting its snapshot, then rejected by the schema-2
-loader with the recovery instruction. The focused state/continuation tests and
-the full suite passed with this regression included.
+Additional graph-backed rollback tests prove schema-1 and schema-2 tasks are
+parked without rewriting or deleting their snapshots, then rejected by the
+schema-3 loader with the recovery instruction. This reduces the production
+pilot package to 1,047 lines (47 above its 1,000-line target) and the baseline
+production-tree delta by another 20 lines, to +1,987 lines. The
+focused state/continuation tests and the full suite passed with both legacy
+schema versions covered.
 This narrows the production contract but does not resolve PIL-04 parked-task
 re-entry, PIL-07 live quality scoring, PIL-11 broader browser qualification, or
 PIL-13's package-size and comparative-value gates.

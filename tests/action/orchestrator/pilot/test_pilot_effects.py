@@ -12,7 +12,6 @@ import pytest
 
 from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
-    PilotInvocation,
     PilotRunContext,
     PilotSnapshot,
 )
@@ -22,6 +21,7 @@ from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult
 from tests.action.orchestrator.pilot.effect_state_fixture import (
+    EffectPilotInvocation,
     EffectPilotSnapshot,
     PilotEffectTestStore,
 )
@@ -337,7 +337,7 @@ async def test_approved_composed_effect_records_task_intent_and_settled_receipt(
     invocation_id = service._invocation_id(context, tool.name, args)
     payload_digest = service._digest(args)
     approval_id = service.approve(context, tool.name, args)
-    invocation = PilotInvocation(
+    invocation = EffectPilotInvocation(
         invocation_id=invocation_id,
         tool_name=tool.name,
         payload_digest=payload_digest,

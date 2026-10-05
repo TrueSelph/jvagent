@@ -208,7 +208,7 @@ class PilotTaskStore:
         if (
             isinstance(schema_version, bool)
             or not isinstance(schema_version, int)
-            or schema_version != 2
+            or schema_version != 3
         ):
             if schema_version is None:
                 version = "missing"
@@ -216,14 +216,14 @@ class PilotTaskStore:
                 version = repr(schema_version)[:32]
             raise PilotStateError(
                 f"pilot task snapshot schema version {version} is unsupported; "
-                "this pilot supports version 2 only. Preserve the task and "
+                "this pilot supports version 3 only. Preserve the task and "
                 "start a new pilot run"
             )
         try:
             snapshot = PilotSnapshot.model_validate(raw_snapshot)
         except Exception as exc:
             raise PilotStateError(
-                "pilot task snapshot is invalid for schema version 2; "
+                "pilot task snapshot is invalid for schema version 3; "
                 "preserve the task and start a new pilot run"
             ) from exc
         expected_task_status = {

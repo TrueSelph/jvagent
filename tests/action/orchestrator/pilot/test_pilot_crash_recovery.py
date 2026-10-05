@@ -53,10 +53,9 @@ async def test_effect_crash_boundaries_are_inspectable_after_worker_restart(
         import sys
         from jvspatial.core.context import GraphContext, set_default_context
         from jvspatial.db.jsondb import JsonDB
-        from jvagent.action.orchestrator.pilot.contracts import (
-            PilotCaller, PilotInvocation, PilotSnapshot,
-        )
+        from jvagent.action.orchestrator.pilot.contracts import PilotCaller
         from tests.action.orchestrator.pilot.effect_state_fixture import (
+            EffectPilotInvocation, EffectPilotSnapshot,
             PilotEffectTestStore,
         )
         from jvagent.memory.conversation import Conversation
@@ -72,7 +71,7 @@ async def test_effect_crash_boundaries_are_inspectable_after_worker_restart(
                 session_id=f"pilot-crash-{boundary}",
             )
             state = PilotEffectTestStore(conversation)
-            snapshot = PilotSnapshot(
+            snapshot = EffectPilotSnapshot(
                 caller=caller,
                 skill_id="test_effect",
                 skill_digest="crash-skill-sha256",
@@ -83,7 +82,7 @@ async def test_effect_crash_boundaries_are_inspectable_after_worker_restart(
                 snapshot, task_id="pilot_crash_task", title="Crash test",
                 description="Test-only effect recovery boundary",
             )
-            invocation = PilotInvocation(
+            invocation = EffectPilotInvocation(
                 invocation_id="pilot-crash-invocation",
                 tool_name="fake_service__write",
                 payload_digest="crash-payload-sha256",

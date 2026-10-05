@@ -66,16 +66,6 @@ class ConversationalReply(PilotModel):
     answer: str = Field(min_length=1, max_length=4000)
 
 
-class PilotInvocation(PilotModel):
-    """Durable intent/receipt state for one tool invocation."""
-
-    invocation_id: str = Field(min_length=1, max_length=256)
-    tool_name: str = Field(min_length=1, max_length=256)
-    payload_digest: str = Field(min_length=1, max_length=128)
-    status: Literal["prepared", "started", "settled"] = "prepared"
-    result: Optional[str] = Field(default=None, max_length=16000)
-
-
 PilotOutput = Union[ResearchBrief, ConversationalReply]
 
 
@@ -106,7 +96,7 @@ def output_user_text(
 class PilotSnapshot(PilotModel):
     """Versioned task payload persisted through the existing TaskStore."""
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     driver: Literal["capability_pilot"] = "capability_pilot"
     caller: PilotCaller
     skill_id: str = Field(min_length=1, max_length=128)
@@ -119,13 +109,11 @@ class PilotSnapshot(PilotModel):
         "cancelled",
         "parked",
     ] = "running"
-    requires_reconciliation: bool = False
     question: str = Field(default="", max_length=2000)
     proactive_task_id: Optional[str] = Field(default=None, max_length=256)
     proactive_context: str = Field(default="", max_length=2000)
     evidence: tuple[EvidenceReference, ...] = Field(default=(), max_length=30)
     park_reason: Optional[str] = Field(default=None, max_length=512)
-    invocations: tuple[PilotInvocation, ...] = Field(default=(), max_length=100)
     output: Optional[PilotOutput] = None
 
 

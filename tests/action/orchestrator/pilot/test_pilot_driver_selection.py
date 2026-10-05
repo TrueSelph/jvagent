@@ -78,7 +78,7 @@ async def test_legacy_selection_parks_pilot_work_before_loop(monkeypatch, test_d
         task_type="CAPABILITY_PILOT",
         owner_action="research",
         initial_status="active",
-        snapshot={"schema_version": 2, "status": "running", "evidence": []},
+        snapshot={"schema_version": 3, "status": "running", "evidence": []},
     )
 
     async def record(*_args, **_kwargs):
