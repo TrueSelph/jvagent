@@ -689,3 +689,21 @@ reserves a per-run amount when a provider attempt has no returned usage. PIL-07
 remains partial; the required ten-case/five-repeat comparison, correction-turn
 measurement, browser research smoke on the reloaded process, parked-task
 re-entry, and PIL-13 simplification decision remain open.
+
+### Generic Messenger model-error diagnosis and reload (2026-10-05)
+
+The saved failed “What can you do?” interaction contains two successful Ollama
+HTTP responses: the first completed with `finish_reason=stop` (791 prompt and
+251 completion tokens, 3.37 seconds); the second ended with
+`finish_reason=length` at 1,024 completion tokens (992 prompt tokens, 11.03
+seconds). This was a truncated model output, not a request timeout or provider
+transport error. Current code maps this finish reason to a response-length
+message at `jvagent/action/orchestrator/orchestrator_interact_action.py:1571`.
+
+The personal API process had started before this source change, so the browser
+was still served by an older loaded process. It was restarted on loopback port
+8002 with the previously used local-smoke auth override. `/health` returned
+HTTP 200 and the existing Messenger tab remained connected to port 8002; its
+saved transcript, including the earlier failed turn and later successful
+retry, remained visible. No new model turn was sent after reload, so the new
+user-facing length message and live post-reload behavior remain unverified.
