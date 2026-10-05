@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
 from typing import Literal, Optional, Union
 from urllib.parse import quote
 
@@ -107,7 +106,7 @@ def output_user_text(
 class PilotSnapshot(PilotModel):
     """Versioned task payload persisted through the existing TaskStore."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     driver: Literal["capability_pilot"] = "capability_pilot"
     caller: PilotCaller
     skill_id: str = Field(min_length=1, max_length=128)
@@ -115,8 +114,6 @@ class PilotSnapshot(PilotModel):
     config_digest: str = Field(min_length=1, max_length=128)
     status: Literal[
         "running",
-        "waiting_approval",
-        "reconciliation_required",
         "complete",
         "failed",
         "cancelled",
@@ -127,10 +124,6 @@ class PilotSnapshot(PilotModel):
     proactive_task_id: Optional[str] = Field(default=None, max_length=256)
     proactive_context: str = Field(default="", max_length=2000)
     evidence: tuple[EvidenceReference, ...] = Field(default=(), max_length=30)
-    approval_id: Optional[str] = Field(default=None, max_length=256)
-    approval_payload_digest: Optional[str] = Field(default=None, max_length=128)
-    approval_expires_at: Optional[datetime] = None
-    approval_invocation_id: Optional[str] = Field(default=None, max_length=256)
     park_reason: Optional[str] = Field(default=None, max_length=512)
     invocations: tuple[PilotInvocation, ...] = Field(default=(), max_length=100)
     output: Optional[PilotOutput] = None

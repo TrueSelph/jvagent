@@ -116,12 +116,12 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         _snapshot(), title="research", description="Research the question"
     )
     unsupported = deepcopy(handle.snapshot)
-    unsupported["schema_version"] = 2
+    unsupported["schema_version"] = 3
     await handle.set_snapshot(unsupported)
 
     with pytest.raises(
         PilotStateError,
-        match=r"schema version 2 is unsupported.*Preserve the task and start a new pilot run",
+        match=r"schema version 3 is unsupported.*Preserve the task and start a new pilot run",
     ):
         tasks.load(
             handle.id,
@@ -132,7 +132,7 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["schema_version"] == 2
+    assert handle.snapshot["schema_version"] == 3
 
 
 @pytest.mark.asyncio

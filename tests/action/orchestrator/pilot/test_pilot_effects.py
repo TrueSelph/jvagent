@@ -21,7 +21,10 @@ from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult
-from tests.action.orchestrator.pilot.effect_state_fixture import PilotEffectTestStore
+from tests.action.orchestrator.pilot.effect_state_fixture import (
+    EffectPilotSnapshot,
+    PilotEffectTestStore,
+)
 
 
 class DurableEffectService:
@@ -364,7 +367,7 @@ async def test_approved_composed_effect_records_task_intent_and_settled_receipt(
         return True
 
     async def invoke_effect(ctx, name, payload, recheck, operation):
-        current = PilotSnapshot.model_validate(handle.snapshot)
+        current = EffectPilotSnapshot.model_validate(handle.snapshot)
         recorded = next(
             item for item in current.invocations if item.invocation_id == invocation_id
         )

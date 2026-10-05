@@ -518,7 +518,7 @@ async def park_capability_pilot_tasks(visitor: Any) -> int:
         reason = "legacy driver selected; pilot state preserved for explicit review"
         raw_snapshot = getattr(task, "snapshot", None)
         snapshot = None
-        if isinstance(raw_snapshot, dict) and raw_snapshot.get("schema_version") == 1:
+        if isinstance(raw_snapshot, dict) and raw_snapshot.get("schema_version") == 2:
             snapshot = dict(raw_snapshot)
             invocations = snapshot.get("invocations")
             unsettled = isinstance(invocations, list) and any(

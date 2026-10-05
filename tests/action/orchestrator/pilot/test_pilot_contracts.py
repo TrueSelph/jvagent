@@ -1,7 +1,5 @@
 """Pilot contracts reject ambiguous or unscoped persisted state."""
 
-from datetime import datetime, timezone
-
 import pytest
 from pydantic import ValidationError
 
@@ -15,6 +13,7 @@ from jvagent.action.orchestrator.pilot.contracts import (
     output_user_text,
     validate_snapshot_for_run,
 )
+from tests.action.orchestrator.pilot.effect_state_fixture import EffectPilotSnapshot
 
 
 def _snapshot() -> PilotSnapshot:
@@ -40,9 +39,18 @@ def test_snapshot_round_trip_is_json_safe_and_immutable() -> None:
     restored = PilotSnapshot.model_validate_json(original.model_dump_json())
 
     assert restored == original
-    assert restored.schema_version == 1
+    assert restored.schema_version == 2
     with pytest.raises(ValidationError):
         original.status = "complete"  # type: ignore[misc]
+
+
+def test_production_snapshot_excludes_unimplemented_approval_contracts() -> None:
+    payload = _snapshot().model_dump()
+
+    with pytest.raises(ValidationError):
+        PilotSnapshot.model_validate({**payload, "status": "waiting_approval"})
+    with pytest.raises(ValidationError):
+        PilotSnapshot.model_validate({**payload, "approval_id": "approval-1"})
 
 
 def test_pilot_run_uses_bounded_live_smoke_defaults() -> None:
@@ -147,9 +155,11 @@ def test_user_facing_conversational_reply_needs_no_external_source():
     assert output_user_text(output) == "I can help with research questions."
 
 
-def test_snapshot_approval_expiry_round_trips_as_utc_datetime() -> None:
+def test_test_only_approval_expiry_round_trips_as_utc_datetime() -> None:
+    from datetime import datetime, timezone
+
     expiry = datetime(2030, 1, 1, tzinfo=timezone.utc)
-    snapshot = _snapshot().model_copy(
+    snapshot = EffectPilotSnapshot.model_validate(_snapshot().model_dump()).model_copy(
         update={
             "status": "waiting_approval",
             "approval_id": "approval-1",
@@ -158,5 +168,5 @@ def test_snapshot_approval_expiry_round_trips_as_utc_datetime() -> None:
         }
     )
 
-    restored = PilotSnapshot.model_validate_json(snapshot.model_dump_json())
+    restored = EffectPilotSnapshot.model_validate_json(snapshot.model_dump_json())
     assert restored.approval_expires_at == expiry

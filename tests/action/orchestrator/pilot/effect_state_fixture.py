@@ -1,7 +1,9 @@
 """Test-only approval and effect persistence adapter for PIL-08/PIL-09."""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import Field
 
 from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
@@ -13,8 +15,57 @@ from jvagent.action.orchestrator.pilot.state import PilotStateError, PilotTaskSt
 from jvagent.memory.task_store import TaskHandle
 
 
+class EffectPilotSnapshot(PilotSnapshot):
+    """Test-only approval states excluded from the production snapshot API."""
+
+    status: Literal[
+        "running",
+        "waiting_approval",
+        "reconciliation_required",
+        "complete",
+        "failed",
+        "cancelled",
+        "parked",
+    ] = "running"
+    approval_id: Optional[str] = Field(default=None, max_length=256)
+    approval_payload_digest: Optional[str] = Field(default=None, max_length=128)
+    approval_expires_at: Optional[datetime] = None
+    approval_invocation_id: Optional[str] = Field(default=None, max_length=256)
+
+
 class PilotEffectTestStore(PilotTaskStore):
     """Keep the excluded approval/effect state machine out of production code."""
+
+    @staticmethod
+    def _validate_snapshot(snapshot: PilotSnapshot) -> EffectPilotSnapshot:
+        try:
+            return EffectPilotSnapshot.model_validate(snapshot.model_dump(mode="json"))
+        except Exception as exc:
+            raise PilotStateError("pilot snapshot is invalid") from exc
+
+    @staticmethod
+    def _read_snapshot(handle: TaskHandle) -> EffectPilotSnapshot:
+        raw_snapshot = handle.snapshot
+        if not isinstance(raw_snapshot, dict):
+            raise PilotStateError("pilot task snapshot is missing or invalid")
+        try:
+            snapshot = EffectPilotSnapshot.model_validate(raw_snapshot)
+        except Exception as exc:
+            raise PilotStateError("pilot task snapshot is invalid") from exc
+        expected_task_status = {
+            "running": "active",
+            "waiting_approval": "parked",
+            "reconciliation_required": "parked",
+            "parked": "parked",
+            "complete": "completed",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }[snapshot.status]
+        if handle.status != expected_task_status:
+            raise PilotStateError(
+                "pilot task and snapshot lifecycle statuses do not match"
+            )
+        return snapshot
 
     async def record_invocation(
         self,

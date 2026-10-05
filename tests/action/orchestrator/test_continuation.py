@@ -113,7 +113,7 @@ async def test_legacy_driver_parks_pilot_snapshot_and_flags_uncertain_invocation
     )
     store = TaskStore(conversation)
     snapshot = {
-        "schema_version": 1,
+        "schema_version": 2,
         "driver": "capability_pilot",
         "status": "running",
         "evidence": [{"source_id": "source-1"}],

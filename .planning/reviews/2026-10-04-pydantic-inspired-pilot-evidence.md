@@ -745,3 +745,23 @@ The focused state/effect/crash suite passed (23 tests), as did
 `uv run --python 3.10 pytest tests/ -q` and `pre-commit run --all-files`.
 The package remains 68 lines above the local 1,000-line target, while total
 production Python remains net +2,007 lines from baseline; PIL-13 stays FAIL.
+
+### Production snapshot contract narrowing (2026-10-05)
+
+Removed approval identifiers, expiry, and approval-only waiting statuses from
+the production `PilotSnapshot` and `PilotTaskStore` lifecycle map. The fake
+effect witness now uses a test-only `EffectPilotSnapshot`, retaining approval
+binding, replay, and crash-boundary coverage without making unsupported effect
+policy part of the runtime contract. The persisted pilot snapshot is now schema
+version 2; schema 1 remains explicitly unsupported and is preserved with the
+existing recovery instruction rather than silently interpreted under the
+narrower model. The legacy rollback bridge now parks schema-2 pilot tasks.
+Production tests assert that approval-only fields and states are rejected.
+
+The pilot, legacy-baseline, and continuation slice passed, with only three
+explicitly gated live-provider checks skipped. The full Python 3.10 suite
+(`uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`)
+also completed successfully; nine environment/live-gated cases were skipped.
+This narrows the production contract but does not resolve PIL-04 parked-task
+re-entry, PIL-07 live quality scoring, PIL-11 broader browser qualification, or
+PIL-13's package-size and comparative-value gates.
