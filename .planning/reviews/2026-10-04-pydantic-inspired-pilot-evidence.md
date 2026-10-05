@@ -830,3 +830,51 @@ that virtualenv has no `pip`; optional Action requirements were therefore not
 installed during startup. The tested identity path did not depend on those
 Actions. The updated gate requires this startup limitation to be recorded and
 resolved or explicitly bounded in future browser qualification.
+
+### Pilot selector and package-marker correction (2026-10-05)
+
+Tested source commit: `62340bd3` (`fix(skills): ignore package markers in
+script detection`). The prior disposable Messenger graph persisted
+`skill_runtime: legacy`; YAML merge mode correctly left persisted Action values
+alone. I set only that disposable graph's Orchestrator to
+`capability_pilot` through Messenger Action Config and constrained it to four
+model requests, four tool calls, 3,000 total tokens, and 500 output tokens.
+The user's stable graph was not used for this configuration change.
+
+The first browser turn exposed an admission bug: the built-in research skill
+contains a package-marker `__init__.py`, which the resolver had labeled
+"bundled scripts". Messenger showed the bounded retry response; debug state
+recorded a persisted failed `CAPABILITY_PILOT` task, zero model calls, and zero
+tokens. Excluding `__init__.py` package markers while continuing to detect
+actual Python helper files corrected the mismatch. The resolver now reports no
+unsupported features for the built-in research skill; a regression test checks
+the package-marker case, and an existing test still verifies that real helper
+scripts are rejected.
+
+After restarting the current checkout source, the next fresh Messenger
+conversation asked `Say hello in one short sentence.` The public
+`POST /agents/n.Agent.c7f1a2b892a24f36bfa5eadd/interact` returned HTTP 200.
+The browser displayed `Hello! Great to see you — what can I help with today?`
+through `glm-5.3:cloud`; debug data identifies the model call as
+`PydanticAICapabilityPilot` and the structured result as
+`final_result_ConversationalReply`. The graph persisted interaction
+`n.Interaction.cda9b6fed5cb45cd882b966c` in session
+`sess_ffc8c89c259c4c87` and a completed `CAPABILITY_PILOT` TaskStore record
+`pilot_3ea63c17aec04c95942e87348b897524`, including the validated answer.
+Provider-reported usage was 947 prompt + 63 completion = 1,010 tokens, one
+request, 0.768 seconds. No provider price or billable amount was returned;
+the internal zero cost accumulator is not evidence of free usage.
+
+`uv run --python 3.10 --extra test --extra pydantic-pilot pytest tests/ -q`
+passed. The resolver/pilot slice passed with only its three gated live tests
+and the unavailable optional skill fixture skipped. `pre-commit run
+--all-files` passed after Black reformatted the new test on its first run.
+Startup returned `/health` 200 but still logged 24 declared dependency errors
+because `JVAGENT_DISABLE_RUNTIME_PIP_INSTALL=1`; several optional Actions were
+not installed in this ad hoc environment. The tested conversational path did
+not call those Actions. This is one live conversational pilot success after a
+fixed admission failure, not a live research evaluation, broad browser
+qualification, or clean optional-Action deployment qualification. The
+TaskStore item is labeled research even though the model correctly selected a
+conversational output; matching skill/task selection remains a question for
+the pilot's narrow one-skill architecture.
