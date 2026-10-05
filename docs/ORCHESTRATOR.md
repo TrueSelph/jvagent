@@ -436,7 +436,17 @@ actions:
     context:
       enabled: true
       skill_runtime: capability_pilot
+      pilot_max_model_requests: 16
+      pilot_max_tool_calls: 24
+      pilot_max_total_tokens: 30000
+      pilot_max_output_tokens: 6000
 ```
+
+These per-run ceilings are configurable on the Orchestrator Action. The defaults
+allow a bounded search, source retrieval, and synthesis cycle; increase them
+only when the skill's expected work justifies the added latency and model cost.
+When a ceiling is reached, Messenger reports which class of limit stopped the
+run and the failed TaskStore record retains the underlying reason.
 
 The pilot rejects non-default channel formatting and pending response
 directives because they require ReplyAction's model-based shaping path. It

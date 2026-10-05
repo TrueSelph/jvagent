@@ -366,6 +366,26 @@ class OrchestratorInteractAction(
             "pilot_skill only."
         ),
     )
+    pilot_max_model_requests: int = attribute(
+        default=16,
+        description="Maximum provider requests in one capability-pilot run (1–32).",
+        ge=1,
+    )
+    pilot_max_tool_calls: int = attribute(
+        default=24,
+        description="Maximum tool calls in one capability-pilot run (1–64).",
+        ge=1,
+    )
+    pilot_max_total_tokens: int = attribute(
+        default=30000,
+        description="Maximum total model tokens in one capability-pilot run.",
+        ge=256,
+    )
+    pilot_max_output_tokens: int = attribute(
+        default=6000,
+        description="Maximum generated tokens across one capability-pilot run.",
+        ge=64,
+    )
     enforce_json_mode: bool = attribute(
         default=True,
         description=(
@@ -1321,6 +1341,12 @@ class OrchestratorInteractAction(
             "model_id": model_id,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "pilot_budgets": {
+                "requests": self.pilot_max_model_requests,
+                "tool_calls": self.pilot_max_tool_calls,
+                "total_tokens": self.pilot_max_total_tokens,
+                "output_tokens": self.pilot_max_output_tokens,
+            },
             "reply_parameters": responder._compose_parameters_text(None, interaction),
         }
         config_digest = hashlib.sha256(
@@ -1336,6 +1362,10 @@ class OrchestratorInteractAction(
             skill_id=skill.name,
             skill_digest=skill.digest,
             config_digest=config_digest,
+            max_model_requests=self.pilot_max_model_requests,
+            max_tool_calls=self.pilot_max_tool_calls,
+            max_total_tokens=self.pilot_max_total_tokens,
+            max_output_tokens=self.pilot_max_output_tokens,
         )
         snapshot = PilotSnapshot(
             caller=caller,
@@ -1471,9 +1501,24 @@ class OrchestratorInteractAction(
             # while using the existing ReplyAction egress for a concise retry
             # instruction.
             try:
+                if "request_limit" in str(exc):
+                    limit_hint = "the model-request limit"
+                elif "tool_calls_limit" in str(exc):
+                    limit_hint = "the research Action-call limit"
+                elif any(
+                    marker in str(exc)
+                    for marker in (
+                        "total_tokens_limit",
+                        "output_tokens_limit",
+                        "token budget",
+                    )
+                ):
+                    limit_hint = "the model token limit"
+                else:
+                    limit_hint = "the time limit"
                 delivered = await responder.publish(
-                    "I couldn't finish that request within the available limits. "
-                    "Please try a narrower request.",
+                    "I couldn't complete that research within "
+                    f"{limit_hint}. Try a narrower question or fewer sources.",
                     visitor=visitor,
                 )
             except Exception:

@@ -443,8 +443,8 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert conversation.tasks[-1]["status"] == "failed"
     assert conversation.tasks[-1]["snapshot"]["status"] == "failed"
     assert published[-1] == (
-        "I couldn't finish that request within the available limits. "
-        "Please try a narrower request."
+        "I couldn't complete that research within the model token limit. "
+        "Try a narrower question or fewer sources."
     )
     assert budget_interaction.response == published[-1]
     assert budget_interaction.emitted is True

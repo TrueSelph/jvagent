@@ -477,5 +477,26 @@ credential before further live calls; the transcript may still contain it. No
 credential value is stored in this report or the repository. The successful
 single adapter call described above used a subsequent hidden-input entry.
 
+### Messenger request-budget retest (2026-10-04)
+
+The user's fresh Messenger session had persisted failures showing the pilot
+stopped at Pydantic AI's `request_limit=8` on one research run and
+`tool_calls_limit=12` (attempting call 13) on the next. Provider calls were
+short; these were harness usage-budget failures rather than transport timeouts.
+The Orchestrator now defaults to 16 model requests, 24 tool calls, 30,000 total
+tokens, and 6,000 output tokens per run. Each ceiling is configurable on the
+Orchestrator Action and included in the run configuration digest. A budget
+fallback names the category that stopped the run while the TaskStore retains
+the provider/library diagnostic.
+
+After reloading the isolated API on port 8002, an in-browser live GLM-5.3 Cloud
+research turn completed through Messenger and the graph-backed TaskStore marked
+its pilot task complete. It took about 12.1 seconds, recorded eight model
+requests and 14,654 total tokens, and returned a citation. The answer only found
+an unrelated Pydantic AI documentation page, so this verifies request delivery,
+tool-loop completion, persistence, and egress—not research relevance or factual
+quality. The pilot remains NOT QUALIFIED; a relevant-source evaluation and
+matched legacy comparison remain open.
+
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).
