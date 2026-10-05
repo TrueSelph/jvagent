@@ -479,6 +479,39 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert empty_interaction.emitted is True
     assert len(published) == 5
 
+    async def return_truncated_model_response(*_args, **_kwargs):
+        error = PilotModelAdapterError(
+            "JV model returned neither text nor tool calls "
+            "(finish_reason=length, completion_tokens=1024)"
+        )
+        error.finish_reason = "length"
+        raise error
+
+    monkeypatch.setattr(
+        pilot_runtime, "run_research_agent", return_truncated_model_response
+    )
+    truncated_interaction = Interaction()
+    truncated_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="answer this request",
+        channel="default",
+        interaction=truncated_interaction,
+        conversation=conversation,
+        correlation_id="run-output-truncated",
+    )
+    await orchestrator._run_capability_pilot(truncated_visitor)
+    assert conversation.tasks[-1]["status"] == "failed"
+    assert conversation.tasks[-1]["snapshot"]["status"] == "failed"
+    assert published[-1] == (
+        "The model reached its response-length limit before it could finish. "
+        "Please try a shorter request."
+    )
+    assert truncated_interaction.response == published[-1]
+    assert truncated_interaction.emitted is True
+    assert len(published) == 6
+
     # Fail the durable evidence checkpoint after the read Action returns. The
     # driver must propagate that persistence error, terminate the task as
     # failed, and not ask the model to retry the tool as an ordinary tool error.
@@ -523,7 +556,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert conversation.tasks[-1]["status"] == "failed"
     assert conversation.tasks[-1]["snapshot"]["status"] == "failed"
     assert sum(model_request_counts) - requests_before_fault == 2
-    assert len(published) == 5
+    assert len(published) == 6
 
     # TaskMonitor's empty utterance is valid only when a claimed PROACTIVE task
     # is resolved from TaskStore; client-supplied context must not replace it.

@@ -1532,15 +1532,35 @@ class OrchestratorInteractAction(
                 update={"status": "failed", "evidence": evidence.snapshot()}
             )
             await pilot_store.fail(handle, failed, str(exc))
+            if exc.finish_reason:
+                logger.warning(
+                    "capability pilot received no usable model output: "
+                    "run_id=%s task_id=%s finish_reason=%s diagnostic=%s",
+                    run_id,
+                    task_id,
+                    exc.finish_reason,
+                    exc,
+                )
             # A malformed/empty provider response is a failed model turn too.
             # Persist the failure and give the user a bounded reply instead of
             # leaving the Messenger stream open with no assistant message.
             try:
-                delivered = await responder.publish(
-                    "I couldn't get a usable response from the model. "
-                    "Please try again.",
-                    visitor=visitor,
-                )
+                if exc.finish_reason == "length":
+                    user_message = (
+                        "The model reached its response-length limit before it "
+                        "could finish. Please try a shorter request."
+                    )
+                elif exc.finish_reason == "content_filter":
+                    user_message = (
+                        "The model couldn't provide a response to that request. "
+                        "Please rephrase it and try again."
+                    )
+                else:
+                    user_message = (
+                        "I couldn't get a usable response from the model. "
+                        "Please try again."
+                    )
+                delivered = await responder.publish(user_message, visitor=visitor)
             except Exception:
                 logger.exception("Could not publish the pilot model-error response")
             else:

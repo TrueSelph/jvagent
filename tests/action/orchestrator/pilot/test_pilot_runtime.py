@@ -9,13 +9,19 @@ from pydantic_ai.messages import ModelRequest as PAIModelRequest
 from pydantic_ai.messages import RetryPromptPart
 from pydantic_ai.usage import UsageLimits
 
-from jvagent.action.model.contract import ModelResponse, ToolCall, Usage
+from jvagent.action.model.contract import (
+    FinishReason,
+    ModelResponse,
+    ToolCall,
+    Usage,
+)
 from jvagent.action.orchestrator.pilot.contracts import (
     ConversationalReply,
     PilotOutput,
     ResearchBrief,
 )
 from jvagent.action.orchestrator.pilot.runtime import (
+    PilotModelAdapterError,
     _to_jv_messages,
     function_model_for_action,
 )
@@ -110,6 +116,29 @@ def test_pilot_accepts_typed_conversational_reply_without_research_sources():
     assert result.output == ConversationalReply(
         answer="I can help with research questions."
     )
+
+
+def test_empty_truncated_model_response_preserves_finish_reason_and_usage():
+    class TruncatedModelAction:
+        async def complete(self, request, *, calling_action_name=None):
+            return ModelResponse(
+                finish_reason=FinishReason.LENGTH,
+                raw_finish_reason="length",
+                usage=Usage(completion_tokens=1024, total_tokens=1024),
+            )
+
+    async def run() -> None:
+        agent = Agent(
+            function_model_for_action(TruncatedModelAction()),
+            output_type=ResearchBrief,
+            retries=0,
+        )
+        with pytest.raises(PilotModelAdapterError) as caught:
+            await agent.run("answer briefly")
+        assert caught.value.finish_reason == FinishReason.LENGTH
+        assert "completion_tokens=1024" in str(caught.value)
+
+    asyncio.run(run())
 
 
 def test_pydantic_validation_retry_details_are_forwarded_as_text():

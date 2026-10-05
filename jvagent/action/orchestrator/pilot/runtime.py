@@ -48,6 +48,8 @@ from jvagent.tooling.tool import Tool as JVTool
 class PilotModelAdapterError(ValueError):
     """A message or model response is outside the pilot's supported text/tool subset."""
 
+    finish_reason: str | None = None
+
 
 class PilotEvidenceCollector:
     """Collect bounded references returned by successful read-tool calls."""
@@ -302,9 +304,13 @@ def function_model_for_action(
                 )
             parts.append(ToolCallPart(call.name, call.arguments, tool_call_id=call.id))
         if not parts:
-            raise PilotModelAdapterError(
-                "JV model returned neither text nor tool calls"
+            error = PilotModelAdapterError(
+                "JV model returned neither text nor tool calls "
+                f"(finish_reason={response.finish_reason}, "
+                f"completion_tokens={response.usage.completion_tokens})"
             )
+            error.finish_reason = response.finish_reason
+            raise error
         return PAIModelResponse(
             parts=parts,
             model_name=response.model or None,

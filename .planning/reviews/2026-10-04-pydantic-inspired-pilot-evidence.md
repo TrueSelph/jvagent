@@ -231,12 +231,12 @@ Verification collected:
 
 ## Bloat and replaced responsibilities
 
-The four substantive pilot modules currently contain 1,316 lines: contracts
-(158), runtime/model adapter (445), TaskStore adapter (504), and Action
+The four substantive pilot modules currently contain 1,323 lines: contracts
+(158), runtime/model adapter (452), TaskStore adapter (504), and Action
 composition (209). The package initializer adds 27, for 1,343 pilot-package
 lines. The generic authenticated host-context helper adds another 53 production
-lines. The pilot package is 316 lines above the 1,000-line target; package plus
-host-context helper totals 1,396 lines before Orchestrator/TaskStore integration.
+lines. The pilot package is 350 lines above the 1,000-line target; package plus
+host-context helper totals 1,403 lines before Orchestrator/TaskStore integration.
 The current shared working-tree diff shows 438 insertions/65 deletions in the
 Orchestrator and 83 insertions/13 deletions in TaskStore. Those files contain
 pre-existing uncommitted work, so those figures cannot be attributed entirely
@@ -264,11 +264,11 @@ The current responsibility delta is narrower than a replacement-harness claim:
 
 The optional package adds exactly one pinned direct dependency,
 `pydantic-ai-slim==2.54.0`, behind `pydantic-pilot`; Pydantic is already a
-direct JV runtime dependency. The current pilot package is 1,343 lines (1,316
-across four substantive modules plus a 27-line initializer), 343 lines over
+direct JV runtime dependency. The current pilot package is 1,350 lines (1,323
+across four substantive modules plus a 27-line initializer), 350 lines over
 its 1,000-line target before counting Orchestrator integration. From the
-implementation baseline `aff7f0a2`, the committed `jvagent` source diff is
-2,453 insertions and 264 deletions (net +2,189 lines). That tree-wide number
+implementation baseline `aff7f0a2`, the current `jvagent` source diff is
+2,480 insertions and 264 deletions (net +2,216 lines). That tree-wide number
 includes shared integrations and compatibility changes and must not be
 attributed wholly to the pilot without a per-hunk inventory. A removable-code
 decision remains required before expansion.
@@ -521,6 +521,15 @@ search fixture. The API restart and live follow-up are therefore pending a
 user-supplied local JWT signing key and Serper key. The graph database and
 conversation files were left untouched; destructive source sync was not
 applied.
+
+The pilot adapter had discarded JV's normalized finish reason when a provider
+returned no text or tool calls, causing output truncation to share the generic
+model-error reply. It now retains the finish reason and completion-token count
+in the TaskStore failure detail, logs the run and task IDs, and gives output
+length and content-filter stops distinct user-facing explanations. It does not
+automatically retry the model call. Focused runtime and Orchestrator regressions
+pass; the changed path still needs a live Messenger retest after the personal
+API is restored.
 
 See the implementation checklist and acceptance matrix in
 [`../plans/2026-10-04-pydantic-inspired-skill-pilot.md`](../plans/2026-10-04-pydantic-inspired-skill-pilot.md).
