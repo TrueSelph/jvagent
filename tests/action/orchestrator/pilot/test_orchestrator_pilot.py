@@ -1310,9 +1310,15 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         conversation=conversation,
         correlation_id="run-cancelled",
     )
-    cancelled_run = asyncio.create_task(
-        orchestrator._run_capability_pilot(cancelled_visitor)
-    )
+    from jvagent.harness.contracts import TurnRunState
+    from jvagent.harness.runtime import get_runtime, reset_runtime
+
+    async def execute_pilot(visitor):
+        await orchestrator._run_capability_pilot(visitor)
+
+    monkeypatch.setattr(orchestrator, "_execute_turn", execute_pilot)
+    reset_runtime()
+    cancelled_run = asyncio.create_task(orchestrator.execute(cancelled_visitor))
     await asyncio.wait_for(action_entered.wait(), timeout=2)
     while not conversation.tasks or conversation.tasks[-1]["status"] != "active":
         await asyncio.sleep(0)
@@ -1322,6 +1328,16 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert action_cancelled.is_set()
     assert conversation.tasks[-1]["status"] == "cancelled"
     assert conversation.tasks[-1]["snapshot"]["status"] == "cancelled"
+    cancelled_turn = get_runtime().get_run("run-cancelled")
+    assert cancelled_turn is not None
+    assert cancelled_turn.state is TurnRunState.CANCELLED
+    assert (
+        get_runtime().checkpoint_from_interaction(cancelled_visitor.interaction)[
+            "state"
+        ]
+        == TurnRunState.CANCELLED.value
+    )
+    reset_runtime()
     assert len(published) == 5
 
     from jvagent.action.orchestrator.pilot import runtime as pilot_runtime
