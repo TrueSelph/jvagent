@@ -13,6 +13,7 @@ from pydantic_ai.usage import UsageLimits
 
 from jvagent.action.model.contract import (
     FinishReason,
+    ModelRequest,
     ModelResponse,
     ToolCall,
     Usage,
@@ -31,6 +32,7 @@ from jvagent.action.orchestrator.pilot.runtime import (
     _to_jv_messages,
     build_research_agent,
     function_model_for_action,
+    request_input_token_upper_bound,
     run_research_agent,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
@@ -45,8 +47,10 @@ def test_model_request_guard_stops_before_calling_the_provider():
             raise AssertionError("provider must not be called after budget exhaustion")
 
     model_action = ConfiguredModelAction()
+    guarded_requests = []
 
-    def exhausted():
+    def exhausted(request):
+        guarded_requests.append(request)
         raise PilotBudgetExceeded("configured dollar budget exhausted")
 
     agent = Agent(
@@ -57,6 +61,28 @@ def test_model_request_guard_stops_before_calling_the_provider():
     with pytest.raises(PilotBudgetExceeded, match="dollar budget"):
         asyncio.run(agent.run("hello"))
     assert model_action.calls == 0
+    assert len(guarded_requests) == 1
+    assert guarded_requests[0].messages[-1]["content"] == "hello"
+
+
+def test_request_input_upper_bound_includes_all_active_tool_schemas():
+    base = ModelRequest(messages=[{"role": "user", "content": "hello"}])
+    with_tools = ModelRequest(
+        messages=[{"role": "user", "content": "hello"}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search__search",
+                    "parameters": {"properties": {"query": {"type": "string"}}},
+                },
+            }
+        ],
+    )
+
+    assert request_input_token_upper_bound(
+        with_tools
+    ) > request_input_token_upper_bound(base)
 
 
 def test_pydantic_runtime_adapts_to_the_configured_jv_model_action():

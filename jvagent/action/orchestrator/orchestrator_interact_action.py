@@ -48,7 +48,7 @@ from pydantic import PrivateAttr
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.utils.uploads import DEFAULT_UPLOAD_KEYS
-from jvagent.action.model.contract import ModelCapabilities, ModelResponse
+from jvagent.action.model.contract import ModelCapabilities, ModelRequest, ModelResponse
 from jvagent.action.orchestrator import continuation
 from jvagent.action.orchestrator.access import delegate_resource_label
 from jvagent.action.orchestrator.catalog import (
@@ -575,18 +575,22 @@ class OrchestratorInteractAction(
     max_turn_cost_usd: float = attribute(
         default=0.0,
         description=(
-            "Cost ceiling for one turn (USD, estimated from usage × pricing). "
-            "When the turn's model calls so far meet it, the loop ends with "
-            "ended_via=budget_exhausted and one partial-compose delivers what was "
-            "gathered. 0 disables."
+            "Cost ceiling for one turn (USD). The capability pilot reserves a "
+            "pessimistic per-request estimate before sending, using serialized "
+            "request size, its output-token cap, provider/model pricing, and a "
+            "safety margin; unknown pricing blocks the request. Other drivers "
+            "stop from observed usage. This is not a provider-enforced billing "
+            "cap. 0 disables."
         ),
     )
     max_conversation_cost_usd: float = attribute(
         default=0.0,
         description=(
             "Cost ceiling for the whole conversation (USD, accumulated on "
-            "conversation.context across turns). A turn that starts over it makes "
-            "no model call and replies with budget_exhausted_text. 0 disables."
+            "conversation.context across turns). The capability pilot reserves "
+            "a pessimistic estimate before each model request; unknown pricing "
+            "blocks the request. This is not a provider-enforced billing cap. "
+            "0 disables."
         ),
     )
     budget_exhausted_text: str = attribute(
@@ -1315,6 +1319,84 @@ class OrchestratorInteractAction(
         await pilot_store.save(handle, reserved)
         return reserved
 
+    def _preflight_pilot_model_cost(
+        self,
+        visitor: "InteractWalker",
+        request: ModelRequest,
+        *,
+        model_id: str,
+        provider: str,
+        max_output_tokens: int,
+    ) -> float:
+        """Reserve pessimistic request cost before crossing the provider boundary.
+
+        The estimate uses the full serialized request (including active tool
+        schemas), a bounded output cap, current provider/model pricing and a
+        safety margin. It is an application-side guard, not a provider billing
+        guarantee; unknown pricing fails closed whenever a dollar ceiling is
+        configured.
+        """
+        turn_ceiling = float(self.max_turn_cost_usd or 0.0)
+        conversation_ceiling = float(self.max_conversation_cost_usd or 0.0)
+        if turn_ceiling <= 0 and conversation_ceiling <= 0:
+            return 0.0
+
+        from jvagent.action.model.cost_estimator import request_cost_reservation_usd
+        from jvagent.action.orchestrator.pilot.runtime import (
+            PilotBudgetExceeded,
+            request_input_token_upper_bound,
+        )
+
+        requested_output = request.max_tokens
+        if (
+            isinstance(requested_output, bool)
+            or not isinstance(requested_output, int)
+            or requested_output <= 0
+        ):
+            requested_output = max_output_tokens
+        bounded_output = min(requested_output, max_output_tokens)
+        if bounded_output <= 0:
+            raise PilotBudgetExceeded(
+                "a bounded output-token limit is required for dollar preflight"
+            )
+        request.max_tokens = bounded_output
+        try:
+            input_tokens = request_input_token_upper_bound(request)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PilotBudgetExceeded(
+                "the model request could not be bounded for dollar preflight"
+            ) from exc
+        reservation = request_cost_reservation_usd(
+            provider,
+            model_id,
+            input_tokens=input_tokens,
+            output_tokens=bounded_output,
+        )
+        if reservation is None:
+            raise PilotBudgetExceeded(
+                "pricing is unavailable for the configured dollar ceiling"
+            )
+
+        current_turn_cost, complete = self._turn_cost_summary(visitor)
+        if not complete:
+            raise PilotBudgetExceeded(
+                "prior model request usage is unconfirmed; retry is blocked"
+            )
+        if turn_ceiling > 0 and current_turn_cost + reservation > turn_ceiling:
+            raise PilotBudgetExceeded(
+                "the next model request cannot be reserved within the turn dollar budget"
+            )
+        if conversation_ceiling > 0:
+            current_conversation_cost = self._conversation_cost_usd(visitor)
+            if (
+                current_conversation_cost + current_turn_cost + reservation
+                > conversation_ceiling
+            ):
+                raise PilotBudgetExceeded(
+                    "the next model request cannot be reserved within the conversation dollar budget"
+                )
+        return reservation
+
     async def _settle_interrupted_pilot_run(
         self,
         pilot_store: Any,
@@ -1835,11 +1917,16 @@ class OrchestratorInteractAction(
             if self.stream_reasoning_trace:
                 await self._emit_thought(visitor, text)
 
-        async def guard_pilot_model_request() -> None:
+        async def guard_pilot_model_request(request: ModelRequest) -> None:
             nonlocal snapshot
             async with pilot_snapshot_lock:
-                # Dollar spend is known only after response; reservation blocks
-                # every following request once the observed ceiling is crossed.
+                self._preflight_pilot_model_cost(
+                    visitor,
+                    request,
+                    model_id=model_id,
+                    provider=str(getattr(model_action, "provider", "") or ""),
+                    max_output_tokens=context.max_output_tokens,
+                )
                 snapshot = await self._reserve_pilot_model_request(
                     visitor, snapshot, pilot_store, handle
                 )

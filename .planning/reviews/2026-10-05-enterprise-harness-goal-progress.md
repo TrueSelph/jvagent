@@ -3,7 +3,7 @@
 Date: 2026-10-05
 Goal status: Active
 Branch: `codex/pydantic-inspired-skill-pilot`
-Latest committed milestone before Phase 53: `be8ec5ba`; this worktree was clean at phase start.
+Latest committed milestone before Phase 54: `044b396f`; this worktree was clean at phase start.
 
 ## Phase 1 — Action trust boundary and browser smoke
 
@@ -152,7 +152,7 @@ These are the current SHA-256 digests of the implementation, tests and lock/conf
 3. Close provider-attempt accounting gaps: request attempts, duration, failed-call usage/cost availability, and how provider transport retries consume the host dollar ceiling.
 4. Complete cross-provider finish-reason and malformed-argument tests; clarify cancellation, timeout, tool error lifecycle, and live user-visible streaming/progress behavior.
 5. Qualify graph-backed delivery attempts/acknowledgment and replay across crashes; multi-worker fencing, in-flight cancellation and the unavoidable pre-ack external side-effect window remain open.
-6. Bind authenticated host context to server-established caller/run, expiry and replay controls; qualify skill/Action/provider and multi-worker behavior.
+6. Host-context caller binding, expiry, dedicated-key and nonce-replay controls are implemented; qualify atomic nonce consumption and lease behavior on production multi-worker/database configurations.
 7. Once a configured provider credential is accepted, rerun successful model + Serper browser acceptance and the full browser failure matrix; add repeated matched evaluations, document interoperability limits, then identify redundant legacy responsibilities to retire without breaking SKILL.md or Action compatibility.
 
 ## Phase 7 — Fail-closed unknown pricing under dollar ceilings (F03)
@@ -879,3 +879,20 @@ The evidence-backed review and its baseline dispositions remain at [2026-10-05-p
 - Diagnosed the reported login issue without changing or purging the disposable graph. The backend at **8122** is running from `/private/tmp/jvagent-goal-f01-repeat-20261005/app`; that app's `.env` configures username `admin`, email `admin@jvagent.example`, and a password (value not copied to this log). A single direct login using those configured values returned HTTP **200** with an access token. The browser login form expects the email address, not the username.
 - In-browser verification used the already-authenticated Messenger at `http://127.0.0.1:3122/chat/n.Agent.891ce63713b544daafbba61f`. The rendered page showed the Orchestrator agent, six conversations, the expected composer, and the prior failed model message with its unknown-cost warning. No prompt was submitted; the browser test generated no new Interaction, task, model call, token usage, or provider spend. This confirms the authenticated UI path, not a new model/provider success.
 - The full repository suite passed: **4,320 passed, 9 skipped, 31 warnings** in **137.21 seconds**; the host-context coverage is included. `pre-commit run --all-files` passed all hooks, and `git diff --cached --check` passed. No runtime source changed in this phase. The evidence/review milestone is ready for commit/push; the enterprise qualification goal remains active.
+
+## Phase 54 — Preflight capability-pilot dollar ceilings (F03, partial)
+
+### Changes
+
+- Added a per-request capability-pilot cost reservation before the configured model Action is called. The request guard now receives the provider-neutral `ModelRequest`; preflight counts the serialized messages, active tool schemas, and request controls, adds framing headroom, bounds output tokens to the remaining pilot allowance, and estimates uncached input plus output at the configured provider/model rates with 25% safety margin. It checks both the current Interaction's known spend and accumulated Conversation spend.
+- A configured dollar ceiling now rejects requests with unavailable pricing before provider dispatch. Unknown/failed provider usage continues to block later budgeted requests as unconfirmed; the reservation estimate is not recorded as actual spend and is not claimed as a provider-enforced cap.
+- Added tests for known pricing, cache-discount exclusion, invalid limits, unknown pricing, output-token clamping, prior Conversation spend, inclusion of tool schemas in the bound, and proof the request guard runs before model dispatch. Updated configuration reference and F03 review disposition; F03 remains partial because actual billing, metadata freshness, and provider-side enforcement cannot be proven locally.
+
+### Verification and browser evidence
+
+- Focused model-cost, Pydantic adapter, and Orchestrator pilot slice: **58 passed** before the final full-suite gate.
+- After Black/isort normalization, the full repository suite passed: **4,330 passed, 9 skipped, 31 warnings** in **147.49 seconds**. `pre-commit run --all-files` passed Black, isort, Flake8, mypy and detect-secrets; `git diff --cached --check` passed.
+- Browser smoke used the isolated app and graph at `/private/tmp/jvagent-goal-f01-repeat-20261005/app`, API **8122**, Messenger **3122**, with the updated source based on `044b396f`. Submitted “Please reply exactly with: post-change live model request check.” The configured Ollama Cloud model `glm-5.3:cloud` was actually called and returned HTTP **401** after **0.287 s**. Messenger displayed the bounded model-service error, the failed-attempt footer (`1 attempt`, `287ms provider time`, `1 unknown-cost event`), and no reasoning/tool event. API health returned HTTP **200**.
+- Graph readback: Interaction `n.Interaction.7c07c802e4db48009954d9c3` persisted `closed=true`, `emitted=true`, the visible fallback response, one failed model attempt, 0.287 seconds provider duration, `unknown_cost_call_count=1`, zero tokens and zero reported/estimated dollars. Task `pilot_a8982ab5beb74e3cb8b6c0bf8f893000` persisted failed with one model request, one unsettled request, `usage_accounting_complete=false`, no tools/evidence/output, and the provider's 401 reason. Interaction interval was **1.141 s**; task interval was **0.315 s**. This is an actual-provider negative-path smoke, not evidence of a successful answer, successful cost estimate, or dollar-ceiling denial in browser.
+- The disposable agent YAML leaves both cost ceilings commented out, so this smoke exercises the changed request-adapter path without activating the ceiling branch. Unit/integration tests cover the reservation decision; successful provider-backed reservation behavior remains unqualified until a working credential and a browser run with a configured ceiling are available. The existing `.env` timestamp is unchanged; no key material was read into the record.
+- Source hashes for this working tree: `cost_estimator.py` `4cc674dfb392df6397999ea67a129ff98d0c1a104e9a66fe73b0584f62887c62`; Orchestrator `c43c23409c5e657271aa559807a3cbd10f2081fb3c65e633dba5cb80be81b674`; pilot runtime `37be3c0add870517f2a4e3ca29e764622086bd942759b9977e4cee8c41d74c1d`. The evidence milestone is ready for commit/push. The goal remains active.

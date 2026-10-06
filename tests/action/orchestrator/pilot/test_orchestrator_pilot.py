@@ -14,7 +14,7 @@ import pytest
 
 pytest.importorskip("pydantic_ai")
 
-from jvagent.action.model.contract import ModelResponse, ToolCall, Usage
+from jvagent.action.model.contract import ModelRequest, ModelResponse, ToolCall, Usage
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
     PilotDeliveryPendingError,
@@ -619,6 +619,79 @@ async def test_pilot_cost_admission_blocks_before_model_selection(
     assert interaction.response == published[0]
     model_selection.assert_not_awaited()
     assert conversation.tasks == []
+
+
+def test_pilot_request_reservation_preflights_full_request_and_clamps_output():
+    orchestrator = OrchestratorInteractAction()
+    orchestrator.max_turn_cost_usd = 0.10
+    visitor = SimpleNamespace(
+        interaction=SimpleNamespace(observability_metrics=[]),
+        conversation=SimpleNamespace(context={}),
+    )
+    request = ModelRequest(
+        messages=[{"role": "user", "content": "Research this"}],
+        tools=[{"type": "function", "function": {"name": "search"}}],
+        max_tokens=10_000,
+    )
+
+    reservation = orchestrator._preflight_pilot_model_cost(
+        visitor,
+        request,
+        model_id="gpt-4o-mini",
+        provider="openai",
+        max_output_tokens=100,
+    )
+
+    assert 0 < reservation < orchestrator.max_turn_cost_usd
+    assert request.max_tokens == 100
+
+
+def test_pilot_request_reservation_fails_closed_for_unknown_pricing():
+    from jvagent.action.orchestrator.pilot.runtime import PilotBudgetExceeded
+
+    orchestrator = OrchestratorInteractAction()
+    orchestrator.max_conversation_cost_usd = 1.0
+    visitor = SimpleNamespace(
+        interaction=SimpleNamespace(observability_metrics=[]),
+        conversation=SimpleNamespace(context={}),
+    )
+    request = ModelRequest(
+        messages=[{"role": "user", "content": "Research this"}],
+        max_tokens=100,
+    )
+
+    with pytest.raises(PilotBudgetExceeded, match="pricing is unavailable"):
+        orchestrator._preflight_pilot_model_cost(
+            visitor,
+            request,
+            model_id="unknown-model",
+            provider="unknown-provider",
+            max_output_tokens=100,
+        )
+
+
+def test_pilot_request_reservation_counts_prior_conversation_cost():
+    from jvagent.action.orchestrator.pilot.runtime import PilotBudgetExceeded
+
+    orchestrator = OrchestratorInteractAction()
+    orchestrator.max_conversation_cost_usd = 0.001
+    visitor = SimpleNamespace(
+        interaction=SimpleNamespace(observability_metrics=[]),
+        conversation=SimpleNamespace(context={"_cost_usd_total": 0.0009}),
+    )
+    request = ModelRequest(
+        messages=[{"role": "user", "content": "x" * 1000}],
+        max_tokens=100,
+    )
+
+    with pytest.raises(PilotBudgetExceeded, match="cannot be reserved"):
+        orchestrator._preflight_pilot_model_cost(
+            visitor,
+            request,
+            model_id="gpt-4o-mini",
+            provider="openai",
+            max_output_tokens=100,
+        )
 
 
 @pytest.mark.asyncio

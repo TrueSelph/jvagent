@@ -35,13 +35,15 @@ Reproduction used a schema requiring a string `query` and forbidding additional 
 
 **Correction:** distinguish intentionally absent/non-enforcing policy from policy-resolution failure. When a policy is configured or expected, discovery/evaluation errors must deny the operation and emit an actionable security event. Preserve an explicit unrestricted deployment mode for compatibility; do not silently infer it from an exception. Test policy lookup failures as well as `has_action_access` failures.
 
-### F03 — P1: configured dollar-spending guards are bypassed by the pilot
+### F03 — P1: configured dollar-spending guards are bypassed by the pilot — partially remediated
 
 **Confirmed by call-path inspection.** Legacy checks turn spend in `loop.py:265` and conversation spend at `loop.py:430`. Pilot selection in `orchestrator_interact_action.py:1080` bypasses that loop. `pilot/runtime.py:463` passes request/tool/token limits but no cost limit; its adapter at `:331` also omits JV cost metadata. Conversation cost is settled after a successful driver return (`orchestrator_interact_action.py:1087`), which records spending without preventing it. Generic failures rethrow before settlement.
 
 An agent configured with `max_turn_cost_usd` or an already exhausted `max_conversation_cost_usd` can still start and continue pilot model requests. A failed pilot may also leave conversation spend understated, despite Interaction-level metrics being available.
 
-**Correction:** enforce existing host spending policy at admission and before every model request, settle spend in a failure-safe finalization path, and preserve reported/estimated cost provenance. Keep one host budget service shared by both drivers. Document that token limits checked after responses may overshoot by a request; provider HTTP retries also are not identical to Pydantic request counts. Add exhausted-conversation, mid-run ceiling, failed-run accounting and transport-retry tests.
+**Correction and current disposition:** Phase 54 adds a pre-request reservation to the capability pilot. Before each JV `ModelRequest` crosses into the configured model Action, it estimates a conservative prompt-size bound including the active tools, applies the bounded output-token setting, uses the configured provider/model pricing without cache discounts, adds 25% headroom, and checks both per-turn and accumulated conversation spend. Unknown pricing blocks before the request. Focused tests exercise the estimate, output clamp, unknown-pricing failure, prior conversation spend, and the guard's position before the provider call.
+
+This reduces but does not eliminate spend overshoot: it is still an application estimate based on bundled/LiteLLM pricing and request serialization, not a provider-enforced reservation. Provider price changes, hidden billing units, or invoice adjustments can exceed it. A transport failure with no usage remains explicitly unknown and blocks a subsequent budgeted request; it cannot be reconciled automatically. Legacy-driver behavior and provider billing reconciliation remain separate qualification work.
 
 ### F04 — P1: the output union provides an escape from the research grounding contract
 

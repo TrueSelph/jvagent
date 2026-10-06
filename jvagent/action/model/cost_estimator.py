@@ -265,6 +265,57 @@ def pricing_for(provider: str, model: str) -> Optional["Pricing"]:
     return _litellm_pricing(provider, model) or _bundled_pricing(provider, model)
 
 
+def request_cost_reservation_usd(
+    provider: str,
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    safety_multiplier: float = 1.25,
+) -> Optional[float]:
+    """Estimate a pessimistic request reservation from known model pricing.
+
+    This is an application-side admission estimate, not a provider-enforced
+    spend cap. Unknown prices return ``None`` so callers with a configured
+    dollar ceiling can stop before sending a request rather than assume it is
+    free. The input side uses the uncached rate or the larger cache-write rate;
+    cache-read discounts are deliberately ignored.
+    """
+    if (
+        isinstance(input_tokens, bool)
+        or not isinstance(input_tokens, int)
+        or input_tokens < 0
+        or isinstance(output_tokens, bool)
+        or not isinstance(output_tokens, int)
+        or output_tokens < 0
+        or isinstance(safety_multiplier, bool)
+        or not isinstance(safety_multiplier, (int, float))
+        or not math.isfinite(float(safety_multiplier))
+        or safety_multiplier < 1.0
+    ):
+        raise ValueError(
+            "request reservation limits must be finite non-negative values"
+        )
+    pricing = pricing_for(provider, model)
+    if pricing is None:
+        return None
+    input_rate = float(pricing.input_per_million) * max(
+        1.0, float(pricing.cached_write_multiplier)
+    )
+    output_rate = float(pricing.output_per_million)
+    if (
+        not math.isfinite(input_rate)
+        or not math.isfinite(output_rate)
+        or input_rate < 0
+        or output_rate < 0
+    ):
+        return None
+    estimated = (
+        (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+    ) * float(safety_multiplier)
+    return estimated if math.isfinite(estimated) else None
+
+
 def clear_pricing_cache() -> None:
     _litellm_pricing_cache.clear()
 

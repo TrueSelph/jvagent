@@ -57,7 +57,7 @@ class PilotModelAdapterError(ValueError):
 
 
 ReasoningObserver = Callable[[str], Awaitable[None] | None]
-RequestGuard = Callable[[], Awaitable[None] | None]
+RequestGuard = Callable[[ModelRequest], Awaitable[None] | None]
 ModelUsageObserver = Callable[[ModelResponse], Awaitable[None] | None]
 
 
@@ -479,6 +479,33 @@ def _tool_definitions(info: AgentInfo) -> list[dict[str, Any]]:
     ]
 
 
+def request_input_token_upper_bound(request: ModelRequest) -> int:
+    """Return a conservative byte-derived prompt bound including tool schemas.
+
+    This intentionally does not tokenize with a provider-specific tokenizer.
+    UTF-8 request bytes plus framing headroom are used so schemas and tool
+    arguments are not omitted from dollar-budget preflight.
+    """
+    messages = request.messages or []
+    tools = request.tools or []
+    payload = json.dumps(
+        {
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": request.tool_choice,
+            "response_format": request.response_format,
+            "reasoning": request.reasoning,
+            "reasoning_effort": request.reasoning_effort,
+            "extra": request.extra,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    framing_headroom = 128 * (len(messages) + len(tools) + 1)
+    return len(payload.encode("utf-8")) + framing_headroom
+
+
 def function_model_for_action(
     model_action: Any,
     *,
@@ -502,10 +529,6 @@ def function_model_for_action(
     async def request_model(
         messages: list[ModelMessage], info: AgentInfo
     ) -> PAIModelResponse:
-        if request_guard is not None:
-            guarded = request_guard()
-            if inspect.isawaitable(guarded):
-                await guarded
         settings = dict(info.model_settings or {})
         direct_settings = {
             key: settings.pop(key)
@@ -551,6 +574,10 @@ def function_model_for_action(
             reasoning_effort=reasoning_effort,
             extra=extra_settings,
         )
+        if request_guard is not None:
+            guarded = request_guard(jv_request)
+            if inspect.isawaitable(guarded):
+                await guarded
         response = await complete(
             jv_request,
             calling_action_name="PydanticAICapabilityPilot",

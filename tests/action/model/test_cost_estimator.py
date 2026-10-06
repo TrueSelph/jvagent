@@ -5,6 +5,7 @@ import pytest
 from jvagent.action.model.cost_estimator import (
     cache_rates_for_provider,
     estimate_cost,
+    request_cost_reservation_usd,
     split_cached_prompt_tokens,
 )
 
@@ -33,6 +34,47 @@ def test_ollama_cloud_cost_uses_published_model_rates_but_local_stays_free():
         "cached_tokens": 1_000_000,
     }
     assert estimate_cost("glm-5.3:cloud", "ollama", cached) == pytest.approx(0.26)
+
+
+def test_request_cost_reservation_ignores_cache_discount_and_adds_safety_margin():
+    reservation = request_cost_reservation_usd(
+        "ollama",
+        "glm-5.3:cloud",
+        input_tokens=100_000,
+        output_tokens=20_000,
+    )
+    assert reservation == pytest.approx(
+        (100_000 * 1.4 + 20_000 * 4.4) / 1_000_000 * 1.25
+    )
+
+
+def test_request_cost_reservation_returns_unknown_for_unpriced_model():
+    assert (
+        request_cost_reservation_usd(
+            "unknown-provider",
+            "unknown-model",
+            input_tokens=100,
+            output_tokens=100,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "input_tokens,output_tokens,safety_multiplier",
+    [(-1, 1, 1.25), (1, -1, 1.25), (True, 1, 1.25), (1, 1, 0.5)],
+)
+def test_request_cost_reservation_rejects_invalid_limits(
+    input_tokens, output_tokens, safety_multiplier
+):
+    with pytest.raises(ValueError, match="reservation limits"):
+        request_cost_reservation_usd(
+            "openai",
+            "gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            safety_multiplier=safety_multiplier,
+        )
 
 
 # --- prompt-cache pricing --------------------------------------------------
