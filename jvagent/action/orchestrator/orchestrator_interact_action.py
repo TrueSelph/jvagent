@@ -1290,7 +1290,13 @@ class OrchestratorInteractAction(
                         visible.add(name)
                 else:
                     wrap_visitor = visitor if bind_visitor else None
-                    tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
+                    tools[name] = wrap_action_tool(
+                        tool,
+                        visitor=wrap_visitor,
+                        agent=agent,
+                        user_id=getattr(visitor, "user_id", None),
+                        channel=getattr(visitor, "channel", "default") or "default",
+                    )
                     longtail.add(name)
             for name, tool in cached_surface.mcp_tools.items():
                 tools[name] = policy.wrap_mcp(tool)
@@ -1367,7 +1373,13 @@ class OrchestratorInteractAction(
                         # decides visibility after assembly). Actions that set
                         # ``binds_tools_to_visitor`` receive the live visitor at wrap.
                         wrap_visitor = visitor if bind_visitor else None
-                        tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
+                        tools[name] = wrap_action_tool(
+                            tool,
+                            visitor=wrap_visitor,
+                            agent=agent,
+                            user_id=getattr(visitor, "user_id", None),
+                            channel=getattr(visitor, "channel", "default") or "default",
+                        )
                         longtail.add(name)
 
             # MCP tool servers (via jvagent/mcp MCPAction; ADR-0015). Tools surface
@@ -1705,6 +1717,23 @@ class OrchestratorInteractAction(
         for d in docs:
             if getattr(d, "always_active", False):
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
+        # Tool permissions win over pins: a save tool the sender cannot call
+        # leaves the prompt and the callable map.
+        from jvagent.action.orchestrator.access import (
+            _resolve_access_control,
+            drop_unpermitted_tools,
+        )
+
+        ac = await _resolve_access_control(agent)
+        if ac is not None:
+            await drop_unpermitted_tools(
+                ac,
+                user_id=getattr(visitor, "user_id", None),
+                channel=getattr(visitor, "channel", "default") or "default",
+                tools=tools,
+                visible=visible,
+                longtail=longtail,
+            )
         # Hard exclude (wins over lean + pins): drop from tools so find_tool /
         # load_tool / dispatch cannot reach them. Applied last intentionally.
         if policy.denied_patterns:
@@ -2640,7 +2669,9 @@ class OrchestratorInteractAction(
     # Loop
     # ------------------------------------------------------------------
 
-    async def _accumulate_parameters(self, interaction: Any) -> None:
+    async def _accumulate_parameters(
+        self, interaction: Any, visitor: Any = None
+    ) -> None:
         """Pool every enabled action's scoped parameters onto
         ``interaction.parameters`` — the accumulation step of the common
         subsystem. Params are queued like directives (observable, persisted,
@@ -2654,7 +2685,7 @@ class OrchestratorInteractAction(
         agent = await self._safe_agent()
         actions = await self._enabled_actions(agent) if agent else [self]
         try:
-            if await accumulate_action_parameters(interaction, actions):
+            if await accumulate_action_parameters(interaction, actions, visitor):
                 await interaction.save()
         except Exception as exc:
             logger.debug("orchestrator: accumulating parameters failed: %s", exc)

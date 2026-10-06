@@ -1,20 +1,20 @@
 """Human handoff capability action.
 
-Model-callable tools, split across the ``handoff`` and ``handoff_staff`` skills:
+One mode at a time (``HandoffAction.mode``). That mode is the only tool set
+``get_tools()`` publishes. Pin those tools on the orchestrator — there is no
+skill SOP.
 
-- ``handoff__contact_details()`` — return the team's email, phone, and hours.
-- ``handoff__update_contact(phone_number?, email?)`` — replace the reply address.
-- ``handoff__staff_lookup(message, phone_numbers?, emails?)`` — cannot answer.
-- ``handoff__agent_escalation(message, phone_numbers?, emails?)`` — person now.
-- ``handoff__scheduled_callback(message, phone_numbers?, emails?)`` — later.
-- ``handoff__pending_questions()`` — list questions waiting for an answer.
-- ``handoff__save_answer(question_id, answer)`` — save the answer for one
-  pending question and return a thank-you.
-- ``handoff__update_chunk(chunk_id, answer)`` — replace one saved chunk.
+- ``consult`` — ``handoff__consult``, ``handoff__pending_questions``,
+  ``handoff__save_answer``, ``handoff__update_chunk``. Ask staff, tell the user
+  you will return, then save the answer and reply to the user.
+- ``transfer`` — ``handoff__transfer``. Summarize for staff, tell the user a
+  staff member will follow up; the conversation continues on later messages.
+- ``observe`` — ``handoff__observe``. In a WhatsApp group, store a useful fact
+  and add the other numbers to ``HandoffAction.staff``. Send nothing.
 
-Staff identity is the dispatch sender. Prefer AccessControlAction
-``HandoffAction.staff`` (phones and emails in one list). One WhatsApp or email
-target is chosen at random per notification.
+On channel ``web`` or ``default``, consult and transfer ask for one WhatsApp
+number or email. On WhatsApp they use the sender. Staff targets are
+AccessControlAction ``HandoffAction.staff``.
 """
 
 import json
@@ -36,74 +36,207 @@ from jvagent.tooling.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
 
-DIRECT_CONTACT_PROMPT = """You can reach a human representative directly using the contact details below:
 
-Email: {handoff_email}
-Phone / WhatsApp: {handoff_phone}
-Office Hours: {handoff_hours}
+def _register_orchestrator_vocabulary() -> None:
+    """Declare ``handoff__`` a trusted directive source.
 
-A team member will assist you as soon as possible."""
+    The handoff tools return ``response_directive`` guidance (the confirmation
+    prompt, the relay lines). The orchestrator honors directives only from a
+    registered first-party ``ns__`` namespace, so this must run before the first
+    turn — mirroring ``InterviewAction``. Idempotent.
+    """
+    try:
+        from jvagent.action.orchestrator.constants import (
+            register_trusted_directive_prefix,
+        )
+    except Exception:  # pragma: no cover - orchestrator optional at load
+        return
+    register_trusted_directive_prefix("handoff__")
 
 
-AGENT_ESCALATION_PROMPT = """A staff member will reach out to you shortly."""
+_register_orchestrator_vocabulary()
 
 
-SCHEDULED_CALLBACK_PROMPT = """I'll arrange for a human representative to follow up with you.
+HANDOFF_INTRO = "I don't have that information yet."
 
-You can expect a response within the next 24 hours (or the next business day). If your request is urgent, please use the direct contact option for faster assistance."""
+TRANSFER_CLOSE = (
+    "I've passed it to the team and a staff member will reach out to you shortly."
+)
 
+CONSULT_CLOSE = "I'll check with the team and get back to you when they respond."
 
-STAFF_LOOKUP_PROMPT = """I don't have that information yet, so I'll check with the team and get back to you when they respond."""
-
-STAFF_LOOKUP_ASK_PROMPT = """I don't have that right now. May I have your phone number or email so I can get back to you?"""
+HANDOFF_FOLLOWUP_THANKS = "Thanks."
 
 HANDOFF_DOC_NAME = "handoff.md"
 HANDOFF_DOC_ACCESS = "public"
 
-_CHANNELS = ("whatsapp", "email")
+#: Model-only. A denied save must not be relayed to the user.
+SAVE_DENIED_LINE = (
+    "This user cannot save answers. Do not tell the user. "
+    "Send no message about permissions or saving."
+)
 
-#: Orchestration-scoped routing rule. Accumulated onto the interaction by the
-#: orchestrator and rendered into the loop prompt, so the model activates the
-#: handoff skill and uses the tools when the user asks for a human or the answer
-#: is out of reach. Keyed so an agent can override it.
-HANDOFF_PARAMETERS: List[Dict[str, Any]] = [
-    {
-        "scope": "orchestration",
-        "key": "handoff_routing",
-        "condition": (
-            "the user asks for a human / agent / live support, wants a callback, "
-            "OR you cannot answer their question from the knowledge base or the "
-            "tools available this turn (a search returned nothing relevant, or "
-            "the request is outside what you can do)"
-        ),
-        "response": (
-            "Search the FAQ and available skills first, including a 'do you "
-            "sell' question. Do not guess or drop the request. Call use_skill "
-            "with name 'handoff' only after that search returned nothing useful "
-            "(its tools are gated), then: if the user only wants the team's "
-            "contact details call handoff__contact_details; otherwise call "
-            "handoff__agent_escalation (a staff member will reach out), "
-            "handoff__scheduled_callback (reach out later), or "
-            "handoff__staff_lookup (you cannot answer). For staff_lookup, "
-            "message sentence 1 is the natural customer ask only; optional "
-            "sentence 2 is what was already tried (staff notify only). Do not "
-            "mention WhatsApp or tell staff to reply. Relay the returned line "
-            "and do not add that summary."
-        ),
-    },
-    {
-        "scope": "orchestration",
-        "key": "handoff_staff_answer",
-        "condition": (
-            "the latest message, with the conversation so far, looks like an "
-            "answer rather than a new question"
-        ),
-        "response": (
-            "Call handoff__pending_questions first (pending questions are "
-            "unknown until it returns), then handoff__save_answer for the match."
-        ),
-    },
-]
+_CHANNELS = ("whatsapp", "email")
+_MODES = ("consult", "transfer", "observe")
+_WEB_CHANNELS = frozenset({"", "web", "default"})
+_MODE_TOOLS = {
+    "consult": frozenset(
+        {
+            "handoff__consult",
+            "handoff__pending_questions",
+            "handoff__save_answer",
+            "handoff__update_chunk",
+        }
+    ),
+    "transfer": frozenset({"handoff__transfer"}),
+    "observe": frozenset({"handoff__observe"}),
+}
+
+
+_CUSTOMER_CONTACT_KINDS = frozenset({"phone", "email"})
+
+
+def _normalized_customer_contact_kind(value: str) -> str:
+    kind = (value or "phone").strip().lower()
+    return kind if kind in _CUSTOMER_CONTACT_KINDS else "phone"
+
+
+def _contact_label(kind: str) -> str:
+    return "email address" if kind == "email" else "WhatsApp number"
+
+
+# Shared consult + transfer customer escalation trigger (KB/tools gap and explicit ask).
+_CUSTOMER_CANNOT_ANSWER_CONDITION = (
+    "you cannot answer a customer question, or you cannot "
+    "complete the request from the knowledge base and tools, or the "
+    'request is outside what the store sells (a "do you sell X" '
+    "question the knowledge base cannot answer) — a quote, stock "
+    "confirmation, bulk or B2B order, an upset customer, or the user "
+    "wants a person or wants something reported"
+)
+
+
+def _parameters_for(
+    mode: str,
+    staff: bool = False,
+    *,
+    customer_contact_kind: str = "phone",
+) -> List[Dict[str, Any]]:
+    """Orchestration parameter(s) for this mode and sender."""
+    mode = mode if mode in _MODE_TOOLS else "consult"
+    kind = _normalized_customer_contact_kind(customer_contact_kind)
+    contact_phrase = _contact_label(kind)
+    if mode == "consult" and staff:
+        return [
+            {
+                "scope": "orchestration",
+                "key": "handoff_consult_staff",
+                "condition": (
+                    "the sender is staff and the latest message answers a "
+                    "customer question or corrects a saved answer"
+                ),
+                "response": (
+                    "This rule overrides the active skill and any skill "
+                    "procedure. Call handoff__pending_questions and read the "
+                    "full list of pend_ ids and questions. Choose every pend_ "
+                    "id the staff message answers (same issue, multiple "
+                    "customers). Call handoff__save_answer with question_ids "
+                    "and the full answer text. Do not call handoff__consult. "
+                    "Call handoff__update_chunk only when an [EVENT] line says "
+                    "Handoff chunk and the id starts with n.DocumentNode. A "
+                    "corr- correlation id is not a question id or a chunk id. "
+                    "If the pending list is empty, do not save. Reply in the "
+                    "conversation. If a save tool says this user cannot save "
+                    "answers, send nothing about permissions or saving."
+                ),
+            }
+        ]
+    if mode == "transfer" and staff:
+        return [
+            {
+                "scope": "orchestration",
+                "key": "handoff_transfer_staff",
+                "condition": "the sender is staff",
+                "response": (
+                    "Do not call handoff__transfer to escalate a customer issue "
+                    "from a staff message. Reply in the conversation when "
+                    "appropriate. Transfer mode notifies staff only when the "
+                    "customer (non-staff sender) triggers handoff__transfer."
+                ),
+            }
+        ]
+    if mode == "transfer":
+        return [
+            {
+                "scope": "orchestration",
+                "key": "handoff_transfer",
+                "condition": _CUSTOMER_CANNOT_ANSWER_CONDITION,
+                "response": (
+                    "This rule overrides the active skill and any skill "
+                    "procedure. Call handoff__transfer with a short summary of "
+                    "the issue in message (what the customer needs handled — "
+                    "not Customer wants… placeholders). Do not reply in text or "
+                    "ask for contact yourself — relay only the line the tool "
+                    "returns. The tool resolves contact "
+                    f"from WhatsApp identity, saved context, or user_id when it "
+                    f"is a {contact_phrase}. Omit contact on WhatsApp. On web or "
+                    "default, omit contact on the first call; when the user "
+                    f"replies with their {contact_phrase}, call again with the "
+                    "same message and contact. Never pass placeholders. On later "
+                    "messages keep helping when you can; call handoff__transfer "
+                    "again when another issue needs staff."
+                ),
+            }
+        ]
+    if mode == "observe":
+        return [
+            {
+                "scope": "orchestration",
+                "key": "handoff_observe",
+                "condition": (
+                    "the latest WhatsApp group message contains a fact, policy, "
+                    "or answer worth keeping"
+                ),
+                "response": (
+                    "Observe mode only — not customer consult or transfer. Call "
+                    "handoff__observe with that fact. Do not call "
+                    "handoff__consult, handoff__transfer, or "
+                    "handoff__pending_questions. Never send a message to the "
+                    "group. If nothing is worth keeping, send nothing. If the "
+                    "tool says this user cannot save answers, send nothing "
+                    "about permissions or saving."
+                ),
+            }
+        ]
+    return [
+        {
+            "scope": "orchestration",
+            "key": "handoff_consult",
+            "condition": _CUSTOMER_CANNOT_ANSWER_CONDITION,
+            "response": (
+                "This rule overrides the active skill and any skill "
+                "procedure. If the latest message is a question you cannot "
+                "answer, or a request you cannot complete, call "
+                "handoff__consult now. Do not reply in text. Do not ask "
+                "permission. Relay only the line the tool returns. Sentence 1 "
+                "must be the customer's words, kept short (drop fillers like "
+                "can u check or again yourself) — e.g. where r u located or what "
+                "is your address? Never Customer wants… or Customer asked… "
+                "summaries or extra detail they did not say. Optional sentence "
+                "2 is what was already tried. On contact follow-up repeat the "
+                "same sentence 1 as the first consult; only contact changes. "
+                "The tool resolves contact from channel identity and saved "
+                "context; omit contact on WhatsApp. "
+                f"On web or default, pass contact only after the tool asks and "
+                f"the user gives their {contact_phrase} — never placeholders."
+            ),
+        }
+    ]
+
+
+#: Default (consult) parameter. Reads of ``HandoffAction.parameters`` follow
+#: the active mode; see ``HandoffAction.__getattribute__``.
+HANDOFF_PARAMETERS: List[Dict[str, Any]] = _parameters_for("consult")
 
 
 def _question_field(question: Any, name: str) -> str:
@@ -129,26 +262,6 @@ def _question_row(question: Any) -> Dict[str, Any]:
         "user_contact": str(getattr(question, "user_contact", "") or ""),
         "created_at": str(getattr(question, "created_at", "") or ""),
     }
-
-
-def _render_direct_contact(template: str, email: str, phone: str, hours: str) -> str:
-    """Render the direct-contact block; drop lines whose field is blank."""
-    try:
-        rendered = template.format(
-            handoff_email=email, handoff_phone=phone, handoff_hours=hours
-        )
-    except (KeyError, IndexError):
-        return template
-    cleaned_lines = []
-    for line in rendered.split("\n"):
-        stripped = line.strip()
-        if stripped.endswith(":") and (
-            stripped.lower().startswith("email:")
-            or stripped.lower().startswith("phone")
-        ):
-            continue
-        cleaned_lines.append(line)
-    return "\n".join(cleaned_lines)
 
 
 def _lookup_staff_message(message: str, tokens: List[str]) -> str:
@@ -213,6 +326,45 @@ def _pending_question_text(message: str) -> str:
     return sentences[0]
 
 
+def _looks_like_staff_summary(message: str) -> bool:
+    """Third-person consult summary from the model (routing only, not rewriting)."""
+    return (message or "").strip().lower().startswith("customer ")
+
+
+def _is_contact_only_message(
+    message: str,
+    contact: str,
+    *,
+    customer_contact_kind: str = "phone",
+) -> bool:
+    """True when message is only a phone/email (contact follow-up turn)."""
+    msg = (message or "").strip()
+    token = (contact or "").strip()
+    if not msg:
+        return bool(token)
+    if token and msg == token:
+        return True
+    clean_msg = _sanitize_contact(msg, customer_contact_kind=customer_contact_kind)
+    if token and clean_msg and clean_msg == token:
+        return True
+    if clean_msg and _contact_kind(clean_msg) and not token:
+        return True
+    stripped = _lookup_staff_message(msg, [token] if token else [])
+    residual = re.sub(r"[^A-Za-z0-9]+", "", stripped or "")
+    return not residual
+
+
+def _consult_issue_text(message: str, contact: str = "") -> str:
+    """Pending/staff question line from one consult message."""
+    tokens = [contact] if (contact or "").strip() else []
+    cleaned = _lookup_staff_message(message, tokens)
+    return (
+        _pending_question_text(cleaned)
+        or _pending_question_text(message)
+        or (message or "").strip()
+    )
+
+
 def _staff_notes_text(message: str, question: str) -> str:
     """Handling notes after the stored question (contact-stripped later)."""
     sentences = _split_message_sentences(message)
@@ -237,42 +389,40 @@ def _bold_whatsapp_ask(question: str) -> str:
     return f"{prefix}*{core}*{punct}"
 
 
-def _staff_outbound(
-    mode: str,
-    message: str,
-    phone_numbers: Optional[List[str]],
-    emails: Optional[List[str]],
-    contact: str,
-) -> str:
-    """Staff text: lookup omits the contact; escalation and callback include it."""
-    tokens = [
-        str(t).strip() for t in (phone_numbers or []) + (emails or []) if str(t).strip()
-    ]
-    if mode == "staff_lookup":
+def _staff_outbound(mode: str, message: str, contact: str = "") -> str:
+    """Staff text: consult question + optional contact; transfer includes contact."""
+    token = (contact or "").strip()
+    tokens = [token] if token and token != "declined" else []
+    if mode == "consult":
         cleaned = _lookup_staff_message(message, tokens)
         question = _pending_question_text(cleaned)
         notes = _staff_notes_text(cleaned, question)
         bolded = _bold_whatsapp_ask(question)
-        if notes:
-            return f"{bolded} {notes}".strip()
-        return bolded
+        body = f"{bolded} {notes}".strip() if notes else bolded
+        if token and token != "declined" and token not in body:
+            body = f"{body}\nContact: {token}".strip()
+        return body
     text = (message or "").strip()
-    follow_up = (contact or "").strip()
-    if follow_up and follow_up not in text:
-        text = f"{text}\nContact: {follow_up}".strip()
+    if token and token not in text:
+        text = f"{text}\nContact: {token}".strip()
     return text
 
 
-def _first_contact(
-    phone_numbers: Optional[List[str]], emails: Optional[List[str]]
-) -> str:
-    for n in phone_numbers or []:
-        if str(n).strip():
-            return str(n).strip()
-    for e in emails or []:
-        if str(e).strip():
-            return str(e).strip()
-    return ""
+def _one_contact(contact: Optional[str]) -> str:
+    """Normalize one customer contact (phone or email) to a stripped string.
+
+    Tolerates a list for backward compatibility, but the customer provides a
+    single contact; only the first non-empty entry is kept.
+    """
+    if contact is None:
+        return ""
+    if isinstance(contact, (list, tuple)):
+        for item in contact:
+            value = str(item).strip()
+            if value:
+                return value
+        return ""
+    return str(contact).strip()
 
 
 def _dispatch_user_id() -> str:
@@ -308,37 +458,176 @@ def _sender_contact(channel: str) -> str:
     return ""
 
 
-_HANDOFF_CONTACT_KEY = "handoff_contact"
-_CONFIRM_MODES = ("agent_escalation", "scheduled_callback")
+def _dispatch_channel() -> str:
+    """Visitor channel for this tool call (``""`` when unbound)."""
+    from jvagent.tooling.tool_executor import get_dispatch_context
+
+    ctx = get_dispatch_context()
+    return (getattr(ctx, "channel", "") or "").strip().lower()
 
 
-def _issue_keys(message: str) -> set:
-    """Raw and contact-stripped forms of one staff issue (question side only)."""
-    raw = (message or "").strip()
-    keys = {raw} if raw else set()
-    stripped = _lookup_staff_message(raw, [])
-    if stripped:
-        keys.add(stripped)
-    question = _pending_question_text(stripped or raw)
-    if question:
-        keys.add(question)
-    return keys
+def _asks_for_contact(channel: str) -> bool:
+    """Web and default have no sender phone, so the user must give one."""
+    return (channel or "").strip().lower() in _WEB_CHANNELS
 
 
-def _confirm_directive(mode: str, message: str, contact: str) -> ToolResult:
-    """Ask the user to confirm the issue and contact before staff are notified."""
-    tool_name = f"handoff__{mode}"
+_CONTACT_PLACEHOLDERS = frozenset(
+    {
+        "not provided",
+        "unknown",
+        "n/a",
+        "na",
+        "none",
+        "no contact",
+        "unavailable",
+        "not available",
+        "missing",
+    }
+)
+
+
+def _contact_matches_kind(value: str, kind: str) -> bool:
+    ck = _contact_kind((value or "").strip())
+    normalized = _normalized_customer_contact_kind(kind)
+    if normalized == "email":
+        return ck == "email"
+    return ck == "whatsapp"
+
+
+def _sanitize_contact(
+    raw: Optional[str], *, customer_contact_kind: str = "phone"
+) -> str:
+    """Normalize tool or saved contact; drop placeholders and wrong kind."""
+    text = _one_contact(raw)
+    if not text:
+        return ""
+    if text.strip().lower() in _CONTACT_PLACEHOLDERS:
+        return ""
+    if not _contact_matches_kind(text, customer_contact_kind):
+        return ""
+    return text
+
+
+def _identity_contact(
+    visitor_channel: str, *, customer_contact_kind: str = "phone"
+) -> str:
+    """Phone or email from dispatch user_id for this visitor channel."""
+    kind = _normalized_customer_contact_kind(customer_contact_kind)
+    ch = (visitor_channel or "").strip().lower()
+    if ch == "email":
+        return _sender_contact("email") if kind == "email" else ""
+    if _asks_for_contact(ch):
+        if kind == "email":
+            return _sender_contact("email")
+        return _sender_contact("whatsapp")
+    return _sender_contact("whatsapp")
+
+
+def _resolve_customer_contact(
+    *,
+    provided: Optional[str],
+    saved: Optional[str],
+    visitor_channel: str,
+    customer_contact_kind: str = "phone",
+) -> str:
+    """Provided, then saved, then identity — all sanitized for the configured kind."""
+    kind = _normalized_customer_contact_kind(customer_contact_kind)
+    for candidate in (
+        _sanitize_contact(provided, customer_contact_kind=kind),
+        _sanitize_contact(saved, customer_contact_kind=kind),
+        _identity_contact(visitor_channel, customer_contact_kind=kind),
+    ):
+        if candidate:
+            return candidate
+    return ""
+
+
+def _join_handoff_parts(*parts: str) -> str:
+    """Join non-empty relay fragments into one customer-facing paragraph."""
+    cleaned = [(p or "").strip() for p in parts if (p or "").strip()]
+    if not cleaned:
+        return ""
+    out = cleaned[0]
+    for piece in cleaned[1:]:
+        if not out.endswith((".", "!", "?")):
+            out += "."
+        out += " " + piece
+    return out
+
+
+def _handoff_contact_ask(mode: str, customer_contact_kind: str) -> str:
+    """Ask for phone or email; no closing promise to staff (that is part 3)."""
+    kind = _normalized_customer_contact_kind(customer_contact_kind)
+    if kind == "email":
+        need = "your email address"
+        question = "What's the best email to reach you?"
+    else:
+        need = "your WhatsApp number"
+        question = "What's the best number to reach you?"
+    if mode == "consult":
+        return f"I'll need {need} so I can get back to you. {question}"
+    return (
+        f"To pass this to our team, I need {need} so a staff member can follow up. "
+        f"{question}"
+    )
+
+
+def _compose_handoff_relay(
+    mode: str,
+    customer_contact_kind: str,
+    *,
+    include_intro: bool,
+    include_contact_ask: bool,
+    include_close: bool,
+    intro: Optional[str] = None,
+    close: Optional[str] = None,
+    followup_thanks: bool = False,
+) -> str:
+    """Build user relay: intro, optional contact ask, mode-specific close."""
+    parts: List[str] = []
+    if followup_thanks:
+        parts.append(HANDOFF_FOLLOWUP_THANKS)
+    if include_intro:
+        parts.append((intro or HANDOFF_INTRO).strip())
+    if include_contact_ask:
+        parts.append(_handoff_contact_ask(mode, customer_contact_kind))
+    if include_close:
+        default_close = CONSULT_CLOSE if mode == "consult" else TRANSFER_CLOSE
+        parts.append((close or default_close).strip())
+    return _join_handoff_parts(*parts)
+
+
+def _missing_contact_handoff_result(
+    mode: str,
+    customer_contact_kind: str,
+    tool_name: str,
+    *,
+    intro: Optional[str] = None,
+) -> ToolResult:
+    """Relay natural ask line; internal note for the executive to recall the tool."""
+    user_line = _compose_handoff_relay(
+        mode,
+        customer_contact_kind,
+        include_intro=True,
+        include_contact_ask=True,
+        include_close=False,
+        intro=intro,
+    )
+    label = _contact_label(_normalized_customer_contact_kind(customer_contact_kind))
     return ToolResult(
         content=(
-            "Confirm with the user before notifying staff. "
-            f"The issue is: {message}. The contact is: {contact}. "
-            "Ask if that issue and contact are correct. If they agree, call "
-            f"{tool_name} again with the same message and confirmed true. "
-            "If they give a different phone or email, call "
-            f"{tool_name} again with the same message and pass it in "
-            "phone_numbers or emails. Do not say staff were notified."
+            "Relay this to the user and do not add the staff summary:\n"
+            f"{user_line}\n\n"
+            "INTERNAL (do not say to the user): After they reply, call "
+            f"{tool_name} again with the same message and contact set to their "
+            f"{label}. Do not notify staff until then."
         )
     )
+
+
+_HANDOFF_CONTACT_KEY = "handoff_contact"
+_HANDOFF_ACTIVE_MODE_KEY = "handoff_active_mode"
+_HANDOFF_ACTIVE_ISSUE_KEY = "handoff_active_issue"
 
 
 def _relay(line: str) -> ToolResult:
@@ -546,6 +835,14 @@ def _chunk_event(chunk_id: str, question: str) -> str:
     return f'Handoff chunk {chunk_id} "{question}".'
 
 
+def _handoff_event(kind: str, detail: str = "", status: str = "completed") -> str:
+    """One-line interaction event for a handoff lifecycle step."""
+    detail = (detail or "").strip()
+    if detail:
+        return f'Handoff {status}: {kind} "{detail}".'
+    return f"Handoff {status}: {kind}."
+
+
 def _chunk_title(chunk_id: str) -> str:
     path = _handoff_json_path()
     if not chunk_id or not path.exists():
@@ -575,39 +872,52 @@ def _patch_handoff_json(chunk_id: str, title: str, section: str) -> None:
 
 
 class HandoffAction(Action):
-    """Human handoff tools: direct contact, staff notification, staff Q&A."""
+    """One handoff mode: consult, transfer, or observe."""
 
     tool_namespace: ClassVar[str] = "handoff"
 
     description: str = attribute(
         default=(
-            "Human handoff tools — show direct contact details, notify staff "
-            "(WhatsApp or email) for escalation/callback, look up a pending "
-            "customer question, or resolve it into the knowledge base."
+            "Human handoff. mode selects one tool set: consult (ask staff and "
+            "reply later), transfer (escalate to staff per message), or "
+            "observe (store WhatsApp group facts silently)."
         ),
         description="Action description",
     )
 
+    mode: str = attribute(
+        default="consult",
+        description="Active handoff mode: consult | transfer | observe. Only one.",
+    )
+
     parameters: List[Dict[str, Any]] = attribute(
-        default_factory=lambda: [dict(p) for p in HANDOFF_PARAMETERS],
+        default_factory=list,
         description=(
-            "Scoped behavioural parameters this action contributes to the common "
-            "subsystem. The orchestration-scoped rule tells the loop when to "
-            "hand off (explicit human ask, or an unanswerable question)."
+            "Optional orchestration parameters from agent.yaml. A non-empty "
+            "list is published as-is. An empty list uses the active mode's "
+            "built-in parameter."
         ),
     )
 
-    direct_contact_prompt: str = attribute(
-        default=DIRECT_CONTACT_PROMPT, description="Prompt for direct contact"
+    handoff_intro: str = attribute(
+        default=HANDOFF_INTRO,
+        description="Opening line when the customer has not yet heard this handoff.",
     )
-    agent_escalation_prompt: str = attribute(
-        default=AGENT_ESCALATION_PROMPT, description="Prompt for agent escalation"
+    consult_close: str = attribute(
+        default=CONSULT_CLOSE,
+        description="Closing line after consult staff notify (part 3).",
     )
-    scheduled_callback_prompt: str = attribute(
-        default=SCHEDULED_CALLBACK_PROMPT, description="Prompt for scheduled callback"
+    transfer_close: str = attribute(
+        default=TRANSFER_CLOSE,
+        description="Closing line after transfer staff notify (part 3).",
     )
-    staff_lookup_prompt: str = attribute(
-        default=STAFF_LOOKUP_PROMPT, description="Prompt for staff lookup"
+    consult_prompt: str = attribute(
+        default="",
+        description="Deprecated yaml alias for consult_close when set.",
+    )
+    transfer_prompt: str = attribute(
+        default="",
+        description="Deprecated yaml alias for transfer_close when set.",
     )
 
     handoff_hours: str = attribute(
@@ -626,11 +936,18 @@ class HandoffAction(Action):
 
     handoff_channels: Dict[str, str] = attribute(
         default_factory=lambda: {
-            "agent_escalation": "whatsapp",
-            "scheduled_callback": "whatsapp",
-            "staff_lookup": "whatsapp",
+            "consult": "whatsapp",
+            "transfer": "whatsapp",
         },
         description="Per-mode notify channel: whatsapp | email.",
+    )
+
+    customer_contact: str = attribute(
+        default="phone",
+        description=(
+            "Which contact type to collect on web/default: phone (WhatsApp "
+            "number) or email. Independent of handoff_channels (staff notify)."
+        ),
     )
 
     pending_questions: List[Dict[str, Any]] = attribute(
@@ -643,242 +960,249 @@ class HandoffAction(Action):
 
     # -- tools -----------------------------------------------------------------
 
+    def __getattribute__(self, name: str) -> Any:
+        """Non-empty stored ``parameters`` win; otherwise they follow ``mode``."""
+        if name == "parameters":
+            stored = super().__getattribute__("parameters")
+            if stored:
+                return stored
+            try:
+                mode = super().__getattribute__("mode")
+            except Exception:
+                mode = "consult"
+            kind = _normalized_customer_contact_kind(
+                str(super().__getattribute__("customer_contact") or "phone")
+            )
+            return _parameters_for(str(mode or "consult"), customer_contact_kind=kind)
+        return super().__getattribute__(name)
+
+    async def contributed_parameters(self, visitor: Any) -> List[Dict[str, Any]]:
+        """Mode and staff rule for this sender. A yaml list replaces it."""
+        stored = super().__getattribute__("parameters")
+        if stored:
+            return list(stored)
+        user_id = str(getattr(visitor, "user_id", "") or "").strip()
+        members = await self._aca_staff_members()
+        return _parameters_for(
+            self._normalized_mode(),
+            staff=bool(user_id) and user_id in members,
+            customer_contact_kind=self._normalized_customer_contact_kind(),
+        )
+
+    def _normalized_customer_contact_kind(self) -> str:
+        return _normalized_customer_contact_kind(
+            str(getattr(self, "customer_contact", None) or "phone")
+        )
+
+    def _normalized_mode(self) -> str:
+        mode = str(self.mode or "consult").strip().lower()
+        return mode if mode in _MODE_TOOLS else "consult"
+
+    def whatsapp_direct_all_group_messages(self) -> bool:
+        """WhatsApp ingress hook: in observe mode, treat every group message as directed."""
+        return self._normalized_mode() == "observe"
+
+    async def get_tools(self) -> List[Any]:
+        """Publish only the active mode's tools."""
+        from jvagent.tooling.tool_decorator import collect_tools
+
+        allowed = _MODE_TOOLS[self._normalized_mode()]
+        return [tool for tool in collect_tools(self) if tool.name in allowed]
+
     def get_capabilities(self) -> List[str]:
         if not self.enabled:
             return []
-        return [
-            "Reach a human teammate (contact details, escalation, callback, or "
-            "checking a pending question with staff)",
-        ]
+        mode = self._normalized_mode()
+        if mode == "transfer":
+            return ["Notify staff and tell the user a staff member will follow up"]
+        if mode == "observe":
+            return ["Store useful WhatsApp group facts without replying"]
+        return ["Ask staff for an answer and reply to the user when it arrives"]
 
-    @tool(name="handoff__contact_details")
-    async def contact_details(self) -> str:
-        """Return the team's email, phone, and office hours. Use only when the user explicitly requests a contact channel or office hours. It returns no business information; do not use it for any other unanswerable question (use handoff__staff_lookup)."""
-        phone, emails = await self._public_contacts()
-        return _render_direct_contact(
-            self.direct_contact_prompt,
-            email=", ".join(emails),
-            phone=phone,
-            hours=self.handoff_hours,
-        )
-
-    @tool(name="handoff__update_contact")
-    async def update_contact(
-        self,
-        phone_number: Annotated[
-            Optional[str],
-            "One phone number. Omit when none.",
-        ] = None,
-        email: Annotated[
-            Optional[str],
-            "One email address. Omit when none.",
-        ] = None,
-    ) -> ToolResult:
-        """Replace the saved phone or email replies are sent to. Use when the user wants to change where the team reaches them."""
-        contact = (phone_number or "").strip() or (email or "").strip()
-        if not contact:
-            return ToolResult(
-                content="handoff failed: pass a phone number or email.",
-                is_error=True,
-            )
-        prior = await self._saved_contact()
-        if await self._conversation() is None:
-            return ToolResult(
-                content="handoff failed: the contact could not be saved.",
-                is_error=True,
-            )
-        await self._save_contact(contact)
-        if await self._saved_contact() != contact:
-            return ToolResult(
-                content="handoff failed: the contact could not be saved.",
-                is_error=True,
-            )
-        if prior:
-            await self._update_pending_contact(prior, contact)
-        return _relay(f"Your contact is updated to {contact}.")
-
-    @tool(
-        name="handoff__staff_lookup", idempotency_class=IdempotencyClass.NON_RETRYABLE
-    )
-    async def staff_lookup(
+    @tool(name="handoff__consult", idempotency_class=IdempotencyClass.NON_RETRYABLE)
+    async def consult(
         self,
         message: Annotated[
             str,
-            "Sentence 1: natural customer ask only. Optional sentence 2: what "
-            "was already tried (staff notify only). Never shown to the user.",
+            "Sentence 1: the customer's question or request in their words, "
+            "kept short (you trim fillers; do not use Customer wants… or "
+            "Customer asked…). Optional sentence 2: what was already tried "
+            "(staff only). Never shown to the user.",
         ],
-        phone_numbers: Annotated[
-            Optional[List[str]],
-            "Phone numbers the user provided. Omit when none.",
-        ] = None,
-        emails: Annotated[
-            Optional[List[str]],
-            "Email addresses the user provided. Omit when none.",
+        contact: Annotated[
+            Optional[str],
+            "Customer phone or email per agent customer_contact setting. "
+            "Omit on WhatsApp. Pass only after the user gives it when the tool "
+            "asked. No placeholders.",
         ] = None,
         contact_declined: Annotated[
             Optional[bool],
-            "True if the user refused to share a phone or email.",
+            "True if the user refused to share the configured contact type.",
         ] = None,
     ) -> ToolResult:
-        """Record a question you cannot answer and notify staff. Use for any request the knowledge base cannot answer, including questions outside the assortment and any business fact no document provides."""
+        """Call when you cannot answer from KB/tools (consult mode). Relay only the tool line; do not reply in prose. Contact is resolved in code (see customer_contact on the action)."""
         return await self._dispatch_handoff(
-            "staff_lookup",
+            "consult",
             message,
-            phone_numbers,
-            emails,
+            contact,
             contact_declined=bool(contact_declined),
         )
 
-    @tool(
-        name="handoff__agent_escalation",
-        idempotency_class=IdempotencyClass.NON_RETRYABLE,
-    )
-    async def agent_escalation(
+    @tool(name="handoff__transfer", idempotency_class=IdempotencyClass.NON_RETRYABLE)
+    async def transfer(
         self,
         message: Annotated[
             str,
-            "The customer's question and what was already tried. Never shown to the user.",
+            "Short summary of the issue for staff: what the customer wants "
+            "handled, built from the conversation. Never a placeholder. Never "
+            "shown to the user.",
         ],
-        phone_numbers: Annotated[
-            Optional[List[str]],
-            "Phone numbers the user provided. Omit when none.",
-        ] = None,
-        emails: Annotated[
-            Optional[List[str]],
-            "Email addresses the user provided. Omit when none.",
-        ] = None,
-        confirmed: Annotated[
-            Optional[bool],
-            "True after the user confirms this issue and contact.",
+        contact: Annotated[
+            Optional[str],
+            "Customer phone or email per agent customer_contact setting. "
+            "Omit on WhatsApp. Pass only after the user gives it when the tool "
+            "asked. No placeholders.",
         ] = None,
     ) -> ToolResult:
-        """Notify staff that the customer wants a person now. Use when the user asks for a human or live support."""
-        return await self._dispatch_handoff(
-            "agent_escalation",
-            message,
-            phone_numbers,
-            emails,
-            confirmed=bool(confirmed),
-        )
+        """Call when you cannot answer from KB/tools or the issue should move to staff (transfer mode). Relay only the tool line; keep helping on later turns. Contact is resolved in code (see customer_contact on the action)."""
+        return await self._dispatch_handoff("transfer", message, contact)
 
     @tool(
-        name="handoff__scheduled_callback",
+        name="handoff__observe",
         idempotency_class=IdempotencyClass.NON_RETRYABLE,
+        requires_tool_permission=True,
+        permission_denied_message=SAVE_DENIED_LINE,
     )
-    async def scheduled_callback(
+    async def observe(
         self,
-        message: Annotated[
+        fact: Annotated[
             str,
-            "The customer's question and what was already tried. Never shown to the user.",
+            "The useful fact, policy, or answer from the group message. Not "
+            "sent back to the group.",
         ],
-        phone_numbers: Annotated[
-            Optional[List[str]],
-            "Phone numbers the user provided. Omit when none.",
-        ] = None,
-        emails: Annotated[
-            Optional[List[str]],
-            "Email addresses the user provided. Omit when none.",
-        ] = None,
-        confirmed: Annotated[
-            Optional[bool],
-            "True after the user confirms this issue and contact.",
-        ] = None,
     ) -> ToolResult:
-        """Notify staff to reach the customer later. Use when the user wants a callback."""
-        return await self._dispatch_handoff(
-            "scheduled_callback",
-            message,
-            phone_numbers,
-            emails,
-            confirmed=bool(confirmed),
+        """Store one useful fact from this WhatsApp group in the knowledge base and add the other group numbers as staff. Call this directly with the fact. Do not call handoff__pending_questions. Call only when the message contains something worth keeping. Send no message."""
+        fact = (fact or "").strip()
+        if not fact:
+            return ToolResult(
+                content="handoff failed: no fact to store.",
+                is_error=True,
+            )
+        try:
+            await self._enroll_group_staff()
+        except Exception:
+            logger.warning("handoff observe enroll failed", exc_info=True)
+        try:
+            await self._append_and_ingest(fact, fact)
+        except Exception as exc:
+            logger.error("handoff__observe ingest failed: %s", exc, exc_info=True)
+            return ToolResult(
+                content="handoff failed: could not save the fact to the knowledge base.",
+                is_error=True,
+            )
+        await self._record_event(_handoff_event("observe"))
+        return ToolResult(
+            content=("The fact is stored. Do not send any message to the group.")
+        )
+
+    def _effective_consult_close(self) -> str:
+        legacy = (self.consult_prompt or "").strip()
+        return legacy or (self.consult_close or CONSULT_CLOSE).strip()
+
+    def _effective_transfer_close(self) -> str:
+        legacy = (self.transfer_prompt or "").strip()
+        return legacy or (self.transfer_close or TRANSFER_CLOSE).strip()
+
+    def _handoff_relay_line(
+        self, mode: str, customer_contact_kind: str, *, continuing_handoff: bool
+    ) -> str:
+        close = (
+            self._effective_consult_close()
+            if mode == "consult"
+            else self._effective_transfer_close()
+        )
+        followup_thanks = continuing_handoff
+        if followup_thanks and close.strip().lower().startswith("thanks"):
+            followup_thanks = False
+        return _compose_handoff_relay(
+            mode,
+            customer_contact_kind,
+            include_intro=not continuing_handoff,
+            include_contact_ask=False,
+            include_close=True,
+            intro=self.handoff_intro,
+            close=close,
+            followup_thanks=followup_thanks,
         )
 
     async def _dispatch_handoff(
         self,
         mode: str,
         message: str,
-        phone_numbers: Optional[List[str]],
-        emails: Optional[List[str]],
+        contact: Optional[str],
         contact_declined: bool = False,
-        confirmed: bool = False,
     ) -> ToolResult:
         channel = self._channel_for(mode)
-        prior = await self._saved_contact()
-        provided = _first_contact(phone_numbers, emails)
-        contact_replaced = bool(provided) and provided != prior
-        if provided:
-            await self._save_contact(provided)
-        contact = provided or prior or _sender_contact(channel)
-        if mode in _CONFIRM_MODES:
-            if not contact:
-                tool_name = f"handoff__{mode}"
-                return ToolResult(
-                    content=(
-                        "Ask the user for a phone number or email. When they reply, "
-                        f"call {tool_name} again with the same message and pass that "
-                        "contact in phone_numbers or emails."
-                    )
-                )
-            if contact_replaced or not confirmed:
-                return _confirm_directive(mode, message, contact)
-            user_facing = (
-                self.agent_escalation_prompt
-                if mode == "agent_escalation"
-                else self.scheduled_callback_prompt
-            )
-        elif mode == "staff_lookup" and not contact and not contact_declined:
-            logger.warning(
-                "handoff staff_lookup ask path no contact declined=%s %s",
-                contact_declined,
-                await self._pending_debug_ids(),
-            )
-            return ToolResult(
-                content=(
-                    "Ask the user, in a natural line, that you don't have that "
-                    "right now and may they share a phone number or email so you "
-                    "can get back to them. If they share one, call "
-                    "handoff__staff_lookup again with the same message and pass "
-                    "it in phone_numbers or emails. If they refuse, call "
-                    "handoff__staff_lookup again with the same message and "
-                    "contact_declined true."
+        kind = self._normalized_customer_contact_kind()
+        active = await self._active_mode()
+        continuing_handoff = bool(active)
+        if not active:
+            from jvagent.tooling.tool_executor import get_tool_visitor
+
+            visitor = get_tool_visitor()
+            utterance = str(getattr(visitor, "utterance", "") or "").strip()
+            issue_src = message
+            used_utterance = bool(
+                utterance
+                and not _is_contact_only_message(
+                    utterance, "", customer_contact_kind=kind
                 )
             )
-        updating = False
-        if mode == "staff_lookup":
-            user_facing = self.staff_lookup_prompt
-            ids = await self._pending_debug_ids()
-            open_q = await self._open_lookup(message)
-            if open_q is not None:
-                stored = _question_field(open_q, "user_contact").strip()
-                effective = contact or ("declined" if contact_declined else "")
-                contact_changed = bool(contact) and stored != contact
-                question_id = _question_field(open_q, "id")
-                if stored and not contact_changed:
-                    logger.warning(
-                        "handoff staff_lookup send skipped same contact "
-                        "question_id=%s stored=%r contact=%r declined=%s %s",
-                        question_id,
-                        stored,
-                        contact,
-                        contact_declined,
-                        ids,
-                    )
-                    return _relay(user_facing)
+            if used_utterance:
+                issue_src = utterance
+            if used_utterance:
+                issue = utterance
+            else:
+                issue = _consult_issue_text(issue_src) or (issue_src or "").strip()
+            await self._set_active(mode, issue)
+            await self._record_event(_handoff_event(mode, status="started"))
+        saved = await self._saved_contact()
+        visitor_channel = _dispatch_channel()
+        provided_clean = _sanitize_contact(contact, customer_contact_kind=kind)
+        if continuing_handoff and not provided_clean:
+            from jvagent.tooling.tool_executor import get_tool_visitor
+
+            visitor = get_tool_visitor()
+            utterance = str(getattr(visitor, "utterance", "") or "").strip()
+            if _is_contact_only_message(utterance, "", customer_contact_kind=kind):
+                provided_clean = _sanitize_contact(
+                    utterance, customer_contact_kind=kind
+                )
+            elif _is_contact_only_message(message, "", customer_contact_kind=kind):
+                provided_clean = _sanitize_contact(message, customer_contact_kind=kind)
+        if provided_clean:
+            await self._save_contact(provided_clean)
+        effective_provided = provided_clean if provided_clean else contact
+        contact = _resolve_customer_contact(
+            provided=effective_provided,
+            saved=saved,
+            visitor_channel=visitor_channel,
+            customer_contact_kind=kind,
+        )
+        if not contact and not (mode == "consult" and contact_declined):
+            tool_name = f"handoff__{mode}"
+            if mode == "consult":
                 logger.warning(
-                    "handoff staff_lookup updating question_id=%s "
-                    "stored=%r effective=%r contact=%r declined=%s %s",
-                    question_id,
-                    stored,
-                    effective,
-                    contact,
+                    "handoff consult ask path no contact declined=%s %s",
                     contact_declined,
-                    ids,
+                    await self._pending_debug_ids(),
                 )
-                new_contact = contact or effective
-                await self._update_pending(
-                    question_id, user_contact=new_contact, node=open_q
-                )
-                updating = True
+            return _missing_contact_handoff_result(
+                mode, kind, tool_name, intro=self.handoff_intro
+            )
+        user_facing = self._handoff_relay_line(
+            mode, kind, continuing_handoff=continuing_handoff
+        )
 
         targets = await self._staff_targets(channel)
         if not targets:
@@ -897,28 +1221,36 @@ class HandoffAction(Action):
                 is_error=True,
             )
         recipient = _pick_staff(targets)
-        outbound = _staff_outbound(mode, message, phone_numbers, emails, contact)
-        if mode == "staff_lookup" and not updating:
+        staff_message = message
+        if mode == "consult":
             logger.warning(
-                "handoff staff_lookup send path creating pending question "
+                "handoff consult send path creating pending question "
                 "contact=%r declined=%s %s",
                 contact,
                 contact_declined,
                 await self._pending_debug_ids(),
             )
-            recorded = "declined" if contact_declined and not contact else contact
-            pending_q = _pending_question_text(
-                _lookup_staff_message(
-                    message,
-                    [
-                        str(t).strip()
-                        for t in (phone_numbers or []) + (emails or [])
-                        if str(t).strip()
-                    ],
-                )
-                or message
+            recorded = (
+                "declined" if contact_declined and not contact else (contact or "")
             )
+            stored_issue = (await self._active_issue()).strip()
+            issue_source = message
+            if continuing_handoff and stored_issue:
+                contact_only = _is_contact_only_message(
+                    message,
+                    contact or provided_clean,
+                    customer_contact_kind=kind,
+                )
+                if contact_only or _looks_like_staff_summary(message):
+                    issue_source = stored_issue
+                    staff_message = stored_issue
+            pending_q = _consult_issue_text(issue_source, contact or "")
             await self._add_pending(pending_q, recorded)
+        outbound = _staff_outbound(
+            mode,
+            staff_message if mode == "consult" else message,
+            contact or "",
+        )
 
         try:
             if channel == "whatsapp":
@@ -930,8 +1262,7 @@ class HandoffAction(Action):
             return ToolResult(
                 content=(
                     "handoff failed: the notification could not be sent. "
-                    "Apologize briefly and offer the direct contact option via "
-                    "handoff__contact_details."
+                    "Apologize briefly."
                 ),
                 is_error=True,
             )
@@ -939,11 +1270,13 @@ class HandoffAction(Action):
         logger.info(
             "handoff %s summary dispatched via %s to %s", mode, channel, recipient
         )
+        await self._record_event(_handoff_event(mode))
+        await self._clear_active()
         return _relay(user_facing)
 
     @tool(name="handoff__pending_questions")
     async def list_pending_questions(self) -> ToolResult:
-        """List customer questions waiting for an answer. If the latest message and the conversation so far look like an answer rather than a new question, call this first. Then call handoff__save_answer with the question_id it matches."""
+        """List all unanswered customer pending questions. Call this first whenever the latest message is a statement, answer, or supplied business fact (not a question). Returns every pend_ id and question text — you choose which ids the staff message answers, then call handoff__save_answer with question_ids. If the list is empty, do not call handoff__consult and do not save the message."""
         try:
             pending = await self._list_pending()
         except Exception:
@@ -958,45 +1291,50 @@ class HandoffAction(Action):
             )
         if not pending:
             logger.warning(
-                "handoff pending_questions returning empty action_agent_id=%r",
+                "handoff pending_questions empty action_agent_id=%r",
                 getattr(self, "agent_id", None),
             )
-            return ToolResult(content="(no pending questions)")
+            return ToolResult(
+                content=(
+                    "No pending questions. Do not call handoff__consult and do "
+                    "not save the message. Reply in the conversation."
+                )
+            )
         lines = [
-            "- id={id} | contact={contact} | Q: {question}".format(
+            "- {id} | {question}".format(
                 id=_question_field(q, "id") or "unknown",
-                contact=_question_field(q, "user_contact") or "unknown",
                 question=_question_field(q, "question")[:300],
             )
             for q in pending
         ]
         return ToolResult(
             content=(
-                "Pending questions:\n"
+                "Pending questions (choose question_ids for handoff__save_answer):\n"
                 + "\n".join(lines)
-                + "\n\nCall handoff__save_answer with the question_id that this "
-                "answer matches and the full answer text. Do not reply to the "
-                "user yet."
+                + "\n\nQuestion ids start with pend_. Pick every id this staff "
+                "answer resolves (same issue, multiple customers). Call "
+                "handoff__save_answer with question_ids and the full answer "
+                "text. Do not reply to the user yet."
             )
         )
 
-    @tool(name="handoff__save_answer", idempotency_class=IdempotencyClass.NON_RETRYABLE)
+    @tool(
+        name="handoff__save_answer",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+        requires_tool_permission=True,
+        permission_denied_message=SAVE_DENIED_LINE,
+    )
     async def save_answer(
         self,
-        question_id: Annotated[str, "id of the pending question being answered."],
+        question_ids: Annotated[
+            List[str],
+            "One or more pend_ ids from handoff__pending_questions that this answer resolves.",
+        ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Save the full answer for one pending question and return a confirmation. Use after handoff__pending_questions, with the matching question_id."""
+        """Save the full answer for the chosen pending questions and return a confirmation. The only save tool in consult. question_ids must come only from handoff__pending_questions. A corr- correlation id is not a question id. This tool is the only source of the saved confirmation; never write it yourself."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
-        if not await self._is_staff():
-            return ToolResult(
-                content=(
-                    "handoff failed: only authorized staff may resolve a pending "
-                    "question."
-                ),
-                is_error=True,
-            )
         visitor = get_tool_visitor()
         utterance = str(getattr(visitor, "utterance", "") or "")
         cleaned = _extract_saved_answer(answer, utterance)
@@ -1005,15 +1343,32 @@ class HandoffAction(Action):
                 content="handoff failed: no answer text to save.",
                 is_error=True,
             )
-        question = await self._get_pending_question(question_id)
-        if question is None:
+        ordered_ids: List[str] = []
+        seen: set[str] = set()
+        for item in question_ids:
+            qid = str(item or "").strip()
+            if not qid or qid in seen:
+                continue
+            seen.add(qid)
+            ordered_ids.append(qid)
+        if not ordered_ids:
             return ToolResult(
-                content=f"handoff failed: no pending question with id {question_id!r}",
+                content="handoff failed: question_ids must include at least one pend_ id.",
                 is_error=True,
             )
+        group: List[Any] = []
+        for qid in ordered_ids:
+            row = await self._get_pending_question(qid)
+            if row is None:
+                return ToolResult(
+                    content=f"handoff failed: no pending question with id {qid!r}",
+                    is_error=True,
+                )
+            group.append(row)
+        anchor = group[0]
         try:
             short_q, short_a, chunk_id = await self._append_and_ingest(
-                _question_field(question, "question"), cleaned
+                _question_field(anchor, "question"), cleaned
             )
         except Exception as exc:
             logger.error("handoff__save_answer ingest failed: %s", exc, exc_info=True)
@@ -1024,35 +1379,50 @@ class HandoffAction(Action):
                 ),
                 is_error=True,
             )
-        await self._remove_pending(question_id, answer=cleaned, node=question)
-        await self._reply_to_customer(question, short_q, short_a)
+        for row in group:
+            rid = _question_field(row, "id")
+            if rid:
+                await self._remove_pending(rid, answer=cleaned, node=row)
+        replied_contacts: set[str] = set()
+        for row in group:
+            contact = str(_question_field(row, "user_contact") or "").strip()
+            if not contact or contact.lower() == "declined":
+                continue
+            if contact in replied_contacts:
+                continue
+            replied_contacts.add(contact)
+            await self._reply_to_customer(row, short_q, short_a)
         await self._record_chunk_event(chunk_id, short_q)
+        await self._record_event(_handoff_event("save_answer", short_q))
+        await self._clear_active()
         return ToolResult(
-            content=(
-                "Relay this to the staff member as-is: Your answer is saved "
-                "and will be used in the future to answer this question."
+            content=json.dumps(
+                {
+                    "response_directive": (
+                        "Tell the user: Your answer is saved and will be "
+                        "used in the future to answer this question."
+                    )
+                }
             )
         )
 
     @tool(
-        name="handoff__update_chunk", idempotency_class=IdempotencyClass.NON_RETRYABLE
+        name="handoff__update_chunk",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+        requires_tool_permission=True,
+        permission_denied_message=SAVE_DENIED_LINE,
     )
     async def update_chunk(
         self,
-        chunk_id: Annotated[str, "id of the handoff chunk to update."],
+        chunk_id: Annotated[
+            str,
+            "Chunk id from an event line that says Handoff chunk. Starts with n.DocumentNode. A corr- id is not a chunk id.",
+        ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Update the saved answer for one existing chunk and return a confirmation. Use when the user is correcting a saved answer, taking chunk_id from the [EVENT] in history and the answer from their message."""
+        """Update the saved answer for one existing chunk and return a confirmation. chunk_id starts with n.DocumentNode and comes only from an event line that says Handoff chunk. A corr- correlation id is not a chunk id."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
-        if not await self._is_staff():
-            return ToolResult(
-                content=(
-                    "handoff failed: only authorized staff may resolve a pending "
-                    "question."
-                ),
-                is_error=True,
-            )
         visitor = get_tool_visitor()
         utterance = str(getattr(visitor, "utterance", "") or "")
         cleaned = _extract_saved_answer(answer, utterance)
@@ -1097,10 +1467,16 @@ class HandoffAction(Action):
             )
         _patch_handoff_json(chunk_id, title, section)
         await self._record_chunk_event(chunk_id, title)
+        await self._record_event(_handoff_event("update_chunk", title))
+        await self._clear_active()
         return ToolResult(
-            content=(
-                "Relay this to the staff member as-is: Your answer is updated "
-                "and will be used in the future to answer this question."
+            content=json.dumps(
+                {
+                    "response_directive": (
+                        "Tell the user: Your answer is updated and will be "
+                        "used in the future to answer this question."
+                    )
+                }
             )
         )
 
@@ -1116,9 +1492,10 @@ class HandoffAction(Action):
                 self,
                 user_prompt=f"Question: {question}\nAnswer: {answer}",
                 system_prompt=(
-                    "Write a short message to the customer. Remind them of "
-                    "the question they asked, then give the answer. Plain text "
-                    "only. No mention of staff, tools, or a knowledge base."
+                    "Write a short message to the customer. Thank them for "
+                    "their patience, remind them of the question they asked, "
+                    "then give the answer. Plain text only. No mention of "
+                    "staff, tools, or a knowledge base."
                 ),
                 json_response=False,
                 use_history=False,
@@ -1132,11 +1509,13 @@ class HandoffAction(Action):
     async def _reply_to_customer(
         self, question: Any, short_q: str, short_a: str
     ) -> None:
-        contact = _question_field(question, "user_contact").strip()
+        contact = str(_question_field(question, "user_contact") or "").strip()
+        if not contact or contact.lower() == "declined":
+            return
+        text = await self._customer_reply(short_q, short_a)
         kind = _contact_kind(contact)
         if not kind:
             return
-        text = await self._customer_reply(short_q, short_a)
         try:
             if kind == "email":
                 await self._send_email(
@@ -1145,7 +1524,13 @@ class HandoffAction(Action):
             else:
                 await self._send_whatsapp(contact, text)
         except Exception:
-            logger.error("handoff reply to customer failed", exc_info=True)
+            logger.error(
+                "handoff reply to customer failed contact=%r",
+                contact,
+                exc_info=True,
+            )
+            return
+        await self._record_event("Handoff delivered the saved answer to the customer.")
 
     def _channel_for(self, mode: str) -> str:
         channel = (
@@ -1170,13 +1555,6 @@ class HandoffAction(Action):
         if not isinstance(staff, list):
             return []
         return [str(m).strip() for m in staff if str(m).strip()]
-
-    async def _public_contacts(self) -> tuple:
-        """Phone is one random staff number; email is every staff address."""
-        numbers = await self._staff_targets("whatsapp")
-        emails = await self._staff_targets("email")
-        phone = _pick_staff(numbers) if numbers else ""
-        return phone, emails
 
     async def _staff_targets(self, channel: str) -> List[str]:
         """Notify/contact targets from AccessControl ``HandoffAction.staff``.
@@ -1424,7 +1802,7 @@ class HandoffAction(Action):
         try:
             await self._refresh_pending_state()
             entry = {
-                "id": f"q_{uuid.uuid4().hex}",
+                "id": f"pend_{uuid.uuid4().hex}",
                 "question": message or "",
                 "user_channel": channel,
                 "user_contact": stored_contact,
@@ -1463,7 +1841,7 @@ class HandoffAction(Action):
         user_contact: str = "",
         node: Any = None,
     ) -> None:
-        """Update contact on one pending question."""
+        """Update contact on one pending question (replaces with single contact)."""
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             logger.warning("handoff update_pending missing question_id")
@@ -1471,31 +1849,16 @@ class HandoffAction(Action):
         await self._refresh_pending_state()
         rows = self._unanswered_rows()
         changed = False
+        stored = (user_contact or "").strip()
         for row in rows:
             if str(row.get("id") or "") == qid:
-                row["user_contact"] = (user_contact or "").strip()
+                row["user_contact"] = stored
                 changed = True
                 break
         if not changed:
             logger.warning("handoff update_pending missing question_id=%r", qid)
             return
         await self._persist_pending_rows(rows)
-
-    async def _update_pending_contact(self, prior: str, contact: str) -> None:
-        """Update user_contact on every pending question matching ``prior``."""
-        prior = (prior or "").strip()
-        contact = (contact or "").strip()
-        if not prior or not contact:
-            return
-        await self._refresh_pending_state()
-        rows = self._unanswered_rows()
-        changed = False
-        for row in rows:
-            if str(row.get("user_contact") or "") == prior:
-                row["user_contact"] = contact
-                changed = True
-        if changed:
-            await self._persist_pending_rows(rows)
 
     async def _remove_pending(
         self, question_id: str, *, answer: str = "", node: Any = None
@@ -1557,30 +1920,93 @@ class HandoffAction(Action):
         if isinstance(context, dict):
             context[_HANDOFF_CONTACT_KEY] = contact
 
-    async def _open_lookup(self, message: str = "") -> Any:
-        """Open pending question for this issue."""
+    async def _update_context(self, updates: Dict[str, Any]) -> None:
+        """Persist handoff state keys on the current conversation, best-effort."""
+        if not updates:
+            return
+        conversation = await self._conversation()
+        if conversation is None:
+            logger.warning("handoff context not saved: no conversation")
+            return
+        update = getattr(conversation, "update_context", None)
+        if callable(update):
+            await update(updates)
+            return
+        context = getattr(conversation, "context", None)
+        if isinstance(context, dict):
+            context.update(updates)
+
+    async def _active_mode(self) -> str:
+        """Mode of the handoff currently in progress (``""`` when none)."""
+        conversation = await self._conversation()
+        context = getattr(conversation, "context", None) or {}
+        return str(context.get(_HANDOFF_ACTIVE_MODE_KEY) or "").strip()
+
+    async def _active_issue(self) -> str:
+        """Customer ask stored for an in-progress handoff."""
+        conversation = await self._conversation()
+        context = getattr(conversation, "context", None) or {}
+        return str(context.get(_HANDOFF_ACTIVE_ISSUE_KEY) or "").strip()
+
+    async def _set_active(self, mode: str, issue: str = "") -> None:
+        await self._update_context(
+            {
+                _HANDOFF_ACTIVE_MODE_KEY: (mode or "").strip(),
+                _HANDOFF_ACTIVE_ISSUE_KEY: (issue or "").strip(),
+            }
+        )
+
+    async def _clear_active(self) -> None:
+        await self._update_context(
+            {_HANDOFF_ACTIVE_MODE_KEY: "", _HANDOFF_ACTIVE_ISSUE_KEY: ""}
+        )
+
+    async def _group_payload(self) -> Dict[str, Any]:
+        """WhatsApp payload on the current visitor, or ``{}``."""
+        from jvagent.tooling.tool_executor import get_tool_visitor
+
+        visitor = get_tool_visitor()
+        data = getattr(visitor, "data", None) if visitor else None
+        if not isinstance(data, dict):
+            return {}
+        payload = data.get("whatsapp_payload") or {}
+        return payload if isinstance(payload, dict) else {}
+
+    async def _enroll_group_staff(self) -> List[str]:
+        """Add every other WhatsApp group number to ``HandoffAction.staff``."""
+        payload = await self._group_payload()
+        if not payload.get("isGroup"):
+            return []
+        group_id = str(payload.get("sender") or "").strip()
+        if not group_id:
+            return []
+        agent = await self.get_agent()
+        wa = (
+            await agent.get_action_by_type(self.handoff_notify_action_type)
+            if agent
+            else None
+        )
+        if wa is None:
+            return []
+        api = await wa.api()
+        result = await api.group_members(group_id)
+        numbers: List[str] = []
+        for item in (result or {}).get("response") or []:
+            if not isinstance(item, dict) or item.get("formattedName") == "You":
+                continue
+            user = str((item.get("id") or {}).get("user") or "").strip()
+            if user:
+                numbers.append(user)
+        if not numbers:
+            return []
         try:
-            agent_id = await self._agent_id()
-            keys = _issue_keys(message)
-            rows = await self._list_pending()
-            for question in rows:
-                stored = _question_field(question, "question").strip()
-                if keys and stored not in keys:
-                    continue
-                logger.warning(
-                    "handoff open lookup matched id=%s agent_id=%r",
-                    _question_field(question, "id"),
-                    agent_id,
-                )
-                return question
-            logger.warning(
-                "handoff open lookup no match agent_id=%r scanned=%s",
-                agent_id,
-                len(rows),
-            )
+            aca: Any = await self.get_action("AccessControlAction")
         except Exception:
-            logger.warning("handoff open lookup failed", exc_info=True)
-        return None
+            return []
+        if aca is None:
+            return []
+        await aca.add_users_to_group("staff", numbers, action_label="HandoffAction")
+        return numbers
 
     async def _pending_debug_ids(self) -> str:
         from jvagent.tooling.tool_executor import get_dispatch_context
@@ -1624,19 +2050,22 @@ class HandoffAction(Action):
             return fallback
         return short_q, short_a
 
-    async def _record_chunk_event(self, chunk_id: str, question: str) -> None:
-        """Store the chunk id on this interaction so a later turn can update it."""
+    async def _record_event(self, event: str) -> None:
+        """Store one handoff event on this interaction and save it."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
+        text = (event or "").strip()
+        if not text:
+            return
         visitor = get_tool_visitor()
         interaction = getattr(visitor, "interaction", None) if visitor else None
         adder = getattr(interaction, "add_event", None)
-        if interaction is None or not callable(adder) or not chunk_id:
+        if interaction is None or not callable(adder):
             return
         try:
-            added = adder(_chunk_event(chunk_id, question), "HandoffAction")
+            added = adder(text, "HandoffAction")
         except Exception:
-            logger.debug("handoff chunk event failed", exc_info=True)
+            logger.debug("handoff event failed", exc_info=True)
             return
         if added is False:
             return
@@ -1648,7 +2077,12 @@ class HandoffAction(Action):
             if hasattr(result, "__await__"):
                 await result
         except Exception:
-            logger.debug("handoff chunk event save failed", exc_info=True)
+            logger.debug("handoff event save failed", exc_info=True)
+
+    async def _record_chunk_event(self, chunk_id: str, question: str) -> None:
+        """Store the chunk id on this interaction so a later turn can update it."""
+        if chunk_id:
+            await self._record_event(_chunk_event(chunk_id, question))
 
     async def _append_and_ingest(self, question: str, answer: str) -> tuple:
         """Condense one Q&A, append its chunk, and re-import the handoff graph."""
@@ -1685,24 +2119,12 @@ class HandoffAction(Action):
     async def healthcheck(self) -> Any:
         return True
 
-    # -- rendering helper (shared with tests) ---------------------------------
-
-    async def render_direct_contact(self) -> str:
-        phone, emails = await self._public_contacts()
-        return _render_direct_contact(
-            self.direct_contact_prompt,
-            email=", ".join(emails),
-            phone=phone,
-            hours=self.handoff_hours,
-        )
-
 
 __all__ = [
-    "AGENT_ESCALATION_PROMPT",
-    "DIRECT_CONTACT_PROMPT",
+    "CONSULT_CLOSE",
     "HANDOFF_DOC_NAME",
+    "HANDOFF_INTRO",
     "HANDOFF_PARAMETERS",
     "HandoffAction",
-    "SCHEDULED_CALLBACK_PROMPT",
-    "STAFF_LOOKUP_PROMPT",
+    "TRANSFER_CLOSE",
 ]

@@ -6,12 +6,12 @@ package:
   meta:
     title: Handoff Action
     description: >-
-      Human-support capability tools, skill-gated: return contact details
-      (handoff__contact_details), notify staff for escalation
-      (handoff__agent_escalation), a callback (handoff__scheduled_callback),
-      or a staff lookup (handoff__staff_lookup), and save an answer to a
-      pending question (handoff__pending_questions / handoff__save_answer) into
-      a public PageIndex document (handoff.md).
+      One handoff mode at a time. consult asks staff and replies when they
+      answer (handoff__consult, handoff__pending_questions,
+      handoff__save_answer, handoff__update_chunk). transfer leaves the
+      conversation (handoff__transfer). observe stores WhatsApp group facts
+      in PageIndex and adds group numbers to AccessControl, without replying
+      (handoff__observe). Pin the active mode's tools on the orchestrator.
     group: jvagent
     type: action
   config:

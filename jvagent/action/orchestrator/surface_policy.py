@@ -125,7 +125,13 @@ class ToolSurfacePolicy:
 
     def wrap_action(self, tool: Any, *, visitor: Any = None) -> SkillTool:
         """Wrap a plain capability tool (visitor bound only when requested)."""
-        return wrap_action_tool(tool, visitor=visitor)
+        return wrap_action_tool(
+            tool,
+            visitor=visitor,
+            agent=self.agent,
+            user_id=self.user_id,
+            channel=self.channel,
+        )
 
     def materialize(
         self, tool: Any, *, action: Any, visitor: Any = None

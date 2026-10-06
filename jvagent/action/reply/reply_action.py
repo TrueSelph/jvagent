@@ -439,10 +439,10 @@ class ReplyAction(Action):
             self.get_channel_format(channel)
         )
 
-        # Any queued shaping (directives, parameters, or channel format) routes
-        # through respond(), which enqueues the message as a directive so the
-        # whole queue composes together and the message is never overridden.
-        if directive_items or has_params or has_format:
+        # Queued directives/parameters (or explicit text + channel format) route
+        # through respond(). Channel format alone never forces compose on empty
+        # reply() — ReplyAction must not answer the utterance without content.
+        if directive_items or has_params or (has_format and text):
             return bool(await self.respond(interaction, visitor=visitor, text=text))
         if not text:
             return False
@@ -466,7 +466,7 @@ class ReplyAction(Action):
             self.get_channel_format(channel)
         )
         if not directive_items:
-            if has_params or has_format:
+            if has_params:
                 return bool(await self.respond(interaction, visitor=visitor))
             return False
         first = directive_items[0]
@@ -583,17 +583,14 @@ class ReplyAction(Action):
                 if content
                 else f"User message: {utterance}"
             )
-        # Parameters (and channel format) shape HOW to phrase. When no explicit
+        # Contributed response parameters shape HOW to phrase. When no explicit
         # message or directive is queued, fall back to the user's utterance so
-        # intro-style *contributed* parameters still reach compose.
+        # intro-style parameters still reach compose. Channel format alone does
+        # not trigger that fallback — it is not permission to answer the utterance.
         if not content and not directive_contents:
             has_shaping = bool(
                 self._collect_parameters(parameters, interaction).strip()
             )
-            if not has_shaping:
-                channel_pre = getattr(visitor, "channel", "default") or "default"
-                if self.apply_channel_format and self.get_channel_format(channel_pre):
-                    has_shaping = True
             if has_shaping and interaction is not None:
                 content = (getattr(interaction, "utterance", "") or "").strip()
             if not content and not directive_contents and not has_shaping:
