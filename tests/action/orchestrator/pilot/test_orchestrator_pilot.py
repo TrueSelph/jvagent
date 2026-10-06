@@ -16,10 +16,14 @@ pytest.importorskip("pydantic_ai")
 from jvagent.action.model.contract import ModelResponse, ToolCall, Usage
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
+    PilotDeliveryPendingError,
+    _publish_pending_pilot_output,
 )
 from jvagent.action.orchestrator.pilot import runtime as _pilot_runtime
 from jvagent.action.orchestrator.pilot.contracts import (
     MAX_PILOT_QUESTION_CHARS,
+    EvidenceReference,
+    PilotCaller,
     PilotSnapshot,
     ResearchBrief,
     ResearchFinding,
@@ -51,6 +55,122 @@ class DurableConversation:
 
     async def get_agent(self):
         return None
+
+
+@pytest.mark.asyncio
+async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
+    orchestrator = OrchestratorInteractAction()
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        status="delivery_pending",
+        question="Research the same question",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/source",
+                excerpt="The source supports this finding.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="Research the same question",
+            findings=(
+                ResearchFinding(
+                    claim="This finding is supported.",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="The source supports this finding.",
+                ),
+            ),
+        ),
+    )
+    handle = SimpleNamespace(id="task-1")
+    completed = []
+
+    class Store:
+        async def complete(self, actual_handle, actual_snapshot, *, delivered):
+            completed.append((actual_handle, actual_snapshot, delivered))
+
+    published = []
+
+    class Responder:
+        async def publish(self, content, *, visitor):
+            published.append((content, visitor))
+            return True
+
+    visitor = SimpleNamespace()
+    interaction = SimpleNamespace(has_emitted=lambda: True)
+    continued = await orchestrator._settle_interrupted_pilot_run(
+        Store(),
+        (handle, snapshot),
+        question="Research the same question",
+        responder=Responder(),
+        visitor=visitor,
+        interaction=interaction,
+    )
+
+    assert continued is False
+    assert len(published) == 1
+    assert "This finding is supported" in published[0][0]
+    assert len(completed) == 1
+    assert completed[0][0] is handle
+    assert completed[0][1].status == "complete"
+    assert completed[0][2] is True
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_final_egress_remains_recoverable():
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        status="delivery_pending",
+        question="q",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/source",
+                excerpt="A source quote.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A sourced claim.",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="A source quote.",
+                ),
+            ),
+        ),
+    )
+    completed = []
+
+    class Responder:
+        async def publish(self, *_args, **_kwargs):
+            raise RuntimeError("ambiguous channel acceptance")
+
+    class Store:
+        async def complete(self, *args, **kwargs):
+            completed.append((args, kwargs))
+
+    with pytest.raises(PilotDeliveryPendingError):
+        await _publish_pending_pilot_output(
+            Responder(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            Store(),
+            SimpleNamespace(id="task-1"),
+            snapshot,
+        )
+
+    assert completed == []
 
 
 class FakeModelAction:

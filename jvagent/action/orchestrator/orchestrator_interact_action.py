@@ -145,6 +145,43 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+class PilotDeliveryPendingError(RuntimeError):
+    """The validated final output is persisted but egress is not acknowledged."""
+
+
+async def _publish_pending_pilot_output(
+    responder: Any,
+    visitor: Any,
+    interaction: Any,
+    pilot_store: Any,
+    handle: Any,
+    snapshot: Any,
+) -> None:
+    """Publish a graph-checkpointed result and then acknowledge task completion."""
+    from jvagent.action.orchestrator.pilot.contracts import output_user_text
+
+    try:
+        delivered = await responder.publish(
+            output_user_text(snapshot.output, snapshot.evidence), visitor=visitor
+        )
+        if not delivered or not OrchestratorInteractAction._turn_delivered(interaction):
+            raise RuntimeError(
+                "ReplyAction did not acknowledge the validated pilot output"
+            )
+        await pilot_store.complete(
+            handle,
+            snapshot.model_copy(update={"status": "complete"}),
+            delivered=True,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        raise PilotDeliveryPendingError(
+            "validated pilot output remains pending delivery"
+        ) from exc
+
+
 from jvagent.action.orchestrator.constants import (
     DECISION_RESERVED_KEYS as _DECISION_RESERVED_KEYS,
 )
@@ -1219,11 +1256,53 @@ class OrchestratorInteractAction(
             return False, None
         return True, active
 
+    async def _reserve_pilot_model_request(
+        self,
+        visitor: "InteractWalker",
+        snapshot: Any,
+        pilot_store: Any,
+        handle: Any,
+    ) -> Any:
+        """Persist request reservation after checking lifetime and dollar guards."""
+        from jvagent.action.orchestrator.pilot.runtime import PilotBudgetExceeded
+
+        if self._conversation_budget_exhausted(visitor) or self._turn_budget_exhausted(
+            visitor
+        ):
+            raise PilotBudgetExceeded("configured dollar budget exhausted")
+        if not snapshot.usage_accounting_complete:
+            raise PilotBudgetExceeded(
+                "prior model request usage is unconfirmed; retry is blocked"
+            )
+        if snapshot.model_requests_used >= self.pilot_max_model_requests:
+            raise PilotBudgetExceeded("pilot lifetime request_limit exhausted")
+        if (
+            snapshot.reported_input_tokens_used
+            + snapshot.reported_output_tokens_used
+            + snapshot.estimated_input_tokens_used
+            + snapshot.estimated_output_tokens_used
+            >= self.pilot_max_total_tokens
+            or snapshot.reported_output_tokens_used
+            + snapshot.estimated_output_tokens_used
+            >= self.pilot_max_output_tokens
+        ):
+            raise PilotBudgetExceeded("pilot lifetime token budget exhausted")
+        reserved = snapshot.model_copy(
+            update={
+                "model_requests_used": snapshot.model_requests_used + 1,
+                "unsettled_model_requests": snapshot.unsettled_model_requests + 1,
+                "usage_accounting_complete": False,
+            }
+        )
+        await pilot_store.save(handle, reserved)
+        return reserved
+
     async def _settle_interrupted_pilot_run(
         self,
         pilot_store: Any,
         interrupted: Any,
         *,
+        question: str,
         responder: Any,
         visitor: "InteractWalker",
         interaction: Any,
@@ -1233,6 +1312,27 @@ class OrchestratorInteractAction(
         if interrupted is None:
             return True
         handle, snapshot = interrupted
+        if snapshot.status == "delivery_pending" and snapshot.question == question:
+            from jvagent.action.orchestrator.pilot.contracts import (
+                ResearchBrief,
+                output_user_text,
+            )
+
+            if isinstance(snapshot.output, ResearchBrief):
+                delivered = await responder.publish(
+                    output_user_text(snapshot.output, snapshot.evidence),
+                    visitor=visitor,
+                )
+                if not delivered or not self._turn_delivered(interaction):
+                    raise RuntimeError(
+                        "ReplyAction did not deliver the recovered pilot output"
+                    )
+                await pilot_store.complete(
+                    handle,
+                    snapshot.model_copy(update={"status": "complete"}),
+                    delivered=True,
+                )
+                return False
         await pilot_store.fail_interrupted(
             handle,
             snapshot,
@@ -1279,7 +1379,6 @@ class OrchestratorInteractAction(
             ) from exc
 
         from jvagent.action.interact.base import InteractAction as BaseInteractAction
-        from jvagent.action.orchestrator.pilot.contracts import output_user_text
         from jvagent.action.reply.reply_action import ReplyAction
 
         agent = await self._safe_agent()
@@ -1526,6 +1625,7 @@ class OrchestratorInteractAction(
         if not await self._settle_interrupted_pilot_run(
             pilot_store,
             interrupted,
+            question=question,
             responder=responder,
             visitor=visitor,
             interaction=interaction,
@@ -1720,40 +1820,11 @@ class OrchestratorInteractAction(
         async def guard_pilot_model_request() -> None:
             nonlocal snapshot
             async with pilot_snapshot_lock:
-                # A request can cross a dollar ceiling because cost is only
-                # known after the provider responds. This guard prevents every
-                # following request from adding further spend.
-                if self._conversation_budget_exhausted(
-                    visitor
-                ) or self._turn_budget_exhausted(visitor):
-                    raise PilotBudgetExceeded("configured dollar budget exhausted")
-                if not snapshot.usage_accounting_complete:
-                    raise PilotBudgetExceeded(
-                        "prior model request usage is unconfirmed; retry is blocked"
-                    )
-                if snapshot.model_requests_used >= self.pilot_max_model_requests:
-                    raise PilotBudgetExceeded("pilot lifetime request_limit exhausted")
-                if (
-                    snapshot.reported_input_tokens_used
-                    + snapshot.reported_output_tokens_used
-                    + snapshot.estimated_input_tokens_used
-                    + snapshot.estimated_output_tokens_used
-                    >= self.pilot_max_total_tokens
-                    or snapshot.reported_output_tokens_used
-                    + snapshot.estimated_output_tokens_used
-                    >= self.pilot_max_output_tokens
-                ):
-                    raise PilotBudgetExceeded("pilot lifetime token budget exhausted")
-                snapshot = snapshot.model_copy(
-                    update={
-                        "model_requests_used": snapshot.model_requests_used + 1,
-                        "unsettled_model_requests": (
-                            snapshot.unsettled_model_requests + 1
-                        ),
-                        "usage_accounting_complete": False,
-                    }
+                # Dollar spend is known only after response; reservation blocks
+                # every following request once the observed ceiling is crossed.
+                snapshot = await self._reserve_pilot_model_request(
+                    visitor, snapshot, pilot_store, handle
                 )
-                await pilot_store.save(handle, snapshot)
 
         async def persist_pilot_model_usage(response: Any) -> None:
             nonlocal snapshot
@@ -1886,26 +1957,35 @@ class OrchestratorInteractAction(
                     evidence=evidence,
                     message_history=messages,
                 )
-            updated = snapshot.model_copy(
+            pending_delivery = snapshot.model_copy(
                 update={
-                    "status": "complete",
+                    "status": "delivery_pending",
                     "evidence": evidence.snapshot(),
                     "output": output,
                 }
             )
-            delivered = await responder.publish(
-                output_user_text(output, evidence.snapshot()), visitor=visitor
+            await pilot_store.prepare_delivery(handle, pending_delivery)
+            snapshot = pending_delivery
+            await _publish_pending_pilot_output(
+                responder,
+                visitor,
+                interaction,
+                pilot_store,
+                handle,
+                pending_delivery,
             )
-            if not delivered or not self._turn_delivered(interaction):
-                raise RuntimeError(
-                    "ReplyAction did not deliver the validated pilot output"
-                )
-            await pilot_store.complete(handle, updated, delivered=True)
         except asyncio.CancelledError:
+            if snapshot.status == "delivery_pending":
+                # Egress may have been accepted before cancellation surfaced.
+                # Preserve the graph checkpoint for explicit at-least-once recovery.
+                raise
             cancelled = snapshot.model_copy(
                 update={"status": "cancelled", "evidence": evidence.snapshot()}
             )
             await pilot_store.cancel(handle, cancelled, "pilot run cancelled")
+            raise
+        except PilotDeliveryPendingError:
+            # Keep the durable output checkpoint for a same-request recovery.
             raise
         except (UsageLimitExceeded, asyncio.TimeoutError, PilotBudgetExceeded) as exc:
             is_timeout = isinstance(exc, asyncio.TimeoutError)
@@ -2030,6 +2110,8 @@ class OrchestratorInteractAction(
                     return
             raise
         except Exception as exc:
+            if snapshot.status == "delivery_pending":
+                raise
             failed = snapshot.model_copy(
                 update={"status": "failed", "evidence": evidence.snapshot()}
             )

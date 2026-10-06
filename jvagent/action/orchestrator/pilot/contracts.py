@@ -258,6 +258,7 @@ class PilotSnapshot(PilotModel):
     config_digest: str = Field(min_length=1, max_length=128)
     status: Literal[
         "running",
+        "delivery_pending",
         "complete",
         "failed",
         "cancelled",

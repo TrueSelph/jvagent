@@ -235,7 +235,7 @@ class PilotTaskStore:
                 )
             except (PilotStateError, ValueError):
                 continue
-            if snapshot.status == "running":
+            if snapshot.status in {"running", "delivery_pending"}:
                 matches.append((handle, snapshot))
         if len(matches) > 1:
             raise PilotStateError(
@@ -309,6 +309,39 @@ class PilotTaskStore:
         snapshot = self._validate_snapshot(snapshot)
         if handle.owner_action != snapshot.skill_id:
             raise PilotStateError("pilot snapshot skill does not match task owner")
+        if snapshot.status == "delivery_pending" and handle.status != "active":
+            raise PilotStateError(
+                "final delivery can only be prepared on an active task"
+            )
+        await handle.set_snapshot(snapshot.model_dump(mode="json"))
+
+    async def prepare_delivery(
+        self, handle: TaskHandle, snapshot: PilotSnapshot
+    ) -> None:
+        """Persist validated final output before crossing the user egress boundary."""
+
+        self._require_durable_conversation()
+        self._require_pilot_task(handle)
+        if snapshot.status != "delivery_pending" or not isinstance(
+            snapshot.output, ResearchBrief
+        ):
+            raise PilotStateError(
+                "final delivery requires a pending evidence-backed ResearchBrief"
+            )
+        if handle.status != "active":
+            raise PilotStateError("final delivery requires an active pilot task")
+        current = self._read_snapshot(handle)
+        if current.status != "running":
+            raise PilotStateError(
+                "pilot task changed before final delivery was prepared"
+            )
+        snapshot = self._validate_snapshot(snapshot)
+        try:
+            output_user_text(snapshot.output, snapshot.evidence)
+        except ValueError as exc:
+            raise PilotStateError(
+                "research pilot task output does not satisfy its evidence contract"
+            ) from exc
         await handle.set_snapshot(snapshot.model_dump(mode="json"))
 
     async def complete(
@@ -429,6 +462,7 @@ class PilotTaskStore:
             ) from exc
         expected_task_status = {
             "running": "active",
+            "delivery_pending": "active",
             "parked": "parked",
             "complete": "completed",
             "failed": "failed",

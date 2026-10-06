@@ -547,6 +547,53 @@ async def test_task_completion_revalidates_quote_and_fresh_source_contract():
 
 
 @pytest.mark.asyncio
+async def test_delivery_pending_output_is_durable_and_recovered_as_active():
+    durable = []
+    conversation = DurableConversation(durable=durable)
+    tasks = PilotTaskStore(conversation)
+    handle = await tasks.create(
+        _snapshot(), title="research", description="Research the question"
+    )
+    pending = _snapshot(
+        status="delivery_pending",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/1",
+                excerpt="A finding appears in the source.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A finding",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="A finding appears in the source.",
+                ),
+            ),
+        ),
+    )
+
+    await tasks.prepare_delivery(handle, pending)
+
+    recovered = PilotTaskStore(DurableConversation(tasks=durable, durable=durable))
+    active = recovered.active_run(
+        caller=pending.caller,
+        skill_id=pending.skill_id,
+        skill_digest=pending.skill_digest,
+        config_digest=pending.config_digest,
+    )
+    assert active is not None
+    recovered_handle, recovered_snapshot = active
+    assert recovered_handle.status == "active"
+    assert recovered_snapshot.status == "delivery_pending"
+    assert recovered_snapshot.output == pending.output
+
+
+@pytest.mark.asyncio
 async def test_cancellation_persists_typed_status_before_task_terminal_state():
     conversation = DurableConversation()
     tasks = PilotTaskStore(conversation)
