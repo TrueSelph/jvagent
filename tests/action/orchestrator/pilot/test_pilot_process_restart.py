@@ -265,3 +265,161 @@ def test_active_pilot_checkpoint_recovers_after_postgres_worker_crash():
         "unsettled_model_requests": 1,
         "usage_accounting_complete": False,
     }
+
+
+@pytest.mark.skipif(
+    not os.environ.get("JVAGENT_TEST_POSTGRES_DSN"),
+    reason="set JVAGENT_TEST_POSTGRES_DSN to a disposable PostgreSQL database",
+)
+def test_cancelled_pilot_checkpoint_survives_postgres_worker_exit():
+    """A committed cancellation remains terminal and readable after worker exit."""
+
+    pytest.importorskip("asyncpg")
+    dsn = os.environ["JVAGENT_TEST_POSTGRES_DSN"]
+    test_id = uuid.uuid4().hex
+    session_id = f"pilot-pg-cancel-{test_id}"
+    task_id = f"pilot_pg_cancel_{test_id}"
+    writer = textwrap.dedent(
+        """
+        import asyncio
+        import os
+        import sys
+        from jvspatial.core.context import GraphContext, set_default_context
+        from jvspatial.db.postgres import PostgresDB
+        from jvagent.action.orchestrator.pilot.contracts import PilotCaller, PilotSnapshot
+        from jvagent.action.orchestrator.pilot.state import PilotTaskStore
+        from jvagent.memory.conversation import Conversation
+
+        async def main():
+            dsn, session_id, task_id = sys.argv[1:]
+            database = PostgresDB(dsn=dsn, min_size=0, max_size=2)
+            set_default_context(GraphContext(database=database))
+            conversation = await Conversation.create(
+                session_id=session_id,
+                user_id="pilot-pg-cancel-user",
+                channel="default",
+            )
+            caller = PilotCaller(
+                agent_id="pilot-pg-cancel-agent",
+                user_id="pilot-pg-cancel-user",
+                session_id=session_id,
+            )
+            state = PilotTaskStore(conversation)
+            snapshot = PilotSnapshot(
+                caller=caller,
+                skill_id="research",
+                skill_digest="postgres-cancel-skill",
+                config_digest="postgres-cancel-config",
+                question="Persist a terminal cancellation on PostgreSQL.",
+                model_requests_used=1,
+                unsettled_model_requests=1,
+                usage_accounting_complete=False,
+            )
+            handle = await state.create(
+                snapshot,
+                task_id=task_id,
+                title="PostgreSQL cancellation checkpoint",
+                description="Cancel before abrupt worker exit",
+            )
+            cancelled = snapshot.model_copy(update={"status": "cancelled"})
+            await state.cancel(handle, cancelled, "operator cancelled")
+            print(f"CONVERSATION_ID={conversation.id}", flush=True)
+            os._exit(72)
+
+        asyncio.run(main())
+        """
+    )
+    created = subprocess.run(
+        [sys.executable, "-c", writer, dsn, session_id, task_id],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=os.environ.copy(),
+    )
+    assert created.returncode == 72, created.stderr
+    conversation_id = next(
+        (
+            line.removeprefix("CONVERSATION_ID=").strip()
+            for line in created.stdout.splitlines()
+            if line.startswith("CONVERSATION_ID=")
+        ),
+        "",
+    )
+    assert conversation_id, created.stdout
+
+    reader = textwrap.dedent(
+        """
+        import asyncio
+        import json
+        import sys
+        from jvspatial.core.context import GraphContext, set_default_context
+        from jvspatial.db.postgres import PostgresDB
+        from jvagent.action.orchestrator.pilot.contracts import PilotCaller
+        from jvagent.action.orchestrator.pilot.state import PilotTaskStore
+        from jvagent.memory.conversation import Conversation
+
+        async def main():
+            dsn, conversation_id, session_id, task_id = sys.argv[1:]
+            database = PostgresDB(dsn=dsn, min_size=0, max_size=2)
+            set_default_context(GraphContext(database=database))
+            conversation = await Conversation.get(conversation_id)
+            assert conversation is not None
+            caller = PilotCaller(
+                agent_id="pilot-pg-cancel-agent",
+                user_id="pilot-pg-cancel-user",
+                session_id=session_id,
+            )
+            state = PilotTaskStore(conversation)
+            handle, snapshot = state.load(
+                task_id,
+                caller=caller,
+                skill_id="research",
+                skill_digest="postgres-cancel-skill",
+                config_digest="postgres-cancel-config",
+            )
+            assert state.active_run(
+                caller=caller,
+                skill_id="research",
+                skill_digest="postgres-cancel-skill",
+                config_digest="postgres-cancel-config",
+            ) is None
+            print("CANCELLED=" + json.dumps({
+                "task_id": handle.id,
+                "task_status": handle.status,
+                "snapshot_status": snapshot.status,
+                "question": snapshot.question,
+                "model_requests_used": snapshot.model_requests_used,
+                "unsettled_model_requests": snapshot.unsettled_model_requests,
+                "usage_accounting_complete": snapshot.usage_accounting_complete,
+            }, sort_keys=True))
+            await conversation.delete(cascade=True)
+            await database.close()
+
+        asyncio.run(main())
+        """
+    )
+    inspected = subprocess.run(
+        [sys.executable, "-c", reader, dsn, conversation_id, session_id, task_id],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=os.environ.copy(),
+    )
+    assert inspected.returncode == 0, inspected.stderr
+    cancelled_line = next(
+        line.removeprefix("CANCELLED=")
+        for line in inspected.stdout.splitlines()
+        if line.startswith("CANCELLED=")
+    )
+    cancelled_state = json.loads(cancelled_line)
+    assert cancelled_state == {
+        "task_id": task_id,
+        "task_status": "cancelled",
+        "snapshot_status": "cancelled",
+        "question": "Persist a terminal cancellation on PostgreSQL.",
+        "model_requests_used": 1,
+        "unsettled_model_requests": 1,
+        "usage_accounting_complete": False,
+    }
