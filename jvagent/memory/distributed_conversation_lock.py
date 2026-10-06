@@ -21,7 +21,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -105,24 +105,63 @@ def _lease_renew_interval(ttl: int) -> float:
     return max(1.0, ttl / 3.0)
 
 
-async def _run_lease_heartbeat(renew, interval: float, conversation_id: str) -> None:
-    """Loop: sleep ``interval``, then ``await renew()`` while the lock is held.
+async def _run_lease_heartbeat(
+    renew: Callable[[], Awaitable[Optional[bool]]],
+    interval: float,
+    conversation_id: str,
+    *,
+    ttl: Optional[float] = None,
+    owner_task: Optional["asyncio.Task[Any]"] = None,
+) -> None:
+    """Renew a lease and cancel its owner before ownership can become uncertain.
 
-    Cancelled by the lock context on release. A failed renewal is logged and the
-    loop continues — a transient blip shouldn't drop the lease early.
+    ``renew`` may return ``False`` when the backend proves this token no longer
+    owns the lease. ``None`` remains a successful result for backends whose
+    renewal API has no return value. Transient failures are retried, but only
+    until the last confirmed lease renewal approaches expiry.
     """
+    last_success = asyncio.get_running_loop().time()
     while True:
         await asyncio.sleep(interval)
         try:
-            await renew()
+            remaining = None
+            if ttl is not None:
+                remaining = (
+                    ttl - interval - (asyncio.get_running_loop().time() - last_success)
+                )
+                if remaining <= 0:
+                    raise TimeoutError("lease renewal safety deadline reached")
+            renewed = (
+                await renew()
+                if remaining is None
+                else await asyncio.wait_for(renew(), timeout=remaining)
+            )
+            if renewed is False:
+                logger.error("distributed lease lost for %s", conversation_id)
+                if owner_task is not None and not owner_task.done():
+                    owner_task.cancel("conversation lock lease lost")
+                return
+            last_success = asyncio.get_running_loop().time()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.debug(
-                "conversation lock renew failed for %s (%s)",
+                "distributed lease renew failed for %s (%s)",
                 conversation_id,
                 type(exc).__name__,
             )
+            if ttl is not None and asyncio.get_running_loop().time() - last_success >= (
+                ttl - interval
+            ):
+                logger.error(
+                    "distributed lease renewal deadline exceeded for %s",
+                    conversation_id,
+                )
+                if owner_task is not None and not owner_task.done():
+                    owner_task.cancel(
+                        "conversation lock lease renewal deadline exceeded"
+                    )
+                return
 
 
 _REQUIRE_DISTRIBUTED_LOCK_ENV = "JVAGENT_REQUIRE_DISTRIBUTED_CONVERSATION_LOCK"
@@ -265,11 +304,17 @@ async def _redis_conversation_lock(
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await client.eval(renew_script, 1, key, token, str(ttl))
+        async def _renew() -> bool:
+            return bool(await client.eval(renew_script, 1, key, token, str(ttl)))
 
         heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), conversation_id)
+            _run_lease_heartbeat(
+                _renew,
+                _lease_renew_interval(ttl),
+                conversation_id,
+                ttl=ttl,
+                owner_task=asyncio.current_task(),
+            )
         )
         yield
     finally:
@@ -366,19 +411,28 @@ async def _dynamo_conversation_lock(
                     code,
                 )
 
-    def renew() -> None:
+    def renew() -> bool:
         # Extend expires_at only while we still hold it (holder == token).
         now = int(time.time())
-        client.update_item(
-            TableName=table_name,
-            Key={"lock_key": {"S": lock_key}},
-            UpdateExpression="SET expires_at = :e",
-            ConditionExpression="holder = :t",
-            ExpressionAttributeValues={
-                ":e": {"N": str(now + ttl_sec)},
-                ":t": {"S": token},
-            },
-        )
+        try:
+            client.update_item(
+                TableName=table_name,
+                Key={"lock_key": {"S": lock_key}},
+                UpdateExpression="SET expires_at = :e",
+                ConditionExpression="holder = :t",
+                ExpressionAttributeValues={
+                    ":e": {"N": str(now + ttl_sec)},
+                    ":t": {"S": token},
+                },
+            )
+        except ClientError as exc:
+            if (
+                exc.response.get("Error", {}).get("Code")
+                == "ConditionalCheckFailedException"
+            ):
+                return False
+            raise
+        return True
 
     # AUDIT-memory HIGH-05: same bounded wait + backoff as the Redis path.
     dyn_max_wait = max(ttl_sec + 5, 60)
@@ -409,12 +463,16 @@ async def _dynamo_conversation_lock(
             await asyncio.sleep(dyn_delay)
             dyn_delay = min(dyn_delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await asyncio.to_thread(renew)
+        async def _renew() -> bool:
+            return await asyncio.to_thread(renew)
 
         heartbeat = asyncio.create_task(
             _run_lease_heartbeat(
-                _renew, _lease_renew_interval(ttl_sec), conversation_id
+                _renew,
+                _lease_renew_interval(ttl_sec),
+                conversation_id,
+                ttl=ttl_sec,
+                owner_task=asyncio.current_task(),
             )
         )
         yield

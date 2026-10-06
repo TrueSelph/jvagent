@@ -116,11 +116,17 @@ async def _redis_lease(key: str, redis_url: str, ttl: int) -> AsyncIterator[None
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await client.eval(renew_script, 1, rkey, token, str(ttl))
+        async def _renew() -> bool:
+            return bool(await client.eval(renew_script, 1, rkey, token, str(ttl)))
 
         heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key)
+            _run_lease_heartbeat(
+                _renew,
+                _lease_renew_interval(ttl),
+                key,
+                ttl=ttl,
+                owner_task=asyncio.current_task(),
+            )
         )
         yield
     finally:
@@ -182,18 +188,27 @@ async def _dynamo_lease(key: str, table_name: str, ttl: int) -> AsyncIterator[No
                 raise
             return False
 
-    def renew() -> None:
+    def renew() -> bool:
         now = int(time.time())
-        client.update_item(
-            TableName=table_name,
-            Key={"lock_key": {"S": lock_key}},
-            UpdateExpression="SET expires_at = :e",
-            ConditionExpression="holder = :t",
-            ExpressionAttributeValues={
-                ":e": {"N": str(now + ttl)},
-                ":t": {"S": token},
-            },
-        )
+        try:
+            client.update_item(
+                TableName=table_name,
+                Key={"lock_key": {"S": lock_key}},
+                UpdateExpression="SET expires_at = :e",
+                ConditionExpression="holder = :t",
+                ExpressionAttributeValues={
+                    ":e": {"N": str(now + ttl)},
+                    ":t": {"S": token},
+                },
+            )
+        except ClientError as exc:
+            if (
+                exc.response.get("Error", {}).get("Code")
+                == "ConditionalCheckFailedException"
+            ):
+                return False
+            raise
+        return True
 
     def release() -> None:
         try:
@@ -224,11 +239,17 @@ async def _dynamo_lease(key: str, table_name: str, ttl: int) -> AsyncIterator[No
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await asyncio.to_thread(renew)
+        async def _renew() -> bool:
+            return await asyncio.to_thread(renew)
 
         heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key)
+            _run_lease_heartbeat(
+                _renew,
+                _lease_renew_interval(ttl),
+                key,
+                ttl=ttl,
+                owner_task=asyncio.current_task(),
+            )
         )
         yield
     finally:

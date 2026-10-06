@@ -62,6 +62,61 @@ async def test_heartbeat_survives_a_failed_renew():
     assert len(calls) >= 3
 
 
+async def _run_owner_with_heartbeat(renew, *, ttl: float) -> None:
+    owner = asyncio.current_task()
+    assert owner is not None
+    heartbeat = asyncio.create_task(
+        dcl._run_lease_heartbeat(
+            renew,
+            interval=0.02,
+            conversation_id="c",
+            ttl=ttl,
+            owner_task=owner,
+        )
+    )
+    try:
+        await asyncio.Event().wait()
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
+async def test_heartbeat_cancels_owner_when_backend_proves_lease_lost():
+    async def renew():
+        return False
+
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=1.0))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+
+async def test_heartbeat_cancels_owner_before_unrenewed_lease_expires():
+    async def renew():
+        raise ConnectionError("temporary backend outage")
+
+    started = asyncio.get_running_loop().time()
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.16))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+    assert asyncio.get_running_loop().time() - started < 0.16
+
+
+async def test_heartbeat_bounds_a_stalled_renewal_by_lease_deadline():
+    async def renew():
+        await asyncio.Event().wait()
+
+    started = asyncio.get_running_loop().time()
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.16))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+    assert asyncio.get_running_loop().time() - started < 0.16
+
+
 async def test_redis_lock_renews_lease_while_held(monkeypatch):
     counts = {"acquire": 0, "renew": 0, "unlock": 0}
 
@@ -126,6 +181,33 @@ async def test_redis_lock_stops_renewing_after_release(monkeypatch):
     # No further renewals after the context exits.
     await asyncio.sleep(0.1)
     assert counts["renew"] == renews_at_release
+
+
+async def test_redis_lock_cancels_turn_after_token_loss(monkeypatch):
+    class _FakeRedis:
+        async def set(self, name, value, nx, ex):
+            return True
+
+        async def eval(self, script, numkeys, *args):
+            return 0
+
+        async def close(self):
+            pass
+
+    fake_asyncio = types.ModuleType("redis.asyncio")
+    fake_asyncio.from_url = lambda url, decode_responses=True: _FakeRedis()
+    monkeypatch.setitem(sys.modules, "redis", types.ModuleType("redis"))
+    monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
+    monkeypatch.setattr(dcl, "_lease_renew_interval", lambda ttl: 0.02)
+
+    async def hold_turn():
+        async with dcl.conversation_mutation_lock("conv-lost"):
+            await asyncio.Event().wait()
+
+    turn = asyncio.create_task(hold_turn())
+    with pytest.raises(asyncio.CancelledError):
+        await turn
 
 
 async def test_configured_redis_lock_fails_closed_without_client(monkeypatch):
