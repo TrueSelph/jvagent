@@ -433,6 +433,38 @@ def test_typed_fetch_receipt_must_match_requested_url_and_http_200() -> None:
         assert collector.snapshot() == ()
 
 
+def test_successful_redirect_receipt_cites_the_validated_final_url() -> None:
+    collector = PilotEvidenceCollector()
+    requested_url = "https://example.test/redirect"
+    final_url = "https://example.test/article"
+    receipt = ToolResultText(
+        f"# Source: {final_url}\n\nFetched article body.",
+        {
+            "web_fetch_result": {
+                "outcome": "success",
+                "requested_url": requested_url,
+                "final_url": final_url,
+                "content_type": "text/html",
+                "http_status": 200,
+            }
+        },
+    )
+
+    asyncio.run(
+        collector.observe(
+            _context(), "web_fetch__fetch", {"url": requested_url}, receipt
+        )
+    )
+
+    (reference,) = collector.snapshot()
+    assert reference.url == final_url
+    assert reference.provenance == "fetched_page"
+    annotated = collector.annotate_result(
+        "web_fetch__fetch", {"url": requested_url}, str(receipt)
+    )
+    assert f"Observed source ID: {reference.source_id}" in annotated
+
+
 @pytest.mark.parametrize(
     ("content", "metadata"),
     [
