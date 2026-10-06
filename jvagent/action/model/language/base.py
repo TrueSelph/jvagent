@@ -5,6 +5,7 @@ and related types for text generation and multimodal interactions.
 """
 
 import asyncio
+import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -1005,10 +1006,25 @@ class LanguageModelAction(BaseModelAction, ABC):
                             pass
                         # After stream completes, estimate tokens if the provider
                         # did not already attach usage (e.g. Anthropic message_stop).
-                        if chunks:
+                        # Tool-only provider responses have no text chunks, but
+                        # LiteLLM assembles their final tool calls and usage
+                        # receipt when the source iterator is exhausted. Track
+                        # those calls too; otherwise the orchestrator can use
+                        # the usage internally while Interaction/jvchat report
+                        # zero tokens and zero cost for every tool-selection turn.
+                        has_provider_usage = any(
+                            result.metrics.get(key, 0) > 0
+                            for key in (
+                                "prompt_tokens",
+                                "completion_tokens",
+                                "total_tokens",
+                            )
+                        )
+                        if chunks or result.tool_calls or has_provider_usage:
                             full_response = "".join(chunks)
                             # Store response for later use
-                            result.response = full_response
+                            if full_response:
+                                result.response = full_response
 
                             # Calculate actual duration (from query start to stream completion)
                             stream_end_time = time.time()
@@ -1061,8 +1077,13 @@ class LanguageModelAction(BaseModelAction, ABC):
                                     prompt_tokens = estimate_prompt_tokens(
                                         messages, model, provider
                                     )
+                                    completion_content = full_response
+                                    if not completion_content and result.tool_calls:
+                                        completion_content = json.dumps(
+                                            result.tool_calls, ensure_ascii=False
+                                        )
                                     completion_tokens = estimate_completion_tokens(
-                                        full_response, model, provider
+                                        completion_content, model, provider
                                     )
                                     total_tokens = prompt_tokens + completion_tokens
 

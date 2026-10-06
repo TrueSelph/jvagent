@@ -167,6 +167,20 @@ def test_cache_counters_are_clamped_to_prompt_tokens():
     )
 
 
+def test_normalized_cache_counters_are_split_and_priced():
+    usage = {
+        "prompt_tokens": 100,
+        "completion_tokens": 10,
+        "cached_read_tokens": 40,
+        "cached_write_tokens": 20,
+    }
+    assert split_cached_prompt_tokens(usage) == (40, 40, 20)
+
+    expected = (40 / 1_000_000) * 2.50 + (40 / 1_000_000) * 1.25
+    expected += (20 / 1_000_000) * 2.50 + (10 / 1_000_000) * 10.00
+    assert estimate_cost("gpt-4o", "openai", usage) == pytest.approx(expected)
+
+
 def test_split_tolerates_junk_values():
     assert split_cached_prompt_tokens({"prompt_tokens": "x"}) == (0, 0, 0)
     assert split_cached_prompt_tokens({"prompt_tokens": 10, "cached_tokens": None}) == (

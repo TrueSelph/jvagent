@@ -229,3 +229,91 @@ class TestModelAction:
 
         assert action.total_requests == 2
         assert action.total_tokens == 150
+
+    @pytest.mark.parametrize("provider_cost", [None, 0.00042])
+    @pytest.mark.asyncio
+    async def test_streaming_tool_only_response_records_usage(self, provider_cost):
+        """Tool-only streams still emit model metrics after the source closes."""
+
+        from jvagent.action.model.context import set_interaction
+
+        class InteractionStub:
+            def __init__(self):
+                self.observability_metrics = []
+
+            async def save(self):
+                return None
+
+        async def empty_stream():
+            if False:
+                yield ""
+
+        class ToolOnlyModelAction(LanguageModelAction):
+            model: str = "gpt-4o"
+            provider: str = "openai"
+
+            async def _query(self, messages, tools=None, **kwargs):
+                raise AssertionError("streaming request should use _query_stream")
+
+            async def _query_stream(self, messages, tools=None, **kwargs):
+                usage = {
+                    "prompt_tokens": 120,
+                    "completion_tokens": 15,
+                    "total_tokens": 135,
+                }
+                if provider_cost is not None:
+                    usage.update(
+                        {
+                            "cost_usd": provider_cost,
+                            "cost_source": "litellm_response_cost",
+                        }
+                    )
+                return ModelActionResult(
+                    stream=empty_stream(),
+                    usage=usage,
+                    model="gpt-4o",
+                    provider="openai",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "lookup", "arguments": "{}"},
+                        }
+                    ],
+                )
+
+        interaction = InteractionStub()
+        set_interaction(interaction)
+        try:
+            action = ToolOnlyModelAction()
+            result = await action.query_messages(
+                messages=[{"role": "user", "content": "Look this up"}],
+                stream=True,
+            )
+            async for _chunk in result.iter_stream():
+                pass
+        finally:
+            set_interaction(None)
+
+        model_calls = [
+            event
+            for event in interaction.observability_metrics
+            if event.get("event_type") == "model_call"
+        ]
+        assert len(model_calls) == 1
+        data = model_calls[0]["data"]
+        assert data["usage"]["prompt_tokens"] == 120
+        assert data["usage"]["completion_tokens"] == 15
+        if provider_cost is not None:
+            assert data["cost_record"] == {
+                "amount": provider_cost,
+                "currency": "USD",
+                "source": "litellm_response_cost",
+                "estimated": False,
+                "pricing_version": None,
+            }
+        else:
+            assert data["cost_record"]["amount"] > 0
+            assert data["cost_record"]["source"] == "jv_cost_estimator"
+            assert data["cost_record"]["estimated"] is True

@@ -81,6 +81,99 @@ clear_locked_flow_error = continuation.clear_locked_flow_error
 note_locked_flow_error = continuation.note_locked_flow_error
 plan_resume_note = continuation.plan_resume_note
 
+
+async def _reconcile_pilot_interaction_usage(interaction: Any, response: Any) -> None:
+    """Copy final pilot usage onto the model-call event consumed by jvchat."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    input_tokens = max(0, int(getattr(usage, "prompt_tokens", 0) or 0))
+    output_tokens = max(0, int(getattr(usage, "completion_tokens", 0) or 0))
+    metrics = getattr(interaction, "observability_metrics", None)
+    if not (input_tokens or output_tokens) or not isinstance(metrics, list):
+        return
+
+    from jvagent.action.model.cost_estimator import (
+        estimated_cost_record,
+        reported_cost_record,
+    )
+
+    estimated = bool(getattr(usage, "estimated", False))
+    usage_data: Dict[str, Any] = {
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": max(0, int(getattr(usage, "total_tokens", 0) or 0))
+        or input_tokens + output_tokens,
+        "estimated": estimated,
+    }
+    for key in ("cached_read_tokens", "cached_write_tokens", "thinking_tokens"):
+        value = max(0, int(getattr(usage, key, 0) or 0))
+        if value:
+            usage_data[key] = value
+
+    for event in reversed(metrics):
+        if not isinstance(event, dict) or event.get("event_type") != "model_call":
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict) or data.get("pilot_usage_reconciled"):
+            continue
+        current = data.get("usage")
+        current = current if isinstance(current, dict) else {}
+        if current.get("prompt_tokens") or current.get("completion_tokens"):
+            continue
+
+        data["usage"] = usage_data
+        data["estimated"] = estimated
+        data["pilot_usage_reconciled"] = True
+        latency_ms = max(0, int(getattr(response, "latency_ms", 0) or 0))
+        if latency_ms:
+            data["duration"] = latency_ms / 1000.0
+        receipt = None
+        existing_receipt = data.get("cost_record")
+        if isinstance(existing_receipt, dict) and not existing_receipt.get("estimated"):
+            receipt = existing_receipt
+        if receipt is None and data.get("cost_source") != "jv_cost_estimator":
+            receipt = reported_cost_record(data)
+        cost_usd = getattr(usage, "cost_usd", None)
+        cost_source = str(getattr(usage, "cost_source", "") or "")
+        if (
+            receipt is None
+            and cost_usd is not None
+            and cost_source != "jv_cost_estimator"
+        ):
+            receipt = reported_cost_record(
+                {
+                    "cost_usd": cost_usd,
+                    "cost_source": cost_source or "provider_reported",
+                    "cost_estimated": getattr(usage, "cost_estimated", False),
+                    "pricing_version": getattr(usage, "pricing_version", None),
+                }
+            )
+        if receipt is None:
+            receipt = estimated_cost_record(
+                str(
+                    data.get("request_model")
+                    or data.get("model")
+                    or getattr(response, "model", "")
+                ),
+                str(data.get("provider") or getattr(response, "provider", "unknown")),
+                usage_data,
+                "model_call",
+            )
+        data["cost_record"] = receipt
+        data["cost_usd"] = receipt.get("amount")
+        data["cost_source"] = receipt.get("source")
+        data["cost_estimated"] = receipt.get("estimated")
+        try:
+            interaction.compute_usage()
+            await interaction.save()
+        except Exception:
+            logger.warning(
+                "Could not persist reconciled pilot model usage", exc_info=True
+            )
+        return
+
+
 from jvagent.action.orchestrator.core_tools import (
     build_artifact_tools,
     build_core_tools,
@@ -1983,6 +2076,9 @@ class OrchestratorInteractAction(
                 )
                 has_usage = input_tokens > 0 or output_tokens > 0
                 estimated = bool(getattr(usage, "estimated", False))
+                await _reconcile_pilot_interaction_usage(
+                    getattr(visitor, "interaction", None), response
+                )
                 updated_usage: Dict[str, Any] = {
                     "unsettled_model_requests": max(
                         0, snapshot.unsettled_model_requests - 1

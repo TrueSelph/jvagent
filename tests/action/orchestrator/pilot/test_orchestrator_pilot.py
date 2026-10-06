@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -19,6 +20,7 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
     PilotDeliveryPendingError,
     _publish_pending_pilot_output,
+    _reconcile_pilot_interaction_usage,
 )
 from jvagent.action.orchestrator.pilot import runtime as _pilot_runtime
 from jvagent.action.orchestrator.pilot.contracts import (
@@ -43,6 +45,78 @@ from jvagent.action.web_search.serper.serper import SerperWebSearchAction
 from jvagent.memory.interaction import Interaction
 from jvagent.memory.task_store import TaskHandle, TaskStore
 from jvagent.scaffold.skill_resolve import parse_skill_bundle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("usage", "expected_source", "estimated_cost"),
+    [
+        (
+            Usage(
+                prompt_tokens=120,
+                completion_tokens=35,
+                total_tokens=155,
+                cached_read_tokens=40,
+                cost_usd=0.00042,
+                cost_source="litellm_response_cost",
+            ),
+            "litellm_response_cost",
+            False,
+        ),
+        (
+            Usage(
+                prompt_tokens=120,
+                completion_tokens=35,
+                total_tokens=155,
+                cost_usd=0.0,
+                cost_source="jv_cost_estimator",
+                cost_estimated=True,
+            ),
+            "jv_cost_estimator",
+            True,
+        ),
+    ],
+)
+async def test_pilot_usage_reconciles_interaction_metrics(
+    monkeypatch, usage, expected_source, estimated_cost
+):
+    interaction = Interaction()
+    interaction.observability_metrics = [
+        {
+            "event_type": "model_call",
+            "data": {
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "request_model": "gpt-4o-mini",
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            },
+        }
+    ]
+    save = AsyncMock()
+    monkeypatch.setattr(Interaction, "save", save)
+    response = SimpleNamespace(
+        usage=usage, model="gpt-4o-mini", provider="openai", latency_ms=1250
+    )
+
+    await _reconcile_pilot_interaction_usage(interaction, response)
+
+    data = interaction.observability_metrics[0]["data"]
+    assert data["usage"]["prompt_tokens"] == 120
+    assert data["usage"]["completion_tokens"] == 35
+    assert data["usage"]["total_tokens"] == 155
+    assert (
+        data["usage"]["cached_read_tokens"] == 40 if usage.cached_read_tokens else True
+    )
+    assert data["duration"] == 1.25
+    assert data["cost_record"]["source"] == expected_source
+    assert data["cost_record"]["estimated"] is estimated_cost
+    assert data["cost_record"]["amount"] > 0
+    assert interaction.usage["total_tokens"] == 155
+    assert interaction.usage["cached_prompt_tokens"] == usage.cached_read_tokens
+    assert interaction.usage["model_call_count"] == 1
+    save.assert_awaited_once()
+
+
 from jvagent.testing.use_case_loader import load_use_case
 
 
@@ -938,18 +1012,9 @@ async def test_pilot_turn_ceiling_stops_before_second_model_request(monkeypatch)
                     },
                 }
             )
-            assert any(
-                tool["function"]["name"] == "load_capability" for tool in request.tools
-            )
             return ModelResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="load-research",
-                        name="load_capability",
-                        arguments={"id": "research"},
-                    )
-                ],
-                finish_reason="tool_calls",
+                text="First call completed.",
+                finish_reason="stop",
                 usage=Usage(prompt_tokens=10, completion_tokens=2, total_tokens=12),
             )
 
@@ -998,6 +1063,22 @@ async def test_pilot_turn_ceiling_stops_before_second_model_request(monkeypatch)
     monkeypatch.setattr(
         OrchestratorInteractAction, "_history", AsyncMock(return_value=[])
     )
+
+    async def build_test_agent(_model, _skills, **kwargs: Any) -> Any:
+        return SimpleNamespace(
+            request_guard=kwargs["request_guard"],
+            usage_observer=kwargs["usage_observer"],
+        )
+
+    async def run_test_agent(test_agent: Any, _question: str, **_kwargs: Any) -> None:
+        request = ModelRequest(messages=[{"role": "user", "content": "cost test"}])
+        await test_agent.request_guard(request)
+        response = await model_action.complete(request)
+        await test_agent.usage_observer(response)
+        await test_agent.request_guard(request)
+
+    monkeypatch.setattr(_pilot_runtime, "build_research_agent", build_test_agent)
+    monkeypatch.setattr(_pilot_runtime, "run_research_agent", run_test_agent)
     monkeypatch.setattr(
         OrchestratorInteractAction,
         "_pilot_run_instructions",

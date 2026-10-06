@@ -148,9 +148,9 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
 
     Both providers report cached counts as a *subset* of the prompt tokens
     (jvagent's Anthropic action folds its separately-reported cache counters in),
-    so these are carved out of the total rather than added to it. Reads are
-    ``cached_tokens`` (OpenAI, flattened) or ``prompt_tokens_details.cached_tokens``
-    (OpenAI, raw) or ``cache_read_input_tokens`` (Anthropic).
+    so these are carved out of the total rather than added to it. Reads accept
+    jvagent's normalized ``cached_read_tokens`` plus provider spellings such as
+    ``cached_tokens`` (OpenAI) and ``cache_read_input_tokens`` (Anthropic).
     """
 
     def _int(key: str) -> int:
@@ -168,10 +168,16 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
         except (TypeError, ValueError):
             nested = 0
     read = min(
-        _int("cached_tokens") or _int("cache_read_input_tokens") or nested,
+        _int("cached_read_tokens")
+        or _int("cached_tokens")
+        or _int("cache_read_input_tokens")
+        or nested,
         prompt_tokens,
     )
-    write = min(_int("cache_creation_input_tokens"), prompt_tokens - read)
+    write = min(
+        _int("cached_write_tokens") or _int("cache_creation_input_tokens"),
+        prompt_tokens - read,
+    )
     return prompt_tokens - read - write, read, write
 
 
