@@ -11,6 +11,7 @@ import asyncio
 import builtins
 import sys
 import types
+from typing import Awaitable, Callable
 
 import pytest
 
@@ -62,13 +63,18 @@ async def test_heartbeat_survives_a_failed_renew():
     assert len(calls) >= 3
 
 
-async def _run_owner_with_heartbeat(renew, *, ttl: float) -> None:
+async def _run_owner_with_heartbeat(
+    renew: Callable[[], Awaitable[bool | None]],
+    *,
+    ttl: float,
+    interval: float = 0.02,
+) -> None:
     owner = asyncio.current_task()
     assert owner is not None
     heartbeat = asyncio.create_task(
         dcl._run_lease_heartbeat(
             renew,
-            interval=0.02,
+            interval=interval,
             conversation_id="c",
             ttl=ttl,
             owner_task=owner,
@@ -98,7 +104,11 @@ async def test_heartbeat_cancels_owner_before_unrenewed_lease_expires():
         raise ConnectionError("temporary backend outage")
 
     started = asyncio.get_running_loop().time()
-    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.16))
+    # Keep a scheduling margin before the lease deadline; a 20ms margin made
+    # this timing assertion flaky when the full suite briefly starved the loop.
+    owner = asyncio.create_task(
+        _run_owner_with_heartbeat(renew, ttl=0.16, interval=0.05)
+    )
     with pytest.raises(asyncio.CancelledError):
         await owner
 
@@ -110,7 +120,9 @@ async def test_heartbeat_bounds_a_stalled_renewal_by_lease_deadline():
         await asyncio.Event().wait()
 
     started = asyncio.get_running_loop().time()
-    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.16))
+    owner = asyncio.create_task(
+        _run_owner_with_heartbeat(renew, ttl=0.16, interval=0.05)
+    )
     with pytest.raises(asyncio.CancelledError):
         await owner
 
