@@ -552,6 +552,21 @@ def function_model_for_action(
             if key in settings
         }
         extra_settings = dict(settings)
+        supported_settings = set(
+            getattr(model_action, "pydantic_ai_supported_settings", ()) or ()
+        )
+        # LiteLLM's drop_params mode can silently discard a provider-specific
+        # setting. In strict mode, only use passthrough when the configured
+        # Action opts out of that behavior; otherwise the setting would appear
+        # accepted while having no effect.
+        if getattr(model_action, "drop_params", False):
+            supported_settings.clear()
+        unsupported_settings = set(extra_settings) - supported_settings
+        if unsupported_settings:
+            raise PilotModelAdapterError(
+                "configured JV model Action does not declare support for model "
+                "settings: " + ", ".join(sorted(unsupported_settings))
+            )
         if "stop_sequences" in extra_settings:
             extra_settings["stop"] = extra_settings.pop("stop_sequences")
         overrides = dict(request_overrides or {})

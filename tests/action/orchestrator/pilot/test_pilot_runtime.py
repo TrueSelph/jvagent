@@ -94,6 +94,9 @@ def test_pydantic_runtime_adapts_to_the_configured_jv_model_action():
     }
 
     class ConfiguredModelAction:
+        pydantic_ai_supported_settings = frozenset(
+            {"seed", "top_k", "presence_penalty", "stop_sequences"}
+        )
         model = "operator-configured-model"
 
         def __init__(self):
@@ -168,6 +171,27 @@ def test_pydantic_runtime_adapts_to_the_configured_jv_model_action():
     assert result.usage.input_tokens == 20
     assert result.usage.output_tokens == 10
     assert result.usage.total_tokens == 30
+
+
+def test_undeclared_provider_setting_fails_before_model_action_call():
+    class ConfiguredModelAction:
+        calls = 0
+
+        async def complete(self, request, *, calling_action_name=None):
+            self.calls += 1
+            return ModelResponse(text="should not be called")
+
+    model_action = ConfiguredModelAction()
+    agent = Agent(
+        function_model_for_action(model_action),
+        output_type=ConversationalReply,
+        model_settings={"frequency_penalty": 0.4},
+        retries=0,
+    )
+
+    with pytest.raises(PilotModelAdapterError, match="does not declare support"):
+        asyncio.run(agent.run("hello"))
+    assert model_action.calls == 0
 
 
 def test_model_usage_observer_receives_usage_before_agent_continues():

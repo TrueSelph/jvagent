@@ -12,7 +12,7 @@ import json
 import logging
 import math
 import uuid
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -55,6 +55,16 @@ class OllamaLanguageModelAction(LanguageModelAction):
     Implements the LanguageModelAction interface for Ollama's native /api/chat
     endpoint.
     """
+
+    pydantic_ai_supported_settings: ClassVar[frozenset[str]] = frozenset(
+        {
+            "seed",
+            "stop_sequences",
+            "top_k",
+            "presence_penalty",
+            "frequency_penalty",
+        }
+    )
 
     api_endpoint: str = attribute(
         default="http://localhost:11434",
@@ -359,6 +369,11 @@ class OllamaLanguageModelAction(LanguageModelAction):
             "top_p": kwargs.get("top_p", self.top_p),
             "num_predict": kwargs.get("max_tokens", self.max_tokens),
         }
+        for key in ("seed", "top_k", "presence_penalty", "frequency_penalty"):
+            if kwargs.get(key) is not None:
+                options[key] = kwargs[key]
+        if kwargs.get("stop") is not None:
+            options["stop"] = kwargs["stop"]
         payload: Dict[str, Any] = {
             "model": model_override,
             "messages": self._to_ollama_messages(messages),

@@ -12,6 +12,25 @@ from jvagent.action.model import (
 )
 
 
+def test_ollama_payload_preserves_declared_pydantic_sampling_settings():
+    action = OllamaLanguageModelAction()
+    payload = action._build_payload(
+        [{"role": "user", "content": "hello"}],
+        stream=False,
+        seed=17,
+        top_k=8,
+        presence_penalty=0.2,
+        frequency_penalty=0.3,
+        stop=["done"],
+    )
+
+    assert payload["options"]["seed"] == 17
+    assert payload["options"]["top_k"] == 8
+    assert payload["options"]["presence_penalty"] == 0.2
+    assert payload["options"]["frequency_penalty"] == 0.3
+    assert payload["options"]["stop"] == ["done"]
+
+
 class _MockResponse:
     def __init__(self, payload: Dict[str, Any], status_code: int = 200):
         self._payload = payload

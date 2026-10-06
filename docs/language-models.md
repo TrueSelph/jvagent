@@ -178,6 +178,24 @@ exception's `status_code`), streaming is assembled with
 `litellm.stream_chunk_builder`, and `provider: litellm` works in slot overrides.
 Reference the class as `LiteLLMLanguageModelAction` in `model_action_type`.
 
+### Pydantic AI skill-driver model settings
+
+The opt-in Pydantic AI skill driver maps its common request controls to JV's
+`ModelRequest`. Provider-specific `ModelSettings` pass through only when the
+configured model Action declares them in `pydantic_ai_supported_settings` and
+implements the corresponding wire mapping. Undeclared settings fail before a
+provider request instead of silently appearing effective. The built-in
+OpenAI-compatible Action declares `seed`, `stop_sequences`,
+`presence_penalty`, and `frequency_penalty`; Ollama also declares `top_k`.
+Custom model Actions can expose only settings they actually implement. See
+[`jvagent/action/orchestrator/pilot/runtime.py`](../jvagent/action/orchestrator/pilot/runtime.py)
+and the provider payload builders for the enforced mappings.
+
+LiteLLM's `drop_params` setting must be `false` when using provider-specific
+Pydantic settings through the pilot. With dropping enabled, the pilot rejects
+those settings before LiteLLM can discard them; with dropping disabled, an
+unsupported parameter is left for the configured provider to reject.
+
 **Ollama through LiteLLM.** An `ollama/<model>` id is sent to LiteLLM's
 `ollama_chat/` provider — the `/api/chat` route with native tool calling
 (Ollama ≥ 0.4). LiteLLM's `ollama/` provider is the `/api/generate` route: it

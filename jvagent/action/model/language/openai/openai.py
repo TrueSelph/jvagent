@@ -66,6 +66,9 @@ class OpenAILanguageModelAction(LanguageModelAction):
     """
 
     # OpenAI-specific configuration
+    pydantic_ai_supported_settings: ClassVar[frozenset[str]] = frozenset(
+        {"seed", "stop_sequences", "presence_penalty", "frequency_penalty"}
+    )
     api_endpoint: str = attribute(
         default="https://api.openai.com/v1", description="OpenAI API endpoint URL"
     )
@@ -297,6 +300,9 @@ class OpenAILanguageModelAction(LanguageModelAction):
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),
         }
+        for key in ("seed", "stop", "presence_penalty", "frequency_penalty"):
+            if kwargs.get(key) is not None:
+                payload[key] = kwargs[key]
         if stream:
             payload["stream"] = True
             stream_opts = dict(kwargs.get("stream_options") or {})

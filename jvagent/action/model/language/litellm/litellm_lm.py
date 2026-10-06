@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -38,6 +38,19 @@ _MISSING = (
 
 class LiteLLMLanguageModelAction(LanguageModelAction):
     """Universal adapter over ``litellm.acompletion``."""
+
+    pydantic_ai_supported_settings: ClassVar[frozenset[str]] = frozenset(
+        {
+            "seed",
+            "stop_sequences",
+            "top_k",
+            "presence_penalty",
+            "frequency_penalty",
+            "logit_bias",
+            "service_tier",
+            "thinking",
+        }
+    )
 
     provider: str = attribute(default="litellm", description="Provider label")
     model: str = attribute(
