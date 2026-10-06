@@ -730,9 +730,43 @@ def function_model_for_action(
             calling_action_name="PydanticAICapabilityPilot",
         )
         if not getattr(result, "is_streaming", False):
-            raise PilotModelAdapterError(
-                "configured JV model Action did not provide a streaming response"
-            )
+            # Some Action/provider paths can complete a request synchronously
+            # even when Pydantic AI entered through request_stream (for example
+            # a provider fallback after a tool round). Preserve the response
+            # contract by yielding its final text/tool deltas instead of
+            # converting an otherwise usable completion into a failed turn.
+            response = result.to_response()
+            if not isinstance(response, ModelResponse):
+                raise PilotModelAdapterError(
+                    "JV model Action returned an invalid non-streaming response"
+                )
+            await observe_response(response)
+            require_successful_finish(response)
+            parts = response_parts(response)
+            if not parts:
+                raise PilotModelAdapterError(
+                    "JV model returned neither text nor tool calls "
+                    f"(finish_reason={response.finish_reason}, "
+                    f"completion_tokens={response.usage.completion_tokens})"
+                )
+            tool_index = 0
+            for part in parts:
+                if isinstance(part, TextPart) and part.content:
+                    yield part.content
+                elif isinstance(part, ToolCallPart):
+                    yield {
+                        tool_index: DeltaToolCall(
+                            name=part.tool_name,
+                            json_args=(
+                                part.args
+                                if isinstance(part.args, str)
+                                else json.dumps(part.args, ensure_ascii=False)
+                            ),
+                            tool_call_id=part.tool_call_id,
+                        )
+                    }
+                    tool_index += 1
+            return
 
         delta_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
 

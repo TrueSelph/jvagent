@@ -360,6 +360,63 @@ def test_streaming_model_action_forwards_reasoning_and_validated_tool_output():
     assert traces == ["Checking the evidence."]
 
 
+def test_streaming_agent_accepts_complete_response_from_stream_capable_action():
+    expected = {
+        "question": "Reply briefly",
+        "findings": [{"claim": "Done.", "source_ids": ["source-1"]}],
+        "limitations": [],
+    }
+
+    class CompleteResponseModelAction:
+        model = "complete-response-test-model"
+
+        async def complete(self, request, *, calling_action_name=None):
+            raise AssertionError("Pydantic should use query_messages")
+
+        async def query_messages(self, *, messages, stream=False, **kwargs):
+            assert stream is True
+            output_tool = next(
+                item["function"]["name"]
+                for item in kwargs["tools"]
+                if item["function"]["name"].startswith("final_result")
+            )
+            return ModelActionResult(
+                tool_calls=[
+                    {
+                        "id": "complete-output-1",
+                        "type": "function",
+                        "function": {
+                            "name": output_tool,
+                            "arguments": json.dumps(expected),
+                        },
+                    }
+                ],
+                model=self.model,
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+            )
+
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        task_id="task-complete-response",
+        run_id="run-complete-response",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    agent = Agent(
+        function_model_for_action(CompleteResponseModelAction()),
+        output_type=ResearchBrief,
+        retries=0,
+    )
+
+    output = asyncio.run(
+        run_research_agent(agent, "Reply briefly", run_context=context)
+    )
+
+    assert output == ResearchBrief.model_validate(expected)
+
+
 def test_cancelling_streamed_pilot_closes_provider_stream_and_reasoning_pump():
     stream_started = asyncio.Event()
     stream_closed = asyncio.Event()
