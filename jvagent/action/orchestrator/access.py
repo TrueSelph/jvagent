@@ -51,6 +51,7 @@ async def is_tool_allowed(
                 "orchestrator_access_denied",
                 extra={
                     "event": "orchestrator_access_denied",
+                    "event_code": "orchestrator_access_denied",
                     "action_label": label,
                     "channel": channel,
                     "actor_present": bool(user_id),
@@ -66,6 +67,7 @@ async def is_tool_allowed(
             "orchestrator_access_policy_failure",
             extra={
                 "event": "orchestrator_access_policy_failure",
+                "event_code": "orchestrator_access_policy_failure",
                 "action_label": label,
                 "channel": channel,
                 "actor_present": bool(user_id),
