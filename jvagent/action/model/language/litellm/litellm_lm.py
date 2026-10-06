@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
@@ -269,7 +270,11 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
             response_cost = float(response_cost)
         except (TypeError, ValueError):
             response_cost = None
-        if response_cost is not None and response_cost > 0:
+        if (
+            response_cost is not None
+            and math.isfinite(response_cost)
+            and response_cost >= 0
+        ):
             usage["cost_usd"] = response_cost
             usage["cost_source"] = "litellm_response_cost"
         # ``model`` is the provider-resolved id (e.g. gpt-4.1-2025-04-14).
@@ -295,7 +300,9 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
                 cost = float(cost) if cost is not None else None
             except (TypeError, ValueError):
                 cost = None
-            if cost is None or cost <= 0:
+            from jvagent.action.model.cost_estimator import is_valid_cost_usd
+
+            if not is_valid_cost_usd(cost):
                 from jvagent.action.model.cost_estimator import estimate_cost
 
                 cost = estimate_cost(

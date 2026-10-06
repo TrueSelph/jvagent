@@ -20,17 +20,13 @@ def delegate_resource_label(action_name: str) -> str:
 async def _resolve_access_control(agent: Any) -> Optional[Any]:
     if agent is None:
         return None
-    try:
-        ac = await agent.get_access_control_action()
-    except Exception as exc:
-        logger.debug("orchestrator.access: failed to fetch AC: %s", exc)
-        return None
+    # A missing policy is an intentional open deployment. A configured policy
+    # that cannot be loaded is an operational/security failure and must not be
+    # confused with absence.
+    ac = await agent.get_access_control_action()
     if ac is None:
         return None
-    try:
-        if not ac.policy_applies():
-            return None
-    except Exception:
+    if not ac.policy_applies():
         return None
     return ac
 
@@ -39,23 +35,44 @@ async def is_tool_allowed(
     agent: Any, *, label: str, user_id: Optional[str], channel: str
 ) -> bool:
     """True if the labelled tool may be dispatched (fail-open / fail-closed)."""
-    ac = await _resolve_access_control(agent)
-    if ac is None:
-        return True
     try:
-        return bool(
+        ac = await _resolve_access_control(agent)
+        if ac is None:
+            return True
+        allowed = bool(
             await ac.has_action_access(
                 user_id=user_id or "",
                 action_label=label,
                 channel=channel,
             )
         )
+        if not allowed:
+            logger.info(
+                "orchestrator_access_denied",
+                extra={
+                    "event": "orchestrator_access_denied",
+                    "action_label": label,
+                    "channel": channel,
+                    "actor_present": bool(user_id),
+                    "stage": "orchestrator",
+                    "reason": "policy_denied",
+                },
+            )
+        return allowed
     except Exception as exc:
-        logger.warning(
-            "orchestrator.access: has_action_access raised for %s — "
-            "failing closed: %s",
-            label,
-            exc,
+        # Keep policy failures actionable and queryable without serializing an
+        # exception string that may contain database or configuration secrets.
+        logger.error(
+            "orchestrator_access_policy_failure",
+            extra={
+                "event": "orchestrator_access_policy_failure",
+                "action_label": label,
+                "channel": channel,
+                "actor_present": bool(user_id),
+                "stage": "orchestrator",
+                "reason": "policy_resolution_or_evaluation_error",
+                "exception_type": type(exc).__name__,
+            },
         )
         return False
 

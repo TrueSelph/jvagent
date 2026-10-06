@@ -260,6 +260,10 @@ class EventEnvelope:
     def __post_init__(self) -> None:
         if self.sequence < 1:
             raise HarnessContractError("event sequence must be >= 1")
+        if not self.session_id:
+            raise HarnessContractError("event session_id must not be empty")
+        if self.cursor != f"{self.session_id}:{self.sequence}":
+            raise HarnessContractError("event cursor must match session and sequence")
 
 
 @dataclass(frozen=True)

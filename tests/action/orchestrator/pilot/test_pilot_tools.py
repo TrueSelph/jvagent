@@ -1,6 +1,7 @@
 """Action tools remain the effect boundary when composed as capabilities."""
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -8,18 +9,67 @@ import pytest
 from jvagent.action.orchestrator.pilot.contracts import PilotCaller, PilotRunContext
 from jvagent.action.orchestrator.pilot.tools import (
     PilotToolConfigurationError,
+    PilotToolOutcome,
+    _bound_tool_result,
     compose_skill_tools,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool import Tool
-from jvagent.tooling.tool_result import ToolResult
+from jvagent.tooling.tool_result import ToolResult, ToolResultText
+
+
+def test_large_search_json_is_bounded_without_losing_source_ids():
+    content = json.dumps(
+        {
+            "organic": [
+                {
+                    "title": f"Source {index}",
+                    "link": f"https://example.test/{index}",
+                    "pilot_source_id": f"source-{index}",
+                    "snippet": "detail " * 200,
+                }
+                for index in range(8)
+            ]
+        }
+    )
+
+    bounded = _bound_tool_result(content, 2400)
+    decoded = json.loads(bounded)
+
+    assert len(bounded) <= 2400
+    assert decoded["pilot_truncated"] is True
+    assert decoded["organic"]
+    assert all(row["pilot_source_id"] for row in decoded["organic"])
+    assert all(len(row["snippet"]) < len("detail " * 200) for row in decoded["organic"])
+
+
+def test_large_scalar_json_is_valid_and_bounded_after_escaping():
+    content = json.dumps({"message": 'quote " slash \\ newline\n' * 200})
+
+    bounded = _bound_tool_result(content, 256)
+    decoded = json.loads(bounded)
+
+    assert len(bounded) <= 256
+    assert decoded["pilot_truncated"] is True
+    assert decoded["preview"]
+
+
+def test_extremely_large_action_result_is_rejected_without_json_parsing():
+    result = _bound_tool_result('"' * 256_001, 4000)
+
+    assert len(result) <= 4000
+    assert json.loads(result) == {
+        "pilot_truncated": True,
+        "notice": "tool output exceeded the pilot inspection limit",
+    }
 
 
 @pytest.mark.asyncio
 async def test_composition_preserves_name_schema_and_rechecks_access_each_call(caplog):
     operations = []
     checks = []
+    events = []
     run_context = PilotRunContext(
         caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
         task_id="task-1",
@@ -56,11 +106,15 @@ async def test_composition_preserves_name_schema_and_rechecks_access_each_call(c
         checks.append((ctx.run_id, skill_name, tool_name, dict(args)))
         return True
 
+    async def observe_event(phase, ctx, tool_name, call_id, args, result):
+        events.append((phase, ctx.run_id, tool_name, call_id, dict(args), result))
+
     (bound,) = await compose_skill_tools(
         skill,
         [("SearchAction", action_tool)],
         run_context=run_context,
         access_check=access_check,
+        tool_event_observer=observe_event,
     )
     assert bound.name == "web_search__search"
     assert bound.function_schema.json_schema == action_tool.parameters_schema
@@ -71,6 +125,24 @@ async def test_composition_preserves_name_schema_and_rechecks_access_each_call(c
             query="pilot architecture",
         )
     assert result == "source-1: pilot architecture"
+    assert events == [
+        (
+            "tool_call",
+            "run-1",
+            "web_search__search",
+            "model-call-1",
+            {"query": "pilot architecture"},
+            None,
+        ),
+        (
+            "tool_result",
+            "run-1",
+            "web_search__search",
+            "model-call-1",
+            {"query": "pilot architecture"},
+            "source-1: pilot architecture",
+        ),
+    ]
     assert operations == ["pilot architecture"]
     assert checks == [
         (
@@ -94,7 +166,7 @@ async def test_composition_preserves_name_schema_and_rechecks_access_each_call(c
         {"effect_key": "forged"},
         {"options": {"capability_token": "forged"}},
     ):
-        with pytest.raises(ValueError, match="cannot supply caller"):
+        with pytest.raises(ValueError, match="reserved authority or binding fields"):
             bound.args_validator(None, query="q", **injected)
     assert operations == ["pilot architecture"]
 
@@ -182,6 +254,49 @@ async def test_access_check_denial_fails_before_action_call():
 
 
 @pytest.mark.asyncio
+async def test_access_check_resolution_error_fails_before_action_call():
+    calls = []
+    run_context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="",
+        requires_tools=("web_search__search",),
+    )
+    tool = Tool(
+        name="web_search__search",
+        description="Search",
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        execute=lambda **_: calls.append("called"),
+    )
+
+    async def access_check(*_args):
+        raise RuntimeError("policy resolution unavailable")
+
+    (bound,) = await compose_skill_tools(
+        skill,
+        [("SearchAction", tool)],
+        run_context=run_context,
+        access_check=access_check,
+    )
+
+    with pytest.raises(RuntimeError, match="policy resolution unavailable"):
+        await bound.function(SimpleNamespace(deps=run_context), query="q")
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_tool_result_is_bounded_before_model_and_evidence_observer():
     observed = []
     run_context = PilotRunContext(
@@ -221,7 +336,48 @@ async def test_tool_result_is_bounded_before_model_and_evidence_observer():
 
     assert len(result) == 256
     assert result.endswith("[tool output truncated by pilot]")
-    assert observed == [result]
+    assert observed == ["x" * 1000]
+
+
+@pytest.mark.asyncio
+async def test_typed_tool_metadata_reaches_evidence_observer():
+    observed = []
+    run_context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="",
+        requires_tools=("web_fetch__fetch",),
+    )
+    receipt = {"web_fetch_result": {"outcome": "success", "http_status": 200}}
+    action_tool = Tool(
+        name="web_fetch__fetch",
+        description="Fetch",
+        parameters_schema={"type": "object", "properties": {}},
+        execute=lambda: ToolResultText("bounded page text", receipt),
+    )
+
+    async def observe(_context, _tool_name, _arguments, content):
+        observed.append((content, getattr(content, "tool_result_metadata", {})))
+
+    (bound,) = await compose_skill_tools(
+        skill,
+        [("WebFetchAction", action_tool)],
+        run_context=run_context,
+        access_check=lambda *_args: True,
+        result_observer=observe,
+    )
+    result = await bound.function(SimpleNamespace(deps=run_context))
+
+    assert result == "bounded page text"
+    assert observed == [("bounded page text", receipt)]
 
 
 @pytest.mark.asyncio
@@ -346,9 +502,120 @@ async def test_action_error_result_is_not_returned_or_observed_as_success():
 
 
 @pytest.mark.asyncio
+async def test_allowlisted_read_tool_error_is_recoverable_and_explicitly_typed():
+    observations = []
+    events = []
+    run_context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-read-error",
+        run_id="run-read-error",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="Search and cite evidence.",
+        requires_tools=("web_search__search",),
+    )
+    tool = Tool(
+        name="web_search__search",
+        description="Search",
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+        execute=lambda **_kwargs: ToolResult.error("sensitive provider detail"),
+    )
+
+    async def observe(*args):
+        observations.append(args)
+
+    async def observe_event(*args):
+        events.append(args)
+
+    (bound,) = await compose_skill_tools(
+        skill,
+        [("SearchAction", tool)],
+        run_context=run_context,
+        access_check=lambda *_args: True,
+        result_observer=observe,
+        tool_event_observer=observe_event,
+        recoverable_tool_errors=frozenset({"web_search__search"}),
+    )
+
+    result = await bound.function(
+        SimpleNamespace(deps=run_context, tool_call_id="call-read-error"),
+        query="query",
+    )
+
+    assert "returned an error" in result
+    assert "No evidence was recorded" in result
+    assert "sensitive provider detail" not in result
+    assert observations == []
+    assert events[-1][0] == "tool_result"
+    assert isinstance(events[-1][-1], PilotToolOutcome)
+    assert events[-1][-1].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_read_tool_exception_returns_recoverable_timeout_without_leaking_error():
+    events = []
+    run_context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-read-timeout",
+        run_id="run-read-timeout",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="",
+        requires_tools=("web_fetch__fetch",),
+    )
+
+    async def fetch(**_kwargs):
+        raise asyncio.TimeoutError("secret URL and token")
+
+    async def observe_event(*args):
+        events.append(args)
+
+    (bound,) = await compose_skill_tools(
+        skill,
+        [
+            (
+                "FetchAction",
+                Tool(
+                    name="web_fetch__fetch",
+                    description="Fetch",
+                    parameters_schema={"type": "object", "properties": {}},
+                    execute=fetch,
+                ),
+            )
+        ],
+        run_context=run_context,
+        access_check=lambda *_args: True,
+        tool_event_observer=observe_event,
+        recoverable_tool_errors=frozenset({"web_fetch__fetch"}),
+    )
+
+    result = await bound.function(SimpleNamespace(deps=run_context))
+
+    assert "timed out" in result
+    assert "secret URL" not in result
+    assert isinstance(events[-1][-1], PilotToolOutcome)
+    assert events[-1][-1].status == "timed_out"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [RuntimeError("action failed"), "cancel"])
 async def test_action_exception_or_cancellation_does_not_create_evidence(failure):
     observations = []
+    tool_events = []
     run_context = PilotRunContext(
         caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
         task_id="task-1",
@@ -372,6 +639,9 @@ async def test_action_exception_or_cancellation_does_not_create_evidence(failure
     async def observe(*args):
         observations.append(args)
 
+    async def observe_tool_event(phase, _context, _name, _call_id, _args, result):
+        tool_events.append((phase, result))
+
     (bound,) = await compose_skill_tools(
         skill,
         [
@@ -388,6 +658,7 @@ async def test_action_exception_or_cancellation_does_not_create_evidence(failure
         run_context=run_context,
         access_check=lambda *_args: True,
         result_observer=observe,
+        tool_event_observer=observe_tool_event,
     )
 
     if failure == "cancel":
@@ -397,3 +668,71 @@ async def test_action_exception_or_cancellation_does_not_create_evidence(failure
         with pytest.raises(RuntimeError, match="action failed"):
             await bound.function(SimpleNamespace(deps=run_context))
     assert observations == []
+    assert [phase for phase, _ in tool_events] == ["tool_call", "tool_result"]
+    if failure == "cancel":
+        assert isinstance(tool_events[-1][1], PilotToolOutcome)
+        assert tool_events[-1][1].status == "cancelled"
+    else:
+        assert isinstance(tool_events[-1][1], PilotToolOutcome)
+        assert tool_events[-1][1].status == "failed"
+        assert "action failed" not in tool_events[-1][1].content
+
+
+@pytest.mark.asyncio
+async def test_model_arguments_cannot_override_bound_tool_or_bypass_schema():
+    calls = []
+    checks = []
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="",
+        requires_tools=("web_search__search",),
+    )
+
+    async def search(query: str) -> str:
+        calls.append(query)
+        return "ok"
+
+    async def access(_ctx, _skill, tool_name, _args):
+        checks.append(tool_name)
+        return tool_name == "web_search__search"
+
+    tool = Tool(
+        name="web_search__search",
+        description="Search",
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            # The wrapper must protect its internal binding names even when
+            # the underlying Action deliberately accepts extension fields.
+            "additionalProperties": True,
+        },
+        execute=search,
+    )
+    (bound,) = await compose_skill_tools(
+        skill, [("SearchAction", tool)], run_context=context, access_check=access
+    )
+    run_context = SimpleNamespace(deps=context, tool_call_id="call-1")
+
+    for injected in (
+        {"_tool_name": "web_fetch__fetch"},
+        {"_original": "forged-action"},
+    ):
+        with pytest.raises(ValueError, match="reserved authority or binding fields"):
+            await bound.function(run_context, query="safe", **injected)
+    with pytest.raises(ValueError, match="invalid arguments"):
+        await bound.function(run_context, query=123)
+    with pytest.raises(ValueError, match="invalid arguments"):
+        await bound.function(run_context)
+
+    assert checks == []
+    assert calls == []

@@ -18,6 +18,7 @@ from jvspatial.core.annotations import attribute
 from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
+from jvagent.action.model.context import check_model_attempt_guard
 
 logger = logging.getLogger(__name__)
 
@@ -309,14 +310,41 @@ class BaseModelAction(Action, ABC):
         deadline = float(getattr(self, "retry_total_deadline_seconds", 0.0) or 0.0)
         self._warn_if_deadline_below_timeout(deadline)
         for attempt in range(max_attempts):
+            # Host policy is checked for every wire attempt, not just once per
+            # logical query. This lets bounded agent runs stop opaque retries
+            # after an unpriced provider failure without changing default use.
+            await check_model_attempt_guard()
+            attempt_started = time.monotonic()
+            attempted = False
             try:
                 coro = op_factory()
                 if not asyncio.iscoroutine(coro):
                     raise TypeError(
                         f"{op_name}: op_factory must return a coroutine object"
                     )
-                return await coro
+                attempted = True
+                result = await coro
+                await self._emit_model_attempt(
+                    op_name,
+                    attempt + 1,
+                    "succeeded",
+                    time.monotonic() - attempt_started,
+                )
+                return result
             except BaseException as exc:
+                if attempted:
+                    outcome = (
+                        "cancelled"
+                        if isinstance(exc, asyncio.CancelledError)
+                        else "failed"
+                    )
+                    await self._emit_model_attempt(
+                        op_name,
+                        attempt + 1,
+                        outcome,
+                        time.monotonic() - attempt_started,
+                        exc,
+                    )
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 if not self._is_retryable_exception(exc):
@@ -359,6 +387,49 @@ class BaseModelAction(Action, ABC):
                     delay,
                 )
                 await asyncio.sleep(delay)
+
+    async def _emit_model_attempt(
+        self,
+        op_name: str,
+        attempt_number: int,
+        outcome: str,
+        duration: float,
+        error: Optional[BaseException] = None,
+    ) -> None:
+        """Record a transport attempt independently from successful usage.
+
+        Failed provider calls often have no trustworthy token or cost report.
+        The attempt event deliberately records neither, while retaining elapsed
+        time and outcome so failures are visible without fabricating usage.
+        """
+        try:
+            from jvagent.action.model.context import get_interaction
+
+            interaction = get_interaction()
+            if interaction is None:
+                return
+            provider = getattr(self, "provider", "unknown") or "unknown"
+            data: Dict[str, Any] = {
+                "operation": op_name,
+                "attempt_number": attempt_number,
+                "provider": str(provider),
+                "model": str(getattr(self, "model", "") or ""),
+                "outcome": outcome,
+                "duration": max(0.0, float(duration)),
+                "usage_status": "provider_unreported",
+            }
+            if error is not None:
+                data["error_type"] = type(error).__name__
+                response = getattr(error, "response", None)
+                status_code = getattr(response, "status_code", None)
+                if isinstance(status_code, int):
+                    data["status_code"] = status_code
+            interaction.observability_metrics.append(
+                {"event_type": "model_attempt", "data": data, "timestamp": time.time()}
+            )
+            await interaction.save()
+        except Exception as exc:  # telemetry must never break a provider call
+            logger.debug("Failed to emit model-attempt event: %s", exc)
 
     def api_key_from_context(self, *environment_variable_names: str) -> str:
         """Resolve an API key from per-turn override, then environment."""
@@ -513,6 +584,33 @@ class BaseModelAction(Action, ABC):
             elif hasattr(self, "provider") and self.provider:
                 provider = self.provider
 
+            model = str(
+                (getattr(result, "model", None) if result is not None else None)
+                or getattr(self, "model", "")
+                or ""
+            )
+            metrics = getattr(result, "metrics", None)
+            cost_record = None
+            if isinstance(metrics, dict):
+                from jvagent.action.model.cost_estimator import (
+                    estimated_cost_record,
+                    reported_cost_record,
+                )
+
+                cost_record = reported_cost_record(metrics)
+                if cost_record is None:
+                    cost_record = estimated_cost_record(
+                        model, str(provider), metrics or usage, event_type
+                    )
+                metrics["cost_record"] = cost_record
+                amount = cost_record.get("amount")
+                if amount is None:
+                    metrics.pop("cost_usd", None)
+                else:
+                    metrics["cost_usd"] = amount
+                    metrics["cost_source"] = cost_record["source"]
+                    metrics["cost_estimated"] = cost_record["estimated"]
+
             # Check if usage is estimated (for streaming results)
             usage_estimated = False
             if result and hasattr(result, "_usage_estimated"):
@@ -605,14 +703,12 @@ class BaseModelAction(Action, ABC):
                 # canary can read to confirm the switch took.
                 "transport": self._telemetry_transport(provider),
             }
-            if isinstance(usage.get("cost_usd"), (int, float)):
-                metrics = getattr(result, "metrics", {})
-                cost_source = (
-                    metrics.get("cost_source") if isinstance(metrics, dict) else None
-                )
-                data["cost_usd"] = float(usage["cost_usd"])
-                data["cost_source"] = str(cost_source or "provider_or_adapter")
-                data["cost_estimated"] = cost_source == "jv_cost_estimator"
+            if cost_record is not None:
+                data["cost_record"] = cost_record
+                if cost_record.get("amount") is not None:
+                    data["cost_usd"] = cost_record["amount"]
+                    data["cost_source"] = cost_record["source"]
+                    data["cost_estimated"] = cost_record["estimated"]
             if request_model:
                 data["request_model"] = request_model
 

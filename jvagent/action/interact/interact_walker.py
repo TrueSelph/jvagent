@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from jvspatial.core import Walker, on_visit
+from pydantic import PrivateAttr
 
 from jvagent.action.access_control.access_control_action import (
     AccessControlAction,
@@ -82,6 +83,7 @@ class InteractWalker(Walker):
     """
 
     # Walker state
+    _host_system_context: Optional[str] = PrivateAttr(default=None)
     agent_id: str = ""
     utterance: str = ""
     channel: str = "default"
@@ -374,6 +376,14 @@ class InteractWalker(Walker):
             rt.record_span(
                 self.correlation_id, "session_admit", caller=caller.as_tuple()
             )
+            # Host policy becomes trusted only after jvagent resolves the live
+            # caller/session, creates the server correlation ID, and durably
+            # records the signed nonce against that run on the Conversation.
+            from jvagent.action.orchestrator.host_context import (
+                consume_host_system_context,
+            )
+
+            self._host_system_context = await consume_host_system_context(self)
         except SessionBusy as exc:
             await self.report({"error": str(exc), "code": "session_busy"})
             return "session_resolution_error"

@@ -65,7 +65,11 @@ class Tool:
         if inspect.isawaitable(result):
             result = await result
         if isinstance(result, str):
-            return ToolResult(content=result)
+            metadata = getattr(result, "tool_result_metadata", None)
+            return ToolResult(
+                content=str(result),
+                metadata=dict(metadata) if isinstance(metadata, dict) else {},
+            )
         if isinstance(result, ToolResult):
             return result
         import json

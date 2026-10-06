@@ -222,9 +222,20 @@ class Agent(Node):
                     self.id, actions_manager, archetype
                 )
                 if keeper_id:
-                    return await Action.get(keeper_id)
-            return await load_action_from_record(records[0])
-        return await load_action_from_record(records[0])
+                    action = await Action.get(keeper_id)
+                    if action is not None:
+                        return action
+                    raise RuntimeError(
+                        "configured AccessControlAction could not be loaded"
+                    )
+            action = await load_action_from_record(records[0])
+            if action is not None:
+                return action
+            raise RuntimeError("configured AccessControlAction could not be loaded")
+        action = await load_action_from_record(records[0])
+        if action is not None:
+            return action
+        raise RuntimeError("configured AccessControlAction could not be loaded")
 
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.

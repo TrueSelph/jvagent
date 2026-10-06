@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional, Tuple
 
 if TYPE_CHECKING:
     pass
@@ -55,6 +55,30 @@ current_interaction: contextvars.ContextVar[Optional[Any]] = contextvars.Context
 current_action_name: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "current_action_name", default=None
 )
+
+# Optional host admission hook checked before every underlying provider
+# transport attempt, including retries internal to an Action. Unbound for
+# ordinary model use; the skill pilot binds it only while a guarded run is live.
+per_turn_model_attempt_guard: contextvars.ContextVar[
+    Optional[Callable[[], Awaitable[None]]]
+] = contextvars.ContextVar("per_turn_model_attempt_guard", default=None)
+
+
+@contextlib.contextmanager
+def bind_model_attempt_guard(guard: Optional[Callable[[], Awaitable[None]]]):
+    """Bind a task-local policy check around provider transport attempts."""
+    token = per_turn_model_attempt_guard.set(guard)
+    try:
+        yield
+    finally:
+        per_turn_model_attempt_guard.reset(token)
+
+
+async def check_model_attempt_guard() -> None:
+    """Run the currently bound host policy check, if any."""
+    guard = per_turn_model_attempt_guard.get()
+    if guard is not None:
+        await guard()
 
 
 def get_interaction() -> Optional[Any]:

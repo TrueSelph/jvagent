@@ -26,6 +26,7 @@ from jvagent.action.orchestrator.pilot.runtime import (
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.tooling.tool import Tool as JVTool
+from jvagent.tooling.tool_result import ToolResultText
 
 
 @pytest.mark.asyncio
@@ -89,12 +90,29 @@ async def test_bounded_live_model_smoke_returns_typed_pilot_output(record_proper
             }
         ]
 
+    async def fixture_fetch(url: str) -> ToolResultText:
+        assert url == "https://example.test/pilot-evidence"
+        action_calls.append(url)
+        return ToolResultText(
+            "# Source: https://example.test/pilot-evidence\n\n"
+            "The fixture verifies that the capability pilot uses typed output.",
+            {
+                "web_fetch_result": {
+                    "outcome": "success",
+                    "requested_url": url,
+                    "final_url": url,
+                    "content_type": "text/html",
+                    "http_status": 200,
+                }
+            },
+        )
+
     skill = SkillDoc(
         name="research",
         description="Research a question using existing Actions and cite evidence.",
         body="Search for evidence, then cite its source identifier in the brief.",
-        requires_tools=("fixture_search__search",),
-        requires_actions=("FixtureSearchAction",),
+        requires_tools=("fixture_search__search", "fixture_fetch__fetch"),
+        requires_actions=("FixtureSearchAction", "FixtureFetchAction"),
         digest="live-smoke-skill",
     )
     action_tool = JVTool(
@@ -108,6 +126,17 @@ async def test_bounded_live_model_smoke_returns_typed_pilot_output(record_proper
         },
         execute=fixture_search,
     )
+    fetch_tool = JVTool(
+        name="fixture_fetch__fetch",
+        description="Fetch the fixed smoke-test page and return its source receipt.",
+        parameters_schema={
+            "type": "object",
+            "properties": {"url": {"type": "string", "format": "uri"}},
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+        execute=fixture_fetch,
+    )
 
     async def access_check(*_args):
         return True
@@ -116,12 +145,21 @@ async def test_bounded_live_model_smoke_returns_typed_pilot_output(record_proper
 
     agent = await build_research_agent(
         RecordingAction(),
-        [(skill, [("FixtureSearchAction", action_tool)])],
+        [
+            (
+                skill,
+                [
+                    ("FixtureSearchAction", action_tool),
+                    ("FixtureFetchAction", fetch_tool),
+                ],
+            )
+        ],
         instructions=(
             "Use the research capability and its fixture search Action. Base the "
-            "answer only on the returned source. Return a concise ResearchBrief "
-            "whose question is the user's question and whose source_ids contain "
-            "the exact source identifier returned by that Action."
+            "answer only on the fetched page. Return a concise ResearchBrief "
+            "whose question is the user's question and whose findings cite the "
+            "fetched page's observed source ID. Include supporting_source_id and "
+            "supporting_quote copied exactly from that page's excerpt."
         ),
         run_context=context,
         access_check=access_check,
@@ -139,8 +177,11 @@ async def test_bounded_live_model_smoke_returns_typed_pilot_output(record_proper
     elapsed_ms = round((perf_counter() - started) * 1000, 2)
 
     assert isinstance(output, ResearchBrief)
-    assert output.source_ids == ("https://example.test/pilot-evidence",)
-    assert "typed output" in output.brief.lower()
+    assert output.findings[0].supporting_source_id in output.findings[0].source_ids
+    assert output.findings[0].supporting_quote in (
+        "The fixture verifies that the capability pilot uses typed output."
+    )
+    assert "typed output" in output.findings[0].claim.lower()
     evidence.validate(output)
     assert action_calls
     assert len(calls) <= context.max_model_requests

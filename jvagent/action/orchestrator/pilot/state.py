@@ -132,6 +132,38 @@ class PilotTaskStore:
             return handle, snapshot
         return None
 
+    def failed_retry_parent(
+        self,
+        *,
+        caller: PilotCaller,
+        skill_id: str,
+        skill_digest: str,
+        config_digest: str,
+        question: str,
+    ) -> tuple[TaskHandle, PilotSnapshot] | None:
+        """Find the latest exactly repeated failed objective with accounted use."""
+
+        self._require_durable_conversation()
+        for handle in reversed(
+            self._store.list(status="failed", owner_action=skill_id)
+        ):
+            if handle.task_type != PILOT_TASK_TYPE:
+                continue
+            try:
+                snapshot = self._read_snapshot(handle)
+                validate_snapshot_for_run(
+                    snapshot,
+                    caller=caller,
+                    skill_id=skill_id,
+                    skill_digest=skill_digest,
+                    config_digest=config_digest,
+                )
+            except (PilotStateError, ValueError):
+                continue
+            if snapshot.question == question and snapshot.proactive_task_id is None:
+                return handle, snapshot
+        return None
+
     def parked_retry(
         self,
         *,
@@ -168,6 +200,68 @@ class PilotTaskStore:
             ):
                 matches.append((handle, snapshot))
         return matches[0] if len(matches) == 1 else None
+
+    def active_run(
+        self,
+        *,
+        caller: PilotCaller,
+        skill_id: str,
+        skill_digest: str,
+        config_digest: str,
+    ) -> tuple[TaskHandle, PilotSnapshot] | None:
+        """Find an unfinished run after the conversation lock admits a new turn.
+
+        The caller owns the conversation mutation lock when using this method,
+        so an active run for this conversation is an interrupted persisted run,
+        not another live interaction.
+        """
+
+        self._require_durable_conversation()
+        matches: list[tuple[TaskHandle, PilotSnapshot]] = []
+        for handle in reversed(
+            self._store.list(status="active", owner_action=skill_id)
+        ):
+            if handle.task_type != PILOT_TASK_TYPE:
+                continue
+            try:
+                snapshot = self._read_snapshot(handle)
+                validate_snapshot_for_run(
+                    snapshot,
+                    caller=caller,
+                    skill_id=skill_id,
+                    skill_digest=skill_digest,
+                    config_digest=config_digest,
+                )
+            except (PilotStateError, ValueError):
+                continue
+            if snapshot.status == "running":
+                matches.append((handle, snapshot))
+        if len(matches) > 1:
+            raise PilotStateError(
+                "multiple active pilot runs match this caller and configuration; "
+                "preserve them and resolve the ambiguous recovery state before retry"
+            )
+        return matches[0] if matches else None
+
+    async def fail_interrupted(
+        self,
+        handle: TaskHandle,
+        snapshot: PilotSnapshot,
+        *,
+        reason: str = "interrupted run requires an explicit restart",
+    ) -> PilotSnapshot:
+        """Settle an orphaned active run while preserving its last checkpoint."""
+
+        self._require_durable_conversation()
+        self._require_pilot_task(handle)
+        current = self._read_snapshot(handle)
+        if current != snapshot or handle.status != "active":
+            raise PilotStateError("active pilot run changed during recovery")
+        failed = current.model_copy(
+            update={"status": "failed", "park_reason": reason[:512]}
+        )
+        await self.fail(handle, failed, reason)
+        return failed
 
     async def resume_parked_retry(
         self,
@@ -282,7 +376,7 @@ class PilotTaskStore:
         if (
             isinstance(schema_version, bool)
             or not isinstance(schema_version, int)
-            or schema_version != 3
+            or schema_version not in (4, 5, 6)
         ):
             if schema_version is None:
                 version = "missing"
@@ -290,14 +384,36 @@ class PilotTaskStore:
                 version = repr(schema_version)[:32]
             raise PilotStateError(
                 f"pilot task snapshot schema version {version} is unsupported; "
-                "this pilot supports version 3 only. Preserve the task and "
+                "this pilot supports versions 4, 5 and 6 only. Preserve the task and "
                 "start a new pilot run"
             )
+        if schema_version in (4, 5):
+            # v4 lacked usage counters; v5 had counters but not an unsettled
+            # request marker. Preserve known lower bounds and refuse to claim
+            # the unresolved provider usage was zero.
+            raw_snapshot = {
+                **raw_snapshot,
+                "schema_version": 6,
+                "usage_accounting_complete": False,
+                "unsettled_model_requests": 1,
+                "unreported_model_usage_responses": 0,
+            }
+            if schema_version == 4:
+                raw_snapshot.update(
+                    {
+                        "model_requests_used": 0,
+                        "tool_calls_used": 0,
+                        "reported_input_tokens_used": 0,
+                        "reported_output_tokens_used": 0,
+                        "estimated_input_tokens_used": 0,
+                        "estimated_output_tokens_used": 0,
+                    }
+                )
         try:
             snapshot = PilotSnapshot.model_validate(raw_snapshot)
         except Exception as exc:
             raise PilotStateError(
-                "pilot task snapshot is invalid for schema version 3; "
+                "pilot task snapshot is invalid for its declared schema version; "
                 "preserve the task and start a new pilot run"
             ) from exc
         expected_task_status = {

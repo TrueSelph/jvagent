@@ -52,6 +52,7 @@ _KNOWN_FRONTMATTER_KEYS = frozenset(
         "license",
         "lock-companions",
         "name",
+        "output-contract",
         "parameters",
         "requires-actions",
         "requires-jvagent",
@@ -298,6 +299,7 @@ def parse_skill_bundle(
         )
 
     description = str(frontmatter.get("description") or "").strip()
+    output_contract = str(frontmatter.get("output-contract") or "").strip()
     if not description:
         description = "Standard operating procedure."
         logger.warning(
@@ -454,6 +456,7 @@ def parse_skill_bundle(
     supported_frontmatter = {
         "name",
         "description",
+        "output-contract",
         "allowed-tools",
         "requires-actions",
         "always-active",
@@ -495,6 +498,7 @@ def parse_skill_bundle(
     return {
         "name": name,
         "description": description,
+        "output_contract": output_contract,
         "content": content,
         "extends": extends_value,
         "interview": interview_block,

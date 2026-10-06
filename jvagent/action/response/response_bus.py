@@ -508,6 +508,35 @@ class ResponseBus:
         message_segment_id = segment_id
         if message_category == "thought" and not message_segment_id:
             message_segment_id = f"thought-{uuid.uuid4().hex[:10]}"
+        prefiltered_nonstream = False
+
+        # Evaluate non-streaming filters before claiming the interaction's only
+        # user egress. A fail-fast rejection must not latch delivery, persist the
+        # text, or leak it through the subscriber queue after adapter delivery is
+        # skipped below.
+        if not stream:
+            candidate = ResponseMessage(
+                session_id=session_id,
+                user_id=user_id or "",
+                interaction_id=interaction_id or "",
+                content=content,
+                channel=channel,
+                metadata=metadata or {},
+                timestamp=now,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
+            )
+            if candidate.category == "thought":
+                candidate.content = normalize_thought_text_for_publish(
+                    candidate.content
+                )
+            if not await self._apply_channel_filters(candidate, channel):
+                candidate.content = ""
+                return candidate
+            content = candidate.content
+            metadata = candidate.metadata
+            prefiltered_nonstream = True
 
         async def _deliver_flush(
             flush_message: ResponseMessage,
@@ -518,7 +547,7 @@ class ResponseBus:
             if flush_message.category == "thought":
                 full_content = normalize_thought_text_for_publish(full_content)
                 flush_message.content = full_content
-            filter_ok = await self._apply_channel_filters(
+            filter_ok = prefiltered_nonstream or await self._apply_channel_filters(
                 flush_message, flush_message.channel
             )
             if not filter_ok:

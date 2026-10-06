@@ -395,7 +395,7 @@ class ReplyAction(Action):
 
         channel = getattr(visitor, "channel", "default") or "default"
         visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
-        await response_bus.publish(
+        message = await response_bus.publish(
             session_id=visitor.session_id,
             content=content,
             channel=channel,
@@ -407,7 +407,10 @@ class ReplyAction(Action):
             streaming_complete=True,
             transient=transient,
         )
-        return True
+        # ResponseBus returns an empty-content envelope when it suppresses a
+        # duplicate or a fail-fast channel filter rejects the message. Do not
+        # report those outcomes as confirmed delivery to pilot TaskStore callers.
+        return bool(getattr(message, "content", ""))
 
     async def publish(
         self, content: str, visitor: Optional[Any] = None, *, transient: bool = False
@@ -696,17 +699,11 @@ class ReplyAction(Action):
                                 exc_info=True,
                             )
                     return ""
-            # Slim fallback: the identity-shaped compose failed, but the user
-            # still needs a reply — deliver the best plain text we have rather
-            # than going silent. Prefer the original message (now framed as a
-            # relay directive, so `content` may be the user's utterance), then
-            # any queued directive text.
-            fallback = (
-                original_text
-                or (content or "").strip()
-                or self._collect_directive_text(directives, interaction)
-            )
-            fallback = fallback or "Sorry — I hit a problem composing that reply."
+            # Do not publish compose inputs as a fallback. `content` can contain
+            # the user's utterance and internal directive reminders; queued
+            # directives can contain private workflow instructions. A neutral
+            # bounded failure is safer than relaying any prompt material.
+            fallback = "I couldn't complete that reply just now. Please try again."
             try:
                 await self.publish(fallback, visitor, transient=transient)
             except Exception:

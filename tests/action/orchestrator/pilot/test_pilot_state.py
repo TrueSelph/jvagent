@@ -12,6 +12,7 @@ from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
     PilotSnapshot,
     ResearchBrief,
+    ResearchFinding,
 )
 from jvagent.action.orchestrator.pilot.state import (
     PILOT_TASK_TYPE,
@@ -172,6 +173,169 @@ async def test_parked_retry_requires_exact_caller_and_current_configuration():
 
 
 @pytest.mark.asyncio
+async def test_interrupted_active_run_is_failed_with_checkpoint_preserved():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    checkpoint = _snapshot(
+        evidence=(EvidenceReference(source_id="source-1", url="https://example.test"),)
+    )
+    handle = await tasks.create(
+        checkpoint, title="research", description="Research the question"
+    )
+
+    found = tasks.active_run(
+        caller=checkpoint.caller,
+        skill_id=checkpoint.skill_id,
+        skill_digest=checkpoint.skill_digest,
+        config_digest=checkpoint.config_digest,
+    )
+    assert found is not None
+    recovered_handle, recovered_snapshot = found
+    assert recovered_handle.id == handle.id
+    assert recovered_snapshot == checkpoint
+    failed = await tasks.fail_interrupted(recovered_handle, recovered_snapshot)
+
+    assert failed.status == "failed"
+    assert failed.evidence == checkpoint.evidence
+    assert recovered_handle.status == "failed"
+    assert recovered_handle.snapshot["status"] == "failed"
+    assert recovered_handle.data["failure_reason"] == (
+        "interrupted run requires an explicit restart"
+    )
+    assert (
+        tasks.active_run(
+            caller=checkpoint.caller,
+            skill_id=checkpoint.skill_id,
+            skill_digest=checkpoint.skill_digest,
+            config_digest=checkpoint.config_digest,
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_active_runs_fail_closed_without_creating_another_task():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    checkpoint = _snapshot()
+    first = await tasks.create(
+        checkpoint, title="research one", description="First active run"
+    )
+    second = await tasks.create(
+        checkpoint, title="research two", description="Second active run"
+    )
+
+    with pytest.raises(PilotStateError, match="multiple active pilot runs"):
+        tasks.active_run(
+            caller=checkpoint.caller,
+            skill_id=checkpoint.skill_id,
+            skill_digest=checkpoint.skill_digest,
+            config_digest=checkpoint.config_digest,
+        )
+
+    assert first.status == "active"
+    assert second.status == "active"
+    assert len(conversation.tasks) == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_exact_retry_parent_preserves_cumulative_usage():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    first = _snapshot(
+        status="failed",
+        model_requests_used=3,
+        tool_calls_used=7,
+        reported_input_tokens_used=1200,
+        reported_output_tokens_used=800,
+    )
+    handle = await tasks.create(first, title="research", description=first.question)
+    await tasks.fail(handle, first, "provider error")
+
+    parent = tasks.failed_retry_parent(
+        caller=first.caller,
+        skill_id=first.skill_id,
+        skill_digest=first.skill_digest,
+        config_digest=first.config_digest,
+        question=first.question,
+    )
+    assert parent is not None
+    assert parent[0].id == handle.id
+    assert parent[1].model_requests_used == 3
+    assert parent[1].tool_calls_used == 7
+    assert parent[1].reported_input_tokens_used == 1200
+    assert parent[1].reported_output_tokens_used == 800
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_version", [4, 5])
+async def test_legacy_snapshot_migrates_without_claiming_unknown_usage_is_zero(
+    legacy_version,
+):
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = _snapshot()
+    handle = await tasks.create(
+        snapshot, title="research", description=snapshot.question
+    )
+    legacy = snapshot.model_dump(mode="json")
+    legacy["schema_version"] = legacy_version
+    if legacy_version == 4:
+        accounting_fields = (
+            "usage_accounting_complete",
+            "model_requests_used",
+            "tool_calls_used",
+            "reported_input_tokens_used",
+            "reported_output_tokens_used",
+            "estimated_input_tokens_used",
+            "estimated_output_tokens_used",
+        )
+        for key in accounting_fields:
+            legacy.pop(key)
+    else:
+        legacy["model_requests_used"] = 2
+        legacy["tool_calls_used"] = 3
+        legacy["reported_input_tokens_used"] = 50
+        legacy["reported_output_tokens_used"] = 20
+        legacy.pop("unsettled_model_requests")
+        legacy.pop("unreported_model_usage_responses")
+    await handle.set_snapshot(legacy)
+
+    loaded_handle, restored = tasks.load(
+        handle.id,
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+    assert restored.schema_version == 6
+    assert restored.usage_accounting_complete is False
+    assert restored.model_requests_used == (2 if legacy_version == 5 else 0)
+    assert (
+        tasks.failed_retry_parent(
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+            question=snapshot.question,
+        )
+        is None
+    )
+    await tasks.fail_interrupted(loaded_handle, restored)
+    assert loaded_handle.snapshot["usage_accounting_complete"] is False
+    parent = tasks.failed_retry_parent(
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+        question=snapshot.question,
+    )
+    assert parent is not None
+    assert parent[1].unsettled_model_requests == 1
+    assert parent[1].usage_accounting_complete is False
+
+
+@pytest.mark.asyncio
 async def test_rehydrate_rejects_task_snapshot_status_mismatch():
     conversation = DurableConversation()
     tasks = PilotTaskStore(conversation)
@@ -199,12 +363,12 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         _snapshot(), title="research", description="Research the question"
     )
     unsupported = deepcopy(handle.snapshot)
-    unsupported["schema_version"] = 4
+    unsupported["schema_version"] = 7
     await handle.set_snapshot(unsupported)
 
     with pytest.raises(
         PilotStateError,
-        match=r"schema version 4 is unsupported.*Preserve the task and start a new pilot run",
+        match=r"schema version 7 is unsupported.*Preserve the task and start a new pilot run",
     ):
         tasks.load(
             handle.id,
@@ -215,7 +379,30 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["schema_version"] == 4
+    assert handle.snapshot["schema_version"] == 7
+
+
+@pytest.mark.asyncio
+async def test_v3_snapshot_is_preserved_but_not_resumed_after_claim_schema_change():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    handle = await tasks.create(
+        _snapshot(), title="research", description="Research the question"
+    )
+    legacy = deepcopy(handle.snapshot)
+    legacy["schema_version"] = 3
+    await handle.set_snapshot(legacy)
+
+    with pytest.raises(PilotStateError, match="schema version 3 is unsupported"):
+        tasks.load(
+            handle.id,
+            caller=_snapshot().caller,
+            skill_id="research",
+            skill_digest="sha256-skill",
+            config_digest="sha256-config",
+        )
+    assert handle.snapshot["schema_version"] == 3
+    assert handle.status == "active"
 
 
 @pytest.mark.asyncio
@@ -277,11 +464,27 @@ async def test_task_completion_requires_validated_output_and_delivery():
     )
     output = ResearchBrief(
         question="q",
-        findings=("A finding",),
-        source_ids=("source-1",),
-        brief="A finding supported by source-1.",
+        findings=(
+            ResearchFinding(
+                claim="A finding",
+                source_ids=("source-1",),
+                supporting_source_id="source-1",
+                supporting_quote="A finding",
+            ),
+        ),
     )
-    result = _snapshot(status="complete", output=output)
+    result = _snapshot(
+        status="complete",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/1",
+                excerpt="A finding appears in the source.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=output,
+    )
     with pytest.raises(PilotStateError, match="final delivery"):
         await tasks.complete(handle, result, delivered=False)
     await tasks.complete(handle, result, delivered=True)
@@ -472,12 +675,30 @@ async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume(
     )
     output = ResearchBrief(
         question="q",
-        findings=("A finding",),
-        source_ids=("source-1",),
-        brief="A finding supported by source-1.",
+        findings=(
+            ResearchFinding(
+                claim="A finding",
+                source_ids=("source-1",),
+                supporting_source_id="source-1",
+                supporting_quote="A finding",
+            ),
+        ),
     )
     await tasks.complete(
-        parent, _snapshot(status="complete", output=output), delivered=True
+        parent,
+        _snapshot(
+            status="complete",
+            evidence=(
+                EvidenceReference(
+                    source_id="source-1",
+                    url="https://example.test/1",
+                    excerpt="A finding appears in the source.",
+                    provenance="fetched_page",
+                ),
+            ),
+            output=output,
+        ),
+        delivered=True,
     )
 
     followup = await tasks.create(
@@ -663,15 +884,33 @@ async def test_storage_failure_cannot_complete_a_pilot_task():
     handle = await tasks.create(_snapshot(), title="research", description="Research")
     output = ResearchBrief(
         question="q",
-        findings=("A finding",),
-        source_ids=("source-1",),
-        brief="A finding supported by source-1.",
+        findings=(
+            ResearchFinding(
+                claim="A finding",
+                source_ids=("source-1",),
+                supporting_source_id="source-1",
+                supporting_quote="A finding",
+            ),
+        ),
     )
     conversation.fail_flush = True
 
     with pytest.raises(OSError, match="storage unavailable"):
         await tasks.complete(
-            handle, _snapshot(status="complete", output=output), delivered=True
+            handle,
+            _snapshot(
+                status="complete",
+                evidence=(
+                    EvidenceReference(
+                        source_id="source-1",
+                        url="https://example.test/1",
+                        excerpt="A finding appears in the source.",
+                        provenance="fetched_page",
+                    ),
+                ),
+                output=output,
+            ),
+            delivered=True,
         )
 
     assert handle.status == "active"

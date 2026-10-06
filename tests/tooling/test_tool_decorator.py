@@ -8,6 +8,7 @@ import pytest
 
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import TOOL_MARKER, ToolSpec, collect_tools, tool
+from jvagent.tooling.tool_result import ToolResultText
 
 
 class FakeAction:
@@ -111,6 +112,21 @@ async def test_built_tool_calls_through_to_bound_method():
     tools = _by_name(collect_tools(FakeAction()))
     result = await tools["myact__greet"].call(who="ada")
     assert result.content == "hi ada"
+
+
+@pytest.mark.asyncio
+async def test_string_compatible_tool_result_preserves_host_metadata():
+    class FetchAction:
+        metadata = {"name": "fetch"}
+        label = None
+
+        @tool
+        async def read(self) -> str:
+            return ToolResultText("readable result", {"receipt": {"ok": True}})
+
+    result = await _by_name(collect_tools(FetchAction()))["fetch__read"].call()
+    assert result.content == "readable result"
+    assert result.metadata == {"receipt": {"ok": True}}
 
 
 def test_returns_empty_when_nothing_decorated():

@@ -128,6 +128,36 @@ def test_result_mapping_preserves_litellm_response_cost():
     assert result.to_response().usage.cost_usd == pytest.approx(0.0123)
 
 
+@pytest.mark.parametrize("reported_cost", [0.0, 0.0123])
+def test_result_mapping_preserves_reported_zero_cost(reported_cost):
+    body = {
+        "model": "gpt-4o-mini",
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+    }
+    response = litellm.ModelResponse(**body)
+    response._hidden_params = {"response_cost": reported_cost}
+
+    result = _action()._result_from_response(response, "openai/gpt-4o-mini")
+
+    assert result.metrics["cost_usd"] == reported_cost
+    assert result.metrics["cost_source"] == "litellm_response_cost"
+
+
+def test_result_mapping_rejects_non_finite_reported_cost():
+    body = {
+        "model": "gpt-4o-mini",
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 4, "total_tokens": 24},
+    }
+    response = litellm.ModelResponse(**body)
+    response._hidden_params = {"response_cost": float("inf")}
+
+    result = _action()._result_from_response(response, "openai/gpt-4o-mini")
+
+    assert "cost_usd" not in result.metrics
+
+
 @pytest.mark.asyncio
 async def test_missing_litellm_cost_uses_marked_estimate():
     action = _action(model="ollama_chat/glm-5.3:cloud")

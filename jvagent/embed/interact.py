@@ -147,7 +147,12 @@ async def interact(
     if not utterance or not utterance.strip():
         from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
 
-        if not allows_empty_host_utterance(data):
+        if not allows_empty_host_utterance(
+            data,
+            agent_id=agent_id,
+            user_id=str(user_id or ""),
+            session_id=str(session_id or ""),
+        ):
             raise ValidationError(
                 message="utterance is required and cannot be empty",
                 details={"utterance": utterance},
@@ -388,7 +393,12 @@ async def interact_stream(
     if not utterance or not utterance.strip():
         from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
 
-        if not allows_empty_host_utterance(data):
+        if not allows_empty_host_utterance(
+            data,
+            agent_id=agent_id,
+            user_id=str(user_id or ""),
+            session_id=str(session_id or ""),
+        ):
             raise ValidationError(
                 message="utterance is required and cannot be empty",
                 details={"utterance": utterance},

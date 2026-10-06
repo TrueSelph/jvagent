@@ -271,7 +271,9 @@ class User(Node):
                     "completion_tokens": 0,
                     "model_call_count": 0,
                     "estimated_cost_usd": 0.0,
+                    "reported_cost_usd": 0.0,
                     "litellm_cost_usd": 0.0,
+                    "unknown_cost_call_count": 0,
                     "total_cost_usd": 0.0,
                     "total_duration_seconds": 0.0,
                     "interaction_count": 0,
@@ -300,6 +302,17 @@ class User(Node):
                 + usage.get("litellm_cost_usd", 0.0),
                 6,
             )
+            target.usage["reported_cost_usd"] = round(
+                target.usage.get("reported_cost_usd", 0.0)
+                + usage.get(
+                    "reported_cost_usd",
+                    usage.get("litellm_cost_usd", 0.0),
+                ),
+                6,
+            )
+            target.usage["unknown_cost_call_count"] = target.usage.get(
+                "unknown_cost_call_count", 0
+            ) + usage.get("unknown_cost_call_count", 0)
             target.usage["total_cost_usd"] = round(
                 target.usage.get("total_cost_usd", 0.0)
                 + usage.get("total_cost_usd", usage.get("estimated_cost_usd", 0.0)),
@@ -331,7 +344,9 @@ class User(Node):
                 "completion_tokens": 0,
                 "model_call_count": 0,
                 "estimated_cost_usd": 0.0,
+                "reported_cost_usd": 0.0,
                 "litellm_cost_usd": 0.0,
+                "unknown_cost_call_count": 0,
                 "total_cost_usd": 0.0,
                 "total_duration_seconds": 0.0,
                 "interaction_count": 0,

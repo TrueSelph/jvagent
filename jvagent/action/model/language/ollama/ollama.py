@@ -10,6 +10,7 @@ Supports both:
 
 import json
 import logging
+import math
 import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -248,7 +249,9 @@ class OllamaLanguageModelAction(LanguageModelAction):
         metrics = getattr(result, "metrics", None)
         if isinstance(metrics, dict):
             reported = metrics.get("cost_usd")
-            if not isinstance(reported, (int, float)) or reported <= 0:
+            from jvagent.action.model.cost_estimator import is_valid_cost_usd
+
+            if not is_valid_cost_usd(reported):
                 from jvagent.action.model.cost_estimator import estimate_cost
 
                 cost = estimate_cost(
@@ -259,7 +262,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
                 if cost > 0:
                     metrics["cost_usd"] = cost
                     metrics["cost_source"] = "jv_cost_estimator"
-            if isinstance(metrics.get("cost_usd"), (int, float)):
+            if is_valid_cost_usd(metrics.get("cost_usd")):
                 self.total_cost += float(metrics["cost_usd"])
         await super().track_usage(usage, duration, result=result)
 
@@ -423,7 +426,12 @@ class OllamaLanguageModelAction(LanguageModelAction):
                 thinking_content=thinking_content,
             )
             reported_cost = data.get("cost_usd")
-            if isinstance(reported_cost, (int, float)) and reported_cost >= 0:
+            if (
+                isinstance(reported_cost, (int, float))
+                and not isinstance(reported_cost, bool)
+                and math.isfinite(float(reported_cost))
+                and reported_cost >= 0
+            ):
                 result.metrics["cost_usd"] = float(reported_cost)
                 result.metrics["cost_source"] = "ollama_response"
             return result
@@ -517,6 +525,8 @@ class OllamaLanguageModelAction(LanguageModelAction):
                             reported_cost = chunk.get("cost_usd")
                             if (
                                 isinstance(reported_cost, (int, float))
+                                and not isinstance(reported_cost, bool)
+                                and math.isfinite(float(reported_cost))
                                 and reported_cost >= 0
                             ):
                                 result.metrics["cost_usd"] = float(reported_cost)

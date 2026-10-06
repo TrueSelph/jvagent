@@ -41,6 +41,23 @@ The orchestrator and every action on its tool surface follow the **[thin harness
 
 Subsystem-specific rules (e.g. interviews) extend the platform doc as **profiles** — see [Interview profile](../jvagent/action/interview/docs/thin-harness.md).
 
+## Trusted host system context
+
+An embedding host may attach per-turn system context only as a signed v2 envelope. Configure a dedicated `JVAGENT_HOST_CONTEXT_SECRET` with at least 32 random UTF-8 bytes in the trusted host and jvagent secret stores; do not reuse the JWT key. Use `jvagent.action.orchestrator.host_context.sign_host_system_context()` to bind the context to `agent_id`, `user_id`, and `session_id`, with a unique `run_id` and nonce. The default expiry is two minutes and the verifier rejects envelopes older than five minutes. HTTP empty-utterance admission verifies the caller binding after identity resolution; `InteractWalker` revalidates against its resolved identity and consumes the nonce in `Conversation.context` before making it available to system instructions ([host_context.py](../jvagent/action/orchestrator/host_context.py), [interact_walker.py](../jvagent/action/interact/interact_walker.py), [endpoints.py](../jvagent/action/interact/endpoints.py)).
+
+```python
+from jvagent.action.orchestrator.host_context import sign_host_system_context
+
+data = sign_host_system_context(
+    "Use the host's approved workspace policy for this turn.",
+    agent_id=agent_id,
+    user_id=user_id,
+    session_id=session_id,
+)
+```
+
+Nonce consumption reloads the Conversation and records the nonce inside the conversation mutation lock. Multi-worker deployments must configure Redis or DynamoDB conversation locking so two workers cannot accept the same nonce concurrently; if a configured lock backend's client dependency is unavailable, acquisition fails closed instead of downgrading to an in-process lock ([distributed_conversation_lock.py](../jvagent/memory/distributed_conversation_lock.py)). A failed Conversation read/save fails closed; the host should create a new signed envelope for a later request rather than replaying an old one.
+
 ## Flow continuation (configurable: deterministic lock or model-mediated)
 
 A *flow* is any action that wants to span turns (today: the interview). It (a) records a control-task on the conversation `TaskStore` while active (the flow does this itself — the orchestrator does not manage it), and (b) is continued by being run again. The flow's only orchestrator-facing modification is being exposed via `get_tools()` (forwarding to `execute(visitor)`) — it gains no special resume entry point, no flow-control task-type hook, and no orchestrator-specific flags.
@@ -136,10 +153,18 @@ Orchestrator and all off by default except the breaker:
 - **Circuit breaker** — per (action, model), per event loop; open circuits are
   skipped; after the cooldown one probe decides. `healthcheck()` reports the
   circuits.
-- **Budget guard** — turn cost is the metadata price of this turn's
-  `model_call` events (`turn_cost_usd` on the activation event); the
-  conversation total lives on `conversation.context._cost_usd_total` and is
-  only written when a conversation ceiling is set.
+- **Budget guard** — turn cost uses a valid provider-reported receipt where
+  available and otherwise the shared estimator. The conversation total lives
+  on `conversation.context._cost_usd_total` and is only written when a
+  conversation ceiling is set. If any call has no usable reported or estimated
+  price, a configured turn ceiling blocks further model requests for that turn;
+  a configured conversation ceiling records
+  `conversation.context._cost_accounting_incomplete` and blocks subsequent
+  turns. An operator must reconcile the provider usage and clear that marker
+  before the conversation can resume under a spend ceiling. Failed or cancelled
+  provider transport attempts without usage/cost receipts are also treated as
+  unpriced. A reported cost of `$0` is a valid receipt and does not trigger this
+  state.
 - **Structured decisions** — with `tool_protocol` resolved to `json` and a model
   that supports structured output, the decision schema travels as
   `response_format: json_schema` (or a forced `orchestrator_decision` tool on
@@ -410,14 +435,20 @@ one Pydantic AI run at the existing Orchestrator execute boundary; the two loops
 do not nest. This pilot currently admits only the existing `research` SOP with
 the unchanged `SerperWebSearchAction.web_search__search` and
 `WebFetchAction.web_fetch__fetch` operations. Tool calls are rechecked through
-the existing AccessControl boundary. Brief, non-factual conversational requests
-use a separate typed reply; factual research must use `ResearchBrief` with
-citations that resolve to URLs observed in Action results. Validated output is
-published through `ReplyAction.publish`. The output shapes are defined in
-[`contracts.py:54`](../jvagent/action/orchestrator/pilot/contracts.py) and
-[`contracts.py:64`](../jvagent/action/orchestrator/pilot/contracts.py), while
-research-source validation is in
-[`runtime.py:138`](../jvagent/action/orchestrator/pilot/runtime.py). The pilot
+the existing AccessControl boundary. Fresh pilot runs require `ResearchBrief`
+with citation-bearing findings whose source IDs resolve to URLs observed in
+Action results; the legacy `ConversationalReply` shape is retained only to read
+older snapshots. The host renders only those typed claims and citations;
+arbitrary model-authored inline URLs are rejected. Source membership still
+records the model's asserted support and does not independently prove factual
+truth. Errors from the two explicitly allowlisted read-only web Actions return
+a bounded failure observation to the skill without adding evidence; their
+streamed tool-result events carry a typed status instead of relying on error
+text prefixes. Access and schema failures remain terminal.
+Validated output is published through `ReplyAction.publish`. The output shapes
+are defined in [`contracts.py`](../jvagent/action/orchestrator/pilot/contracts.py),
+while research-source validation is in
+[`runtime.py`](../jvagent/action/orchestrator/pilot/runtime.py). The pilot
 persists a `CAPABILITY_PILOT` task snapshot in the conversation TaskStore. These limits are enforced in
 [`_run_capability_pilot`](../jvagent/action/orchestrator/orchestrator_interact_action.py)
 and [`PilotEvidenceCollector`](../jvagent/action/orchestrator/pilot/runtime.py).
@@ -450,6 +481,16 @@ for cost-sensitive deployments or raise them only when the model/provider's
 context and output limits permit it and the additional spend is acceptable.
 When a ceiling is reached, Messenger reports which class of limit stopped the
 run and the failed TaskStore record retains the underlying reason.
+
+Pilot Action tools use the Orchestrator's `tool_call_timeout` (including a
+channel override) instead of a separate 45-second constant; `0` disables the
+per-tool timer while the overall pilot wall-time ceiling still applies. The
+pilot also maps `max_concurrent_tools` into Pydantic AI's tool concurrency
+limit, bounded to 1–8. The default remains serial (`1`). Parallel execution is
+currently limited by production admission to the declared read-only research
+Actions; configurations above eight fail closed. Deterministic tests cover the
+setting mapping; provider and deployment-level parallel-load qualification
+remains open.
 
 For LiteLLM calls, JV records LiteLLM's `response_cost` when the response has a
 positive priced value. Native Ollama Cloud calls have no cost field in the

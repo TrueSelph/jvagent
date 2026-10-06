@@ -24,6 +24,7 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.base import Action
 from jvagent.tooling.tool_decorator import tool
+from jvagent.tooling.tool_result import ToolResultText
 
 logger = logging.getLogger(__name__)
 
@@ -157,18 +158,20 @@ class WebFetchAction(Action):
         relying on snippets."""
         url = (url or "").strip()
         if not url:
-            return "(refused: empty url)"
+            return self._typed_result(
+                "(refused: empty url)", outcome="refused", requested_url=url
+            )
         # Validate before opening any client so unsafe URLs never touch the wire.
         err, pin_ip = await self._validate(url)
         if err:
-            return err
+            return self._typed_result(err, outcome="refused", requested_url=url)
         limit = int(max_chars or self.max_chars)
         headers = {"User-Agent": self.user_agent, "Accept": "text/html,*/*"}
+        current = url
         try:
             async with httpx.AsyncClient(
                 timeout=self.timeout, follow_redirects=False
             ) as client:
-                current = url
                 for _ in range(int(self.max_redirects) + 1):
                     # Stream so the body is read incrementally and capped at
                     # max_bytes — client.get() buffers the ENTIRE response first,
@@ -185,14 +188,67 @@ class WebFetchAction(Action):
                             # Re-validate AND re-pin each hop.
                             err, pin_ip = await self._validate(current)
                             if err:
-                                return err
+                                return self._typed_result(
+                                    err,
+                                    outcome="refused",
+                                    requested_url=url,
+                                    final_url=current,
+                                )
                             continue
-                        return await self._render(resp, current, limit)
+                        content = await self._render(resp, current, limit)
+                        successful = resp.status_code == 200 and content.startswith(
+                            "# Source: http"
+                        )
+                        return self._typed_result(
+                            content,
+                            outcome="success" if successful else "error",
+                            requested_url=url,
+                            final_url=current,
+                            content_type=(resp.headers.get("content-type") or "")
+                            .split(";", 1)[0]
+                            .strip()
+                            .lower(),
+                            http_status=resp.status_code,
+                        )
                     finally:
                         await resp.aclose()
-                return "(refused: too many redirects)"
+                return self._typed_result(
+                    "(refused: too many redirects)",
+                    outcome="refused",
+                    requested_url=url,
+                    final_url=current,
+                )
         except httpx.HTTPError as exc:
-            return f"(fetch error: {type(exc).__name__}: {exc})"
+            return self._typed_result(
+                f"(fetch error: {type(exc).__name__}: {exc})",
+                outcome="error",
+                requested_url=url,
+                final_url=current,
+            )
+
+    @staticmethod
+    def _typed_result(
+        content: str,
+        *,
+        outcome: str,
+        requested_url: str,
+        final_url: str = "",
+        content_type: str = "",
+        http_status: Optional[int] = None,
+    ) -> ToolResultText:
+        """Keep readable text while attaching a typed fetch receipt."""
+        return ToolResultText(
+            content,
+            {
+                "web_fetch_result": {
+                    "outcome": outcome,
+                    "requested_url": requested_url,
+                    "final_url": final_url,
+                    "content_type": content_type,
+                    "http_status": http_status,
+                }
+            },
+        )
 
     def _build_pinned_request(
         self,

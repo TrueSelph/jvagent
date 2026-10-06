@@ -8,6 +8,7 @@ import pytest
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
+from jvagent.action.orchestrator.pilot.contracts import PilotCaller, PilotSnapshot
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_store import TaskStore
 
@@ -74,6 +75,32 @@ async def test_unknown_skill_runtime_fails_closed(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_turn_settles_usage_even_when_driver_fails(monkeypatch):
+    ex = OrchestratorInteractAction()
+    ex.skill_runtime = "capability_pilot"
+    settled = []
+
+    async def record_settlement(_self, visitor):
+        settled.append(visitor)
+
+    async def fail_driver(_self, visitor):
+        raise RuntimeError("driver failed after recording provider usage")
+
+    monkeypatch.setattr(OrchestratorInteractAction, "_curate_walk_path", AsyncMock())
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_run_capability_pilot", fail_driver
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_settle_conversation_cost", record_settlement
+    )
+    visitor = SimpleNamespace(interaction=object())
+
+    with pytest.raises(RuntimeError, match="driver failed"):
+        await ex._execute_turn(visitor)
+    assert settled == [visitor]
+
+
+@pytest.mark.asyncio
 async def test_legacy_selection_parks_pilot_work_before_loop(monkeypatch, test_db):
     ex = OrchestratorInteractAction()
     ex.skill_runtime = "legacy"
@@ -88,7 +115,16 @@ async def test_legacy_selection_parks_pilot_work_before_loop(monkeypatch, test_d
         task_type="CAPABILITY_PILOT",
         owner_action="research",
         initial_status="active",
-        snapshot={"schema_version": 3, "status": "running", "evidence": []},
+        snapshot=PilotSnapshot(
+            caller=PilotCaller(
+                agent_id="a",
+                user_id="pilot-rollback-user",
+                session_id=conversation.session_id,
+            ),
+            skill_id="research",
+            skill_digest="skill-digest",
+            config_digest="config-digest",
+        ).model_dump(mode="json"),
     )
 
     async def record(*_args, **_kwargs):

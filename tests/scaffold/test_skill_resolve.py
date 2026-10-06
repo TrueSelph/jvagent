@@ -46,6 +46,22 @@ def test_skill_digest_is_stable_for_skill_md(tmp_path: Path) -> None:
     assert bundle["digest"] == first
 
 
+def test_parse_skill_output_contract_frontmatter(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "research"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: research\ndescription: Evidence-backed research\n"
+        "output-contract: evidence_required\n---\nUse sources.\n",
+        encoding="utf-8",
+    )
+
+    bundle = parse_skill_bundle(skill_dir, source="app")
+
+    assert bundle is not None
+    assert bundle["output_contract"] == "evidence_required"
+    assert "frontmatter key output-contract" not in bundle["unsupported_features"]
+
+
 def test_resolve_agent_skills_reads_app_local_bundle(tmp_path: Path) -> None:
     skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "my_skill"
     skill_dir.mkdir(parents=True)

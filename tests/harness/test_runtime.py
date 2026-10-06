@@ -408,6 +408,65 @@ def test_checkpoint_round_trip_restores_idempotent_result(
     assert cached == "hello"
 
 
+def test_stale_checkpoint_import_does_not_roll_back_session_outbox(
+    rt: HarnessRuntime, caller: NativeCaller
+):
+    snap = rt.admit_snapshot(caller)
+    corr = rt.new_correlation()
+    rt.start_turn(corr, caller, snap, interaction_id="int-outbox")
+    first = rt.append_event(
+        session_id=caller.session_id,
+        kind="chunk",
+        message_id="m1",
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+    )
+    checkpoint = rt.export_checkpoint(corr)
+    rt.append_event(
+        session_id=caller.session_id,
+        kind="final",
+        message_id="m2",
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+    )
+
+    rt.import_checkpoint(checkpoint)
+    replay = rt.replay_from(caller.session_id, first.cursor)
+    assert [event.message_id for event in replay] == ["m2"]
+    third = rt.append_event(
+        session_id=caller.session_id,
+        kind="final",
+        message_id="m3",
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+    )
+    assert third.sequence == 3
+
+
+def test_conflicting_checkpoint_event_is_rejected_before_runtime_mutation(
+    rt: HarnessRuntime, caller: NativeCaller
+):
+    snap = rt.admit_snapshot(caller)
+    corr = rt.new_correlation()
+    rt.start_turn(corr, caller, snap, interaction_id="int-conflict")
+    rt.append_event(
+        session_id=caller.session_id,
+        kind="final",
+        message_id="canonical",
+        correlation_id=corr,
+        snapshot_id=snap.snapshot_id,
+    )
+    checkpoint = rt.export_checkpoint(corr)
+    checkpoint["outbox"][0]["message_id"] = "forged"
+
+    with pytest.raises(HarnessContractError, match="conflicts with a newer"):
+        rt.import_checkpoint(checkpoint)
+
+    assert [event.message_id for event in rt.replay_from(caller.session_id)] == [
+        "canonical"
+    ]
+
+
 def test_peek_completed_skips_non_idempotent(rt: HarnessRuntime, caller: NativeCaller):
     snap = rt.admit_snapshot(caller)
     corr = rt.new_correlation()

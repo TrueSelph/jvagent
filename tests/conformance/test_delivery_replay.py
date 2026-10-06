@@ -47,6 +47,19 @@ def test_event_envelope_rejects_non_positive_sequence():
         )
 
 
+def test_event_envelope_rejects_cursor_from_another_session():
+    with pytest.raises(HarnessContractError, match="cursor must match"):
+        EventEnvelope(
+            session_id="s1",
+            sequence=1,
+            cursor="s2:1",
+            message_id="m1",
+            correlation_id="c1",
+            snapshot_id="snap-1",
+            kind="chunk",
+        )
+
+
 def test_reconnecting_client_replays_missed_frames_in_order():
     store = HarnessStore()
     w1 = HarnessRuntime(store, worker_id="w1")

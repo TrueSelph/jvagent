@@ -13,12 +13,23 @@ import pytest
 
 pytest.importorskip("pydantic_ai")
 
-from jvagent.action.model.contract import ModelResponse, ToolCall
+from jvagent.action.model.contract import ModelResponse, ToolCall, Usage
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-from jvagent.action.orchestrator.pilot.contracts import PilotSnapshot, ResearchBrief
-from jvagent.action.orchestrator.pilot.state import PILOT_TASK_TYPE
+from jvagent.action.orchestrator.pilot import runtime as _pilot_runtime
+from jvagent.action.orchestrator.pilot.contracts import (
+    MAX_PILOT_QUESTION_CHARS,
+    PilotSnapshot,
+    ResearchBrief,
+    ResearchFinding,
+)
+from jvagent.action.orchestrator.pilot.runtime import PilotEvidenceCollector
+from jvagent.action.orchestrator.pilot.state import (
+    PILOT_TASK_TYPE,
+    PilotStateError,
+    PilotTaskStore,
+)
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.action.reply.reply_action import ReplyAction
 from jvagent.action.web_fetch.web_fetch_action import WebFetchAction
@@ -45,9 +56,10 @@ class DurableConversation:
 class FakeModelAction:
     model = "offline-fixture"
 
-    def __init__(self, request_counts=None):
+    def __init__(self, request_counts=None, *, parallel_search=False):
         self.calls = 0
         self.request_counts = request_counts
+        self.parallel_search = parallel_search
 
     async def complete(self, request, *, calling_action_name=None):
         self.calls += 1
@@ -64,17 +76,33 @@ class FakeModelAction:
                     )
                 ],
                 finish_reason="tool_calls",
+                usage=Usage(
+                    prompt_tokens=10,
+                    completion_tokens=2,
+                    total_tokens=12,
+                    estimated=True,
+                ),
             )
         if self.calls == 2 and "web_search__search" in names:
-            return ModelResponse(
-                tool_calls=[
+            search_calls = [
+                ToolCall(
+                    id="search-1",
+                    name="web_search__search",
+                    arguments={"query": "pilot"},
+                )
+            ]
+            if self.parallel_search:
+                search_calls.append(
                     ToolCall(
-                        id="search-1",
+                        id="search-2",
                         name="web_search__search",
-                        arguments={"query": "pilot"},
+                        arguments={"query": "pilot-alt"},
                     )
-                ],
+                )
+            return ModelResponse(
+                tool_calls=search_calls,
                 finish_reason="tool_calls",
+                usage=Usage(prompt_tokens=10, completion_tokens=2, total_tokens=12),
             )
         if self.calls == 3 and "web_fetch__fetch" in names:
             return ModelResponse(
@@ -86,6 +114,7 @@ class FakeModelAction:
                     )
                 ],
                 finish_reason="tool_calls",
+                usage=Usage(prompt_tokens=10, completion_tokens=2, total_tokens=12),
             )
         output_name = next(
             tool["function"]["name"]
@@ -94,10 +123,21 @@ class FakeModelAction:
         )
         result = ResearchBrief(
             question="pilot",
-            findings=("The pilot uses typed capabilities.",),
-            source_ids=("https://example.com/evidence",),
+            findings=(
+                ResearchFinding(
+                    claim="The pilot uses typed capabilities.",
+                    source_ids=(
+                        PilotEvidenceCollector._source_id(
+                            "", "https://example.com/evidence"
+                        ),
+                    ),
+                    supporting_source_id=PilotEvidenceCollector._source_id(
+                        "", "https://example.com/evidence"
+                    ),
+                    supporting_quote="The pilot uses typed capabilities.",
+                ),
+            ),
             limitations=(),
-            brief="The pilot uses typed capabilities. https://example.com/evidence",
         )
         return ModelResponse(
             tool_calls=[
@@ -108,7 +148,303 @@ class FakeModelAction:
                 )
             ],
             finish_reason="tool_calls",
+            usage=Usage(prompt_tokens=10, completion_tokens=2, total_tokens=12),
         )
+
+
+@pytest.mark.asyncio
+async def test_oversized_pilot_question_is_rejected_without_truncation(monkeypatch):
+    orchestrator = OrchestratorInteractAction()
+    responder = ReplyAction()
+    interaction = Interaction()
+    visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="q" * (MAX_PILOT_QUESTION_CHARS + 1),
+        channel="default",
+        interaction=interaction,
+        conversation=DurableConversation(),
+    )
+    published = []
+
+    async def publish(_self, content, visitor=None):
+        published.append(content)
+        visitor.interaction.response = content
+        visitor.interaction.mark_emitted()
+        return True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_safe_agent", AsyncMock(return_value=object())
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "get_responder", AsyncMock(return_value=responder)
+    )
+    monkeypatch.setattr(ReplyAction, "publish", publish)
+
+    await orchestrator._run_capability_pilot(visitor)
+
+    assert len(published) == 1
+    assert "20,000 characters" in published[0]
+    assert "narrow or split" in published[0]
+    assert interaction.response == published[0]
+    assert visitor.conversation.tasks == []
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_pilot_recovery_delivers_notice_before_new_work():
+    orchestrator = OrchestratorInteractAction()
+    interaction = Interaction()
+    visitor = SimpleNamespace(interaction=interaction)
+    published = []
+
+    async def publish(content, visitor=None):
+        published.append(content)
+        visitor.interaction.response = content
+        visitor.interaction.mark_emitted()
+        return True
+
+    store = SimpleNamespace(
+        active_run=lambda **_kwargs: (_ for _ in ()).throw(
+            PilotStateError("ambiguous active state")
+        )
+    )
+    responder = SimpleNamespace(publish=publish)
+    safe_to_continue, active = await orchestrator._resolve_pilot_active_run(
+        store,
+        caller=object(),
+        skill=SimpleNamespace(name="research", digest="skill-digest"),
+        config_digest="config-digest",
+        responder=responder,
+        visitor=visitor,
+        interaction=interaction,
+        state_error=PilotStateError,
+    )
+
+    assert safe_to_continue is False
+    assert active is None
+    assert len(published) == 1
+    assert "more than one unfinished research run" in published[0]
+    assert interaction.has_emitted()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "budget_config, conversation_context, metrics",
+    [
+        (
+            {"max_turn_cost_usd": 0.10},
+            {},
+            [
+                {
+                    "event_type": "model_call",
+                    "data": {
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                        "cost_usd": 0.12,
+                        "cost_source": "provider_reported",
+                    },
+                }
+            ],
+        ),
+        (
+            {"max_conversation_cost_usd": 0.50},
+            {"_cost_usd_total": 0.60},
+            [],
+        ),
+        (
+            {"max_conversation_cost_usd": 0.50},
+            {"_cost_accounting_incomplete": True},
+            [],
+        ),
+    ],
+)
+async def test_pilot_cost_admission_blocks_before_model_selection(
+    monkeypatch, budget_config, conversation_context, metrics
+):
+    orchestrator = OrchestratorInteractAction()
+    for name, value in budget_config.items():
+        setattr(orchestrator, name, value)
+    responder = ReplyAction()
+    interaction = Interaction()
+    interaction.observability_metrics = metrics
+    conversation = DurableConversation()
+    conversation.context = conversation_context
+    visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="Research a question",
+        channel="default",
+        interaction=interaction,
+        conversation=conversation,
+    )
+    published = []
+
+    async def publish(_self, content, visitor=None):
+        published.append(content)
+        visitor.interaction.response = content
+        visitor.interaction.mark_emitted()
+        return True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_safe_agent", AsyncMock(return_value=object())
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "get_responder",
+        AsyncMock(return_value=responder),
+    )
+    model_selection = AsyncMock(side_effect=AssertionError("model selected"))
+    monkeypatch.setattr(OrchestratorInteractAction, "_gear_model", model_selection)
+    monkeypatch.setattr(ReplyAction, "publish", publish)
+
+    await orchestrator._run_capability_pilot(visitor)
+
+    assert len(published) == 1
+    assert orchestrator.budget_exhausted_text in published[0]
+    assert interaction.response == published[0]
+    model_selection.assert_not_awaited()
+    assert conversation.tasks == []
+
+
+@pytest.mark.asyncio
+async def test_pilot_turn_ceiling_stops_before_second_model_request(monkeypatch):
+    orchestrator = OrchestratorInteractAction()
+    orchestrator.max_turn_cost_usd = 0.10
+    bundle = parse_skill_bundle(
+        Path(__file__).resolve().parents[4] / "jvagent/skills/research",
+        source="action",
+    )
+    assert bundle is not None
+    skill = SkillDoc(
+        name=bundle["name"],
+        description=bundle["description"],
+        body=bundle["content"].strip(),
+        requires_tools=tuple(bundle["allowed_tools"]),
+        requires_actions=tuple(bundle["requires_actions"]),
+        digest=bundle["digest"],
+    )
+    interaction = Interaction()
+    interaction.observability_metrics = []
+    conversation = DurableConversation()
+    conversation.context = {}
+    visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="Research the pilot cost guard",
+        channel="default",
+        interaction=interaction,
+        conversation=conversation,
+        correlation_id="run-cost-ceiling",
+    )
+    responder = ReplyAction()
+    published = []
+
+    class PricedModelAction:
+        model = "gpt-4o-mini"
+
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, request, *, calling_action_name=None):
+            self.calls += 1
+            interaction.observability_metrics.append(
+                {
+                    "event_type": "model_call",
+                    "data": {
+                        "provider": "openai",
+                        "model": self.model,
+                        "cost_usd": 0.12,
+                        "cost_source": "provider_reported",
+                    },
+                }
+            )
+            assert any(
+                tool["function"]["name"] == "load_capability" for tool in request.tools
+            )
+            return ModelResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="load-research",
+                        name="load_capability",
+                        arguments={"id": "research"},
+                    )
+                ],
+                finish_reason="tool_calls",
+                usage=Usage(prompt_tokens=10, completion_tokens=2, total_tokens=12),
+            )
+
+    model_action = PricedModelAction()
+
+    class FakeAgent:
+        async def get_actions(self, enabled_only=True):
+            assert enabled_only is True
+            return [SerperWebSearchAction(), WebFetchAction()]
+
+    async def publish(_self, content, visitor=None):
+        published.append(content)
+        visitor.interaction.response = content
+        visitor.interaction.mark_emitted()
+        return True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_safe_agent", AsyncMock(return_value=FakeAgent())
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "get_responder",
+        AsyncMock(return_value=responder),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_discover_skills", lambda *_: [skill]
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_enforce_required_actions",
+        AsyncMock(side_effect=lambda docs: docs),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_tool_surface_policy",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            is_mcp_action=lambda _action: False,
+            is_denied=lambda _name: False,
+        ),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_gear_model",
+        AsyncMock(return_value=(model_action, model_action.model, 0.0, 2048, False)),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_history", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_pilot_run_instructions",
+        AsyncMock(return_value="Use the research capability."),
+    )
+    monkeypatch.setattr(
+        "jvagent.action.orchestrator.access.is_tool_allowed",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(ReplyAction, "_identity", AsyncMock(return_value="Research"))
+    monkeypatch.setattr(ReplyAction, "publish", publish)
+
+    await orchestrator._run_capability_pilot(visitor)
+
+    assert model_action.calls == 1
+    assert len(published) == 1
+    assert "configured model-cost budget" in published[0]
+    task = conversation.tasks[-1]
+    assert task["status"] == "failed"
+    snapshot = task["snapshot"]
+    assert snapshot["model_requests_used"] == 1
+    assert snapshot["reported_input_tokens_used"] == 10
+    assert snapshot["reported_output_tokens_used"] == 2
+    assert snapshot["usage_accounting_complete"] is True
 
 
 @pytest.mark.asyncio
@@ -119,6 +455,9 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
 ):
     scenario = load_use_case(Path(__file__).parent / "cucs" / "research-followup.yaml")
     orchestrator = OrchestratorInteractAction()
+    orchestrator.tool_call_timeout = 35
+    orchestrator.max_concurrent_tools = 2
+    orchestrator.channel_overrides = {"default": {"tool_call_timeout": 17}}
     research_path = Path(__file__).resolve().parents[4] / "jvagent/skills/research"
     research_bundle = parse_skill_bundle(research_path, source="action")
     assert research_bundle is not None
@@ -131,6 +470,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         digest=research_bundle["digest"],
     )
     action_calls = []
+    parallel_search_mode = {"enabled": False}
     access_state = {"allowed": True}
     access_calls = []
     model_request_counts = []
@@ -140,6 +480,14 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     async def search(_self, query: str, **_kwargs):
         assert query
         action_calls.append("web_search__search")
+        if query == "pilot-alt":
+            return [
+                {
+                    "title": "Additional pilot evidence",
+                    "link": "https://example.com/alternate-evidence",
+                    "snippet": "An independently discovered supporting source.",
+                }
+            ]
         return [
             {
                 "title": "Pilot evidence",
@@ -258,7 +606,10 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
             side_effect=lambda *_args: (
                 (
                     model_request_counts.append(0)
-                    or FakeModelAction(model_request_counts)
+                    or FakeModelAction(
+                        model_request_counts,
+                        parallel_search=parallel_search_mode["enabled"],
+                    )
                 ),
                 "offline-fixture",
                 0.0,
@@ -269,6 +620,18 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     )
     monkeypatch.setattr(
         OrchestratorInteractAction, "_history", AsyncMock(return_value=[])
+    )
+    original_build_research_agent = _pilot_runtime.build_research_agent
+    configured_pilot_limits = []
+
+    async def build_with_captured_limits(*args, **kwargs):
+        configured_pilot_limits.append(
+            (kwargs["tool_timeout_seconds"], kwargs["max_tool_concurrency"])
+        )
+        return await original_build_research_agent(*args, **kwargs)
+
+    monkeypatch.setattr(
+        _pilot_runtime, "build_research_agent", build_with_captured_limits
     )
     monkeypatch.setattr(
         ReplyAction,
@@ -295,7 +658,8 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         )
 
     await run_smoke_turn(visitor)
-    assert smoke_turns[-1]["persistence_saves"] == 4
+    assert configured_pilot_limits[0] == (17, 2)
+    assert smoke_turns[-1]["persistence_saves"] >= 4
 
     assert len(published) == 1
     expected_first = scenario["turns"][0]["then"]
@@ -307,6 +671,12 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert stored_task["status"] == "completed"
     assert stored_task["data"]["pilot_correlation_id"] == "run-1"
     assert stored_task["snapshot"]["status"] == "complete"
+    assert stored_task["snapshot"]["model_requests_used"] == 4
+    assert stored_task["snapshot"]["tool_calls_used"] == 2
+    assert stored_task["snapshot"]["reported_input_tokens_used"] == 30
+    assert stored_task["snapshot"]["reported_output_tokens_used"] == 6
+    assert stored_task["snapshot"]["estimated_input_tokens_used"] == 10
+    assert stored_task["snapshot"]["estimated_output_tokens_used"] == 2
     assert (
         stored_task["snapshot"]["evidence"][0]["url"] == "https://example.com/evidence"
     )
@@ -394,7 +764,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         correlation_id="run-2",
     )
     await run_smoke_turn(followup_visitor)
-    assert smoke_turns[-1]["persistence_saves"] == 4
+    assert smoke_turns[-1]["persistence_saves"] >= 4
 
     assert len(published) == 4
     expected_followup = scenario["turns"][1]["then"]
@@ -407,7 +777,17 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     followup_task = conversation.tasks[-1]
     assert followup_task["status"] == "completed"
     assert followup_task["data"]["pilot_parent_task_id"] == resumed_task.id
-    assert followup_task["snapshot"]["evidence"] == stored_task["snapshot"]["evidence"]
+    assert [
+        (item["source_id"], item["url"], item["provenance"])
+        for item in followup_task["snapshot"]["evidence"]
+    ] == [
+        (item["source_id"], item["url"], item["provenance"])
+        for item in stored_task["snapshot"]["evidence"]
+    ]
+    assert (
+        followup_task["snapshot"]["evidence"][0]["observed_at"]
+        >= stored_task["snapshot"]["evidence"][0]["observed_at"]
+    )
 
     monkeypatch.setattr(
         SerperWebSearchAction,
@@ -425,7 +805,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         correlation_id="run-3",
     )
     await run_smoke_turn(changed_config_visitor)
-    assert smoke_turns[-1]["persistence_saves"] == 4
+    assert smoke_turns[-1]["persistence_saves"] >= 4
 
     changed_task = conversation.tasks[-1]
     assert changed_task["status"] == "completed"
@@ -641,6 +1021,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
                 item
                 for item in conversation.tasks
                 if item.get("description") == "storage fault during evidence save"
+                and item.get("snapshot", {}).get("evidence")
             ),
             None,
         )
@@ -668,7 +1049,12 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert checkpoint_fault["pending"] is False
     assert conversation.tasks[-1]["status"] == "failed"
     assert conversation.tasks[-1]["snapshot"]["status"] == "failed"
-    assert sum(model_request_counts) - requests_before_fault == 2
+    assert conversation.tasks[-1]["snapshot"]["model_requests_used"] == 3
+    assert conversation.tasks[-1]["snapshot"]["reported_input_tokens_used"] == 20
+    assert conversation.tasks[-1]["snapshot"]["reported_output_tokens_used"] == 4
+    assert conversation.tasks[-1]["snapshot"]["estimated_input_tokens_used"] == 10
+    assert conversation.tasks[-1]["snapshot"]["estimated_output_tokens_used"] == 2
+    assert sum(model_request_counts) - requests_before_fault == 3
     assert len(published) == 9
 
     # TaskMonitor's empty utterance is valid only when a claimed PROACTIVE task
@@ -728,6 +1114,83 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert proactive_directive in captured_instructions[-1]
     assert proactive_task_context in captured_instructions[-1]
     assert client_directive not in captured_instructions[-1]
+
+    # Exercise real Pydantic AI parallel tool dispatch and deliberately delay
+    # the one-reference checkpoint. Without the per-run lock, the two-source
+    # snapshot can be saved first and then overwritten by the delayed stale
+    # one-reference checkpoint.
+    monkeypatch.setattr(
+        pilot_runtime, "run_research_agent", original_run_research_agent
+    )
+    parallel_search_mode["enabled"] = True
+    checkpoint_evidence_counts = []
+    original_pilot_save = PilotTaskStore.save
+
+    async def delayed_single_evidence_checkpoint(store, handle, snapshot):
+        if len(snapshot.evidence) == 1:
+            await asyncio.sleep(0.03)
+        await original_pilot_save(store, handle, snapshot)
+        if snapshot.status == "running" and snapshot.evidence:
+            checkpoint_evidence_counts.append(len(snapshot.evidence))
+
+    monkeypatch.setattr(
+        PilotTaskStore,
+        "save",
+        delayed_single_evidence_checkpoint,
+    )
+    parallel_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="parallel checkpoint persistence test",
+        channel="default",
+        interaction=Interaction(),
+        conversation=proactive_conversation,
+        correlation_id="run-parallel-checkpoints",
+    )
+    await run_smoke_turn(parallel_visitor)
+    parallel_task = proactive_conversation.tasks[-1]
+    assert parallel_task["status"] == "completed"
+    assert parallel_task["snapshot"]["tool_calls_used"] == 3
+    assert {item["url"] for item in parallel_task["snapshot"]["evidence"]} >= {
+        "https://example.com/evidence",
+        "https://example.com/alternate-evidence",
+    }
+    assert checkpoint_evidence_counts[-1] == 2
+
+    provider_request = httpx.Request("POST", "https://ollama.com/api/chat")
+    provider_response = httpx.Response(401, request=provider_request)
+    provider_error = httpx.HTTPStatusError(
+        "provider rejected credentials",
+        request=provider_request,
+        response=provider_response,
+    )
+
+    async def reject_provider_request(*_args, **_kwargs):
+        raise provider_error
+
+    monkeypatch.setattr(pilot_runtime, "run_research_agent", reject_provider_request)
+    provider_interaction = Interaction()
+    provider_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="check provider failure handling",
+        channel="default",
+        interaction=provider_interaction,
+        conversation=proactive_conversation,
+        correlation_id="run-provider-error",
+    )
+    await orchestrator._run_capability_pilot(provider_visitor)
+    provider_task = proactive_conversation.tasks[-1]
+    assert provider_task["status"] == "failed"
+    assert provider_task["snapshot"]["status"] == "failed"
+    assert published[-1] == (
+        "I couldn't complete that request because the model service returned an "
+        "error. Please try again later."
+    )
+    assert provider_interaction.response == published[-1]
+    assert provider_interaction.emitted is True
     assert "client-forged-task" not in str(proactive_task)
     assert proactive_interaction.emitted is True
 

@@ -38,10 +38,13 @@ recovery qualification, and the final expansion/removal decision remain open.
    Action result, 20,000 total tokens, 2,000 output tokens, and 120 seconds
    per run (`PilotRunContext` defaults in
    [`contracts.py`](../../jvagent/action/orchestrator/pilot/contracts.py)).
-5. Treat the pilot as a read-only research witness with a separate typed output
-   for brief, non-factual conversational replies. Mutating operations remain
-   unavailable unless a separately qualified host effect invoker provides
-   approval, idempotency, receipt, and reconciliation semantics.
+5. Treat the current capability pilot as an evidence-backed research driver.
+   Every admitted skill must declare `output-contract: evidence_required`, and
+   fresh runs can return only `ResearchBrief`; source-free conversational
+   output is not a valid research result. Ordinary conversation remains on the
+   standard agent mode. Mutating operations remain unavailable unless a
+   separately qualified host effect invoker provides approval, idempotency,
+   receipt, and reconciliation semantics.
 6. Preserve pilot snapshots when reverting to `legacy`; legacy continuation
    must ignore pilot-owned tasks. Re-entry requires current contract and
    authority validation.

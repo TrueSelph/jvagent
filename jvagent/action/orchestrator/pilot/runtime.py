@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
 import json
-from collections.abc import Sequence
+import math
+import re
+from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
     ModelMessage,
@@ -26,17 +30,19 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
-from jvagent.action.model.contract import ModelRequest, ModelResponse
+from jvagent.action.model.contract import FinishReason, ModelRequest, ModelResponse
 from jvagent.action.orchestrator.pilot.contracts import (
-    ConversationalReply,
     EvidenceReference,
     PilotOutput,
     PilotRunContext,
     ResearchBrief,
+    normalize_evidence_url,
+    output_user_text,
 )
 from jvagent.action.orchestrator.pilot.tools import (
     AccessCheck,
     EffectInvoker,
+    ToolEventObserver,
     ToolResultObserver,
     compose_skill_tools,
 )
@@ -50,25 +56,48 @@ class PilotModelAdapterError(ValueError):
     finish_reason: str | None = None
 
 
+ReasoningObserver = Callable[[str], Awaitable[None] | None]
+RequestGuard = Callable[[], Awaitable[None] | None]
+ModelUsageObserver = Callable[[ModelResponse], Awaitable[None] | None]
+
+
+class PilotBudgetExceeded(RuntimeError):
+    """Host dollar policy stopped the pilot before another model request."""
+
+
 class PilotEvidenceCollector:
     """Collect bounded references returned by successful read-tool calls."""
 
     max_references = 30
     max_excerpt_chars = 1600
+    max_structured_result_chars = 256_000
 
     def __init__(self, references: Sequence[EvidenceReference] = ()) -> None:
-        self._references = {ref.source_id: ref for ref in references}
+        # Prior-run sources are deliberately not eligible in a new objective.
+        # A follow-up must retrieve current evidence instead of inheriting a
+        # stale, session-wide citation pool.
+        self._references: dict[str, EvidenceReference] = {}
+        self._fetch_aliases: dict[str, str] = {}
 
     @staticmethod
     def _normalize_url(value: Any) -> str:
-        raw = str(value or "").strip().rstrip(".,;:!?)]")
-        try:
-            parsed = urlsplit(raw)
-        except ValueError:
+        if not isinstance(value, str) or len(value) > 2048:
             return ""
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            return ""
-        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+        return normalize_evidence_url(value)
+
+    @staticmethod
+    def _source_id(identifier: Any, url: str) -> str:
+        action_id = str(identifier or "").strip()
+        if (
+            action_id
+            and len(action_id) <= 160
+            and re.fullmatch(r"[A-Za-z0-9._:-]+", action_id)
+        ):
+            url_digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+            return f"action:{action_id}:{url_digest}"
+        digest_input = f"{action_id}\0{url}" if action_id else url
+        digest = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+        return ("result-sha256:" if action_id else "url-sha256:") + digest
 
     async def observe(
         self,
@@ -84,9 +113,10 @@ class PilotEvidenceCollector:
         if not is_search and not is_fetch:
             return
 
-        title = ""
         excerpt = content[: self.max_excerpt_chars]
         try:
+            if len(content) > self.max_structured_result_chars:
+                raise ValueError("structured result exceeds observation limit")
             decoded = json.loads(content)
         except (TypeError, ValueError):
             decoded = None
@@ -110,14 +140,15 @@ class PilotEvidenceCollector:
             item_url = self._normalize_url(item.get("link") or item.get("url"))
             if not item_url or not is_search:
                 continue
-            identifier = str(item.get("id") or "").strip()
-            source_id = identifier or item_url
+            source_id = self._source_id(item.get("id"), item_url)
             snippet = str(item.get("snippet") or item.get("content") or "")
             ref = EvidenceReference(
                 source_id=source_id,
                 url=item_url,
                 title=str(item.get("title") or "")[:512],
                 excerpt=(snippet or content)[: self.max_excerpt_chars],
+                provenance="search_snippet",
+                observed_at=datetime.now(timezone.utc),
             )
             if (
                 source_id in self._references
@@ -125,37 +156,164 @@ class PilotEvidenceCollector:
             ):
                 self._references[source_id] = ref
 
-        if is_fetch and requested_url:
-            ref = EvidenceReference(
-                source_id=requested_url,
-                url=requested_url,
-                title=title,
-                excerpt=excerpt[: self.max_excerpt_chars],
+        # Fetch provenance comes from the Action's typed receipt, never text
+        # markers that could be forged by a page body or another Action.
+        tool_metadata = getattr(content, "tool_result_metadata", {})
+        fetch_result = (
+            tool_metadata.get("web_fetch_result", {})
+            if isinstance(tool_metadata, dict)
+            else {}
+        )
+        if is_fetch and isinstance(fetch_result, dict):
+            final_url = self._normalize_url(fetch_result.get("final_url"))
+            receipt_requested = self._normalize_url(fetch_result.get("requested_url"))
+            content_type = str(fetch_result.get("content_type") or "").lower()
+            source_line = next(
+                (
+                    line[len("# Source: ") :].strip()
+                    for line in content.splitlines()[:5]
+                    if line.startswith("# Source: ")
+                ),
+                "",
             )
-            if (
-                requested_url in self._references
-                or len(self._references) < self.max_references
-            ):
-                self._references[requested_url] = ref
+            rendered_source_url = self._normalize_url(source_line)
+            supported_content_type = not content_type or content_type in {
+                "text/html",
+                "application/xhtml",
+                "application/xhtml+xml",
+                "text/plain",
+                "application/json",
+                "text/markdown",
+            }
+            successful = (
+                fetch_result.get("outcome") == "success"
+                and fetch_result.get("http_status") == 200
+                and receipt_requested == requested_url
+                and bool(final_url)
+                and rendered_source_url == final_url
+                and supported_content_type
+            )
+            if successful:
+                title_line = next(
+                    (
+                        line
+                        for line in content.splitlines()[:5]
+                        if line.startswith("# Title: ")
+                    ),
+                    "",
+                )
+                ref = EvidenceReference(
+                    source_id=self._source_id("", final_url),
+                    url=final_url,
+                    title=title_line.removeprefix("# Title: ")[:512],
+                    excerpt=excerpt[: self.max_excerpt_chars],
+                    provenance="fetched_page",
+                    observed_at=datetime.now(timezone.utc),
+                )
+                if (
+                    ref.source_id in self._references
+                    or len(self._references) < self.max_references
+                ):
+                    self._references[ref.source_id] = ref
+                    self._fetch_aliases[requested_url] = ref.source_id
 
     def snapshot(self) -> tuple[EvidenceReference, ...]:
         """Return bounded references in deterministic order."""
 
         return tuple(self._references[key] for key in sorted(self._references))
 
+    def annotate_result(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        content: str,
+    ) -> str:
+        """Expose host-assigned source IDs alongside full Action results."""
+        if tool_name.endswith("__search"):
+            if len(content) > self.max_structured_result_chars:
+                return content
+            try:
+                decoded = json.loads(content)
+            except (TypeError, ValueError):
+                return content
+            if isinstance(decoded, list):
+                self._annotate_search_items(decoded)
+            elif isinstance(decoded, dict):
+                for key in ("results", "organic", "organic_results"):
+                    nested = decoded.get(key)
+                    if isinstance(nested, list):
+                        self._annotate_search_items(nested)
+                        break
+            return json.dumps(decoded, ensure_ascii=False, separators=(",", ":"))
+        elif tool_name.endswith(("__fetch", "__get")):
+            requested = self._normalize_url(args.get("url"))
+            if not requested:
+                return content
+            reference = next(
+                (
+                    item
+                    for source_id, item in self._references.items()
+                    if self._fetch_aliases.get(requested) == source_id
+                ),
+                None,
+            )
+            if reference is not None:
+                return content + f"\n\nObserved source ID: {reference.source_id}"
+        return content
+
+    def _annotate_search_items(self, values: list[Any]) -> None:
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            url = self._normalize_url(item.get("link") or item.get("url"))
+            reference = next(
+                (
+                    candidate
+                    for candidate in self._references.values()
+                    if candidate.url == url
+                ),
+                None,
+            )
+            if reference is not None:
+                item["pilot_source_id"] = reference.source_id
+
     def validate(self, output: PilotOutput) -> None:
-        """Require research citations to refer to an observed tool receipt."""
+        """Require each claim to quote a fresh, successfully fetched source."""
 
         if isinstance(output, ResearchBrief):
             known = set(self._references)
-            missing = set(output.source_ids) - known
+            requested = {
+                source_id
+                for finding in output.findings
+                for source_id in finding.source_ids
+            }
+            missing = requested - known
             if missing:
                 raise PilotModelAdapterError(
                     "research output cited sources not returned by an Action: "
                     + ", ".join(sorted(missing)[:5])
                 )
-        elif not isinstance(output, ConversationalReply):
-            raise PilotModelAdapterError("pilot returned an unsupported output type")
+            unusable = sorted(
+                source_id
+                for source_id in requested
+                if not self._references[source_id].url
+            )
+            if unusable:
+                raise PilotModelAdapterError(
+                    "research output cited Action results without a source URL: "
+                    + ", ".join(unusable[:5])
+                )
+            try:
+                output_user_text(output, self.snapshot())
+            except ValueError as exc:
+                raise PilotModelAdapterError(str(exc)) from exc
+        else:
+            # The current capability pilot is the evidence-backed research
+            # driver. Keep the legacy union only for reading prior snapshots;
+            # never accept source-free output from a fresh research run.
+            raise PilotModelAdapterError(
+                "research pilot requires evidence-backed ResearchBrief output"
+            )
 
 
 def _text_content(content: Any) -> str:
@@ -269,7 +427,13 @@ def _tool_definitions(info: AgentInfo) -> list[dict[str, Any]]:
 
 
 def function_model_for_action(
-    model_action: Any, *, model_id: str | None = None
+    model_action: Any,
+    *,
+    model_id: str | None = None,
+    reasoning_observer: ReasoningObserver | None = None,
+    request_guard: RequestGuard | None = None,
+    usage_observer: ModelUsageObserver | None = None,
+    request_overrides: dict[str, Any] | None = None,
 ) -> FunctionModel:
     """Adapt a configured JV ``LanguageModelAction`` to Pydantic AI's model API.
 
@@ -285,13 +449,54 @@ def function_model_for_action(
     async def request_model(
         messages: list[ModelMessage], info: AgentInfo
     ) -> PAIModelResponse:
+        if request_guard is not None:
+            guarded = request_guard()
+            if inspect.isawaitable(guarded):
+                await guarded
+        settings = dict(info.model_settings or {})
+        direct_settings = {
+            key: settings.pop(key)
+            for key in ("max_tokens", "temperature", "top_p")
+            if key in settings
+        }
+        request_controls = {
+            key: settings.pop(key)
+            for key in (
+                "tool_choice",
+                "parallel_tool_calls",
+                "response_format",
+                "reasoning_effort",
+                "reasoning",
+            )
+            if key in settings
+        }
+        extra_settings = dict(settings)
+        if "stop_sequences" in extra_settings:
+            extra_settings["stop"] = extra_settings.pop("stop_sequences")
+        overrides = dict(request_overrides or {})
+        unsupported_overrides = set(overrides) - {"reasoning", "reasoning_effort"}
+        if unsupported_overrides:
+            raise PilotModelAdapterError(
+                "unsupported host model request overrides: "
+                + ", ".join(sorted(unsupported_overrides))
+            )
+        reasoning = overrides.get("reasoning", request_controls.get("reasoning"))
+        reasoning_effort = overrides.get(
+            "reasoning_effort", request_controls.get("reasoning_effort")
+        )
         jv_request = ModelRequest(
             messages=_to_jv_messages(messages, instructions=info.instructions),
             model=model_id or str(getattr(model_action, "model", "") or "") or None,
             tools=_tool_definitions(info),
-            max_tokens=(info.model_settings or {}).get("max_tokens"),
-            temperature=(info.model_settings or {}).get("temperature"),
-            top_p=(info.model_settings or {}).get("top_p"),
+            tool_choice=request_controls.get("tool_choice"),
+            parallel_tool_calls=request_controls.get("parallel_tool_calls"),
+            response_format=request_controls.get("response_format"),
+            max_tokens=direct_settings.get("max_tokens"),
+            temperature=direct_settings.get("temperature"),
+            top_p=direct_settings.get("top_p"),
+            reasoning=reasoning,
+            reasoning_effort=reasoning_effort,
+            extra=extra_settings,
         )
         response = await complete(
             jv_request,
@@ -299,6 +504,26 @@ def function_model_for_action(
         )
         if not isinstance(response, ModelResponse):
             raise PilotModelAdapterError("JV ModelAdapter returned an invalid response")
+        if usage_observer is not None:
+            observed_usage = usage_observer(response)
+            if inspect.isawaitable(observed_usage):
+                await observed_usage
+        if response.finish_reason in (
+            FinishReason.LENGTH,
+            FinishReason.CONTENT_FILTER,
+            FinishReason.ERROR,
+        ):
+            error = PilotModelAdapterError(
+                "JV model response did not complete successfully "
+                f"(finish_reason={response.finish_reason}, "
+                f"completion_tokens={response.usage.completion_tokens})"
+            )
+            error.finish_reason = response.finish_reason
+            raise error
+        if reasoning_observer is not None and response.thinking.strip():
+            observed = reasoning_observer(response.thinking)
+            if inspect.isawaitable(observed):
+                await observed
         parts: list[Any] = []
         if response.text:
             parts.append(TextPart(response.text))
@@ -307,7 +532,25 @@ def function_model_for_action(
                 raise PilotModelAdapterError(
                     "JV model returned a tool call without identity"
                 )
-            parts.append(ToolCallPart(call.name, call.arguments, tool_call_id=call.id))
+            arguments = call.arguments
+            if call.raw_arguments:
+                try:
+                    raw_arguments = json.loads(call.raw_arguments)
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise PilotModelAdapterError(
+                        f"JV model returned malformed tool arguments for {call.name}"
+                    ) from exc
+                if not isinstance(raw_arguments, dict):
+                    raise PilotModelAdapterError(
+                        f"JV model returned non-object tool arguments for {call.name}"
+                    )
+                if raw_arguments != call.arguments:
+                    raise PilotModelAdapterError(
+                        f"JV model tool arguments disagree with preserved raw arguments "
+                        f"for {call.name}"
+                    )
+                arguments = raw_arguments
+            parts.append(ToolCallPart(call.name, arguments, tool_call_id=call.id))
         if not parts:
             error = PilotModelAdapterError(
                 "JV model returned neither text nor tool calls "
@@ -319,6 +562,7 @@ def function_model_for_action(
         return PAIModelResponse(
             parts=parts,
             model_name=response.model or None,
+            finish_reason=response.finish_reason,
             usage=RequestUsage(
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
@@ -338,6 +582,8 @@ async def capability_for_skill(
     access_check: AccessCheck,
     result_observer: ToolResultObserver | None = None,
     effect_invoker: EffectInvoker | None = None,
+    tool_event_observer: ToolEventObserver | None = None,
+    recoverable_tool_errors: frozenset[str] = frozenset(),
 ) -> Capability[Any]:
     """Compile one existing SOP and its explicitly declared Action tools."""
 
@@ -359,6 +605,10 @@ async def capability_for_skill(
         )
     if not skill.digest:
         raise PilotModelAdapterError(f"skill {skill.name!r} has no stable digest")
+    if skill.output_contract != "evidence_required":
+        raise PilotModelAdapterError(
+            f"skill {skill.name!r} must declare output-contract: evidence_required"
+        )
     if not skill.name:
         raise PilotModelAdapterError("skill name must be stable and non-empty")
     tools = await compose_skill_tools(
@@ -368,6 +618,8 @@ async def capability_for_skill(
         access_check=access_check,
         result_observer=result_observer,
         effect_invoker=effect_invoker,
+        tool_event_observer=tool_event_observer,
+        recoverable_tool_errors=recoverable_tool_errors,
     )
     return Capability(
         id=skill.name,
@@ -389,6 +641,14 @@ async def build_research_agent(
     effect_invoker: EffectInvoker | None = None,
     model_id: str | None = None,
     model_settings: dict[str, Any] | None = None,
+    tool_event_observer: ToolEventObserver | None = None,
+    reasoning_observer: ReasoningObserver | None = None,
+    request_guard: RequestGuard | None = None,
+    usage_observer: ModelUsageObserver | None = None,
+    request_overrides: dict[str, Any] | None = None,
+    recoverable_tool_errors: frozenset[str] = frozenset(),
+    tool_timeout_seconds: float | None = 45.0,
+    max_tool_concurrency: int = 1,
 ) -> Agent[PilotRunContext, PilotOutput]:
     """Build one run-scoped agent from the existing skill and Action surface."""
 
@@ -400,25 +660,68 @@ async def build_research_agent(
             access_check=access_check,
             result_observer=result_observer,
             effect_invoker=effect_invoker,
+            tool_event_observer=tool_event_observer,
+            recoverable_tool_errors=recoverable_tool_errors,
         )
         for skill, action_tools in skills
     ]
     names = [capability.id for capability in capabilities]
     if len(names) != len(set(names)):
         raise PilotModelAdapterError("skill names must be unique in a pilot run")
+    if not skills or any(
+        skill.output_contract != "evidence_required" for skill, _action_tools in skills
+    ):
+        raise PilotModelAdapterError(
+            "research pilot requires an evidence_required output contract"
+        )
+    normalized_tool_timeout: float | None = None
+    if tool_timeout_seconds is not None:
+        if isinstance(tool_timeout_seconds, bool) or not isinstance(
+            tool_timeout_seconds, (int, float)
+        ):
+            raise PilotModelAdapterError(
+                "tool timeout must be a finite non-negative number of seconds"
+            )
+        try:
+            timeout_value = float(tool_timeout_seconds)
+        except (OverflowError, ValueError) as exc:
+            raise PilotModelAdapterError(
+                "tool timeout must be a finite non-negative number of seconds"
+            ) from exc
+        if not math.isfinite(timeout_value) or timeout_value < 0:
+            raise PilotModelAdapterError(
+                "tool timeout must be a finite non-negative number of seconds"
+            )
+        normalized_tool_timeout = timeout_value or None
+    if (
+        isinstance(max_tool_concurrency, bool)
+        or not isinstance(max_tool_concurrency, int)
+        or not 1 <= max_tool_concurrency <= 8
+    ):
+        raise PilotModelAdapterError(
+            "pilot tool concurrency must be an integer from 1 through 8"
+        )
     # Pydantic AI 2.54's overload omits its public FunctionModel adapter in
     # static typing even though it is accepted at runtime.
-    model: Any = function_model_for_action(model_action, model_id=model_id)
+    model: Any = function_model_for_action(
+        model_action,
+        model_id=model_id,
+        reasoning_observer=reasoning_observer,
+        request_guard=request_guard,
+        usage_observer=usage_observer,
+        request_overrides=request_overrides,
+    )
     return Agent(  # type: ignore[call-overload]
         model,
         instructions=instructions,
-        output_type=PilotOutput,
+        # Research skills cannot select the source-free conversational branch.
+        output_type=ResearchBrief,
         deps_type=PilotRunContext,
         model_settings=model_settings,
         capabilities=capabilities,
         retries=2,
-        tool_timeout=45.0,
-        max_concurrency=1,
+        tool_timeout=normalized_tool_timeout,
+        max_concurrency=max_tool_concurrency,
         name="jvagent-skill-pilot",
     )
 
@@ -432,6 +735,19 @@ async def run_research_agent(
     message_history: Sequence[ModelMessage] | None = None,
 ) -> PilotOutput:
     """Run one bounded Pydantic AI loop and return validated pilot output."""
+
+    if evidence is not None:
+
+        def validate_evidence_output(
+            _ctx: RunContext[PilotRunContext], output: PilotOutput
+        ) -> PilotOutput:
+            try:
+                evidence.validate(output)
+            except PilotModelAdapterError as exc:
+                raise ModelRetry(str(exc)) from exc
+            return output
+
+        agent.output_validator(validate_evidence_output)
 
     result = await asyncio.wait_for(
         agent.run(
@@ -449,8 +765,10 @@ async def run_research_agent(
         ),
         timeout=run_context.max_runtime_seconds,
     )
-    if not isinstance(result.output, (ResearchBrief, ConversationalReply)):
-        raise PilotModelAdapterError("Pydantic AI returned an invalid pilot output")
+    if not isinstance(result.output, ResearchBrief):
+        raise PilotModelAdapterError(
+            "Pydantic AI returned output outside the research skill contract"
+        )
     if evidence is not None:
         evidence.validate(result.output)
     return result.output

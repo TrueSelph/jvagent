@@ -8,6 +8,7 @@ while held."""
 from __future__ import annotations
 
 import asyncio
+import builtins
 import sys
 import types
 
@@ -125,3 +126,37 @@ async def test_redis_lock_stops_renewing_after_release(monkeypatch):
     # No further renewals after the context exits.
     await asyncio.sleep(0.1)
     assert counts["renew"] == renews_at_release
+
+
+async def test_configured_redis_lock_fails_closed_without_client(monkeypatch):
+    original_import = builtins.__import__
+
+    def _without_redis(name, *args, **kwargs):
+        if name == "redis.asyncio":
+            raise ImportError("redis client unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _without_redis)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
+    monkeypatch.delenv("JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE", raising=False)
+
+    with pytest.raises(RuntimeError, match="redis>=5 is unavailable"):
+        async with dcl.conversation_mutation_lock("conv-no-redis-client"):
+            pytest.fail("must not silently downgrade to a process-local lock")
+
+
+async def test_configured_dynamodb_lock_fails_closed_without_client(monkeypatch):
+    original_import = builtins.__import__
+
+    def _without_boto3(name, *args, **kwargs):
+        if name == "boto3":
+            raise ImportError("boto3 unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _without_boto3)
+    monkeypatch.delenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", raising=False)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE", "conversation-locks")
+
+    with pytest.raises(RuntimeError, match="boto3 is unavailable"):
+        async with dcl.conversation_mutation_lock("conv-no-boto3"):
+            pytest.fail("must not silently downgrade to a process-local lock")

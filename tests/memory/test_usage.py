@@ -81,6 +81,30 @@ class TestInteractionComputeUsage:
         assert result["estimated_cost_usd"] > 0
         assert obj.usage == result
 
+    def test_failed_attempt_is_counted_separately_from_successful_usage(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_attempt",
+                "data": {"outcome": "failed", "duration": 0.42},
+            },
+            {
+                "event_type": "model_attempt",
+                "data": {"outcome": "cancelled", "duration": 0.08},
+            },
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["model_attempt_count"] == 2
+        assert result["failed_model_attempt_count"] == 1
+        assert result["cancelled_model_attempt_count"] == 1
+        assert result["model_attempt_duration_seconds"] == 0.5
+        assert result["model_call_count"] == 0
+        assert result["total_duration_seconds"] == 0
+        assert result["total_tokens"] == 0
+        assert result["total_cost_usd"] == 0
+
     def test_compute_usage_uses_litellm_cost_and_estimates_missing_calls(self):
         obj = _make_interaction_like()
         obj.observability_metrics = [
@@ -112,6 +136,87 @@ class TestInteractionComputeUsage:
         assert result["litellm_cost_usd"] == pytest.approx(0.0123)
         assert result["estimated_cost_usd"] == pytest.approx(0.004)
         assert result["total_cost_usd"] == pytest.approx(0.0163)
+
+    def test_compute_usage_preserves_zero_and_non_litellm_reported_costs(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "ollama",
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                    "cost_record": {
+                        "amount": 0,
+                        "currency": "USD",
+                        "source": "ollama_response",
+                        "estimated": False,
+                        "pricing_version": None,
+                    },
+                },
+            },
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "openai",
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+                    "cost_record": {
+                        "amount": 0.004,
+                        "currency": "USD",
+                        "source": "openai_response_cost",
+                        "estimated": False,
+                        "pricing_version": None,
+                    },
+                },
+            },
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["reported_cost_usd"] == pytest.approx(0.004)
+        assert result["estimated_cost_usd"] == 0
+        assert result["total_cost_usd"] == pytest.approx(0.004)
+        assert result["unknown_cost_call_count"] == 0
+
+    @pytest.mark.parametrize("invalid_cost", [float("nan"), float("inf")])
+    def test_compute_usage_rejects_non_finite_cost_and_estimates(self, invalid_cost):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+                    "cost_usd": invalid_cost,
+                },
+            }
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["estimated_cost_usd"] > 0
+        assert result["total_cost_usd"] == result["estimated_cost_usd"]
+        assert result["unknown_cost_call_count"] == 0
+
+    def test_compute_usage_does_not_call_unknown_provider_free(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_call",
+                "data": {
+                    "provider": "provider-without-pricing",
+                    "model": "mystery-model",
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+                },
+            }
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["reported_cost_usd"] == 0
+        assert result["estimated_cost_usd"] == 0
+        assert result["total_cost_usd"] == 0
+        assert result["unknown_cost_call_count"] == 1
 
     def test_compute_usage_mixed_events(self):
         """Model and embedding calls both counted."""
@@ -204,6 +309,9 @@ class TestUserAddUsageFromInteraction:
                 "total_tokens": 150,
                 "model_call_count": 1,
                 "estimated_cost_usd": 0.001,
+                "reported_cost_usd": 0.004,
+                "unknown_cost_call_count": 1,
+                "total_cost_usd": 0.005,
                 "total_duration_seconds": 0.5,
             }
             await user.add_usage_from_interaction(usage)
@@ -215,6 +323,9 @@ class TestUserAddUsageFromInteraction:
             assert stats["model_call_count"] == 1
             assert stats["interaction_count"] == 1
             assert stats["estimated_cost_usd"] == 0.001
+            assert stats["reported_cost_usd"] == 0.004
+            assert stats["unknown_cost_call_count"] == 1
+            assert stats["total_cost_usd"] == 0.005
             assert stats["last_updated"] is not None
         finally:
             await user.delete(cascade=True)

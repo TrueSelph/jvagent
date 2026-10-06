@@ -93,6 +93,21 @@ async def test_reply_publishes_literal_no_bus():
     assert v.interaction.response == "hi there"
 
 
+async def test_publish_reports_suppressed_bus_message_as_not_delivered():
+    ra = ReplyAction()
+    bus = SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(content="")))
+    visitor = SimpleNamespace(
+        interaction=SimpleNamespace(id="interaction-1", user_id="user-1"),
+        response_bus=bus,
+        session_id="session-1",
+        channel="default",
+        data={},
+    )
+
+    assert await ra.publish("answer", visitor) is False
+    bus.publish.assert_awaited_once()
+
+
 async def test_reply_is_slim_with_no_shaping(monkeypatch):
     """No directives/parameters → thin publish, no model call."""
     ra = ReplyAction()
@@ -234,6 +249,31 @@ async def test_respond_does_not_double_prefix(monkeypatch):
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "Tell the user the order shipped." in sysprompt
     assert "Tell the user or ask the user: Tell the user" not in sysprompt
+
+
+async def test_respond_model_failure_does_not_publish_prompt_or_directives(monkeypatch):
+    """A compose failure must not leak user text or internal prompt scaffolding."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(side_effect=RuntimeError("provider unavailable"))
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Internal workflow instruction."}])
+    v.interaction.utterance = "Private user request text."
+
+    result = await ra.respond(
+        v.interaction, visitor=v, text="Tell the user the task completed."
+    )
+
+    assert result == "I couldn't complete that reply just now. Please try again."
+    assert v.interaction.response == result
+    assert "Private user request text" not in result
+    assert "Internal workflow instruction" not in result
+    assert "MANDATORY" not in result
 
 
 async def test_respond_composes_message_with_params_only(monkeypatch):

@@ -1,31 +1,14 @@
 """Pilot turns preserve only authenticated host context and trusted JV rules."""
 
-import hashlib
-import hmac
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 import jvagent.action.orchestrator.session_context as session_context
-from jvagent.action.interact import session_token
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
-
-
-def _signed_context(*, secret: str, run_id: str, context: str) -> dict[str, str]:
-    body = json.dumps(
-        {"version": 1, "run_id": run_id, "context": context},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    signature = hmac.new(
-        secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
-    return {"body": body, "signature": signature}
 
 
 @pytest.mark.parametrize(
@@ -33,11 +16,7 @@ def _signed_context(*, secret: str, run_id: str, context: str) -> dict[str, str]
     [
         (
             "workspace-chat",
-            _signed_context(
-                secret="pilot-test-secret",
-                run_id="run-1",
-                context="Follow the authenticated host policy.",
-            ),
+            {"context": "untrusted client data"},
             "Follow the authenticated host policy.",
             True,
         ),
@@ -49,11 +28,7 @@ def _signed_context(*, secret: str, run_id: str, context: str) -> dict[str, str]
         ),
         (
             "default",
-            _signed_context(
-                secret="pilot-test-secret",
-                run_id="run-1",
-                context="Verified host policy.",
-            ),
+            {"context": "untrusted client data"},
             "Verified host policy.",
             True,
         ),
@@ -62,7 +37,6 @@ def _signed_context(*, secret: str, run_id: str, context: str) -> dict[str, str]
 async def test_pilot_instructions_include_only_verified_host_context(
     monkeypatch, channel, context, context_text, trusted
 ):
-    monkeypatch.setattr(session_token, "_secret", lambda: "pilot-test-secret")
     monkeypatch.setattr(
         session_context,
         "render_session_context",
@@ -78,6 +52,7 @@ async def test_pilot_instructions_include_only_verified_host_context(
     visitor = SimpleNamespace(
         channel=channel,
         data={"run_id": "run-1", "host_system_context": context},
+        _host_system_context=context_text if trusted else None,
     )
     responder = SimpleNamespace(
         _identity=AsyncMock(return_value="Agent identity."),
@@ -91,11 +66,11 @@ async def test_pilot_instructions_include_only_verified_host_context(
     assert "Agent identity." in instructions
     assert "Response policy." in instructions
     assert "SESSION CONTEXT: trusted clock and channel." in instructions
-    assert "activate the relevant skill" in instructions
-    assert "declared Actions" in instructions
-    assert "ResearchBrief.brief is the final user-facing response" in instructions
-    assert "follow its requested scope and format" in instructions
-    assert "restate the request in place of the answer" in instructions
+    assert "scoped to evidence-backed research" in instructions
+    assert "loaded research skill and only its declared Actions" in instructions
+    assert "each paired with source_ids observed in Action results" in instructions
+    assert "only from validated" in instructions
+    assert "do not put additional findings in other fields" in instructions
     assert "use the research Actions" not in instructions
     if channel == "workspace-chat":
         assert "Configured channel policy." in instructions

@@ -8,6 +8,8 @@ For AWS Lambda and other multi-worker deployments, set one of:
   (requires ``boto3``, table with string partition key ``lock_key``).
 
 If neither is configured, falls back to :class:`~jvagent.memory.lock_manager.MemoryLockManager`.
+If either backend is configured but its client dependency is missing, lock
+acquisition fails closed instead of silently downgrading to a process-local lock.
 """
 
 from __future__ import annotations
@@ -207,14 +209,10 @@ async def _redis_conversation_lock(
     try:
         import redis.asyncio as redis  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s is set but redis is not installed; "
-            "install redis>=5 or unset the URL to use the in-process lock",
-            _REDIS_URL_ENV,
+        raise RuntimeError(
+            f"{_REDIS_URL_ENV} is configured but redis>=5 is unavailable; "
+            "install the Redis client or remove the distributed-lock setting"
         )
-        async with _fallback_memory_lock(conversation_id):
-            yield
-        return
 
     ttl = _lock_ttl_seconds()
     key = f"{_LOCK_PREFIX}{conversation_id}"
@@ -306,14 +304,10 @@ async def _dynamo_conversation_lock(
         import boto3  # type: ignore[import-untyped]
         from botocore.exceptions import ClientError  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s is set but boto3 is not installed; "
-            "pip install boto3 or unset the table to use the in-process lock",
-            _DYNAMO_TABLE_ENV,
+        raise RuntimeError(
+            f"{_DYNAMO_TABLE_ENV} is configured but boto3 is unavailable; "
+            "install boto3 or remove the distributed-lock setting"
         )
-        async with _fallback_memory_lock(conversation_id):
-            yield
-        return
 
     ttl_sec = _dynamo_ttl_seconds()
     lock_key = f"conversation:{conversation_id}"
@@ -432,13 +426,3 @@ async def _dynamo_conversation_lock(
             except asyncio.CancelledError:
                 pass
         await asyncio.to_thread(release)
-
-
-@asynccontextmanager
-async def _fallback_memory_lock(conversation_id: str) -> AsyncIterator[None]:
-    from jvagent.memory.lock_manager import get_conversation_lock_manager
-
-    lock_mgr = get_conversation_lock_manager()
-    lock = await lock_mgr.acquire(conversation_id)
-    async with lock:
-        yield

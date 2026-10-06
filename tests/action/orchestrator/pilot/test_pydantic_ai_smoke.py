@@ -20,6 +20,7 @@ from jvagent.action.orchestrator.pilot.runtime import (  # noqa: E402
     PilotModelAdapterError,
     capability_for_skill,
 )
+from jvagent.action.orchestrator.pilot.tools import compose_skill_tools  # noqa: E402
 from jvagent.action.orchestrator.skills import SkillDoc  # noqa: E402
 from jvagent.tooling.tool import Tool as JVTool  # noqa: E402
 
@@ -51,6 +52,84 @@ def test_compiler_rejects_unimplemented_skill_frontmatter() -> None:
                 access_check=lambda *_args: True,
             )
         )
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_error"),
+    [
+        (
+            {"query": "safe", "_tool_name": "web_fetch__fetch"},
+            "reserved authority or binding fields",
+        ),
+        ({"query": 123}, "invalid arguments for tool"),
+    ],
+)
+def test_agent_run_rejects_spoofed_or_schema_invalid_tool_arguments(
+    arguments, expected_error
+) -> None:
+    action_calls = []
+    access_checks = []
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="Use the search Action.",
+        requires_tools=("web_search__search",),
+        requires_actions=("SearchAction",),
+        digest="skill-sha256",
+    )
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+
+    async def search(query: str) -> str:
+        action_calls.append(query)
+        return "should never execute"
+
+    async def access_check(_ctx, _skill, label, _args):
+        access_checks.append(label)
+        return label == "web_search__search"
+
+    tool = JVTool(
+        name="web_search__search",
+        description="Search",
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": True,
+        },
+        execute=search,
+    )
+    (bound,) = asyncio.run(
+        compose_skill_tools(
+            skill,
+            [("SearchAction", tool)],
+            run_context=context,
+            access_check=access_check,
+        )
+    )
+
+    def respond(_messages, _info):
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "web_search__search",
+                    arguments,
+                )
+            ]
+        )
+
+    agent = Agent(FunctionModel(respond), tools=[bound], output_type=str, retries=0)
+    with pytest.raises(Exception, match=expected_error):
+        asyncio.run(agent.run("search safely", deps=context))
+
+    assert action_calls == []
+    assert access_checks == []
 
 
 def test_deferred_skill_calls_existing_named_tool_and_returns_typed_output() -> None:
@@ -103,10 +182,13 @@ def test_deferred_skill_calls_existing_named_tool_and_returns_typed_output() -> 
 
     expected = {
         "question": "pilot architecture",
-        "findings": ["The pilot keeps skill instructions and Action tools together."],
-        "source_ids": ["source-1"],
+        "findings": [
+            {
+                "claim": "The pilot keeps skill instructions and Action tools together.",
+                "source_ids": ["source-1"],
+            }
+        ],
         "limitations": [],
-        "brief": "Finding supported by source-1.",
     }
 
     def respond(messages, info):

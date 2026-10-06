@@ -122,6 +122,14 @@ async def test_html_extracted_to_markdown(monkeypatch):
         [_Resp(headers={"content-type": "text/html; charset=utf-8"}, content=html)],
     )
     out = await WebFetchAction().fetch("https://example.com/post")
+    receipt = out.tool_result_metadata["web_fetch_result"]
+    assert receipt == {
+        "outcome": "success",
+        "requested_url": "https://example.com/post",
+        "final_url": "https://example.com/post",
+        "content_type": "text/html",
+        "http_status": 200,
+    }
     assert "# Source: https://example.com/post" in out
     assert "Title: My Page" in out
     assert "UNTRUSTED WEB CONTENT" in out
@@ -244,7 +252,11 @@ async def test_redirect_repins_each_hop(monkeypatch):
             _Resp(headers={"content-type": "text/plain"}, content=b"done"),
         ],
     )
-    await WebFetchAction().fetch("https://example.com/start")
+    out = await WebFetchAction().fetch("https://example.com/start")
+    receipt = out.tool_result_metadata["web_fetch_result"]
+    assert receipt["requested_url"] == "https://example.com/start"
+    assert receipt["final_url"] == "https://example.com/final"
+    assert receipt["outcome"] == "success"
     # Two requests built, both pinned to the validated IP.
     assert len(_LAST_REQUESTS) == 2
     assert all(str(r.url).startswith("https://93.184.216.34") for r in _LAST_REQUESTS)

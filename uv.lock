@@ -2328,6 +2328,7 @@ pageindex = [
     { name = "tabulate" },
 ]
 pydantic-pilot = [
+    { name = "jsonschema" },
     { name = "pydantic-ai-slim" },
 ]
 test = [
@@ -2376,6 +2377,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "jsonschema", marker = "extra == 'pydantic-pilot'", specifier = ">=4.23,<5" },
     { name = "jvspatial", specifier = "==0.1.1" },
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.101.0,<1.102" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.101.0,<1.102" },

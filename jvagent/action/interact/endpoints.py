@@ -654,10 +654,6 @@ async def interact_endpoint(
             },
         )
 
-    from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
-
-    empty_host_turn = allows_empty_host_utterance(data)
-
     # Validate utterance length
     is_valid, error_message = rate_limiter.validate_utterance_length(utterance)
     if not is_valid:
@@ -702,15 +698,6 @@ async def interact_endpoint(
                     details={"agent_id": agent_id},
                 )
 
-            if not utterance or not utterance.strip():
-                if empty_host_turn:
-                    pass
-                else:
-                    raise ValidationError(
-                        message="utterance is required and cannot be empty",
-                        details={"utterance": utterance},
-                    )
-
             # Identity guard (ADR-0020): resolve Mode A bearer / Mode B session
             # token BEFORE spawning the walker (and before any LLM cost). In
             # `off` mode this is a no-op; in `log` mode denials are observed but
@@ -754,6 +741,22 @@ async def interact_endpoint(
             # A proven identity (Mode A bearer / Mode B token) overrides any
             # client-asserted user_id; otherwise fall back to the client value.
             effective_user_id = identity.verified_user_id or user_id
+
+            if not utterance or not utterance.strip():
+                from jvagent.action.orchestrator.host_context import (
+                    allows_empty_host_utterance,
+                )
+
+                if not allows_empty_host_utterance(
+                    data,
+                    agent_id=agent_id,
+                    user_id=str(effective_user_id or ""),
+                    session_id=str(session_id or ""),
+                ):
+                    raise ValidationError(
+                        message="utterance is required and cannot be empty",
+                        details={"utterance": utterance},
+                    )
 
             # Create walker
             walker = InteractWalker(

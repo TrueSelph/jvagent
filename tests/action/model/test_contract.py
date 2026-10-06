@@ -112,6 +112,22 @@ def test_usage_preserves_optional_cost_metadata():
 
     assert usage.cost_usd == 0.0123
     assert usage.cost_source == "litellm_response_cost"
+    zero = Usage.from_metrics(
+        {
+            "cost_record": {
+                "amount": 0.0,
+                "currency": "USD",
+                "source": "ollama_response",
+                "estimated": False,
+                "pricing_version": None,
+            }
+        }
+    )
+    assert zero.cost_usd == 0.0
+    assert zero.cost_source == "ollama_response"
+    assert zero.cost_currency == "USD"
+    assert zero.cost_estimated is False
+    assert Usage.from_metrics({"cost_usd": float("nan")}).cost_usd is None
     reasoning = Usage.from_metrics(
         {
             "prompt_tokens": 1,

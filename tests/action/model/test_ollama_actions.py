@@ -117,6 +117,28 @@ async def test_ollama_cloud_usage_gets_marked_cost_estimate():
 
 
 @pytest.mark.asyncio
+async def test_ollama_reported_zero_cost_is_not_replaced_by_estimate():
+    from jvagent.action.model.language.base import ModelActionResult
+
+    action = OllamaLanguageModelAction(model="glm-5.3:cloud")
+    result = ModelActionResult(
+        usage={"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000},
+        model="glm-5.3:cloud",
+        provider="ollama",
+    )
+    result.metrics["cost_usd"] = 0.0
+    result.metrics["cost_source"] = "ollama_response"
+
+    await action.track_usage(
+        {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000}, result=result
+    )
+
+    assert result.metrics["cost_usd"] == 0.0
+    assert result.metrics["cost_source"] == "ollama_response"
+    assert action.total_cost == 0.0
+
+
+@pytest.mark.asyncio
 async def test_ollama_lm_query_sync_normalizes_tool_calls():
     action = OllamaLanguageModelAction()
     action._http_client = _MockHttpClient(

@@ -6,6 +6,7 @@ per-call cost estimation from observability event data.
 """
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,69 @@ _DEFAULT_INPUT_RATE = 1.0
 _DEFAULT_OUTPUT_RATE = 2.0
 _DEFAULT_EMBEDDING_RATE = 0.10
 _UNKNOWN_PROVIDER_WARNED: set[str] = set()
+
+
+def is_valid_cost_usd(value: Any) -> bool:
+    """Whether *value* is a finite, non-negative USD amount (including zero)."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and float(value) >= 0.0
+    )
+
+
+def reported_cost_record(metrics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build the provider-neutral record for an explicit cost receipt."""
+    if "cost_usd" not in metrics or not is_valid_cost_usd(metrics.get("cost_usd")):
+        return None
+    source = str(metrics.get("cost_source") or "provider_reported")[:128]
+    estimated = bool(metrics.get("cost_estimated")) or source == "jv_cost_estimator"
+    return {
+        "amount": float(metrics["cost_usd"]),
+        "currency": "USD",
+        "source": source,
+        "estimated": estimated,
+        "pricing_version": metrics.get("pricing_version"),
+    }
+
+
+def estimated_cost_record(
+    model: str, provider: str, usage: Dict[str, Any], event_type: str
+) -> Dict[str, Any]:
+    """Estimate cost and retain the pricing provenance or unknown state."""
+    estimate = estimate_cost(model, provider, usage, event_type)
+    pricing = pricing_for(provider, model)
+    if pricing is not None:
+        source = "jv_cost_estimator"
+        version = f"{pricing.source}-pricing-v1"
+        amount: Optional[float] = estimate
+    elif (provider or "").strip().lower() in {
+        "openai",
+        "openrouter",
+        "anthropic",
+        "ollama",
+        "litellm",
+        "",
+    }:
+        # estimate_cost deliberately applies its conservative fallback for
+        # unknown model IDs on supported providers.
+        source = "jv_cost_estimator"
+        version = "conservative-fallback-v1"
+        amount = estimate
+    else:
+        # An unknown provider's zero estimate is not evidence of free usage.
+        source = "unavailable_pricing"
+        version = None
+        amount = None
+    return {
+        "amount": amount,
+        "currency": "USD",
+        "source": source,
+        "estimated": True,
+        "pricing_version": version,
+    }
+
 
 # Prompt-cache token rates, as multipliers on a model's normal input rate.
 # Cached input is not free and not full price, and an agentic loop resends a
