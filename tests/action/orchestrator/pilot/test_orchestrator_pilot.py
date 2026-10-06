@@ -212,7 +212,7 @@ async def test_unconfirmed_final_egress_remains_recoverable():
 
 
 @pytest.mark.asyncio
-async def test_saved_delivery_ack_completes_after_restart_without_resending():
+async def test_acknowledged_delivery_completes_after_crash_without_resending():
     from jvagent.action.orchestrator.pilot.state import PilotTaskStore
 
     conversation = DurableConversation()
@@ -255,10 +255,31 @@ async def test_saved_delivery_ack_completes_after_restart_without_resending():
     message_id = (
         "o.ResponseMessage.pilot_" + hashlib.sha256(handle.id.encode()).hexdigest()[:24]
     )
-    attempted = await tasks.record_delivery_attempt(
-        handle, pending, message_id=message_id
-    )
-    await tasks.acknowledge_delivery(handle, attempted, message_id=message_id)
+    published = []
+
+    class Responder:
+        async def publish(self, content, *, visitor, message_id=None):
+            published.append((content, message_id))
+            return True
+
+    async def crash_before_terminal_commit(*_args, **_kwargs):
+        raise OSError("simulated process loss before task completion")
+
+    tasks.complete = crash_before_terminal_commit
+    with pytest.raises(PilotDeliveryPendingError):
+        await _publish_pending_pilot_output(
+            Responder(),
+            SimpleNamespace(),
+            SimpleNamespace(has_emitted=lambda: True),
+            tasks,
+            handle,
+            pending,
+        )
+
+    assert len(published) == 1
+    assert published[0][1] == message_id
+    assert handle.snapshot["status"] == "delivery_pending"
+    assert handle.snapshot["delivery_acknowledged"] is True
 
     recovered_conversation = DurableConversation()
     recovered_conversation.tasks = deepcopy(conversation.tasks)
