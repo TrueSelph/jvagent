@@ -14,6 +14,10 @@ def test_research_eval_manifest_has_ten_complete_independent_cases() -> None:
     manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     assert manifest["schema"] == "jvagent.pilot-eval/v1"
+    protocol = path.with_name(manifest["blind_review_protocol"])
+    assert protocol.is_file()
+    assert "exact quote can still fail" in protocol.read_text(encoding="utf-8")
+    assert "independent human review" in protocol.read_text(encoding="utf-8")
     assert set(manifest["rubric"]["dimensions"]) == {
         "evidence_support",
         "citation_coverage",
@@ -69,6 +73,9 @@ def test_surface_evaluator_flags_unsupported_claims_missing_sources_and_reply_es
         },
     )
     assert passed["passed"] is True
+    assert passed["mechanical_checks_passed"] is True
+    assert passed["fully_qualified"] is False
+    assert passed["qualification_status"] == "pending_blind_review"
     assert passed["findings_with_unobserved_supporting_quotes"] == []
     assert passed["semantic_entailment_assessed"] is False
 
@@ -80,6 +87,47 @@ def test_surface_evaluator_flags_unsupported_claims_missing_sources_and_reply_es
     assert "factual_case_used_non_research_output" in escaped["failures"]
     assert "prohibited_claim_phrase_present" in escaped["failures"]
     assert "required_source_id_missing" in escaped["failures"]
+
+
+def test_exact_quote_with_invalid_causal_inference_still_requires_blind_review():
+    case = {
+        "required_claims": ["revenue rose after launch"],
+        "prohibited_claims": [],
+        "required_source_ids": ["SRC-REVENUE"],
+        "sources": [
+            {
+                "id": "SRC-REVENUE",
+                "url": "https://fixtures.example.test/revenue/quarterly",
+                "text": (
+                    "Revenue rose after launch. The record does not establish "
+                    "what caused the increase."
+                ),
+            }
+        ],
+    }
+    output = {
+        "findings": [
+            {
+                "claim": (
+                    "Revenue rose after launch; therefore the launch caused "
+                    "the rise."
+                ),
+                "source_ids": ["SRC-REVENUE"],
+                "supporting_source_id": "SRC-REVENUE",
+                "supporting_quote": "Revenue rose after launch.",
+            }
+        ]
+    }
+
+    result = score_case_output(case, output)
+
+    # Exact quote and phrase checks can pass a non-entailing causal claim.
+    # This output must remain explicitly unqualified until blinded semantic
+    # reviewers assess it.
+    assert result["mechanical_checks_passed"] is True
+    assert result["semantic_entailment_assessed"] is False
+    assert result["qualification_status"] == "pending_blind_review"
+    assert result["fully_qualified"] is False
 
 
 def test_surface_evaluator_does_not_mistake_missing_claims_for_semantic_validation():
@@ -106,6 +154,7 @@ def test_surface_evaluator_does_not_mistake_missing_claims_for_semantic_validati
         },
     )
     assert result["passed"] is False
+    assert result["qualification_status"] == "mechanical_failure"
     assert result["missing_required_claim_phrases"] == ["the vote count is not stated"]
     assert result["semantic_entailment_assessed"] is False
 

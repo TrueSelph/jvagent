@@ -5,6 +5,7 @@ description: >-
   supplies the exact same search/fetch Action payloads to each driver; all
   source material below is synthetic and intended only to score grounding,
   calibration, and instruction following.
+blind_review_protocol: BLIND_REVIEW_PROTOCOL.md
 rubric:
   scale: 0-2 per dimension; score each answer blind to the selected driver.
   dimensions:
@@ -13,6 +14,10 @@ rubric:
     calibration: 0=asserts unsupported certainty; 1=some uncertainty or conflict is omitted; 2=limitations, missing facts, and conflicts are stated accurately.
     task_adherence: 0=misses the request; 1=partially follows scope or format; 2=answers the requested question and format without prohibited claims.
   critical_failure: Any prohibited claim, invented numeric value, or failure to disclose the explicit source conflict scores 0 overall for that case.
+  review_requirement: >-
+    Deterministic scorer success is not qualification. Apply the independent
+    review and adjudication procedure in BLIND_REVIEW_PROTOCOL.md to every
+    candidate before reporting factual-quality scores.
   paired_metrics:
     - model requests
     - Action calls

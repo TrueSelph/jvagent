@@ -111,7 +111,14 @@ def score_case_output(
     if unobserved_supporting_quotes:
         failures.append("supporting_quote_not_observed")
     return {
+        # Keep the historical key for tooling compatibility, but make its scope
+        # explicit: it means lexical/citation checks only, never harness quality.
         "passed": not failures,
+        "mechanical_checks_passed": not failures,
+        "fully_qualified": False,
+        "qualification_status": (
+            "mechanical_failure" if failures else "pending_blind_review"
+        ),
         "output_mode": output_mode,
         "missing_required_claim_phrases": missing_required,
         "present_prohibited_claim_phrases": present_prohibited,
