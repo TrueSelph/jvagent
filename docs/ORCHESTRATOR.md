@@ -434,9 +434,14 @@ Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch
 
 `skill_runtime` defaults to `legacy`. Setting it to `capability_pilot` chooses
 one Pydantic AI run at the existing Orchestrator execute boundary; the two loops
-do not nest. This pilot currently admits only the existing `research` SOP with
-the unchanged `SerperWebSearchAction.web_search__search` and
-`WebFetchAction.web_fetch__fetch` operations. Tool calls are rechecked through
+do not nest. `pilot_skill` selects one enabled JV skill by exact name and defaults
+to `research`. A selected skill must declare `output-contract: evidence_required`
+and satisfy the pilot's existing research evidence contract; the selector does
+not make arbitrary output shapes or task flows compatible. The pilot requires
+the host evidence operations `SerperWebSearchAction.web_search__search` and
+`WebFetchAction.web_fetch__fetch`, alongside any additional tools explicitly
+declared by the selected skill when their Actions declare `effect_class: read`.
+Tool calls are rechecked through
 the existing AccessControl boundary. Fresh pilot runs require `ResearchBrief`
 with citation-bearing findings whose source IDs resolve to URLs observed in
 Action results; the legacy `ConversationalReply` shape is retained only to read
@@ -469,6 +474,7 @@ actions:
     context:
       enabled: true
       skill_runtime: capability_pilot
+      pilot_skill: research       # exact enabled JV skill name; evidence contract required
       pilot_max_model_requests: 32
       pilot_max_tool_calls: 48
       pilot_max_total_tokens: 100000

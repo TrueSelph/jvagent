@@ -370,10 +370,13 @@ async def test_failed_send_persists_replayable_attempt_without_acknowledgment():
 class FakeModelAction:
     model = "offline-fixture"
 
-    def __init__(self, request_counts=None, *, parallel_search=False):
+    def __init__(
+        self, request_counts=None, *, parallel_search=False, skill_id="research"
+    ):
         self.calls = 0
         self.request_counts = request_counts
         self.parallel_search = parallel_search
+        self.skill_id = skill_id
 
     async def complete(self, request, *, calling_action_name=None):
         self.calls += 1
@@ -386,7 +389,7 @@ class FakeModelAction:
                     ToolCall(
                         id="load-1",
                         name="load_capability",
-                        arguments={"id": "research"},
+                        arguments={"id": self.skill_id},
                     )
                 ],
                 finish_reason="tool_calls",
@@ -899,13 +902,14 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     research_bundle = parse_skill_bundle(research_path, source="action")
     assert research_bundle is not None
     skill = SkillDoc(
-        name=research_bundle["name"],
+        name="market_research",
         description=research_bundle["description"],
         body=research_bundle["content"].strip(),
         requires_tools=tuple(research_bundle["allowed_tools"]),
         requires_actions=tuple(research_bundle["requires_actions"]),
         digest=research_bundle["digest"],
     )
+    orchestrator.pilot_skill = "market_research"
     action_calls = []
     parallel_search_mode = {"enabled": False}
     access_state = {"allowed": True}
@@ -1067,6 +1071,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
                     or FakeModelAction(
                         model_request_counts,
                         parallel_search=parallel_search_mode["enabled"],
+                        skill_id="market_research",
                     )
                 ),
                 "offline-fixture",
@@ -1152,7 +1157,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     retry_task = await TaskStore(conversation).create(
         title="interrupted research",
         description=original_snapshot.question,
-        owner_action="research",
+        owner_action=original_snapshot.skill_id,
         task_type=PILOT_TASK_TYPE,
         initial_status="active",
         snapshot=retry_running.model_dump(mode="json"),

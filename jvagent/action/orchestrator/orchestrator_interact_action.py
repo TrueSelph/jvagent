@@ -418,8 +418,16 @@ class OrchestratorInteractAction(
         description=(
             "Execution driver for JV SOP skills: 'legacy' (default) or the "
             "experimental 'capability_pilot'. The pilot requires the optional "
-            "pydantic-pilot extra and currently supports the configured "
-            "pilot_skill only."
+            "pydantic-pilot extra and the selected pilot_skill."
+        ),
+    )
+    pilot_skill: str = attribute(
+        default="research",
+        description=(
+            "Name of the one enabled JV SKILL.md capability run by "
+            "skill_runtime=capability_pilot. The selected skill must declare "
+            "output-contract: evidence_required and use the supported research "
+            "evidence contract. Defaults to 'research'."
         ),
     )
     pilot_max_model_requests: int = attribute(
@@ -1558,7 +1566,9 @@ class OrchestratorInteractAction(
                 "capability pilot cannot bypass pending ReplyAction directives"
             )
 
-        pilot_skill_name = "research"
+        pilot_skill_name = str(self.pilot_skill or "").strip()
+        if not pilot_skill_name or len(pilot_skill_name) > 128:
+            raise RuntimeError("capability pilot requires a valid pilot_skill name")
         docs = await self._enforce_required_actions(self._discover_skills(agent))
         docs = [
             doc
@@ -1572,6 +1582,11 @@ class OrchestratorInteractAction(
                 f"pilot skill {pilot_skill_name!r} is unavailable for channel {channel!r}"
             )
         skill = docs[0]
+        if getattr(skill, "output_contract", "") != "evidence_required":
+            raise RuntimeError(
+                f"pilot skill {pilot_skill_name!r} must declare "
+                "output-contract: evidence_required"
+            )
         if getattr(skill, "task_lock", False) or getattr(skill, "requires_tasks", ()):
             raise RuntimeError(
                 f"pilot skill {pilot_skill_name!r} requires unsupported flow semantics"
@@ -1644,6 +1659,7 @@ class OrchestratorInteractAction(
             )
         config_material = {
             "skill": skill.digest,
+            "skill_name": skill.name,
             "actions": required_tool_configs,
             "action_versions": required_action_versions,
             "channel": channel,
