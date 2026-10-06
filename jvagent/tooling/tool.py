@@ -1,6 +1,6 @@
 import inspect
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 
 from jvagent.tooling.tool_result import ToolResult
 
@@ -29,6 +29,7 @@ class Tool:
     terminal: Optional[bool] = None
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[Any] = None
+    effect_class: Optional[Literal["read", "write", "external"]] = None
 
     def __post_init__(self) -> None:
         if not self.parameters_schema:

@@ -12,11 +12,144 @@ from jvagent.action.orchestrator.pilot.tools import (
     PilotToolOutcome,
     _bound_tool_result,
     compose_skill_tools,
+    validate_skill_action_tools,
 )
 from jvagent.action.orchestrator.skills import SkillDoc
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_result import ToolResult, ToolResultText
+
+
+@pytest.mark.asyncio
+async def test_skill_action_admission_composes_declared_read_only_extensions():
+    skill = SkillDoc(
+        name="research",
+        description="Evidence-first research",
+        body="Use the inventory lookup when relevant, then cite fetched sources.",
+        requires_tools=(
+            "web_search__search",
+            "web_fetch__fetch",
+            "inventory__lookup",
+        ),
+        requires_actions=(
+            "SerperWebSearchAction",
+            "WebFetchAction",
+            "InventoryAction",
+        ),
+    )
+    reads = []
+
+    async def lookup(record_id: str) -> str:
+        reads.append(record_id)
+        return f"record {record_id}"
+
+    action_tools = [
+        (
+            "SerperWebSearchAction",
+            Tool("web_search__search", "Search", execute=lambda: ""),
+        ),
+        (
+            "WebFetchAction",
+            Tool("web_fetch__fetch", "Fetch", execute=lambda: ""),
+        ),
+        (
+            "InventoryAction",
+            Tool(
+                "inventory__lookup",
+                "Read inventory records",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {"record_id": {"type": "string"}},
+                    "required": ["record_id"],
+                    "additionalProperties": False,
+                },
+                execute=lookup,
+                effect_class="read",
+            ),
+        ),
+    ]
+
+    selected = validate_skill_action_tools(skill, action_tools)
+    assert selected == tuple(action_tools)
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    bindings = await compose_skill_tools(
+        skill,
+        selected,
+        run_context=context,
+        access_check=lambda *_args: True,
+    )
+    assert {binding.name for binding in bindings} == {
+        "web_search__search",
+        "web_fetch__fetch",
+        "inventory__lookup",
+    }
+    composed = await compose_skill_tools(
+        SkillDoc(
+            name="research",
+            description="Research",
+            body="",
+            requires_tools=("inventory__lookup",),
+            requires_actions=("InventoryAction",),
+        ),
+        selected,
+        run_context=context,
+        access_check=lambda *_args: True,
+    )
+    assert len(composed) == 1
+    assert (
+        await composed[0].function(
+            SimpleNamespace(deps=context, tool_call_id="inventory-call"),
+            record_id="item-7",
+        )
+        == "record item-7"
+    )
+    assert reads == ["item-7"]
+
+
+@pytest.mark.parametrize("effect_class", [None, "write", "external"])
+def test_skill_action_admission_rejects_unclassified_or_effectful_extensions(
+    effect_class,
+):
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="",
+        requires_tools=(
+            "web_search__search",
+            "web_fetch__fetch",
+            "inventory__lookup",
+        ),
+        requires_actions=("SerperWebSearchAction", "WebFetchAction", "InventoryAction"),
+    )
+    action_tools = [
+        (
+            "SerperWebSearchAction",
+            Tool("web_search__search", "Search", execute=lambda: ""),
+        ),
+        (
+            "WebFetchAction",
+            Tool("web_fetch__fetch", "Fetch", execute=lambda: ""),
+        ),
+        (
+            "InventoryAction",
+            Tool(
+                "inventory__lookup",
+                "Inventory operation",
+                execute=lambda: "",
+                effect_class=effect_class,
+            ),
+        ),
+    ]
+
+    with pytest.raises(PilotToolConfigurationError, match="effect_class='read'"):
+        validate_skill_action_tools(skill, action_tools)
 
 
 def test_large_search_json_is_bounded_without_losing_source_ids():

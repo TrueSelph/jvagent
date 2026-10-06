@@ -145,7 +145,7 @@ class WebFetchAction(Action):
 
     # -- Fetch + extract ----------------------------------------------------
 
-    @tool
+    @tool(effect_class="read")
     async def fetch(
         self,
         url: Annotated[str, "The http(s) URL to fetch."],

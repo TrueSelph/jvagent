@@ -422,6 +422,7 @@ The decorator derives everything from the function:
 | `name` | `{action_name}__{method}` (here `my_action__do_thing`) | `@tool(name="…")` per tool, or a class-level `tool_namespace = "…"` to change the prefix for all of the action's tools (set `tool_namespace = ""` for bare, unprefixed names) |
 | `description` | method docstring, first paragraph | `@tool(description="…")` |
 | `parameters_schema` | the signature; `Annotated[T, "desc"]` supplies per-arg docs | — |
+| `effect_class` | unset for the legacy surface | `@tool(effect_class="read")`, `"write"`, or `"external"` |
 
 The prefix resolves in order: a class-level `tool_namespace` (when declared) → the loader package name (`metadata["name"]`) → the action `label` → a class-name fallback (`WebFetchAction` → `web_fetch`), so names stay stable even when an instance is built without loader metadata.
 
@@ -437,6 +438,14 @@ registers them with an `action__` prefix on the unified tool surface. See
 **Manual `Tool()` still works.** Override `get_tools()` only when a tool can't be
 a decorated method (dynamic tool sets, etc.); combine both by calling
 `collect_tools(self)` and extending the result.
+
+The opt-in Pydantic research driver requires every additional Action tool to be
+declared by the skill and explicitly classified `effect_class="read"`. This
+classification is a reviewed Action contract, not automatic proof that the
+implementation is side-effect-free. The pilot still requires its host-qualified
+web-search and web-fetch evidence tools; write/external tools, MCP, and visitor-
+bound tools remain outside its authority surface. The legacy Orchestrator does
+not use this classification to change existing tool behavior.
 
 ---
 

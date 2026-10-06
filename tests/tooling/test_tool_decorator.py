@@ -35,6 +35,11 @@ class FakeAction:
         """Underscore-named but still collected."""
         return "shh"
 
+    @tool(effect_class="read")
+    async def inspect(self) -> str:
+        """Read a record without mutating it."""
+        return "record"
+
     async def not_a_tool(self) -> str:
         """Undecorated — must be ignored."""
         return "nope"
@@ -82,6 +87,11 @@ def test_underscore_method_collected_with_hints():
     assert hidden.access_label == "secret"
     assert hidden.terminal is True
     assert hidden.binds_visitor is True
+
+
+def test_effect_class_is_carried_to_collected_tool():
+    tools = _by_name(collect_tools(FakeAction()))
+    assert tools["myact__inspect"].effect_class == "read"
 
 
 def test_undecorated_method_ignored():
@@ -167,4 +177,5 @@ async def test_web_fetch_uses_base_default():
     tools = await WebFetchAction().get_tools()
     assert [t.name for t in tools] == ["web_fetch__fetch"]
     assert isinstance(tools[0], Tool)
+    assert tools[0].effect_class == "read"
     assert tools[0].parameters_schema["required"] == ["url"]

@@ -1467,6 +1467,9 @@ class OrchestratorInteractAction(
                 PilotStateError,
                 PilotTaskStore,
             )
+            from jvagent.action.orchestrator.pilot.tools import (
+                validate_skill_action_tools,
+            )
         except ImportError as exc:
             raise RuntimeError(
                 "skill_runtime=capability_pilot requires " "jvagent[pydantic-pilot]"
@@ -1573,16 +1576,6 @@ class OrchestratorInteractAction(
             raise RuntimeError(
                 f"pilot skill {pilot_skill_name!r} requires unsupported flow semantics"
             )
-        expected_owners = {
-            "web_search__search": "SerperWebSearchAction",
-            "web_fetch__fetch": "WebFetchAction",
-        }
-        if set(skill.requires_tools) != set(expected_owners):
-            raise RuntimeError(
-                "capability pilot research skill must declare only the existing "
-                "web_search__search and web_fetch__fetch read operations"
-            )
-
         actions = await agent.get_actions(enabled_only=True)
         policy = self._tool_surface_policy(visitor, actions, agent=agent)
         action_tools: List[Tuple[str, Any]] = []
@@ -1608,21 +1601,7 @@ class OrchestratorInteractAction(
                     continue
                 action_tools.append((owner, tool))
 
-        resolved_owners = {
-            tool.name: owner
-            for owner, tool in action_tools
-            if tool.name in expected_owners
-        }
-        if resolved_owners != expected_owners:
-            logger.error(
-                "capability pilot Action admission mismatch: expected=%s resolved=%s",
-                expected_owners,
-                resolved_owners,
-            )
-            raise RuntimeError(
-                "capability pilot requires the unchanged SerperWebSearchAction "
-                "and WebFetchAction operations"
-            )
+        selected_action_tools = validate_skill_action_tools(skill, action_tools)
 
         caller = PilotCaller(
             agent_id=str(getattr(visitor, "agent_id", "") or ""),
@@ -1636,8 +1615,7 @@ class OrchestratorInteractAction(
                 "name": tool.name,
                 "schema": tool.parameters_schema,
             }
-            for owner, tool in action_tools
-            if tool.name in required_names
+            for owner, tool in selected_action_tools
         ]
         required_tool_configs.sort(key=lambda item: (item["owner"], item["name"]))
         required_action_versions = []
@@ -2031,7 +2009,9 @@ class OrchestratorInteractAction(
                 request_guard=guard_pilot_model_request,
                 usage_observer=persist_pilot_model_usage,
                 request_overrides=reasoning_settings,
-                recoverable_tool_errors=frozenset(expected_owners),
+                recoverable_tool_errors=frozenset(
+                    {"web_search__search", "web_fetch__fetch"}
+                ),
                 tool_timeout_seconds=self._channel_cfg(
                     visitor, "tool_call_timeout", self.tool_call_timeout
                 ),

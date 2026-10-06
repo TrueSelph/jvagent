@@ -34,7 +34,7 @@ from __future__ import annotations
 import inspect
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.signature_schema import build_parameters_schema
@@ -63,6 +63,7 @@ class ToolSpec:
     terminal: Optional[bool] = None
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[IdempotencyClass] = None
+    effect_class: Optional[Literal["read", "write", "external"]] = None
 
 
 def tool(
@@ -74,6 +75,7 @@ def tool(
     terminal: Optional[bool] = None,
     binds_visitor: Optional[bool] = None,
     idempotency_class: Optional[IdempotencyClass] = None,
+    effect_class: Optional[Literal["read", "write", "external"]] = None,
 ) -> Callable[..., Any]:
     """Mark a method as an agent tool. Usable as ``@tool`` or ``@tool(name=...)``."""
 
@@ -84,6 +86,7 @@ def tool(
         terminal=terminal,
         binds_visitor=binds_visitor,
         idempotency_class=idempotency_class,
+        effect_class=effect_class,
     )
 
     def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -215,6 +218,8 @@ def collect_tools(instance: Any) -> List[Tool]:
             built.binds_visitor = spec.binds_visitor
         if spec.idempotency_class is not None:
             built.idempotency_class = spec.idempotency_class
+        if spec.effect_class is not None:
+            built.effect_class = spec.effect_class
         tools.append(built)
 
     tools.sort(key=lambda t: t.name)

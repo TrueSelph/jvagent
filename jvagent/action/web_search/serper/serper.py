@@ -121,7 +121,7 @@ class SerperWebSearchAction(BaseWebSearchAction):
             )
             return []
 
-    @tool(name="web_search__search")
+    @tool(name="web_search__search", effect_class="read")
     async def _t_search(
         self,
         query: Annotated[str, "The search query."],

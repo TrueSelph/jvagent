@@ -154,7 +154,7 @@ The review's original statements that the context lacked expiry, caller binding,
 | Boundary reviewed | Strength to preserve | Gap / disposition |
 | --- | --- | --- |
 | Typed contracts and output | Forbid-extra models, bounded run inputs, stable schema version | F04/F08/F10; frozen models do not by themselves validate semantic truth or every nested string length |
-| SKILL.md compiler and capability activation | Existing SOP authoring, stable digest, deferred loading, explicit unsupported-feature rejection | Good pilot admission design; production entry admits only research and two named read Actions (`orchestrator_interact_action.py:1244`). General Action integration is not yet available |
+| SKILL.md compiler and capability activation | Existing SOP authoring, stable digest, deferred loading, explicit unsupported-feature rejection | Pilot admission remains research/evidence-contract specific, but now permits additional skill-declared read-only Action tools through an explicit `effect_class="read"` contract. General task flows and arbitrary output contracts remain outside the pilot (`orchestrator_interact_action.py:1588`, `pilot/tools.py:174`). |
 | Action tool composition | Existing implementations, required-owner checks, per-call access callback, optional effect boundary | F01/F02/F05/F06/F14; never expand writes using the present wrapper |
 | JV model Action bridge | Preserves existing credentials/provider transport and avoids another provider configuration registry | F09/F15; production contract must be explicit and feature-tested rather than relying on FunctionModel's generic profile |
 | Run policy and resource usage | Real request/tool/token/wall-clock bounds | F03/F11/F15; budgets are per fresh Agent run, not durable objective budgets |

@@ -182,6 +182,68 @@ class PilotToolOutcome:
     content: str
 
 
+def validate_skill_action_tools(
+    skill: SkillDoc, action_tools: Sequence[tuple[str, JVTool]]
+) -> tuple[tuple[str, JVTool], ...]:
+    """Select declared pilot tools and require explicit read-only classification.
+
+    Research always retains its host-qualified search/fetch evidence path. A
+    skill may add modular Action tools when each owner and tool is declared in
+    its SKILL.md and every additional tool explicitly declares ``effect_class``
+    as ``read``. Unknown, write, and external effects remain outside this
+    pilot's authority boundary.
+    """
+
+    evidence_owners = {
+        "web_search__search": "SerperWebSearchAction",
+        "web_fetch__fetch": "WebFetchAction",
+    }
+    required_names = tuple(skill.requires_tools)
+    if len(set(required_names)) != len(required_names):
+        raise PilotToolConfigurationError("skill declares duplicate tool names")
+    if not set(evidence_owners).issubset(required_names):
+        raise PilotToolConfigurationError(
+            "research skill must retain the existing search and fetch evidence tools"
+        )
+
+    by_name: dict[str, tuple[str, JVTool]] = {}
+    for owner, tool in action_tools:
+        if tool.name in by_name:
+            raise PilotToolConfigurationError(
+                f"duplicate Action tool name: {tool.name}"
+            )
+        by_name[tool.name] = (owner, tool)
+    missing = set(required_names) - set(by_name)
+    if missing:
+        raise PilotToolConfigurationError(
+            "skill requires unavailable Action tools: " + ", ".join(sorted(missing))
+        )
+
+    selected = tuple(by_name[name] for name in required_names)
+    owner_by_name = {tool.name: owner for owner, tool in selected}
+    for name, expected_owner in evidence_owners.items():
+        if owner_by_name.get(name) != expected_owner:
+            raise PilotToolConfigurationError(
+                f"research evidence tool {name!r} must come from {expected_owner}"
+            )
+
+    declared_owners = set(skill.requires_actions)
+    selected_owners = {owner for owner, _tool in selected}
+    if selected_owners != declared_owners:
+        raise PilotToolConfigurationError(
+            "every required Action must own a declared required tool"
+        )
+    for owner, tool in selected:
+        if tool.name in evidence_owners:
+            continue
+        if tool.effect_class != "read":
+            raise PilotToolConfigurationError(
+                f"additional pilot tool {tool.name!r} must explicitly declare "
+                "effect_class='read'"
+            )
+    return selected
+
+
 async def compose_skill_tools(
     skill: SkillDoc,
     action_tools: Sequence[tuple[str, JVTool]],
