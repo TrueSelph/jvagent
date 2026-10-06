@@ -118,8 +118,8 @@ uvicorn ... --workers 2
 To qualify the Redis conversation lease across independent Python processes,
 install the Redis client and run the opt-in test against a disposable Redis
 instance. It holds one lease beyond its five-second TTL, verifies a second
-process cannot enter early, and confirms heartbeat renewal keeps the first
-worker exclusive:
+process cannot enter early, and checks that a cooperatively suspended async
+owner is cancelled after it resumes past lease expiry:
 
 ```bash
 uv pip install --python .venv/bin/python 'redis>=5.0.0'
@@ -130,9 +130,11 @@ JVAGENT_TEST_REDIS_URL=redis://127.0.0.1:16379/0 \
 docker stop jvagent-lock-test
 ```
 
-This qualifies Redis lock contention and lease renewal only. It does not
-qualify multi-worker graph persistence, DynamoDB, process suspension, or a
-deployed application topology.
+This qualifies Redis lock contention and lease renewal for active and
+cooperatively suspended async workers only. Cancellation cannot fence a
+process paused inside synchronous or cancellation-suppressing work, so this
+does not qualify arbitrary process suspension, multi-worker graph persistence,
+DynamoDB, or a deployed application topology.
 
 ---
 
