@@ -18,6 +18,7 @@ from jvagent.action.model.contract import (
     ToolCall,
     Usage,
 )
+from jvagent.action.model.language.base import ModelActionResult
 from jvagent.action.orchestrator.pilot.contracts import (
     ConversationalReply,
     PilotCaller,
@@ -256,6 +257,83 @@ def test_pydantic_model_adapter_forwards_provider_reasoning_trace():
     )
     asyncio.run(agent.run("Reply briefly"))
     assert traces == ["Checking the requested evidence."]
+
+
+def test_streaming_model_action_forwards_reasoning_and_validated_tool_output():
+    traces = []
+    expected = {
+        "question": "Reply briefly",
+        "findings": [{"claim": "Done.", "source_ids": ["source-1"]}],
+        "limitations": [],
+    }
+
+    class StreamingModelAction:
+        model = "streaming-test-model"
+
+        async def complete(self, request, *, calling_action_name=None):
+            raise AssertionError("stream-capable models should use query_messages")
+
+        async def query_messages(
+            self, *, messages, stream=False, calling_action_name=None, **kwargs
+        ):
+            assert stream is True
+            tool_name = next(
+                item["function"]["name"]
+                for item in kwargs["tools"]
+                if item["function"]["name"].startswith("final_result")
+            )
+
+            async def text_stream():
+                yield "{"  # Draft output remains inside Pydantic AI.
+                yield '"question":'
+
+            result = ModelActionResult(
+                stream=text_stream(),
+                usage={"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+                model=self.model,
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": "output-1",
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(expected),
+                        },
+                    }
+                ],
+                thinking_queue=asyncio.Queue(),
+            )
+            result.push_thinking_delta("Checking the evidence.")
+            result.close_thinking_stream()
+            return result
+
+    async def observe(text):
+        traces.append(text)
+
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    agent = Agent(
+        function_model_for_action(StreamingModelAction(), reasoning_observer=observe),
+        output_type=ResearchBrief,
+        retries=0,
+    )
+    output = asyncio.run(
+        run_research_agent(
+            agent,
+            "Reply briefly",
+            run_context=context,
+        )
+    )
+
+    assert output == ResearchBrief.model_validate(expected)
+    assert traces == ["Checking the evidence."]
 
 
 def test_research_pilot_does_not_offer_source_free_conversational_output():

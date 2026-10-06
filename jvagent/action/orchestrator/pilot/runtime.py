@@ -27,7 +27,12 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import (
+    AgentInfo,
+    DeltaThinkingPart,
+    DeltaToolCall,
+    FunctionModel,
+)
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
 from jvagent.action.model.contract import FinishReason, ModelRequest, ModelResponse
@@ -526,9 +531,9 @@ def function_model_for_action(
     if not callable(complete):
         raise TypeError("configured model Action must implement ModelAdapter.complete")
 
-    async def request_model(
-        messages: list[ModelMessage], info: AgentInfo
-    ) -> PAIModelResponse:
+    def build_request(
+        messages: list[ModelMessage], info: AgentInfo, *, stream: bool
+    ) -> ModelRequest:
         settings = dict(info.model_settings or {})
         direct_settings = {
             key: settings.pop(key)
@@ -572,38 +577,12 @@ def function_model_for_action(
             top_p=direct_settings.get("top_p"),
             reasoning=reasoning,
             reasoning_effort=reasoning_effort,
+            stream=stream,
             extra=extra_settings,
         )
-        if request_guard is not None:
-            guarded = request_guard(jv_request)
-            if inspect.isawaitable(guarded):
-                await guarded
-        response = await complete(
-            jv_request,
-            calling_action_name="PydanticAICapabilityPilot",
-        )
-        if not isinstance(response, ModelResponse):
-            raise PilotModelAdapterError("JV ModelAdapter returned an invalid response")
-        if usage_observer is not None:
-            observed_usage = usage_observer(response)
-            if inspect.isawaitable(observed_usage):
-                await observed_usage
-        if response.finish_reason in (
-            FinishReason.LENGTH,
-            FinishReason.CONTENT_FILTER,
-            FinishReason.ERROR,
-        ):
-            error = PilotModelAdapterError(
-                "JV model response did not complete successfully "
-                f"(finish_reason={response.finish_reason}, "
-                f"completion_tokens={response.usage.completion_tokens})"
-            )
-            error.finish_reason = response.finish_reason
-            raise error
-        if reasoning_observer is not None and response.thinking.strip():
-            observed = reasoning_observer(response.thinking)
-            if inspect.isawaitable(observed):
-                await observed
+        return jv_request
+
+    def response_parts(response: ModelResponse) -> list[Any]:
         parts: list[Any] = []
         if response.text:
             parts.append(TextPart(response.text))
@@ -631,6 +610,55 @@ def function_model_for_action(
                     )
                 arguments = raw_arguments
             parts.append(ToolCallPart(call.name, arguments, tool_call_id=call.id))
+        return parts
+
+    async def observe_response(
+        response: ModelResponse, *, include_reasoning: bool = True
+    ) -> None:
+        if usage_observer is not None:
+            observed_usage = usage_observer(response)
+            if inspect.isawaitable(observed_usage):
+                await observed_usage
+        if (
+            include_reasoning
+            and reasoning_observer is not None
+            and response.thinking.strip()
+        ):
+            observed = reasoning_observer(response.thinking)
+            if inspect.isawaitable(observed):
+                await observed
+
+    def require_successful_finish(response: ModelResponse) -> None:
+        if response.finish_reason in (
+            FinishReason.LENGTH,
+            FinishReason.CONTENT_FILTER,
+            FinishReason.ERROR,
+        ):
+            error = PilotModelAdapterError(
+                "JV model response did not complete successfully "
+                f"(finish_reason={response.finish_reason}, "
+                f"completion_tokens={response.usage.completion_tokens})"
+            )
+            error.finish_reason = response.finish_reason
+            raise error
+
+    async def request_model(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> PAIModelResponse:
+        jv_request = build_request(messages, info, stream=False)
+        if request_guard is not None:
+            guarded = request_guard(jv_request)
+            if inspect.isawaitable(guarded):
+                await guarded
+        response = await complete(
+            jv_request,
+            calling_action_name="PydanticAICapabilityPilot",
+        )
+        if not isinstance(response, ModelResponse):
+            raise PilotModelAdapterError("JV ModelAdapter returned an invalid response")
+        await observe_response(response)
+        require_successful_finish(response)
+        parts = response_parts(response)
         if not parts:
             error = PilotModelAdapterError(
                 "JV model returned neither text nor tool calls "
@@ -651,7 +679,122 @@ def function_model_for_action(
             ),
         )
 
-    return FunctionModel(request_model, model_name="jvagent-language-model-action")
+    async def stream_model(messages: list[ModelMessage], info: AgentInfo) -> Any:
+        """Stream provider deltas through Pydantic AI without publishing drafts."""
+        query_messages = getattr(model_action, "query_messages", None)
+        if not callable(query_messages):
+            # Third-party ModelAdapter implementations with only complete() keep
+            # working; they do not claim live streaming support.
+            response = await request_model(messages, info)
+            tool_index = 0
+            for part in response.parts:
+                if isinstance(part, TextPart) and part.content:
+                    yield part.content
+                elif isinstance(part, ToolCallPart):
+                    yield {
+                        tool_index: DeltaToolCall(
+                            name=part.tool_name,
+                            json_args=(
+                                part.args
+                                if isinstance(part.args, str)
+                                else json.dumps(part.args, ensure_ascii=False)
+                            ),
+                            tool_call_id=part.tool_call_id,
+                        )
+                    }
+                    tool_index += 1
+            return
+
+        jv_request = build_request(messages, info, stream=True)
+        if request_guard is not None:
+            guarded = request_guard(jv_request)
+            if inspect.isawaitable(guarded):
+                await guarded
+        result = await query_messages(
+            **jv_request.to_query_kwargs(),
+            calling_action_name="PydanticAICapabilityPilot",
+        )
+        if not getattr(result, "is_streaming", False):
+            raise PilotModelAdapterError(
+                "configured JV model Action did not provide a streaming response"
+            )
+
+        delta_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+
+        async def pump_text() -> None:
+            try:
+                async for text in result.iter_stream():
+                    if text:
+                        await delta_queue.put(("text", text))
+            finally:
+                await delta_queue.put(("done", None))
+
+        async def pump_thinking() -> None:
+            try:
+                async for text in result.iter_thinking():
+                    if text:
+                        if reasoning_observer is not None:
+                            observed = reasoning_observer(text)
+                            if inspect.isawaitable(observed):
+                                await observed
+                        await delta_queue.put(("thinking", text))
+            finally:
+                await delta_queue.put(("done", None))
+
+        pumps = [asyncio.create_task(pump_text()), asyncio.create_task(pump_thinking())]
+        completed_pumps = 0
+        try:
+            while completed_pumps < len(pumps):
+                kind, value = await delta_queue.get()
+                if kind == "done":
+                    completed_pumps += 1
+                elif kind == "text" and value:
+                    yield value
+                elif kind == "thinking" and value:
+                    # Keep the synthetic thinking part in a disjoint ID range
+                    # from tool calls, whose provider IDs are zero-based indexes.
+                    yield {-1: DeltaThinkingPart(content=value)}
+            await asyncio.gather(*pumps)
+        finally:
+            for pump in pumps:
+                if not pump.done():
+                    pump.cancel()
+            await asyncio.gather(*pumps, return_exceptions=True)
+
+        response = result.to_response()
+        if not isinstance(response, ModelResponse):
+            raise PilotModelAdapterError(
+                "JV streaming Action returned an invalid response"
+            )
+        await observe_response(response, include_reasoning=False)
+        require_successful_finish(response)
+        for index, call in enumerate(response.tool_calls):
+            part = response_parts(
+                ModelResponse(
+                    tool_calls=[call],
+                    usage=response.usage,
+                    finish_reason=response.finish_reason,
+                )
+            )[0]
+            if not isinstance(part, ToolCallPart):
+                continue
+            yield {
+                index: DeltaToolCall(
+                    name=part.tool_name,
+                    json_args=(
+                        part.args
+                        if isinstance(part.args, str)
+                        else json.dumps(part.args, ensure_ascii=False)
+                    ),
+                    tool_call_id=part.tool_call_id,
+                )
+            }
+
+    return FunctionModel(
+        request_model,
+        stream_function=stream_model,
+        model_name="jvagent-language-model-action",
+    )
 
 
 async def capability_for_skill(
@@ -829,8 +972,8 @@ async def run_research_agent(
 
         agent.output_validator(validate_evidence_output)
 
-    result = await asyncio.wait_for(
-        agent.run(
+    async def run_and_stream() -> Any:
+        async with agent.run_stream_events(
             question,
             message_history=message_history,
             deps=run_context,
@@ -842,8 +985,20 @@ async def run_research_agent(
                 total_tokens_limit=run_context.max_total_tokens,
                 output_tokens_limit=run_context.max_output_tokens,
             ),
-        ),
-        timeout=run_context.max_runtime_seconds,
+        ) as events:
+            async for event in events:
+                # Consume the Pydantic AI event stream so the provider request
+                # and tool calls complete under its normal lifecycle.
+                del event
+            result = events.result
+            if result is None:
+                raise PilotModelAdapterError(
+                    "Pydantic AI stream ended without a completed run result"
+                )
+            return result
+
+    result = await asyncio.wait_for(
+        run_and_stream(), timeout=run_context.max_runtime_seconds
     )
     if not isinstance(result.output, ResearchBrief):
         raise PilotModelAdapterError(
