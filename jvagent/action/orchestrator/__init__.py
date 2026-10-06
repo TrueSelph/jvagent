@@ -12,6 +12,7 @@ Routing is tool selection; turn-lock is an emergent flow property. See
 ``.planning/adr/0012-skill-executive-architecture.md``.
 """
 
+from jvagent.action.orchestrator import endpoints as _endpoints  # noqa: F401
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )

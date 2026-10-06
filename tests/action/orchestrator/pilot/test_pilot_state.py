@@ -361,7 +361,7 @@ async def test_legacy_snapshot_migrates_without_claiming_unknown_usage_is_zero(
         skill_digest=snapshot.skill_digest,
         config_digest=snapshot.config_digest,
     )
-    assert restored.schema_version == 7
+    assert restored.schema_version == 8
     assert restored.usage_accounting_complete is False
     assert restored.model_requests_used == (2 if legacy_version == 5 else 0)
     assert (
@@ -417,10 +417,48 @@ async def test_v6_snapshot_migrates_to_unacknowledged_delivery_state():
     )
 
     assert loaded_handle.id == handle.id
-    assert restored.schema_version == 7
+    assert restored.schema_version == 8
     assert restored.delivery_attempt_count == 0
     assert restored.delivery_message_id is None
     assert restored.delivery_acknowledged is False
+
+
+@pytest.mark.asyncio
+async def test_v7_uncertain_delivery_migrates_as_unreconciled():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = _snapshot(
+        status="delivery_pending",
+        delivery_attempt_count=1,
+        delivery_message_id="o.ResponseMessage.old",
+    )
+    handle = await tasks.create(snapshot, title="research", description="q")
+    legacy = snapshot.model_dump(mode="json")
+    legacy["schema_version"] = 7
+    for field in (
+        "delivery_reconciled_attempt_count",
+        "delivery_reconciliation_decision",
+        "delivery_reconciliation_actor",
+        "delivery_reconciliation_at",
+        "delivery_reconciliation_note",
+        "delivery_retry_authorized",
+    ):
+        legacy.pop(field)
+    await handle.set_snapshot(legacy)
+
+    restored_handle, restored = tasks.load(
+        handle.id,
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+
+    assert restored_handle.id == handle.id
+    assert restored.schema_version == 8
+    assert restored.delivery_reconciled_attempt_count == 0
+    assert restored.delivery_retry_authorized is False
+    assert len(tasks.pending_deliveries()) == 1
 
 
 @pytest.mark.asyncio
@@ -524,12 +562,12 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         _snapshot(), title="research", description="Research the question"
     )
     unsupported = deepcopy(handle.snapshot)
-    unsupported["schema_version"] = 8
+    unsupported["schema_version"] = 9
     await handle.set_snapshot(unsupported)
 
     with pytest.raises(
         PilotStateError,
-        match=r"schema version 8 is unsupported.*Preserve the task and start a new pilot run",
+        match=r"schema version 9 is unsupported.*Preserve the task and start a new pilot run",
     ):
         tasks.load(
             handle.id,
@@ -540,7 +578,7 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["schema_version"] == 8
+    assert handle.snapshot["schema_version"] == 9
 
 
 @pytest.mark.asyncio
@@ -767,6 +805,107 @@ async def test_delivery_pending_output_is_durable_and_recovered_as_active():
     assert recovered_handle.status == "active"
     assert recovered_snapshot.status == "delivery_pending"
     assert recovered_snapshot.output == pending.output
+
+
+@pytest.mark.asyncio
+async def test_uncertain_delivery_requires_admin_reconciliation_before_retry():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    initial = _snapshot(
+        status="running",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/1",
+                excerpt="A finding appears in the source.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A finding",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="A finding appears in the source.",
+                ),
+            ),
+        ),
+    )
+    handle = await tasks.create(initial, title="research", description="q")
+    pending = await tasks.prepare_delivery(
+        handle, initial.model_copy(update={"status": "delivery_pending"})
+    )
+    attempted = await tasks.record_delivery_attempt(
+        handle, pending, message_id="o.ResponseMessage.test"
+    )
+
+    with pytest.raises(PilotStateError, match="requires reconciliation"):
+        await tasks.record_delivery_attempt(
+            handle, attempted, message_id="o.ResponseMessage.test"
+        )
+
+    reconciled_handle, reconciled = await tasks.reconcile_delivery(
+        handle.id,
+        decision="not_delivered",
+        actor="admin-123",
+        note="Verified no message in channel history",
+    )
+    assert reconciled_handle.id == handle.id
+    assert reconciled.delivery_retry_authorized is True
+    assert reconciled.delivery_reconciled_attempt_count == 1
+    replay = await tasks.record_delivery_attempt(
+        reconciled_handle, reconciled, message_id="o.ResponseMessage.test"
+    )
+    assert replay.delivery_attempt_count == 2
+    assert replay.delivery_retry_authorized is False
+    assert replay.delivery_reconciliation_decision is None
+
+
+@pytest.mark.asyncio
+async def test_admin_delivered_reconciliation_completes_without_another_send():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    initial = _snapshot(
+        status="running",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/1",
+                excerpt="A finding appears in the source.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A finding",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="A finding appears in the source.",
+                ),
+            ),
+        ),
+    )
+    handle = await tasks.create(initial, title="research", description="q")
+    pending = await tasks.prepare_delivery(
+        handle, initial.model_copy(update={"status": "delivery_pending"})
+    )
+    await tasks.record_delivery_attempt(
+        handle, pending, message_id="o.ResponseMessage.test"
+    )
+
+    completed_handle, completed = await tasks.reconcile_delivery(
+        handle.id, decision="delivered", actor="admin-123"
+    )
+
+    assert completed_handle.status == "completed"
+    assert completed.status == "complete"
+    assert completed.delivery_acknowledged is True
+    assert completed.delivery_reconciliation_actor == "admin-123"
+    assert tasks.pending_deliveries() == []
 
 
 @pytest.mark.asyncio

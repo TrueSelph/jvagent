@@ -245,6 +245,103 @@ class PilotTaskStore:
             )
         return matches[0] if matches else None
 
+    def pending_deliveries(self) -> list[tuple[TaskHandle, PilotSnapshot]]:
+        """List unresolved final egress attempts for an operator to reconcile."""
+
+        self._require_durable_conversation()
+        pending: list[tuple[TaskHandle, PilotSnapshot]] = []
+        for handle in self._store.list(status="active"):
+            if handle.task_type != PILOT_TASK_TYPE:
+                continue
+            snapshot = self._read_snapshot(handle)
+            if (
+                snapshot.status == "delivery_pending"
+                and snapshot.delivery_attempt_count
+                > snapshot.delivery_reconciled_attempt_count
+                and not snapshot.delivery_acknowledged
+            ):
+                pending.append((handle, snapshot))
+        return pending
+
+    async def reconcile_delivery(
+        self,
+        task_id: str,
+        *,
+        decision: str,
+        actor: str,
+        note: str = "",
+    ) -> tuple[TaskHandle, PilotSnapshot]:
+        """Persist an auditable operator decision for one uncertain delivery."""
+
+        self._require_durable_conversation()
+        handle = self._store.get(task_id)
+        if handle is None or handle.task_type != PILOT_TASK_TYPE:
+            raise PilotStateError("pilot task is unavailable")
+        current = self._read_snapshot(handle)
+        if current.status != "delivery_pending" or current.delivery_attempt_count < 1:
+            raise PilotStateError("pilot task has no attempted pending delivery")
+        if decision not in {"delivered", "not_delivered"}:
+            raise PilotStateError(
+                "delivery decision must be delivered or not_delivered"
+            )
+        if not actor or len(actor) > 256 or len(note) > 1024:
+            raise PilotStateError("delivery reconciliation audit fields are invalid")
+        if current.delivery_acknowledged or handle.status != "active":
+            raise PilotStateError("pilot delivery is already settled")
+        if current.delivery_reconciliation_decision is not None:
+            if current.delivery_reconciliation_decision != decision:
+                raise PilotStateError(
+                    "pilot delivery already has a conflicting decision"
+                )
+            if decision == "delivered":
+                return handle, await self.finalize_reconciled_delivery(handle, current)
+            return handle, current
+        reconciled = current.model_copy(
+            update={
+                "delivery_reconciled_attempt_count": current.delivery_attempt_count,
+                "delivery_reconciliation_decision": decision,
+                "delivery_reconciliation_actor": actor,
+                "delivery_reconciliation_at": datetime.now(timezone.utc),
+                "delivery_reconciliation_note": note,
+                "delivery_retry_authorized": decision == "not_delivered",
+            }
+        )
+        await handle.set_snapshot(reconciled.model_dump(mode="json"))
+        reconciled = self._read_snapshot(handle)
+        if decision == "delivered":
+            completed = await self.finalize_reconciled_delivery(handle, reconciled)
+            return handle, completed
+        return handle, reconciled
+
+    async def finalize_reconciled_delivery(
+        self, handle: TaskHandle, snapshot: PilotSnapshot
+    ) -> PilotSnapshot:
+        """Complete an operator-confirmed send without crossing egress again."""
+
+        self._require_durable_conversation()
+        current = self._read_snapshot(handle)
+        if (
+            handle.status != "active"
+            or current != snapshot
+            or current.status != "delivery_pending"
+            or current.delivery_reconciliation_decision != "delivered"
+            or current.delivery_reconciled_attempt_count
+            < current.delivery_attempt_count
+        ):
+            raise PilotStateError("pilot delivery lacks a durable delivered decision")
+        acknowledged = current
+        if not current.delivery_acknowledged:
+            acknowledged = current.model_copy(
+                update={
+                    "delivery_acknowledged": True,
+                    "delivery_acknowledged_at": datetime.now(timezone.utc),
+                }
+            )
+            await handle.set_snapshot(acknowledged.model_dump(mode="json"))
+        completed = acknowledged.model_copy(update={"status": "complete"})
+        await self.complete(handle, completed, delivered=True)
+        return completed
+
     async def fail_interrupted(
         self,
         handle: TaskHandle,
@@ -383,11 +480,21 @@ class PilotTaskStore:
             raise PilotStateError("pilot delivery message identifier is invalid")
         if current.delivery_message_id not in (None, message_id):
             raise PilotStateError("pilot delivery identity changed during recovery")
+        if (
+            current.delivery_attempt_count > current.delivery_reconciled_attempt_count
+            and not current.delivery_retry_authorized
+        ):
+            raise PilotStateError("uncertain pilot delivery requires reconciliation")
         attempted = current.model_copy(
             update={
                 "delivery_attempt_count": current.delivery_attempt_count + 1,
                 "delivery_message_id": message_id,
                 "delivery_last_attempt_at": datetime.now(timezone.utc),
+                "delivery_retry_authorized": False,
+                "delivery_reconciliation_decision": None,
+                "delivery_reconciliation_actor": None,
+                "delivery_reconciliation_at": None,
+                "delivery_reconciliation_note": None,
             }
         )
         await handle.set_snapshot(attempted.model_dump(mode="json"))
@@ -516,7 +623,7 @@ class PilotTaskStore:
         if (
             isinstance(schema_version, bool)
             or not isinstance(schema_version, int)
-            or schema_version not in (4, 5, 6, 7)
+            or schema_version not in (4, 5, 6, 7, 8)
         ):
             if schema_version is None:
                 version = "missing"
@@ -524,7 +631,7 @@ class PilotTaskStore:
                 version = repr(schema_version)[:32]
             raise PilotStateError(
                 f"pilot task snapshot schema version {version} is unsupported; "
-                "this pilot supports versions 4, 5, 6 and 7 only. Preserve the task and "
+                "this pilot supports versions 4 through 8 only. Preserve the task and "
                 "start a new pilot run"
             )
         if schema_version in (4, 5, 6):
@@ -564,6 +671,19 @@ class PilotTaskStore:
                         "estimated_output_tokens_used": 0,
                     }
                 )
+        if schema_version in (4, 5, 6, 7):
+            # Existing uncertain sends require explicit reconciliation before
+            # an operator-authorized retry can occur.
+            raw_snapshot = {
+                **raw_snapshot,
+                "schema_version": 8,
+                "delivery_reconciled_attempt_count": 0,
+                "delivery_reconciliation_decision": None,
+                "delivery_reconciliation_actor": None,
+                "delivery_reconciliation_at": None,
+                "delivery_reconciliation_note": None,
+                "delivery_retry_authorized": False,
+            }
         try:
             snapshot = PilotSnapshot.model_validate(raw_snapshot)
         except Exception as exc:

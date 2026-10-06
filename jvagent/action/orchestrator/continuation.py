@@ -524,6 +524,7 @@ async def park_capability_pilot_tasks(visitor: Any) -> int:
             5,
             6,
             7,
+            8,
         }:
             snapshot = dict(raw_snapshot)
             invocations = snapshot.get("invocations")

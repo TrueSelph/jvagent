@@ -170,6 +170,9 @@ async def _publish_pending_pilot_output(
             "o.ResponseMessage.pilot_"
             + hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:24]
         )
+        if snapshot.delivery_reconciliation_decision == "delivered":
+            snapshot = await pilot_store.finalize_reconciled_delivery(handle, snapshot)
+            return
         if not snapshot.delivery_acknowledged:
             snapshot = await pilot_store.record_delivery_attempt(
                 handle, snapshot, message_id=delivery_message_id
@@ -1424,7 +1427,8 @@ class OrchestratorInteractAction(
         handle, snapshot = interrupted
         if (
             snapshot.status == "delivery_pending"
-            and snapshot.delivery_attempt_count > 0
+            and snapshot.delivery_attempt_count
+            > snapshot.delivery_reconciled_attempt_count
             and not snapshot.delivery_acknowledged
         ):
             notice = (
