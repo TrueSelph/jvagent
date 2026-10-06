@@ -1477,6 +1477,65 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     reset_runtime()
     assert len(published) == 5
 
+    # If cancellation persistence itself fails, preserve the original
+    # cancellation and leave the active graph task available for interrupted-run
+    # recovery instead of masking it as an ordinary failed turn.
+    action_entered.clear()
+    action_cancelled.clear()
+
+    original_pilot_cancel = PilotTaskStore.cancel
+
+    async def fail_pilot_cancel(*_args, **_kwargs):
+        raise OSError("synthetic graph write failure")
+
+    monkeypatch.setattr(PilotTaskStore, "cancel", fail_pilot_cancel)
+    persistence_failure_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="cancel despite a graph write failure",
+        channel="default",
+        interaction=Interaction(),
+        conversation=conversation,
+        correlation_id="run-cancel-persist-failed",
+    )
+    reset_runtime()
+    failed_persistence_run = asyncio.create_task(
+        orchestrator.execute(persistence_failure_visitor)
+    )
+    await asyncio.wait_for(action_entered.wait(), timeout=2)
+    while not conversation.tasks or conversation.tasks[-1]["status"] != "active":
+        await asyncio.sleep(0)
+    failed_persistence_run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await failed_persistence_run
+    assert action_cancelled.is_set()
+    assert conversation.tasks[-1]["status"] == "active"
+    assert conversation.tasks[-1]["snapshot"]["status"] == "running"
+    failed_persistence_turn = get_runtime().get_run("run-cancel-persist-failed")
+    assert failed_persistence_turn is not None
+    assert failed_persistence_turn.state is TurnRunState.CANCELLED
+    assert (
+        get_runtime().checkpoint_from_interaction(
+            persistence_failure_visitor.interaction
+        )["state"]
+        == TurnRunState.CANCELLED.value
+    )
+    stranded_handle = TaskStore(conversation).get(conversation.tasks[-1]["id"])
+    assert stranded_handle is not None
+    stranded_snapshot = PilotSnapshot.model_validate(
+        stranded_handle.snapshot
+    ).model_copy(update={"status": "cancelled"})
+    await original_pilot_cancel(
+        PilotTaskStore(conversation),
+        stranded_handle,
+        stranded_snapshot,
+        "test cleanup",
+    )
+    monkeypatch.setattr(PilotTaskStore, "cancel", original_pilot_cancel)
+    reset_runtime()
+    assert len(published) == 5
+
     from jvagent.action.orchestrator.pilot import runtime as pilot_runtime
 
     original_run_research_agent = pilot_runtime.run_research_agent

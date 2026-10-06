@@ -2127,7 +2127,21 @@ class OrchestratorInteractAction(
             cancelled = snapshot.model_copy(
                 update={"status": "cancelled", "evidence": evidence.snapshot()}
             )
-            await pilot_store.cancel(handle, cancelled, "pilot run cancelled")
+            try:
+                await pilot_store.cancel(handle, cancelled, "pilot run cancelled")
+            except Exception as exc:
+                # A failed graph write must not turn caller cancellation into a
+                # normal failed turn. The active TaskStore snapshot is recovered
+                # as interrupted on the next admitted turn; log only identifiers
+                # and the exception type because provider/tool errors may contain
+                # sensitive payloads.
+                logger.error(
+                    "could not persist capability-pilot cancellation: "
+                    "run_id=%s task_id=%s error_type=%s",
+                    run_id,
+                    task_id,
+                    type(exc).__name__,
+                )
             raise
         except PilotDeliveryPendingError:
             # Keep the durable output checkpoint for a same-request recovery.
