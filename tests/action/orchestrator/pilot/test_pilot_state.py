@@ -287,10 +287,15 @@ async def test_failed_exact_retry_parent_preserves_cumulative_usage():
     tasks = PilotTaskStore(conversation)
     first = _snapshot(
         status="failed",
+        usage_accounting_complete=False,
         model_requests_used=3,
+        unsettled_model_requests=0,
+        unreported_model_usage_responses=1,
         tool_calls_used=7,
         reported_input_tokens_used=1200,
         reported_output_tokens_used=800,
+        estimated_input_tokens_used=340,
+        estimated_output_tokens_used=55,
     )
     handle = await tasks.create(first, title="research", description=first.question)
     await tasks.fail(handle, first, "provider error")
@@ -304,10 +309,15 @@ async def test_failed_exact_retry_parent_preserves_cumulative_usage():
     )
     assert parent is not None
     assert parent[0].id == handle.id
+    assert parent[1].usage_accounting_complete is False
     assert parent[1].model_requests_used == 3
+    assert parent[1].unsettled_model_requests == 0
+    assert parent[1].unreported_model_usage_responses == 1
     assert parent[1].tool_calls_used == 7
     assert parent[1].reported_input_tokens_used == 1200
     assert parent[1].reported_output_tokens_used == 800
+    assert parent[1].estimated_input_tokens_used == 340
+    assert parent[1].estimated_output_tokens_used == 55
 
 
 @pytest.mark.asyncio
