@@ -115,6 +115,25 @@ export JVAGENT_CONVERSATION_LOCK_REDIS_URL=redis://127.0.0.1:6379/0
 uvicorn ... --workers 2
 ```
 
+To qualify the Redis conversation lease across independent Python processes,
+install the Redis client and run the opt-in test against a disposable Redis
+instance. It holds one lease beyond its five-second TTL, verifies a second
+process cannot enter early, and confirms heartbeat renewal keeps the first
+worker exclusive:
+
+```bash
+uv pip install --python .venv/bin/python 'redis>=5.0.0'
+docker run --rm -d --name jvagent-lock-test \
+  -p 127.0.0.1:16379:6379 redis:7-alpine
+JVAGENT_TEST_REDIS_URL=redis://127.0.0.1:16379/0 \
+  .venv/bin/pytest tests/memory/test_redis_lock_multiprocess.py -q
+docker stop jvagent-lock-test
+```
+
+This qualifies Redis lock contention and lease renewal only. It does not
+qualify multi-worker graph persistence, DynamoDB, process suspension, or a
+deployed application topology.
+
 ---
 
 ## Environment reference
