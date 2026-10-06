@@ -300,6 +300,7 @@ class BaseModelAction(Action, ABC):
         op_factory: Callable[[], Coroutine[Any, Any, T]],
         *,
         op_name: str,
+        emit_success: bool = True,
     ) -> T:
         """Run an async operation with retries on transient httpx failures.
 
@@ -324,12 +325,13 @@ class BaseModelAction(Action, ABC):
                     )
                 attempted = True
                 result = await coro
-                await self._emit_model_attempt(
-                    op_name,
-                    attempt + 1,
-                    "succeeded",
-                    time.monotonic() - attempt_started,
-                )
+                if emit_success:
+                    await self._emit_model_attempt(
+                        op_name,
+                        attempt + 1,
+                        "succeeded",
+                        time.monotonic() - attempt_started,
+                    )
                 return result
             except BaseException as exc:
                 if attempted:

@@ -45,6 +45,8 @@ An agent configured with `max_turn_cost_usd` or an already exhausted `max_conver
 
 This reduces but does not eliminate spend overshoot: it is still an application estimate based on bundled/LiteLLM pricing and request serialization, not a provider-enforced reservation. Provider price changes, hidden billing units, or invoice adjustments can exceed it. A transport failure with no usage remains explicitly unknown and blocks a subsequent budgeted request; it cannot be reconciled automatically. Legacy-driver behavior and provider billing reconciliation remain separate qualification work.
 
+**Streaming accounting correction (Phase 58):** lazy provider errors during streamed response consumption are now recorded as failed, unreported-cost attempts. Before this correction, stream construction was marked successful even when the first read returned an HTTP error, allowing the browser usage summary and pilot settlement to understate uncertainty. A real browser request against the disposable app verified the failed attempt now increments the visible unknown-cost count. Provider billing reconciliation, successful usage/cost receipts, and hard provider-side ceilings remain unqualified.
+
 ### F04 — P1: the output union provides an escape from the research grounding contract
 
 **Confirmed by execution.** `ConversationalReply` accepts any nonempty string up to 4,000 characters (`pilot/contracts.py:63`). `pilot/runtime.py:151` checks references only for `ResearchBrief`; a factual answer using the conversational variant is accepted with zero tool receipts. Describing that variant as non-factual does not enforce the description.
@@ -121,11 +123,11 @@ Current subprocess tests prove snapshot readability; write/receipt crash tests e
 
 **Correction:** classify configuration/security failures as terminal, ordinary read failures as typed observations or Pydantic `ToolFailed`/bounded retry outcomes, and return explicit event status independent of string prefixes. The skill should decide how to proceed from an unavailable page, without core domain heuristics.
 
-### F15 — P2: “streaming restored” is event compatibility, not live model streaming
+### F15 — P2: live model streaming lifecycle and progress remain only partially qualified
 
-**Confirmed by source and current browser rendering.** The adapter uses non-streaming `complete()` and FunctionModel without a streaming function (`pilot/runtime.py:304`, `:342`). Reasoning is published only after the full response returns (`:310`); the final answer is published after the run finishes. Tool events help once an Action is selected, but a long first model call can remain silent. This matters for the user's observed timeout/no-reply symptoms; it does not prove the cause of every earlier failure.
+**Original finding confirmed; model streaming path now implemented, but production behavior remains partially qualified.** The pilot detects JV `query_messages(stream=True)` and forwards response and reasoning deltas through Pydantic AI's stream hook; complete-only providers retain the compatibility fallback. Draft text stays internal until the structured output validates. Synthetic integration tests verify streamed reasoning and output-tool reconstruction. A cancellation regression confirms the provider generator closes and cancellation propagates. A real browser request reached Ollama Cloud but returned HTTP 401, so successful provider-backed browser streaming and reasoning display are still unqualified. The latest browser smoke also exposed and fixed late stream-failure accounting: the UI now reports the provider-unreported attempt as unknown cost.
 
-The runtime also hardcodes a 45-second tool timeout (`:441`) instead of the configured Orchestrator tool timeout (`orchestrator_interact_action.py:891`), and fixes concurrency at 1. Channel/run settings are therefore inconsistent across drivers.
+The runtime also hardcodes a 45-second tool timeout (`:441`) instead of the configured Orchestrator tool timeout (`orchestrator_interact_action.py:891`), and fixes concurrency at 1. Channel/run settings are therefore inconsistent across drivers. Transport heartbeat/progress, reconnect semantics, and idle proxy timeout behavior still need qualification.
 
 **Correction:** provide cancellation-aware model event streaming and transport heartbeat/progress semantics while withholding an unvalidated final output. Use one typed run-policy mapping for timeouts, concurrency and limits, explicitly rejecting unsupported overrides. Test slow reasoning-only responses, client disconnect/reconnect, cancelled tools and idle proxy timeout behavior.
 

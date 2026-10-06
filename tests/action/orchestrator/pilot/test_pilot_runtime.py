@@ -336,6 +336,56 @@ def test_streaming_model_action_forwards_reasoning_and_validated_tool_output():
     assert traces == ["Checking the evidence."]
 
 
+def test_cancelling_streamed_pilot_closes_provider_stream_and_reasoning_pump():
+    stream_started = asyncio.Event()
+    stream_closed = asyncio.Event()
+
+    class StreamingModelAction:
+        async def complete(self, request, *, calling_action_name=None):
+            raise AssertionError("stream-capable models should use query_messages")
+
+        async def query_messages(self, *, stream=False, **_kwargs):
+            assert stream is True
+
+            async def text_stream():
+                stream_started.set()
+                try:
+                    await asyncio.Event().wait()
+                    yield "unreachable"
+                finally:
+                    stream_closed.set()
+
+            return ModelActionResult(
+                stream=text_stream(), thinking_queue=asyncio.Queue()
+            )
+
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        task_id="task-cancel-stream",
+        run_id="run-cancel-stream",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+    agent = Agent(
+        function_model_for_action(StreamingModelAction()),
+        output_type=ResearchBrief,
+        retries=0,
+    )
+
+    async def cancel_run():
+        task = asyncio.create_task(
+            run_research_agent(agent, "Wait for provider", run_context=context)
+        )
+        await asyncio.wait_for(stream_started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert stream_closed.is_set()
+
+    asyncio.run(cancel_run())
+
+
 def test_research_pilot_does_not_offer_source_free_conversational_output():
     class ConfiguredModelAction:
         request = None
