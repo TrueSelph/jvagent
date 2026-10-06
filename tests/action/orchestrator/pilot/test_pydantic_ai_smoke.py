@@ -11,6 +11,10 @@ from pydantic_ai import Agent  # noqa: E402
 from pydantic_ai.messages import ModelResponse, ToolCallPart  # noqa: E402
 from pydantic_ai.models.function import FunctionModel  # noqa: E402
 
+from jvagent.action.orchestrator.access import (  # noqa: E402
+    delegate_resource_label,
+    is_tool_allowed,
+)
 from jvagent.action.orchestrator.pilot.contracts import (  # noqa: E402
     PilotCaller,
     PilotRunContext,
@@ -130,6 +134,79 @@ def test_agent_run_rejects_spoofed_or_schema_invalid_tool_arguments(
 
     assert action_calls == []
     assert access_checks == []
+
+
+def test_agent_run_denies_action_when_access_policy_resolution_fails(caplog) -> None:
+    action_calls = []
+    secret_error = "storage credentials must not be logged"
+
+    class AgentWithUnavailablePolicy:
+        async def get_access_control_action(self):
+            raise RuntimeError(secret_error)
+
+    agent_owner = AgentWithUnavailablePolicy()
+    skill = SkillDoc(
+        name="research",
+        description="Research",
+        body="Use the search Action.",
+        requires_tools=("web_search__search",),
+        requires_actions=("SearchAction",),
+        digest="skill-sha256",
+    )
+    context = PilotRunContext(
+        caller=PilotCaller(agent_id="a1", user_id="u1", session_id="s1"),
+        task_id="task-1",
+        run_id="run-1",
+        skill_id="research",
+        skill_digest="skill-sha256",
+        config_digest="config-sha256",
+    )
+
+    async def search(query: str) -> str:
+        action_calls.append(query)
+        return "must not execute"
+
+    async def access_check(_ctx, _skill, tool_name, _args):
+        return await is_tool_allowed(
+            agent_owner,
+            label=delegate_resource_label(tool_name),
+            user_id="u1",
+            channel="web",
+        )
+
+    tool = JVTool(
+        name="web_search__search",
+        description="Search",
+        parameters_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        execute=search,
+    )
+    (bound,) = asyncio.run(
+        compose_skill_tools(
+            skill,
+            [("SearchAction", tool)],
+            run_context=context,
+            access_check=access_check,
+        )
+    )
+    model = FunctionModel(
+        lambda _messages, _info: ModelResponse(
+            parts=[ToolCallPart("web_search__search", {"query": "safe query"})]
+        )
+    )
+    harness_agent = Agent(model, tools=[bound], output_type=str, retries=0)
+
+    with caplog.at_level("ERROR", logger="jvagent.action.orchestrator.access"):
+        with pytest.raises(Exception):
+            asyncio.run(harness_agent.run("search safely", deps=context))
+
+    assert action_calls == []
+    assert "orchestrator_access_policy_failure" in caplog.text
+    assert secret_error not in caplog.text
 
 
 def test_deferred_skill_calls_existing_named_tool_and_returns_typed_output() -> None:
