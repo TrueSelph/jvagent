@@ -101,5 +101,8 @@ class ChannelAdapter(ABC):
             message: ResponseMessage object to send
 
         Returns:
-            True if message was sent successfully, False otherwise
+            True when the adapter's configured transport accepts the message,
+            False when delivery is rejected or fails. This is not a recipient
+            read receipt. For replayable messages, use ``message.id`` as the
+            transport's idempotency key when that capability is available.
         """

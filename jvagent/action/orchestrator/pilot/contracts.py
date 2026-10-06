@@ -250,7 +250,7 @@ def output_user_text(
 class PilotSnapshot(PilotModel):
     """Versioned task payload persisted through the existing TaskStore."""
 
-    schema_version: Literal[6] = 6
+    schema_version: Literal[7] = 7
     driver: Literal["capability_pilot"] = "capability_pilot"
     caller: PilotCaller
     skill_id: str = Field(min_length=1, max_length=128)
@@ -277,6 +277,11 @@ class PilotSnapshot(PilotModel):
     reported_output_tokens_used: int = Field(default=0, ge=0)
     estimated_input_tokens_used: int = Field(default=0, ge=0)
     estimated_output_tokens_used: int = Field(default=0, ge=0)
+    delivery_attempt_count: int = Field(default=0, ge=0)
+    delivery_message_id: Optional[str] = Field(default=None, max_length=256)
+    delivery_last_attempt_at: Optional[datetime] = None
+    delivery_acknowledged: bool = False
+    delivery_acknowledged_at: Optional[datetime] = None
     park_reason: Optional[str] = Field(default=None, max_length=512)
     output: Optional[PilotOutput] = None
 

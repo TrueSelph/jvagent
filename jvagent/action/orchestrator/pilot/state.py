@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from jvagent.action.orchestrator.pilot.contracts import (
@@ -317,7 +318,7 @@ class PilotTaskStore:
 
     async def prepare_delivery(
         self, handle: TaskHandle, snapshot: PilotSnapshot
-    ) -> None:
+    ) -> PilotSnapshot:
         """Persist validated final output before crossing the user egress boundary."""
 
         self._require_durable_conversation()
@@ -335,7 +336,17 @@ class PilotTaskStore:
             raise PilotStateError(
                 "pilot task changed before final delivery was prepared"
             )
-        snapshot = self._validate_snapshot(snapshot)
+        snapshot = self._validate_snapshot(
+            snapshot.model_copy(
+                update={
+                    "delivery_attempt_count": 0,
+                    "delivery_message_id": None,
+                    "delivery_last_attempt_at": None,
+                    "delivery_acknowledged": False,
+                    "delivery_acknowledged_at": None,
+                }
+            )
+        )
         try:
             output_user_text(snapshot.output, snapshot.evidence)
         except ValueError as exc:
@@ -343,6 +354,74 @@ class PilotTaskStore:
                 "research pilot task output does not satisfy its evidence contract"
             ) from exc
         await handle.set_snapshot(snapshot.model_dump(mode="json"))
+        return snapshot
+
+    async def record_delivery_attempt(
+        self,
+        handle: TaskHandle,
+        snapshot: PilotSnapshot,
+        *,
+        message_id: str,
+    ) -> PilotSnapshot:
+        """Persist the stable egress identity before an external send attempt."""
+
+        self._require_durable_conversation()
+        self._require_pilot_task(handle)
+        current = self._read_snapshot(handle)
+        if (
+            handle.status != "active"
+            or current != snapshot
+            or current.status != "delivery_pending"
+            or current.delivery_acknowledged
+        ):
+            raise PilotStateError("pilot delivery changed before its send attempt")
+        if (
+            not isinstance(message_id, str)
+            or not message_id.startswith("o.ResponseMessage.")
+            or len(message_id) > 256
+        ):
+            raise PilotStateError("pilot delivery message identifier is invalid")
+        if current.delivery_message_id not in (None, message_id):
+            raise PilotStateError("pilot delivery identity changed during recovery")
+        attempted = current.model_copy(
+            update={
+                "delivery_attempt_count": current.delivery_attempt_count + 1,
+                "delivery_message_id": message_id,
+                "delivery_last_attempt_at": datetime.now(timezone.utc),
+            }
+        )
+        await handle.set_snapshot(attempted.model_dump(mode="json"))
+        return attempted
+
+    async def acknowledge_delivery(
+        self,
+        handle: TaskHandle,
+        snapshot: PilotSnapshot,
+        *,
+        message_id: str,
+    ) -> PilotSnapshot:
+        """Persist an adapter/egress acknowledgment before terminal completion."""
+
+        self._require_durable_conversation()
+        self._require_pilot_task(handle)
+        current = self._read_snapshot(handle)
+        if (
+            handle.status != "active"
+            or current != snapshot
+            or current.status != "delivery_pending"
+            or current.delivery_attempt_count < 1
+            or current.delivery_message_id != message_id
+            or current.delivery_acknowledged
+        ):
+            raise PilotStateError("pilot delivery cannot be acknowledged in this state")
+        acknowledged = current.model_copy(
+            update={
+                "delivery_acknowledged": True,
+                "delivery_acknowledged_at": datetime.now(timezone.utc),
+            }
+        )
+        await handle.set_snapshot(acknowledged.model_dump(mode="json"))
+        return acknowledged
 
     async def complete(
         self, handle: TaskHandle, snapshot: PilotSnapshot, *, delivered: bool
@@ -366,6 +445,23 @@ class PilotTaskStore:
             raise PilotStateError(
                 "research pilot task output does not satisfy its evidence contract"
             ) from exc
+        current = self._read_snapshot(handle)
+        if (
+            handle.status != "active"
+            or current.status != "delivery_pending"
+            or not current.delivery_acknowledged
+            or current.delivery_acknowledged_at is None
+            or current.delivery_attempt_count < 1
+            or current.delivery_message_id is None
+            or snapshot.delivery_acknowledged is not True
+            or snapshot.delivery_acknowledged_at != current.delivery_acknowledged_at
+            or snapshot.delivery_message_id != current.delivery_message_id
+            or snapshot.delivery_attempt_count != current.delivery_attempt_count
+            or snapshot != current.model_copy(update={"status": "complete"})
+        ):
+            raise PilotStateError(
+                "pilot task requires a persisted delivery acknowledgement"
+            )
         await handle.complete(
             result=rendered_result,
             snapshot=snapshot.model_dump(mode="json"),
@@ -420,7 +516,7 @@ class PilotTaskStore:
         if (
             isinstance(schema_version, bool)
             or not isinstance(schema_version, int)
-            or schema_version not in (4, 5, 6)
+            or schema_version not in (4, 5, 6, 7)
         ):
             if schema_version is None:
                 version = "missing"
@@ -428,20 +524,35 @@ class PilotTaskStore:
                 version = repr(schema_version)[:32]
             raise PilotStateError(
                 f"pilot task snapshot schema version {version} is unsupported; "
-                "this pilot supports versions 4, 5 and 6 only. Preserve the task and "
+                "this pilot supports versions 4, 5, 6 and 7 only. Preserve the task and "
                 "start a new pilot run"
             )
-        if schema_version in (4, 5):
-            # v4 lacked usage counters; v5 had counters but not an unsettled
-            # request marker. Preserve known lower bounds and refuse to claim
-            # the unresolved provider usage was zero.
+        if schema_version in (4, 5, 6):
+            # Older snapshots lack the durable delivery receipt. Preserve that
+            # uncertainty as unacknowledged; a pending output must be replayed
+            # through the stable message ID before the task can complete.
             raw_snapshot = {
                 **raw_snapshot,
-                "schema_version": 6,
-                "usage_accounting_complete": False,
-                "unsettled_model_requests": 1,
-                "unreported_model_usage_responses": 0,
+                "schema_version": 7,
+                "delivery_attempt_count": raw_snapshot.get("delivery_attempt_count", 0),
+                "delivery_message_id": raw_snapshot.get("delivery_message_id"),
+                "delivery_last_attempt_at": raw_snapshot.get(
+                    "delivery_last_attempt_at"
+                ),
+                "delivery_acknowledged": False,
+                "delivery_acknowledged_at": None,
             }
+            if schema_version in (4, 5):
+                # v4 lacked usage counters; v5 had counters but not an unsettled
+                # request marker. Preserve known lower bounds and refuse to claim
+                # unresolved provider usage was zero.
+                raw_snapshot.update(
+                    {
+                        "usage_accounting_complete": False,
+                        "unsettled_model_requests": 1,
+                        "unreported_model_usage_responses": 0,
+                    }
+                )
             if schema_version == 4:
                 raw_snapshot.update(
                     {

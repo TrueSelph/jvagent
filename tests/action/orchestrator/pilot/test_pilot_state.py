@@ -56,6 +56,20 @@ def _snapshot(**updates) -> PilotSnapshot:
     return PilotSnapshot(**payload)
 
 
+async def _acknowledged_result(tasks, handle, result):
+    """Exercise graph-backed attempt and acknowledgment before completion."""
+    pending = result.model_copy(update={"status": "delivery_pending"})
+    pending = await tasks.prepare_delivery(handle, pending)
+    message_id = f"o.ResponseMessage.test_{handle.id}"
+    attempted = await tasks.record_delivery_attempt(
+        handle, pending, message_id=message_id
+    )
+    acknowledged = await tasks.acknowledge_delivery(
+        handle, attempted, message_id=message_id
+    )
+    return acknowledged.model_copy(update={"status": "complete"})
+
+
 @pytest.mark.asyncio
 async def test_pilot_task_snapshot_survives_recreation_and_is_caller_scoped():
     durable = []
@@ -309,7 +323,7 @@ async def test_legacy_snapshot_migrates_without_claiming_unknown_usage_is_zero(
         skill_digest=snapshot.skill_digest,
         config_digest=snapshot.config_digest,
     )
-    assert restored.schema_version == 6
+    assert restored.schema_version == 7
     assert restored.usage_accounting_complete is False
     assert restored.model_requests_used == (2 if legacy_version == 5 else 0)
     assert (
@@ -334,6 +348,114 @@ async def test_legacy_snapshot_migrates_without_claiming_unknown_usage_is_zero(
     assert parent is not None
     assert parent[1].unsettled_model_requests == 1
     assert parent[1].usage_accounting_complete is False
+
+
+@pytest.mark.asyncio
+async def test_v6_snapshot_migrates_to_unacknowledged_delivery_state():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = _snapshot()
+    handle = await tasks.create(
+        snapshot, title="research", description=snapshot.question
+    )
+    legacy = snapshot.model_dump(mode="json")
+    legacy["schema_version"] = 6
+    for field in (
+        "delivery_attempt_count",
+        "delivery_message_id",
+        "delivery_last_attempt_at",
+        "delivery_acknowledged",
+        "delivery_acknowledged_at",
+    ):
+        legacy.pop(field)
+    await handle.set_snapshot(legacy)
+
+    loaded_handle, restored = tasks.load(
+        handle.id,
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+
+    assert loaded_handle.id == handle.id
+    assert restored.schema_version == 7
+    assert restored.delivery_attempt_count == 0
+    assert restored.delivery_message_id is None
+    assert restored.delivery_acknowledged is False
+
+
+@pytest.mark.asyncio
+async def test_delivery_attempt_and_acknowledgment_survive_taskstore_recreation():
+    durable = []
+    conversation = DurableConversation(durable=durable)
+    tasks = PilotTaskStore(conversation)
+    running = _snapshot()
+    handle = await tasks.create(running, title="research", description=running.question)
+    pending = running.model_copy(
+        update={
+            "status": "delivery_pending",
+            "evidence": (
+                EvidenceReference(
+                    source_id="source-1",
+                    url="https://example.test/source",
+                    excerpt="A supported source quote.",
+                    provenance="fetched_page",
+                ),
+            ),
+            "output": ResearchBrief(
+                question=running.question,
+                findings=(
+                    ResearchFinding(
+                        claim="A supported finding.",
+                        source_ids=("source-1",),
+                        supporting_source_id="source-1",
+                        supporting_quote="A supported source quote.",
+                    ),
+                ),
+            ),
+        }
+    )
+    pending = await tasks.prepare_delivery(handle, pending)
+    message_id = "o.ResponseMessage.pilot_0123456789abcdef01234567"
+    attempted = await tasks.record_delivery_attempt(
+        handle, pending, message_id=message_id
+    )
+    assert attempted.delivery_attempt_count == 1
+    assert attempted.delivery_message_id == message_id
+
+    recovered_store = PilotTaskStore(
+        DurableConversation(tasks=durable, durable=durable)
+    )
+    active = recovered_store.active_run(
+        caller=running.caller,
+        skill_id=running.skill_id,
+        skill_digest=running.skill_digest,
+        config_digest=running.config_digest,
+    )
+    assert active is not None
+    recovered_handle, recovered_snapshot = active
+    assert recovered_snapshot.delivery_attempt_count == 1
+    assert recovered_snapshot.delivery_acknowledged is False
+
+    acknowledged = await recovered_store.acknowledge_delivery(
+        recovered_handle, recovered_snapshot, message_id=message_id
+    )
+    second_recovery = PilotTaskStore(
+        DurableConversation(tasks=durable, durable=durable)
+    )
+    active_after_ack = second_recovery.active_run(
+        caller=running.caller,
+        skill_id=running.skill_id,
+        skill_digest=running.skill_digest,
+        config_digest=running.config_digest,
+    )
+    assert active_after_ack is not None
+    _, acknowledged_snapshot = active_after_ack
+    assert acknowledged_snapshot.delivery_acknowledged is True
+    assert acknowledged_snapshot.delivery_acknowledged_at == (
+        acknowledged.delivery_acknowledged_at
+    )
 
 
 @pytest.mark.asyncio
@@ -364,12 +486,12 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         _snapshot(), title="research", description="Research the question"
     )
     unsupported = deepcopy(handle.snapshot)
-    unsupported["schema_version"] = 7
+    unsupported["schema_version"] = 8
     await handle.set_snapshot(unsupported)
 
     with pytest.raises(
         PilotStateError,
-        match=r"schema version 7 is unsupported.*Preserve the task and start a new pilot run",
+        match=r"schema version 8 is unsupported.*Preserve the task and start a new pilot run",
     ):
         tasks.load(
             handle.id,
@@ -380,7 +502,7 @@ async def test_rehydrate_reports_unsupported_snapshot_version_with_recovery():
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["schema_version"] == 7
+    assert handle.snapshot["schema_version"] == 8
 
 
 @pytest.mark.asyncio
@@ -488,7 +610,23 @@ async def test_task_completion_requires_validated_output_and_delivery():
     )
     with pytest.raises(PilotStateError, match="final delivery"):
         await tasks.complete(handle, result, delivered=False)
-    await tasks.complete(handle, result, delivered=True)
+    acknowledged_result = await _acknowledged_result(tasks, handle, result)
+    changed_after_ack = acknowledged_result.model_copy(
+        update={
+            "output": output.model_copy(
+                update={
+                    "findings": (
+                        output.findings[0].model_copy(
+                            update={"claim": "A changed answer after acknowledgment."}
+                        ),
+                    )
+                }
+            )
+        }
+    )
+    with pytest.raises(PilotStateError, match="persisted delivery acknowledgement"):
+        await tasks.complete(handle, changed_after_ack, delivered=True)
+    await tasks.complete(handle, acknowledged_result, delivered=True)
     assert handle.status == "completed"
 
 
@@ -771,7 +909,7 @@ async def test_settled_invocation_receipt_is_persisted_before_reuse():
 async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume():
     durable = []
     conversation = DurableConversation(durable=durable)
-    tasks = PilotEffectTestStore(conversation)
+    tasks = PilotTaskStore(conversation)
     parent = await tasks.create(
         _snapshot(), title="research", description="Initial research"
     )
@@ -786,7 +924,8 @@ async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume(
             ),
         ),
     )
-    await tasks.complete(
+    parent_result = await _acknowledged_result(
+        tasks,
         parent,
         _snapshot(
             status="complete",
@@ -800,10 +939,11 @@ async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume(
             ),
             output=output,
         ),
-        delivered=True,
     )
+    await tasks.complete(parent, parent_result, delivered=True)
 
-    followup = await tasks.create(
+    effect_tasks = PilotEffectTestStore(conversation)
+    followup = await effect_tasks.create(
         _snapshot(question="Follow-up question"),
         title="research",
         description="Follow-up research",
@@ -812,8 +952,8 @@ async def test_followup_links_prior_task_and_rollback_parks_for_explicit_resume(
     assert followup.data["pilot_parent_task_id"] == parent.id
 
     parked_snapshot = _snapshot(status="parked", park_reason="legacy selected")
-    await tasks.park(followup, parked_snapshot, "rollback")
-    resumed = await tasks.resume(
+    await effect_tasks.park(followup, parked_snapshot, "rollback")
+    resumed = await effect_tasks.resume(
         followup,
         caller=parked_snapshot.caller,
         skill_id="research",
@@ -995,29 +1135,36 @@ async def test_storage_failure_cannot_complete_a_pilot_task():
             ),
         ),
     )
+    acknowledged_result = await _acknowledged_result(
+        tasks,
+        handle,
+        _snapshot(
+            status="complete",
+            evidence=(
+                EvidenceReference(
+                    source_id="source-1",
+                    url="https://example.test/1",
+                    excerpt="A finding appears in the source.",
+                    provenance="fetched_page",
+                ),
+            ),
+            output=output,
+        ),
+    )
     conversation.fail_flush = True
 
     with pytest.raises(OSError, match="storage unavailable"):
         await tasks.complete(
             handle,
-            _snapshot(
-                status="complete",
-                evidence=(
-                    EvidenceReference(
-                        source_id="source-1",
-                        url="https://example.test/1",
-                        excerpt="A finding appears in the source.",
-                        provenance="fetched_page",
-                    ),
-                ),
-                output=output,
-            ),
+            acknowledged_result,
             delivered=True,
         )
 
     assert handle.status == "active"
-    assert handle.snapshot["status"] == "running"
+    assert handle.snapshot["status"] == "delivery_pending"
+    assert handle.snapshot["delivery_acknowledged"] is True
     assert conversation.durable[0]["status"] == "active"
-    assert conversation.durable[0]["snapshot"]["status"] == "running"
+    assert conversation.durable[0]["snapshot"]["status"] == "delivery_pending"
+    assert conversation.durable[0]["snapshot"]["delivery_acknowledged"] is True
     assert conversation.tasks[0]["status"] == "active"
-    assert conversation.tasks[0]["snapshot"]["status"] == "running"
+    assert conversation.tasks[0]["snapshot"]["status"] == "delivery_pending"

@@ -41,7 +41,7 @@ def test_snapshot_round_trip_is_json_safe_and_immutable() -> None:
     restored = PilotSnapshot.model_validate_json(original.model_dump_json())
 
     assert restored == original
-    assert restored.schema_version == 6
+    assert restored.schema_version == 7
     with pytest.raises(ValidationError):
         original.status = "complete"  # type: ignore[misc]
 

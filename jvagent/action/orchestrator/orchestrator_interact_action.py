@@ -169,14 +169,23 @@ async def _publish_pending_pilot_output(
             "o.ResponseMessage.pilot_"
             + hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:24]
         )
-        delivered = await responder.publish(
-            output_user_text(snapshot.output, snapshot.evidence),
-            visitor=visitor,
-            message_id=delivery_message_id,
-        )
-        if not delivered or not OrchestratorInteractAction._turn_delivered(interaction):
-            raise RuntimeError(
-                "ReplyAction did not acknowledge the validated pilot output"
+        if not snapshot.delivery_acknowledged:
+            snapshot = await pilot_store.record_delivery_attempt(
+                handle, snapshot, message_id=delivery_message_id
+            )
+            delivered = await responder.publish(
+                output_user_text(snapshot.output, snapshot.evidence),
+                visitor=visitor,
+                message_id=delivery_message_id,
+            )
+            if not delivered or not OrchestratorInteractAction._turn_delivered(
+                interaction
+            ):
+                raise RuntimeError(
+                    "ReplyAction did not acknowledge the validated pilot output"
+                )
+            snapshot = await pilot_store.acknowledge_delivery(
+                handle, snapshot, message_id=delivery_message_id
             )
         await pilot_store.complete(
             handle,
@@ -1967,7 +1976,9 @@ class OrchestratorInteractAction(
                     "output": output,
                 }
             )
-            await pilot_store.prepare_delivery(handle, pending_delivery)
+            pending_delivery = await pilot_store.prepare_delivery(
+                handle, pending_delivery
+            )
             snapshot = pending_delivery
             await _publish_pending_pilot_output(
                 responder,

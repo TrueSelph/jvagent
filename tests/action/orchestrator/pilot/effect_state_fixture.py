@@ -30,6 +30,7 @@ class EffectPilotSnapshot(PilotSnapshot):
 
     status: Literal[
         "running",
+        "delivery_pending",
         "waiting_approval",
         "reconciliation_required",
         "complete",
@@ -66,6 +67,7 @@ class PilotEffectTestStore(PilotTaskStore):
             raise PilotStateError("pilot task snapshot is invalid") from exc
         expected_task_status = {
             "running": "active",
+            "delivery_pending": "active",
             "waiting_approval": "parked",
             "reconciliation_required": "parked",
             "parked": "parked",

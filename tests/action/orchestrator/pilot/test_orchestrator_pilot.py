@@ -92,6 +92,28 @@ async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
     completed = []
 
     class Store:
+        async def record_delivery_attempt(
+            self, actual_handle, actual_snapshot, *, message_id
+        ):
+            return actual_snapshot.model_copy(
+                update={
+                    "delivery_attempt_count": 1,
+                    "delivery_message_id": message_id,
+                }
+            )
+
+        async def acknowledge_delivery(
+            self, actual_handle, actual_snapshot, *, message_id
+        ):
+            from datetime import datetime, timezone
+
+            return actual_snapshot.model_copy(
+                update={
+                    "delivery_acknowledged": True,
+                    "delivery_acknowledged_at": datetime.now(timezone.utc),
+                }
+            )
+
         async def complete(self, actual_handle, actual_snapshot, *, delivered):
             completed.append((actual_handle, actual_snapshot, delivered))
 
@@ -123,6 +145,7 @@ async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
     assert completed[0][0] is handle
     assert completed[0][1].status == "complete"
     assert completed[0][2] is True
+    assert completed[0][1].delivery_acknowledged is True
 
 
 @pytest.mark.asyncio
@@ -161,6 +184,16 @@ async def test_unconfirmed_final_egress_remains_recoverable():
             raise RuntimeError("ambiguous channel acceptance")
 
     class Store:
+        async def record_delivery_attempt(
+            self, actual_handle, actual_snapshot, *, message_id
+        ):
+            return actual_snapshot.model_copy(
+                update={
+                    "delivery_attempt_count": 1,
+                    "delivery_message_id": message_id,
+                }
+            )
+
         async def complete(self, *args, **kwargs):
             completed.append((args, kwargs))
 
@@ -175,6 +208,162 @@ async def test_unconfirmed_final_egress_remains_recoverable():
         )
 
     assert completed == []
+
+
+@pytest.mark.asyncio
+async def test_saved_delivery_ack_completes_after_restart_without_resending():
+    from jvagent.action.orchestrator.pilot.state import PilotTaskStore
+
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        question="Research the same question",
+    )
+    handle = await tasks.create(
+        snapshot, title="research", description=snapshot.question
+    )
+    pending = snapshot.model_copy(
+        update={
+            "status": "delivery_pending",
+            "evidence": (
+                EvidenceReference(
+                    source_id="source-1",
+                    url="https://example.test/source",
+                    excerpt="The source supports this finding.",
+                    provenance="fetched_page",
+                ),
+            ),
+            "output": ResearchBrief(
+                question=snapshot.question,
+                findings=(
+                    ResearchFinding(
+                        claim="This finding is supported.",
+                        source_ids=("source-1",),
+                        supporting_source_id="source-1",
+                        supporting_quote="The source supports this finding.",
+                    ),
+                ),
+            ),
+        }
+    )
+    pending = await tasks.prepare_delivery(handle, pending)
+    message_id = (
+        "o.ResponseMessage.pilot_" + hashlib.sha256(handle.id.encode()).hexdigest()[:24]
+    )
+    attempted = await tasks.record_delivery_attempt(
+        handle, pending, message_id=message_id
+    )
+    await tasks.acknowledge_delivery(handle, attempted, message_id=message_id)
+
+    recovered_conversation = DurableConversation()
+    recovered_conversation.tasks = deepcopy(conversation.tasks)
+    recovered_store = PilotTaskStore(recovered_conversation)
+    active = recovered_store.active_run(
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+    assert active is not None
+    recovered_handle, recovered_snapshot = active
+
+    class Responder:
+        async def publish(self, *_args, **_kwargs):
+            raise AssertionError("acknowledged delivery must not be sent again")
+
+    await _publish_pending_pilot_output(
+        Responder(),
+        SimpleNamespace(),
+        SimpleNamespace(has_emitted=lambda: False),
+        recovered_store,
+        recovered_handle,
+        recovered_snapshot,
+    )
+
+    settled = recovered_store._store.get(handle.id)
+    assert settled is not None
+    assert settled.status == "completed"
+    assert settled.snapshot["status"] == "complete"
+    assert settled.snapshot["delivery_acknowledged"] is True
+    assert settled.snapshot["delivery_message_id"] == message_id
+
+
+@pytest.mark.asyncio
+async def test_failed_send_persists_replayable_attempt_without_acknowledgment():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        question="Research the same question",
+    )
+    handle = await tasks.create(
+        snapshot, title="research", description=snapshot.question
+    )
+    pending = snapshot.model_copy(
+        update={
+            "status": "delivery_pending",
+            "evidence": (
+                EvidenceReference(
+                    source_id="source-1",
+                    url="https://example.test/source",
+                    excerpt="The source supports this finding.",
+                    provenance="fetched_page",
+                ),
+            ),
+            "output": ResearchBrief(
+                question=snapshot.question,
+                findings=(
+                    ResearchFinding(
+                        claim="This finding is supported.",
+                        source_ids=("source-1",),
+                        supporting_source_id="source-1",
+                        supporting_quote="The source supports this finding.",
+                    ),
+                ),
+            ),
+        }
+    )
+    pending = await tasks.prepare_delivery(handle, pending)
+
+    class RejectingResponder:
+        async def publish(self, *_args, **_kwargs):
+            raise RuntimeError("adapter rejected delivery")
+
+    with pytest.raises(PilotDeliveryPendingError):
+        await _publish_pending_pilot_output(
+            RejectingResponder(),
+            SimpleNamespace(),
+            SimpleNamespace(has_emitted=lambda: False),
+            tasks,
+            handle,
+            pending,
+        )
+
+    recovered_conversation = DurableConversation()
+    recovered_conversation.tasks = deepcopy(conversation.tasks)
+    recovered_store = PilotTaskStore(recovered_conversation)
+    active = recovered_store.active_run(
+        caller=snapshot.caller,
+        skill_id=snapshot.skill_id,
+        skill_digest=snapshot.skill_digest,
+        config_digest=snapshot.config_digest,
+    )
+    assert active is not None
+    _, recovered = active
+    assert recovered.status == "delivery_pending"
+    assert recovered.delivery_attempt_count == 1
+    assert recovered.delivery_message_id == (
+        "o.ResponseMessage.pilot_" + hashlib.sha256(handle.id.encode()).hexdigest()[:24]
+    )
+    assert recovered.delivery_acknowledged is False
+    assert recovered.delivery_acknowledged_at is None
 
 
 class FakeModelAction:
