@@ -1422,6 +1422,22 @@ class OrchestratorInteractAction(
         if interrupted is None:
             return True
         handle, snapshot = interrupted
+        if (
+            snapshot.status == "delivery_pending"
+            and snapshot.delivery_attempt_count > 0
+            and not snapshot.delivery_acknowledged
+        ):
+            notice = (
+                "I couldn't confirm whether the previous final response reached "
+                "your channel, so I won't resend it automatically. Please check "
+                "the conversation and have the delivery reconciled before retrying."
+            )
+            delivered = await responder.publish(notice, visitor=visitor)
+            if not delivered or not self._turn_delivered(interaction):
+                raise RuntimeError(
+                    "ReplyAction did not deliver the uncertain-delivery notice"
+                )
+            return False
         if snapshot.status == "delivery_pending" and snapshot.question == question:
             from jvagent.action.orchestrator.pilot.contracts import (
                 ResearchBrief,

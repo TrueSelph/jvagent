@@ -150,6 +150,62 @@ async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
 
 
 @pytest.mark.asyncio
+async def test_interrupted_attempt_with_uncertain_delivery_is_not_resent():
+    orchestrator = OrchestratorInteractAction()
+    message_id = "o.ResponseMessage.pilot_0123456789abcdef01234567"
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        status="delivery_pending",
+        question="Research the same question",
+        delivery_attempt_count=1,
+        delivery_message_id=message_id,
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/source",
+                excerpt="The source supports this finding.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="Research the same question",
+            findings=(
+                ResearchFinding(
+                    claim="This finding is supported.",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="The source supports this finding.",
+                ),
+            ),
+        ),
+    )
+    handle = SimpleNamespace(id="task-uncertain-delivery")
+    published = []
+
+    class Responder:
+        async def publish(self, content, *, visitor, message_id=None):
+            published.append((content, message_id))
+            return True
+
+    continued = await orchestrator._settle_interrupted_pilot_run(
+        SimpleNamespace(),
+        (handle, snapshot),
+        question="Research the same question",
+        responder=Responder(),
+        visitor=SimpleNamespace(),
+        interaction=SimpleNamespace(has_emitted=lambda: True),
+    )
+
+    assert continued is False
+    assert len(published) == 1
+    assert "won't resend it automatically" in published[0][0]
+    assert published[0][1] is None
+
+
+@pytest.mark.asyncio
 async def test_unconfirmed_final_egress_remains_recoverable():
     snapshot = PilotSnapshot(
         caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
