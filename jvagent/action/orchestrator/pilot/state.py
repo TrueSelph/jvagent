@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -602,9 +603,21 @@ class PilotTaskStore:
             raise PilotStateError(
                 "cancelled TaskStore status requires cancelled snapshot"
             )
-        await handle.cancel(
-            reason=reason[:512], snapshot=snapshot.model_dump(mode="json")
+        persistence = asyncio.create_task(
+            handle.cancel(
+                reason=reason[:512], snapshot=snapshot.model_dump(mode="json")
+            )
         )
+        while not persistence.done():
+            try:
+                # A repeated request cancellation must not interrupt the
+                # graph-backed terminal transition after it has started.
+                await asyncio.shield(persistence)
+            except asyncio.CancelledError:
+                if persistence.done():
+                    break
+                continue
+        await persistence
 
     @staticmethod
     def _require_pilot_task(handle: TaskHandle) -> None:

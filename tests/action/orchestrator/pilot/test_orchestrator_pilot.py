@@ -41,7 +41,7 @@ from jvagent.action.reply.reply_action import ReplyAction
 from jvagent.action.web_fetch.web_fetch_action import WebFetchAction
 from jvagent.action.web_search.serper.serper import SerperWebSearchAction
 from jvagent.memory.interaction import Interaction
-from jvagent.memory.task_store import TaskStore
+from jvagent.memory.task_store import TaskHandle, TaskStore
 from jvagent.scaffold.skill_resolve import parse_skill_bundle
 from jvagent.testing.use_case_loader import load_use_case
 
@@ -1533,6 +1533,55 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         "test cleanup",
     )
     monkeypatch.setattr(PilotTaskStore, "cancel", original_pilot_cancel)
+    reset_runtime()
+    assert len(published) == 5
+
+    # A second cancellation must not interrupt the durable cancel transition.
+    action_entered.clear()
+    action_cancelled.clear()
+    cancellation_write_started = asyncio.Event()
+    allow_cancellation_write = asyncio.Event()
+
+    original_task_cancel = TaskHandle.cancel
+
+    async def delayed_task_cancel(task_handle, reason=None, *, snapshot=None):
+        cancellation_write_started.set()
+        await allow_cancellation_write.wait()
+        await original_task_cancel(task_handle, reason, snapshot=snapshot)
+
+    monkeypatch.setattr(TaskHandle, "cancel", delayed_task_cancel)
+    repeated_cancel_visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="cancel twice during persistence",
+        channel="default",
+        interaction=Interaction(),
+        conversation=conversation,
+        correlation_id="run-cancel-twice",
+    )
+    reset_runtime()
+    repeated_cancel_run = asyncio.create_task(
+        orchestrator.execute(repeated_cancel_visitor)
+    )
+    await asyncio.wait_for(action_entered.wait(), timeout=2)
+    while not conversation.tasks or conversation.tasks[-1]["status"] != "active":
+        await asyncio.sleep(0)
+    repeated_cancel_run.cancel()
+    await asyncio.wait_for(cancellation_write_started.wait(), timeout=2)
+    repeated_cancel_run.cancel()
+    await asyncio.sleep(0)
+    assert not repeated_cancel_run.done()
+    allow_cancellation_write.set()
+    with pytest.raises(asyncio.CancelledError):
+        await repeated_cancel_run
+    assert action_cancelled.is_set()
+    assert conversation.tasks[-1]["status"] == "cancelled"
+    assert conversation.tasks[-1]["snapshot"]["status"] == "cancelled"
+    repeated_cancel_turn = get_runtime().get_run("run-cancel-twice")
+    assert repeated_cancel_turn is not None
+    assert repeated_cancel_turn.state is TurnRunState.CANCELLED
+    monkeypatch.setattr(TaskHandle, "cancel", original_task_cancel)
     reset_runtime()
     assert len(published) == 5
 
