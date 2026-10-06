@@ -136,6 +136,33 @@ process paused inside synchronous or cancellation-suppressing work, so this
 does not qualify arbitrary process suspension, multi-worker graph persistence,
 DynamoDB, or a deployed application topology.
 
+To qualify signed host-context nonce replay against one shared graph database
+and Redis lock, start disposable PostgreSQL and Redis services, then run the
+opt-in cross-process test. Both workers load the same Conversation before a
+barrier, contend through the production mutation-lock wrapper, and attempt to
+consume the same signed nonce. The test requires exactly one promotion and
+reads the single persisted nonce entry back from PostgreSQL:
+
+```bash
+uv pip install --python .venv/bin/python 'asyncpg>=0.29' 'redis>=5.0.0'
+docker run --rm -d --name jvagent-host-context-pg \
+  -e POSTGRES_USER=jvagent -e POSTGRES_PASSWORD=jvagent \
+  -e POSTGRES_DB=jvagent_lock_test \
+  -p 127.0.0.1:16381:5432 postgres:16-alpine
+docker run --rm -d --name jvagent-host-context-redis \
+  -p 127.0.0.1:16382:6379 redis:7-alpine
+docker exec jvagent-host-context-pg \
+  pg_isready -U jvagent -d jvagent_lock_test
+JVAGENT_TEST_POSTGRES_DSN=postgresql://jvagent:jvagent@127.0.0.1:16381/jvagent_lock_test \
+JVAGENT_TEST_REDIS_URL=redis://127.0.0.1:16382/0 \
+  .venv/bin/pytest tests/action/orchestrator/test_host_context_distributed.py -q
+docker stop jvagent-host-context-redis jvagent-host-context-pg
+```
+
+This qualifies concurrent nonce consumption for PostgreSQL plus Redis in this
+local topology. It does not qualify other graph backends, database failover,
+lease fencing for synchronous effects, or a deployed multi-worker rollout.
+
 ---
 
 ## Environment reference

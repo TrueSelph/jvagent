@@ -23,7 +23,11 @@ def _patch_conversation_loader(monkeypatch, loader):
     async def _get(_cls, _conversation_id):
         return loader()
 
+    async def _find_one(_cls, query=None, **kwargs):
+        return loader()
+
     monkeypatch.setattr(Conversation, "get", classmethod(_get))
+    monkeypatch.setattr(Conversation, "find_one", classmethod(_find_one))
 
 
 def _envelope(

@@ -217,7 +217,10 @@ async def consume_host_system_context(visitor: Any) -> Optional[str]:
         )
 
         async with conversation_mutation_lock(conversation_id):
-            current = await Conversation.get(conversation_id)
+            # `find_one` reads through the database instead of GraphContext's
+            # process cache and request identity map. A different worker may
+            # commit the nonce ledger while this worker waits for Redis.
+            current = await Conversation.find_one({"id": conversation_id})
             if current is None:
                 return None
             conversation_context = getattr(current, "context", None)
