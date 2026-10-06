@@ -1,6 +1,7 @@
 """Offline Orchestrator integration through the public pilot driver seam."""
 
 import asyncio
+import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -97,8 +98,8 @@ async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
     published = []
 
     class Responder:
-        async def publish(self, content, *, visitor):
-            published.append((content, visitor))
+        async def publish(self, content, *, visitor, message_id=None):
+            published.append((content, visitor, message_id))
             return True
 
     visitor = SimpleNamespace()
@@ -115,6 +116,9 @@ async def test_interrupted_pending_final_is_replayed_without_a_new_model_run():
     assert continued is False
     assert len(published) == 1
     assert "This finding is supported" in published[0][0]
+    assert published[0][2] == (
+        "o.ResponseMessage.pilot_" + hashlib.sha256(b"task-1").hexdigest()[:24]
+    )
     assert len(completed) == 1
     assert completed[0][0] is handle
     assert completed[0][1].status == "complete"
@@ -288,7 +292,7 @@ async def test_oversized_pilot_question_is_rejected_without_truncation(monkeypat
     )
     published = []
 
-    async def publish(_self, content, visitor=None):
+    async def publish(_self, content, visitor=None, *, message_id=None):
         published.append(content)
         visitor.interaction.response = content
         visitor.interaction.mark_emitted()
@@ -401,7 +405,7 @@ async def test_pilot_cost_admission_blocks_before_model_selection(
     )
     published = []
 
-    async def publish(_self, content, visitor=None):
+    async def publish(_self, content, visitor=None, *, message_id=None):
         published.append(content)
         visitor.interaction.response = content
         visitor.interaction.mark_emitted()
@@ -503,7 +507,7 @@ async def test_pilot_turn_ceiling_stops_before_second_model_request(monkeypatch)
             assert enabled_only is True
             return [SerperWebSearchAction(), WebFetchAction()]
 
-    async def publish(_self, content, visitor=None):
+    async def publish(_self, content, visitor=None, *, message_id=None):
         published.append(content)
         visitor.interaction.response = content
         visitor.interaction.mark_emitted()
@@ -687,7 +691,7 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     responder = ReplyAction()
     published = []
 
-    async def publish(_self, content, visitor=None):
+    async def publish(_self, content, visitor=None, *, message_id=None):
         published.append(content)
         visitor.interaction.response = content
         visitor.interaction.mark_emitted()

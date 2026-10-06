@@ -498,8 +498,15 @@ class ResponseBus:
         thought_type: Optional[str] = None,
         segment_id: Optional[str] = None,
         relay_to_adapters: bool = False,
+        message_id: Optional[str] = None,
     ) -> ResponseMessage:
         """Publish user/thought content with optional streaming and adapter relay."""
+        if message_id is not None and (
+            not isinstance(message_id, str)
+            or not message_id.startswith("o.ResponseMessage.")
+            or len(message_id) > 256
+        ):
+            raise ValueError("message_id must be a bounded ResponseMessage identifier")
         # Throttled TTL-based cleanup
         self._maybe_cleanup()
 
@@ -636,7 +643,9 @@ class ResponseBus:
                     acc_id = self._adhoc_accumulation[interaction_id].message_id
                 allowed, claimed_user_id = await try_claim_user_egress(
                     interaction_id,
-                    message_id=acc_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
+                    message_id=acc_id
+                    or message_id
+                    or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
                     session_id=session_id,
                     continue_stream=active_user_stream,
                 )

@@ -87,6 +87,45 @@ async def test_second_user_egress_is_suppressed_at_the_bus():
 
 
 @pytest.mark.asyncio
+async def test_replayed_delivery_can_keep_a_stable_message_identifier():
+    bus = ResponseBus()
+    stable_id = "o.ResponseMessage.pilot_0123456789abcdef01234567"
+    first = await bus.publish(
+        session_id="s1",
+        content="The saved answer.",
+        channel="default",
+        interaction=Interaction(),
+        interaction_id="interaction-first",
+        category="user",
+        message_id=stable_id,
+    )
+    replay = await bus.publish(
+        session_id="s1",
+        content="The saved answer.",
+        channel="default",
+        interaction=Interaction(),
+        interaction_id="interaction-retry",
+        category="user",
+        message_id=stable_id,
+    )
+
+    assert first.id == stable_id
+    assert replay.id == stable_id
+
+
+@pytest.mark.asyncio
+async def test_message_id_rejects_unbounded_or_unscoped_identifiers():
+    bus = ResponseBus()
+    with pytest.raises(ValueError, match="bounded ResponseMessage"):
+        await bus.publish(
+            session_id="s1",
+            content="hello",
+            channel="default",
+            message_id="arbitrary-id",
+        )
+
+
+@pytest.mark.asyncio
 async def test_incremental_stream_latches_first_chunk_and_allows_completion():
     bus = ResponseBus()
     interaction = Interaction()

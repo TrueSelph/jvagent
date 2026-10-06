@@ -36,6 +36,32 @@ def _patch_agent(monkeypatch, alias="Ada", role="a helpful guide"):
     monkeypatch.setattr(ReplyAction, "get_agent", _agent)
 
 
+async def test_publish_forwards_stable_message_identifier_to_response_bus():
+    bus = SimpleNamespace(
+        publish=AsyncMock(return_value=SimpleNamespace(content="saved answer"))
+    )
+    interaction = SimpleNamespace(id="interaction-1", user_id="user-1")
+    visitor = SimpleNamespace(
+        interaction=interaction,
+        response_bus=bus,
+        session_id="session-1",
+        channel="default",
+        data={},
+    )
+
+    delivered = await ReplyAction().publish(
+        "saved answer",
+        visitor,
+        message_id="o.ResponseMessage.pilot_0123456789abcdef01234567",
+    )
+
+    assert delivered is True
+    assert (
+        bus.publish.call_args.kwargs["message_id"]
+        == "o.ResponseMessage.pilot_0123456789abcdef01234567"
+    )
+
+
 def _visitor_with(directives=None, parameters=None):
     """A visitor whose interaction has a realistic directive/parameter queue:
     add_directive appends, get_unexecuted_* reflect it, set_to_executed marks."""

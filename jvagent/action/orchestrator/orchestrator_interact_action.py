@@ -162,8 +162,17 @@ async def _publish_pending_pilot_output(
     from jvagent.action.orchestrator.pilot.contracts import output_user_text
 
     try:
+        task_id = str(getattr(handle, "id", "") or "")
+        if not task_id:
+            raise RuntimeError("pilot TaskStore handle has no stable identifier")
+        delivery_message_id = (
+            "o.ResponseMessage.pilot_"
+            + hashlib.sha256(task_id.encode("utf-8")).hexdigest()[:24]
+        )
         delivered = await responder.publish(
-            output_user_text(snapshot.output, snapshot.evidence), visitor=visitor
+            output_user_text(snapshot.output, snapshot.evidence),
+            visitor=visitor,
+            message_id=delivery_message_id,
         )
         if not delivered or not OrchestratorInteractAction._turn_delivered(interaction):
             raise RuntimeError(
@@ -1315,22 +1324,16 @@ class OrchestratorInteractAction(
         if snapshot.status == "delivery_pending" and snapshot.question == question:
             from jvagent.action.orchestrator.pilot.contracts import (
                 ResearchBrief,
-                output_user_text,
             )
 
             if isinstance(snapshot.output, ResearchBrief):
-                delivered = await responder.publish(
-                    output_user_text(snapshot.output, snapshot.evidence),
-                    visitor=visitor,
-                )
-                if not delivered or not self._turn_delivered(interaction):
-                    raise RuntimeError(
-                        "ReplyAction did not deliver the recovered pilot output"
-                    )
-                await pilot_store.complete(
+                await _publish_pending_pilot_output(
+                    responder,
+                    visitor,
+                    interaction,
+                    pilot_store,
                     handle,
-                    snapshot.model_copy(update={"status": "complete"}),
-                    delivered=True,
+                    snapshot,
                 )
                 return False
         await pilot_store.fail_interrupted(

@@ -350,6 +350,7 @@ class ReplyAction(Action):
         visitor: Optional[Any],
         streaming: bool = False,
         transient: bool = False,
+        message_id: Optional[str] = None,
     ) -> bool:
         """Persist and/or publish ``content`` (ported from PersonaAction).
 
@@ -406,6 +407,7 @@ class ReplyAction(Action):
             user_id=getattr(interaction, "user_id", None),
             streaming_complete=True,
             transient=transient,
+            message_id=message_id,
         )
         # ResponseBus returns an empty-content envelope when it suppresses a
         # duplicate or a fail-fast channel filter rejects the message. Do not
@@ -413,12 +415,24 @@ class ReplyAction(Action):
         return bool(getattr(message, "content", ""))
 
     async def publish(
-        self, content: str, visitor: Optional[Any] = None, *, transient: bool = False
+        self,
+        content: str,
+        visitor: Optional[Any] = None,
+        *,
+        transient: bool = False,
+        message_id: Optional[str] = None,
     ) -> bool:
         """Egress primitive — publish literal ``content`` to the user."""
         interaction = getattr(visitor, "interaction", None)
+        options: Dict[str, Any] = {"transient": transient}
+        if message_id is not None:
+            options["message_id"] = message_id
         return await self._pipe_response(
-            content, interaction, visitor, streaming=False, transient=transient
+            content,
+            interaction,
+            visitor,
+            streaming=False,
+            **options,
         )
 
     # ------------------------------------------------------------------
