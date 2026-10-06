@@ -606,8 +606,16 @@ class Interaction(DeferredSaveMixin, Node):
                 attempt_data = event.get("data", {})
                 if attempt_data.get("outcome") == "failed":
                     failed_model_attempt_count += 1
+                    # A failed request may have reached the provider before
+                    # transport/parsing failed. Without a provider receipt its
+                    # cost is unknown, even when a later retry succeeds.
+                    if attempt_data.get("usage_status") == "provider_unreported":
+                        unknown_cost_call_count += 1
                 elif attempt_data.get("outcome") == "cancelled":
                     cancelled_model_attempt_count += 1
+                    # Cancellation does not prove the provider stopped work.
+                    if attempt_data.get("usage_status") == "provider_unreported":
+                        unknown_cost_call_count += 1
                 attempt_duration = attempt_data.get("duration") or 0.0
                 if isinstance(attempt_duration, (int, float)):
                     model_attempt_duration_seconds += float(attempt_duration)

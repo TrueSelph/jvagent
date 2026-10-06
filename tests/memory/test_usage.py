@@ -86,7 +86,11 @@ class TestInteractionComputeUsage:
         obj.observability_metrics = [
             {
                 "event_type": "model_attempt",
-                "data": {"outcome": "failed", "duration": 0.42},
+                "data": {
+                    "outcome": "failed",
+                    "duration": 0.42,
+                    "usage_status": "provider_unreported",
+                },
             },
             {
                 "event_type": "model_attempt",
@@ -104,6 +108,36 @@ class TestInteractionComputeUsage:
         assert result["total_duration_seconds"] == 0
         assert result["total_tokens"] == 0
         assert result["total_cost_usd"] == 0
+        assert result["unknown_cost_call_count"] == 1
+
+    def test_failed_attempt_remains_unknown_when_retry_has_reported_usage(self):
+        obj = _make_interaction_like()
+        obj.observability_metrics = [
+            {
+                "event_type": "model_attempt",
+                "data": {
+                    "outcome": "failed",
+                    "duration": 0.42,
+                    "usage_status": "provider_unreported",
+                },
+            },
+            {
+                "event_type": "model_call",
+                "data": {
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 20},
+                    "model": "gpt-4o-mini",
+                    "provider": "openai",
+                    "cost_usd": 0.001,
+                    "cost_source": "provider_reported",
+                },
+            },
+        ]
+
+        result = Interaction.compute_usage(obj)
+
+        assert result["model_call_count"] == 1
+        assert result["reported_cost_usd"] == pytest.approx(0.001)
+        assert result["unknown_cost_call_count"] == 1
 
     def test_compute_usage_uses_litellm_cost_and_estimates_missing_calls(self):
         obj = _make_interaction_like()
