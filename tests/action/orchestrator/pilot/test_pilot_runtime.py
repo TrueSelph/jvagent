@@ -504,12 +504,16 @@ def test_empty_truncated_model_response_preserves_finish_reason_and_usage():
     asyncio.run(run())
 
 
-def test_partial_text_with_length_finish_reason_is_rejected():
+@pytest.mark.parametrize(
+    "finish_reason",
+    [FinishReason.LENGTH, FinishReason.CONTENT_FILTER],
+)
+def test_partial_text_with_non_success_finish_reason_is_rejected(finish_reason):
     class TruncatedModelAction:
         async def complete(self, request, *, calling_action_name=None):
             return ModelResponse(
                 text="incomplete answer",
-                finish_reason=FinishReason.LENGTH,
+                finish_reason=finish_reason,
                 usage=Usage(completion_tokens=1024, total_tokens=1024),
             )
 
@@ -521,7 +525,7 @@ def test_partial_text_with_length_finish_reason_is_rejected():
         )
         with pytest.raises(PilotModelAdapterError) as caught:
             await agent.run("answer briefly")
-        assert caught.value.finish_reason == FinishReason.LENGTH
+        assert caught.value.finish_reason == finish_reason
         assert "incomplete answer" not in str(caught.value)
 
     asyncio.run(run())
