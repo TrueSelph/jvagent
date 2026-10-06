@@ -3,7 +3,7 @@
 Date: 2026-10-05
 Goal status: Active
 Branch: `codex/pydantic-inspired-skill-pilot`
-Committed base: `82012aef`; working tree contains earlier uncommitted pilot changes and this goal's work. Nothing was staged or committed.
+Latest committed milestone before Phase 53: `be8ec5ba`; this worktree was clean at phase start.
 
 ## Phase 1 — Action trust boundary and browser smoke
 
@@ -872,3 +872,10 @@ The evidence-backed review and its baseline dispositions remain at [2026-10-05-p
 - Parameterized the lease test helper's heartbeat interval and gave the two **160 ms TTL** deadline tests a **50 ms** safety margin. This retains the before-expiry assertion while tolerating ordinary event-loop scheduling jitter.
 - Both deadline cases passed **10 consecutive isolated runs**. The full repository suite then exited **0** with the same **9 optional/environment/opt-in skips**. No harness production code changed in this phase; Phase 51's browser smoke and jvchat checks remain the current UI evidence.
 - Tested source is branch `codex/pydantic-inspired-skill-pilot`, commit `955d7bf1` plus the Phase 52 test/log change. Final staged checks and push-hook rerun remain pending; goal stays active.
+
+## Phase 53 — Correct host-context finding and diagnose Messenger admin login
+
+- Re-audited F16 against the current source and focused tests. The host-supplied `run_id` is a signed request label, not an authority claim; the envelope also binds to the server-resolved agent/user/session, has issuer/audience/expiry checks and uses a dedicated key. Nonces are durably consumed under the Conversation mutation lock and linked to the server-generated correlation ID. Updated the review disposition from open to remediated, retaining production multi-worker/database atomicity as a qualification gap.
+- Diagnosed the reported login issue without changing or purging the disposable graph. The backend at **8122** is running from `/private/tmp/jvagent-goal-f01-repeat-20261005/app`; that app's `.env` configures username `admin`, email `admin@jvagent.example`, and a password (value not copied to this log). A single direct login using those configured values returned HTTP **200** with an access token. The browser login form expects the email address, not the username.
+- In-browser verification used the already-authenticated Messenger at `http://127.0.0.1:3122/chat/n.Agent.891ce63713b544daafbba61f`. The rendered page showed the Orchestrator agent, six conversations, the expected composer, and the prior failed model message with its unknown-cost warning. No prompt was submitted; the browser test generated no new Interaction, task, model call, token usage, or provider spend. This confirms the authenticated UI path, not a new model/provider success.
+- The full repository suite passed: **4,320 passed, 9 skipped, 31 warnings** in **137.21 seconds**; the host-context coverage is included. `pre-commit run --all-files` passed all hooks, and `git diff --cached --check` passed. No runtime source changed in this phase. The evidence/review milestone is ready for commit/push; the enterprise qualification goal remains active.
