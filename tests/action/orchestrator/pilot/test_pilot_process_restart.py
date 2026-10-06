@@ -1,9 +1,11 @@
 """Pilot TaskStore snapshots remain readable after a real worker restart."""
 
+import json
 import os
 import subprocess
 import sys
 import textwrap
+import uuid
 
 import pytest
 
@@ -114,3 +116,152 @@ async def test_pilot_snapshot_reloads_in_a_separate_process(tmp_path):
     assert '"question": "Can this survive a process restart?"' in result.stdout
     assert '"source_id": "https://example.test/restart"' in result.stdout
     await conversation.delete(cascade=True)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("JVAGENT_TEST_POSTGRES_DSN"),
+    reason="set JVAGENT_TEST_POSTGRES_DSN to a disposable PostgreSQL database",
+)
+def test_active_pilot_checkpoint_recovers_after_postgres_worker_crash():
+    """A fresh process can discover uncertain usage in the graph TaskStore."""
+
+    pytest.importorskip("asyncpg")
+    dsn = os.environ["JVAGENT_TEST_POSTGRES_DSN"]
+    test_id = uuid.uuid4().hex
+    session_id = f"pilot-pg-crash-{test_id}"
+    task_id = f"pilot_pg_crash_{test_id}"
+    writer = textwrap.dedent(
+        """
+        import asyncio
+        import os
+        import sys
+        from jvspatial.core.context import GraphContext, set_default_context
+        from jvspatial.db.postgres import PostgresDB
+        from jvagent.action.orchestrator.pilot.contracts import PilotCaller, PilotSnapshot
+        from jvagent.action.orchestrator.pilot.state import PilotTaskStore
+        from jvagent.memory.conversation import Conversation
+
+        async def main():
+            dsn, session_id, task_id = sys.argv[1:]
+            database = PostgresDB(dsn=dsn, min_size=0, max_size=2)
+            set_default_context(GraphContext(database=database))
+            conversation = await Conversation.create(
+                session_id=session_id,
+                user_id="pilot-pg-crash-user",
+                channel="default",
+            )
+            caller = PilotCaller(
+                agent_id="pilot-pg-crash-agent",
+                user_id="pilot-pg-crash-user",
+                session_id=session_id,
+            )
+            state = PilotTaskStore(conversation)
+            handle = await state.create(
+                PilotSnapshot(
+                    caller=caller,
+                    skill_id="research",
+                    skill_digest="postgres-crash-skill",
+                    config_digest="postgres-crash-config",
+                    question="Recover this interrupted PostgreSQL checkpoint.",
+                    model_requests_used=1,
+                    unsettled_model_requests=1,
+                    usage_accounting_complete=False,
+                ),
+                task_id=task_id,
+                title="PostgreSQL crash checkpoint",
+                description="Persist before an abrupt worker exit",
+            )
+            print(f"CONVERSATION_ID={conversation.id}", flush=True)
+            os._exit(71)
+
+        asyncio.run(main())
+        """
+    )
+    created = subprocess.run(
+        [sys.executable, "-c", writer, dsn, session_id, task_id],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=os.environ.copy(),
+    )
+    assert created.returncode == 71, created.stderr
+    conversation_id = next(
+        (
+            line.removeprefix("CONVERSATION_ID=").strip()
+            for line in created.stdout.splitlines()
+            if line.startswith("CONVERSATION_ID=")
+        ),
+        "",
+    )
+    assert conversation_id, created.stdout
+
+    reader = textwrap.dedent(
+        """
+        import asyncio
+        import json
+        import sys
+        from jvspatial.core.context import GraphContext, set_default_context
+        from jvspatial.db.postgres import PostgresDB
+        from jvagent.action.orchestrator.pilot.contracts import PilotCaller
+        from jvagent.action.orchestrator.pilot.state import PilotTaskStore
+        from jvagent.memory.conversation import Conversation
+
+        async def main():
+            dsn, conversation_id, session_id, task_id = sys.argv[1:]
+            database = PostgresDB(dsn=dsn, min_size=0, max_size=2)
+            set_default_context(GraphContext(database=database))
+            conversation = await Conversation.get(conversation_id)
+            assert conversation is not None
+            caller = PilotCaller(
+                agent_id="pilot-pg-crash-agent",
+                user_id="pilot-pg-crash-user",
+                session_id=session_id,
+            )
+            state = PilotTaskStore(conversation)
+            handle, snapshot = state.active_run(
+                caller=caller,
+                skill_id="research",
+                skill_digest="postgres-crash-skill",
+                config_digest="postgres-crash-config",
+            )
+            assert handle is not None
+            print("RECOVERED=" + json.dumps({
+                "task_id": handle.id,
+                "task_status": handle.status,
+                "snapshot_status": snapshot.status,
+                "question": snapshot.question,
+                "model_requests_used": snapshot.model_requests_used,
+                "unsettled_model_requests": snapshot.unsettled_model_requests,
+                "usage_accounting_complete": snapshot.usage_accounting_complete,
+            }, sort_keys=True))
+            await conversation.delete(cascade=True)
+            await database.close()
+
+        asyncio.run(main())
+        """
+    )
+    inspected = subprocess.run(
+        [sys.executable, "-c", reader, dsn, conversation_id, session_id, task_id],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=os.environ.copy(),
+    )
+    assert inspected.returncode == 0, inspected.stderr
+    recovery_line = next(
+        line.removeprefix("RECOVERED=")
+        for line in inspected.stdout.splitlines()
+        if line.startswith("RECOVERED=")
+    )
+    recovered = json.loads(recovery_line)
+    assert recovered == {
+        "task_id": task_id,
+        "task_status": "active",
+        "snapshot_status": "running",
+        "question": "Recover this interrupted PostgreSQL checkpoint.",
+        "model_requests_used": 1,
+        "unsettled_model_requests": 1,
+        "usage_accounting_complete": False,
+    }
