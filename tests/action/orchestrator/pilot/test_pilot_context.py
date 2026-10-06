@@ -67,7 +67,8 @@ async def test_pilot_instructions_include_only_verified_host_context(
     assert "Response policy." in instructions
     assert "SESSION CONTEXT: trusted clock and channel." in instructions
     assert "scoped to evidence-backed research" in instructions
-    assert "loaded research skill and only its declared Actions" in instructions
+    assert "Use the selected JV skill and only its declared Actions." in instructions
+    assert "loaded research skill" not in instructions
     assert "each paired with source_ids observed in Action results" in instructions
     assert "only from validated" in instructions
     assert "do not put additional findings in other fields" in instructions

@@ -1545,9 +1545,10 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
         ProactiveTaskSpec(
             directive=proactive_directive,
             context=proactive_task_context,
-            skill="research",
+            skill="market_research",
         )
     )
+    orchestrator.pilot_skill = "market_research"
     assert await proactive_store.claim_proactive(
         proactive_handle.id, "proactive-lease-1"
     )
@@ -1589,6 +1590,8 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     assert proactive_directive in captured_instructions[-1]
     assert proactive_task_context in captured_instructions[-1]
     assert client_directive not in captured_instructions[-1]
+    assert "Use the selected JV skill" in captured_instructions[-1]
+    assert "loaded research skill" not in captured_instructions[-1]
 
     # Exercise real Pydantic AI parallel tool dispatch and deliberately delay
     # the one-reference checkpoint. Without the per-run lock, the two-source

@@ -436,7 +436,8 @@ Pair `web_search` with `web_fetch`: search surfaces URLs, then `web_fetch__fetch
 one Pydantic AI run at the existing Orchestrator execute boundary; the two loops
 do not nest. `pilot_skill` selects one enabled JV skill by exact name and defaults
 to `research`. A selected skill must declare `output-contract: evidence_required`
-and satisfy the pilot's existing research evidence contract; the selector does
+and satisfy the pilot's existing research evidence contract; proactive TaskStore
+work must target that same configured skill. The selector does
 not make arbitrary output shapes or task flows compatible. The pilot requires
 the host evidence operations `SerperWebSearchAction.web_search__search` and
 `WebFetchAction.web_fetch__fetch`, alongside any additional tools explicitly
