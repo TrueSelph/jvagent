@@ -191,6 +191,31 @@ async def test_parked_retry_requires_exact_caller_and_current_configuration():
 
 
 @pytest.mark.asyncio
+async def test_parked_retry_distinguishes_requests_after_old_clip_boundary():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    first_question = "q" * 2000 + " first ending"
+    snapshot = _snapshot().model_copy(update={"question": first_question})
+    handle = await tasks.create(
+        snapshot, title="research", description="Request with long prefix"
+    )
+    parked = snapshot.model_copy(update={"status": "parked", "park_reason": "legacy"})
+    await handle.park(snapshot=parked.model_dump(mode="json"), reason="legacy")
+
+    different_question = "q" * 2000 + " different ending"
+    assert (
+        tasks.parked_retry(
+            caller=snapshot.caller,
+            skill_id=snapshot.skill_id,
+            skill_digest=snapshot.skill_digest,
+            config_digest=snapshot.config_digest,
+            question=different_question,
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
 async def test_interrupted_active_run_is_failed_with_checkpoint_preserved():
     conversation = DurableConversation()
     tasks = PilotTaskStore(conversation)

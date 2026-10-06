@@ -22,6 +22,7 @@ from jvagent.action.orchestrator.orchestrator_interact_action import (
 )
 from jvagent.action.orchestrator.pilot import runtime as _pilot_runtime
 from jvagent.action.orchestrator.pilot.contracts import (
+    MAX_PILOT_CONTEXT_CHARS,
     MAX_PILOT_QUESTION_CHARS,
     EvidenceReference,
     PilotCaller,
@@ -502,6 +503,56 @@ async def test_oversized_pilot_question_is_rejected_without_truncation(monkeypat
     assert "narrow or split" in published[0]
     assert interaction.response == published[0]
     assert visitor.conversation.tasks == []
+
+
+@pytest.mark.asyncio
+async def test_oversized_proactive_context_is_rejected_without_truncation(monkeypatch):
+    orchestrator = OrchestratorInteractAction()
+    responder = ReplyAction()
+    interaction = Interaction()
+    conversation = DurableConversation()
+    visitor = SimpleNamespace(
+        agent_id="agent-1",
+        user_id="user-1",
+        session_id="session-1",
+        utterance="",
+        channel="default",
+        interaction=interaction,
+        conversation=conversation,
+    )
+    published = []
+
+    async def publish(_self, content, visitor=None, *, message_id=None):
+        published.append(content)
+        visitor.interaction.response = content
+        visitor.interaction.mark_emitted()
+        return True
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_resolve_active_proactive",
+        lambda _self, _visitor: (
+            "task-1",
+            "Research this topic",
+            "research",
+            "c" * (MAX_PILOT_CONTEXT_CHARS + 1),
+        ),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_safe_agent", AsyncMock(return_value=object())
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "get_responder", AsyncMock(return_value=responder)
+    )
+    monkeypatch.setattr(ReplyAction, "publish", publish)
+
+    await orchestrator._run_capability_pilot(visitor)
+
+    assert len(published) == 1
+    assert "20,000 characters" in published[0]
+    assert "shorten the task context" in published[0]
+    assert interaction.response == published[0]
+    assert conversation.tasks == []
 
 
 @pytest.mark.asyncio

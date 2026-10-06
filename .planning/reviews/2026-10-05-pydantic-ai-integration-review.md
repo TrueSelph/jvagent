@@ -91,9 +91,9 @@ The bridge forwards only model/tools/max_tokens/temperature/top_p (`:296`). It o
 
 **Correction:** use an explicit production model adapter with a declared supported request/response contract. Map finish reasons and provider metadata; fail clearly on unsupported settings. Preserve raw tool-argument parse failures instead of converting malformed JSON into an empty mapping (`action/model/contract.py:113`). Qualify OpenAI and Ollama Cloud separately, including reasoning-heavy truncation, filtering, invalid tool arguments and multi-call responses.
 
-### F10 — P2: user requests and proactive context are silently clipped
+### F10 — P2: user requests and proactive context were silently clipped — partially remediated
 
-**Confirmed by source.** `orchestrator_interact_action.py:1379`, `:1388`, `:1531`, `:1565` slice the user's objective and proactive context to 2,000 characters. A long request can lose critical constraints, source exclusions, output requirements or the final question without notice. Two distinct requests sharing the same first 2,000 characters also match the same parked-retry question.
+**Original finding confirmed; current pilot request path no longer clips an accepted question or proactive context.** The capability pilot rejects questions above 20,000 characters and preserves the complete accepted question in its snapshot and retry identity (`orchestrator_interact_action.py:1520`, `pilot/contracts.py:317`, `pilot/state.py:169`). Over-limit user-request and proactive-context regressions verify an explicit reply before task/model dispatch (`tests/action/orchestrator/pilot/test_orchestrator_pilot.py:477`). A retry regression proves two requests that share the old 2,000-character prefix but differ after it no longer alias (`tests/action/orchestrator/pilot/test_pilot_state.py`). This correction is scoped to the capability pilot; do not infer a general input-size contract for every legacy driver.
 
 **Correction:** validate request size at admission and return an explicit error or use a bounded context strategy with an unabridged objective reference. Retry identity should use the complete accepted request or its digest. Test differences after the boundary.
 
@@ -117,9 +117,9 @@ Current subprocess tests prove snapshot readability; write/receipt crash tests e
 
 **Correction:** establish one terminal cancellation transition shared by task, outer run and streaming state. Use bounded cleanup appropriate to the storage backend, and finish tool events with explicit cancellation/timeout status. Test cancellation at model wait, Action wait, evidence checkpoint and final delivery.
 
-### F14 — P2: recovered tool errors are not a coherent model/UI protocol
+### F14 — P2: recovered tool errors were not a coherent model/UI protocol — partially remediated
 
-**Confirmed by source.** A ToolResult error causes `RuntimeError` (`pilot/tools.py:205`), aborting the Agent rather than returning a typed recoverable failure that the research SOP can handle. The error event uses text `Action tool ... returned an error`; the renderer flags errors only when text starts `(tool error` (`orchestrator_interact_action.py:3689`), so this path is displayed without the error flag. Timeouts/cancellation and observer failures can leave an open tool-call segment.
+**Original mismatch remediated at the pilot boundary.** `PilotToolOutcome` carries an explicit `failed`, `timed_out`, or `cancelled` status independent of its text; the Orchestrator renderer consumes that status to set `is_error`. Declared read failures return a bounded recoverable observation to the research skill, and cancellation emits a paired terminal tool event (`pilot/tools.py:324`, `:365`; `orchestrator_interact_action.py:4220`; `tests/action/orchestrator/pilot/test_pilot_tools.py:499`, `:610`). Observer failures and cancellation during persisted delivery still require lifecycle qualification.
 
 **Correction:** classify configuration/security failures as terminal, ordinary read failures as typed observations or Pydantic `ToolFailed`/bounded retry outcomes, and return explicit event status independent of string prefixes. The skill should decide how to proceed from an unavailable page, without core domain heuristics.
 
@@ -127,7 +127,7 @@ Current subprocess tests prove snapshot readability; write/receipt crash tests e
 
 **Original finding confirmed; model streaming path now implemented, but production behavior remains partially qualified.** The pilot detects JV `query_messages(stream=True)` and forwards response and reasoning deltas through Pydantic AI's stream hook; complete-only providers retain the compatibility fallback. Draft text stays internal until the structured output validates. Synthetic integration tests verify streamed reasoning and output-tool reconstruction. Cancellation coverage verifies provider-generator closure; retry and empty-stream regressions verify failed/success terminal attempt events. Real browser calls reached Ollama Cloud but returned HTTP 401, so successful provider-backed browser streaming and reasoning display remain unqualified. Browser smoke exposed and fixed late stream-failure accounting: the UI now reports the provider-unreported attempt as unknown cost.
 
-The runtime also hardcodes a 45-second tool timeout (`:441`) instead of the configured Orchestrator tool timeout (`orchestrator_interact_action.py:891`), and fixes concurrency at 1. Channel/run settings are therefore inconsistent across drivers. Transport heartbeat/progress, reconnect semantics, and idle proxy timeout behavior still need qualification.
+The current source maps the channel-effective Orchestrator `tool_call_timeout` and bounded `max_concurrent_tools` into Pydantic AI (`orchestrator_interact_action.py:2035`, `pilot/runtime.py:934`). Runtime-construction tests verify these values and reject invalid bounds (`tests/action/orchestrator/pilot/test_pilot_runtime.py:656`, `:694`, `:728`), so the prior 45-second/single-call mismatch is closed. Transport heartbeat/progress, reconnect semantics, idle proxy timeout behavior, and successful provider-backed browser streaming still need qualification.
 
 **Correction:** provide cancellation-aware model event streaming and transport heartbeat/progress semantics while withholding an unvalidated final output. Use one typed run-policy mapping for timeouts, concurrency and limits, explicitly rejecting unsupported overrides. Test slow reasoning-only responses, client disconnect/reconnect, cancelled tools and idle proxy timeout behavior.
 

@@ -190,6 +190,8 @@ OpenAI-compatible Action declares `seed`, `stop_sequences`,
 Custom model Actions can expose only settings they actually implement. See
 [`jvagent/action/orchestrator/pilot/runtime.py`](../jvagent/action/orchestrator/pilot/runtime.py)
 and the provider payload builders for the enforced mappings.
+The complete skill, Action, provider, identity, state, delegation, write, and
+egress boundary is listed in [the pilot compatibility matrix](pydantic-ai-pilot-compatibility.md).
 
 LiteLLM's `drop_params` setting must be `false` when using provider-specific
 Pydantic settings through the pilot. With dropping enabled, the pilot rejects
