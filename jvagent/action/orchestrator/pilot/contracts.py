@@ -163,6 +163,20 @@ class EvidenceReference(PilotModel):
         return normalized
 
 
+def _contains_inline_citation(value: str) -> bool:
+    """Reject model-authored citation markers reserved for host rendering."""
+
+    return bool(
+        re.search(
+            r"https?://|www\.|\[[^\]]+\]\(|"
+            r"\[\s*(?:source\s*)?#?\d+(?:\s*[,;][^\]]*)?\s*\]|"
+            r"\bsource\s*#?\s*\d+\b",
+            value,
+            re.IGNORECASE,
+        )
+    )
+
+
 class ResearchFinding(PilotModel):
     """One claim with explicit citations and a quote anchor from a fetched page."""
 
@@ -175,7 +189,7 @@ class ResearchFinding(PilotModel):
     @classmethod
     def reject_inline_citations(cls, value: str) -> str:
         """Prevent model-authored links/citations from bypassing ID rendering."""
-        if re.search(r"https?://|www\.|\[[^\]]+\]\(", value, re.IGNORECASE):
+        if _contains_inline_citation(value):
             raise ValueError("research claims must use source_ids for citations")
         return value
 
@@ -200,10 +214,7 @@ class ResearchBrief(PilotModel):
     @classmethod
     def reject_unrenderable_limitations(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         """Keep caveats bounded and prevent inline links bypassing citations."""
-        if any(
-            re.search(r"https?://|www\.|\[[^\]]+\]\(", item, re.IGNORECASE)
-            for item in value
-        ):
+        if any(_contains_inline_citation(item) for item in value):
             raise ValueError("research limitations must not contain URLs or citations")
         return value
 

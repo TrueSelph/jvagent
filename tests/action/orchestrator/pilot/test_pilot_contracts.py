@@ -133,6 +133,13 @@ def test_research_brief_rejects_extra_fields_and_unbounded_text() -> None:
             claim="Claim with untrusted URL https://fake.test",
             source_ids=("source-1",),
         )
+    for claim in (
+        "This conclusion is verified [Source 99].",
+        "This conclusion is verified [99].",
+        "This conclusion is verified by Source #99.",
+    ):
+        with pytest.raises(ValidationError, match="source_ids"):
+            ResearchFinding(claim=claim, source_ids=("source-1",))
     with pytest.raises(ValidationError):
         PilotSnapshot.model_validate(
             {
@@ -235,6 +242,20 @@ def test_research_limitations_are_bounded_and_cannot_bypass_citations() -> None:
                 ),
             ),
             limitations=("See https://example.test for details.",),
+        )
+
+    with pytest.raises(ValidationError, match="URLs or citations"):
+        ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A finding",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="A supporting quote long enough.",
+                ),
+            ),
+            limitations=("See [Source 99] for details.",),
         )
 
 
