@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from jvagent.action.response.response_bus import ResponseBus
+from jvagent.action.response.channel_adapter import ChannelAdapter
+from jvagent.action.response.message import ResponseMessage
+from jvagent.action.response.response_bus import ChannelDeliveryError, ResponseBus
 from jvagent.memory.interaction import Interaction
 
 
@@ -123,6 +127,61 @@ async def test_message_id_rejects_unbounded_or_unscoped_identifiers():
             channel="default",
             message_id="arbitrary-id",
         )
+
+
+@pytest.mark.asyncio
+async def test_required_adapter_rejection_fails_before_task_can_be_acknowledged():
+    class RejectingAdapter(ChannelAdapter):
+        async def send(self, message: ResponseMessage) -> bool:
+            return False
+
+    bus = ResponseBus()
+    adapter = RejectingAdapter(channel="partner")
+    adapter.send = AsyncMock(return_value=False)
+    bus._channel_adapters["partner"] = adapter
+    interaction = Interaction()
+    await bus.subscribe("session-1", AsyncMock(), receive_chunks=True)
+
+    with pytest.raises(ChannelDeliveryError, match="did not confirm delivery"):
+        await bus.publish(
+            session_id="session-1",
+            content="Saved answer",
+            channel="partner",
+            interaction=interaction,
+            interaction_id=interaction.id,
+            category="user",
+            message_id="o.ResponseMessage.pilot_0123456789abcdef01234567",
+            require_adapter_ack=True,
+        )
+
+    adapter.send.assert_awaited_once()
+    assert interaction.has_emitted() is False
+    assert bus._session_queues.get("session-1", []) == []
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejection_keeps_legacy_queue_behavior_without_required_ack():
+    class RejectingAdapter(ChannelAdapter):
+        async def send(self, message: ResponseMessage) -> bool:
+            return False
+
+    bus = ResponseBus()
+    adapter = RejectingAdapter(channel="partner")
+    adapter.send = AsyncMock(return_value=False)
+    bus._channel_adapters["partner"] = adapter
+    interaction = Interaction()
+
+    message = await bus.publish(
+        session_id="session-legacy",
+        content="Existing adapter behavior",
+        channel="partner",
+        interaction=interaction,
+        interaction_id=interaction.id,
+        category="user",
+    )
+
+    assert message.content == "Existing adapter behavior"
+    assert len(bus._session_queues["session-legacy"]) == 1
 
 
 @pytest.mark.asyncio

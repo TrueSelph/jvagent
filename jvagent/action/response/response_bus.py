@@ -27,6 +27,10 @@ from jvagent.core.app import App
 logger = logging.getLogger(__name__)
 
 
+class ChannelDeliveryError(RuntimeError):
+    """A required channel adapter did not confirm message delivery."""
+
+
 @dataclass
 class AdhocAccumulator:
     """Accumulates streaming adhoc chunks per interaction until streaming_complete."""
@@ -499,8 +503,14 @@ class ResponseBus:
         segment_id: Optional[str] = None,
         relay_to_adapters: bool = False,
         message_id: Optional[str] = None,
+        require_adapter_ack: bool = False,
     ) -> ResponseMessage:
-        """Publish user/thought content with optional streaming and adapter relay."""
+        """Publish content, optionally requiring a channel adapter's confirmation.
+
+        ``require_adapter_ack`` is intended for checkpointed output whose caller
+        must leave its durable task pending when a configured adapter rejects it.
+        Queue-based delivery without a channel adapter retains its normal behavior.
+        """
         if message_id is not None and (
             not isinstance(message_id, str)
             or not message_id.startswith("o.ResponseMessage.")
@@ -565,7 +575,13 @@ class ResponseBus:
                     relay_to_adapters if relay_override is None else relay_override
                 )
                 if self._can_send_to_adapter(adapter, flush_message, effective_relay):
-                    await self._send_to_adapter(adapter, flush_message)
+                    adapter_delivered = await self._send_to_adapter(
+                        adapter, flush_message
+                    )
+                    if require_adapter_ack and not adapter_delivered:
+                        raise ChannelDeliveryError(
+                            "required channel adapter did not confirm delivery"
+                        )
 
             if (
                 flush_message.category == "user"

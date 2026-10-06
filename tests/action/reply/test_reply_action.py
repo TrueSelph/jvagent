@@ -60,6 +60,7 @@ async def test_publish_forwards_stable_message_identifier_to_response_bus():
         bus.publish.call_args.kwargs["message_id"]
         == "o.ResponseMessage.pilot_0123456789abcdef01234567"
     )
+    assert bus.publish.call_args.kwargs["require_adapter_ack"] is True
 
 
 def _visitor_with(directives=None, parameters=None):

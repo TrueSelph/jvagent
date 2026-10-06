@@ -396,18 +396,23 @@ class ReplyAction(Action):
 
         channel = getattr(visitor, "channel", "default") or "default"
         visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
+        publish_options: Dict[str, Any] = {
+            "session_id": visitor.session_id,
+            "content": content,
+            "channel": channel,
+            "stream": False,
+            "metadata": dict(visitor_data),
+            "interaction_id": getattr(interaction, "id", None),
+            "interaction": interaction,
+            "user_id": getattr(interaction, "user_id", None),
+            "streaming_complete": True,
+            "transient": transient,
+        }
+        if message_id is not None:
+            publish_options["message_id"] = message_id
+            publish_options["require_adapter_ack"] = True
         message = await response_bus.publish(
-            session_id=visitor.session_id,
-            content=content,
-            channel=channel,
-            stream=False,
-            metadata=dict(visitor_data),
-            interaction_id=getattr(interaction, "id", None),
-            interaction=interaction,
-            user_id=getattr(interaction, "user_id", None),
-            streaming_complete=True,
-            transient=transient,
-            message_id=message_id,
+            **publish_options,
         )
         # ResponseBus returns an empty-content envelope when it suppresses a
         # duplicate or a fail-fast channel filter rejects the message. Do not
