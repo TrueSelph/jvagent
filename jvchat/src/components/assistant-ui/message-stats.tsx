@@ -26,6 +26,11 @@ type Usage = {
   estimated_cost_usd?: number;
   litellm_cost_usd?: number;
   total_cost_usd?: number;
+  model_attempt_count?: number;
+  failed_model_attempt_count?: number;
+  cancelled_model_attempt_count?: number;
+  model_attempt_duration_seconds?: number;
+  unknown_cost_call_count?: number;
 };
 
 type MetricEntry = {
@@ -33,6 +38,7 @@ type MetricEntry = {
   data?: {
     model?: string;
     duration?: number;
+    outcome?: string;
     usage?: {
       prompt_tokens?: number;
       completion_tokens?: number;
@@ -81,6 +87,9 @@ export const MessageStats: FC = () => {
   const steps = (interaction.observability_metrics ?? []).filter(
     (m) => m.event_type === "model_call",
   );
+  const attempts = (interaction.observability_metrics ?? []).filter(
+    (m) => m.event_type === "model_attempt",
+  );
 
   const totalIn = usage.prompt_tokens ?? 0;
   const totalOut = usage.completion_tokens ?? 0;
@@ -92,16 +101,35 @@ export const MessageStats: FC = () => {
       ? totalOut / durationSec
       : undefined;
 
-  const primaryModel = shortModel(steps[0]?.data?.model);
+  const primaryModel = shortModel(
+    steps[0]?.data?.model ?? attempts[0]?.data?.model,
+  );
   const multiModel =
     steps.length > 1 &&
     new Set(steps.map((s) => s.data?.model).filter(Boolean)).size > 1;
 
   const summaryParts: string[] = [];
-  if (steps.length > 0) summaryParts.push(primaryModel);
+  if (steps.length > 0 || attempts.length > 0) {
+    summaryParts.push(primaryModel);
+  }
+  if (attempts.length > 0) {
+    summaryParts.push(
+      `${attempts.length} attempt${attempts.length === 1 ? "" : "s"}`,
+    );
+  }
   if (totalTokens > 0) summaryParts.push(`${formatTokens(totalTokens)} tokens`);
   const timeStr = formatTimeSec(durationSec);
   if (timeStr) summaryParts.push(timeStr);
+  const attemptTimeStr = formatTimeSec(usage.model_attempt_duration_seconds);
+  if (attemptTimeStr && steps.length === 0) {
+    summaryParts.push(`${attemptTimeStr} provider time`);
+  }
+  const unknownCostCount = usage.unknown_cost_call_count ?? 0;
+  if (unknownCostCount > 0) {
+    summaryParts.push(
+      `${unknownCostCount} unknown-cost event${unknownCostCount === 1 ? "" : "s"}`,
+    );
+  }
   const tpsStr = tps ? `${tps.toFixed(1)} tok/s` : null;
   if (tpsStr) summaryParts.push(tpsStr);
 
@@ -171,6 +199,26 @@ export const MessageStats: FC = () => {
                 )}
               </tbody>
             </table>
+          )}
+
+          {attempts.length > 0 && (
+            <div className="mt-1.5" role="status">
+              {attempts.length} provider attempt
+              {attempts.length === 1 ? "" : "s"}
+              {usage.failed_model_attempt_count
+                ? ` · ${usage.failed_model_attempt_count} failed`
+                : ""}
+              {usage.cancelled_model_attempt_count
+                ? ` · ${usage.cancelled_model_attempt_count} cancelled`
+                : ""}
+              {unknownCostCount > 0 && (
+                <span className="ml-2 font-medium text-amber-700 dark:text-amber-400">
+                  {" · "}
+                  Cost unknown for {unknownCostCount} provider attempt
+                  {unknownCostCount === 1 ? "" : "s"}; check provider billing.
+                </span>
+              )}
+            </div>
           )}
 
           <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground/70">
