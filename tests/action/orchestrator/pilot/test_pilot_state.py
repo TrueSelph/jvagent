@@ -8,6 +8,7 @@ import pytest
 
 from jvagent.action.orchestrator.continuation import park_capability_pilot_tasks
 from jvagent.action.orchestrator.pilot.contracts import (
+    ConversationalReply,
     EvidenceReference,
     PilotCaller,
     PilotSnapshot,
@@ -489,6 +490,60 @@ async def test_task_completion_requires_validated_output_and_delivery():
         await tasks.complete(handle, result, delivered=False)
     await tasks.complete(handle, result, delivered=True)
     assert handle.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_task_completion_rejects_source_free_conversational_variant():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    handle = await tasks.create(
+        _snapshot(), title="research", description="Research the question"
+    )
+    result = _snapshot(
+        status="complete",
+        output=ConversationalReply(answer="A factual answer without evidence."),
+    )
+
+    with pytest.raises(PilotStateError, match="evidence-backed ResearchBrief"):
+        await tasks.complete(handle, result, delivered=True)
+
+    assert handle.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_task_completion_revalidates_quote_and_fresh_source_contract():
+    conversation = DurableConversation()
+    tasks = PilotTaskStore(conversation)
+    handle = await tasks.create(
+        _snapshot(), title="research", description="Research the question"
+    )
+    result = _snapshot(
+        status="complete",
+        evidence=(
+            EvidenceReference(
+                source_id="source-1",
+                url="https://example.test/1",
+                excerpt="A different statement is on this fetched page.",
+                provenance="fetched_page",
+            ),
+        ),
+        output=ResearchBrief(
+            question="q",
+            findings=(
+                ResearchFinding(
+                    claim="A finding",
+                    source_ids=("source-1",),
+                    supporting_source_id="source-1",
+                    supporting_quote="This fabricated quote is not in the page.",
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(PilotStateError, match="evidence contract"):
+        await tasks.complete(handle, result, delivered=True)
+
+    assert handle.status == "active"
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from typing import Any, Optional
 from jvagent.action.orchestrator.pilot.contracts import (
     PilotCaller,
     PilotSnapshot,
+    ResearchBrief,
     output_user_text,
     validate_snapshot_for_run,
 )
@@ -321,9 +322,19 @@ class PilotTaskStore:
             raise PilotStateError(
                 "pilot task requires validated output and final delivery"
             )
+        if not isinstance(snapshot.output, ResearchBrief):
+            raise PilotStateError(
+                "research pilot task requires an evidence-backed ResearchBrief"
+            )
         snapshot = self._validate_snapshot(snapshot)
+        try:
+            rendered_result = output_user_text(snapshot.output, snapshot.evidence)
+        except ValueError as exc:
+            raise PilotStateError(
+                "research pilot task output does not satisfy its evidence contract"
+            ) from exc
         await handle.complete(
-            result=output_user_text(snapshot.output, snapshot.evidence),
+            result=rendered_result,
             snapshot=snapshot.model_dump(mode="json"),
         )
 
