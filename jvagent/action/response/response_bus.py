@@ -1293,12 +1293,15 @@ class ResponseBus:
     async def _send_to_adapter(
         self, adapter: "ChannelAdapter", message: ResponseMessage
     ) -> bool:
-        """Send message to adapter with lightweight retry (max 2 attempts).
+        """Send once, retrying an uncertain exception only for idempotent adapters.
 
         Returns:
-            True if sent successfully, False on permanent failure or exhausted retries.
+            True if sent successfully; False when rejected, uncertain, or exhausted.
         """
         delivered_before = bool(getattr(message, "delivered", False))
+        supports_idempotent_replay = bool(
+            getattr(adapter, "supports_idempotent_replay", False)
+        )
         for attempt in range(2):
             try:
                 if await adapter.send(message):
@@ -1310,6 +1313,14 @@ class ResponseBus:
                 if delivered_before or bool(getattr(message, "delivered", False)):
                     logger.warning(
                         f"Adapter partial delivery for {adapter.channel}; skip retry: {e}"
+                    )
+                    return False
+                if not supports_idempotent_replay:
+                    logger.warning(
+                        "Adapter delivery outcome is uncertain for %s; skip retry "
+                        "because idempotent replay is not declared: %s",
+                        adapter.channel,
+                        e,
                     )
                     return False
                 if attempt == 0:

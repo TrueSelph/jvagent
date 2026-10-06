@@ -39,6 +39,9 @@ class ChannelAdapter(ABC):
         """
         self.channel = channel
         self.deliver_thoughts: bool = False
+        # The bus may retry an exception only when the transport deduplicates
+        # replayed sends by ResponseMessage.id. Legacy adapters default closed.
+        self.supports_idempotent_replay: bool = False
         self.response_bus: Optional[ResponseBus] = None
         self._initialized: bool = False
 
@@ -105,4 +108,8 @@ class ChannelAdapter(ABC):
             False when delivery is rejected or fails. This is not a recipient
             read receipt. For replayable messages, use ``message.id`` as the
             transport's idempotency key when that capability is available.
+
+        Set ``supports_idempotent_replay`` to True only when the outbound
+        transport enforces ``message.id`` as an idempotency key. Otherwise an
+        exception is treated as an uncertain send and the bus does not retry.
         """

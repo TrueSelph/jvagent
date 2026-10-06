@@ -133,6 +133,17 @@ See `chunking.py` for `chunk_text_by_words()` and `chunk_text_by_chars()` for ot
 - **Simple Interface**: Single `send()` method to implement
 - **Serverless-Safe**: Adapters are replaced on registration, preventing orphaned instances
 
+### Retry and idempotency
+
+An exception from a provider send can mean the provider accepted the message but
+the acknowledgment was lost. `ChannelAdapter.supports_idempotent_replay` defaults
+to `False`, so the bus does not automatically retry that uncertain send. Set it
+to `True` only when the provider enforces `ResponseMessage.id` as an idempotency
+key and the adapter passes the same ID on every retry. A successful `send()`
+means the configured transport accepted the request; it is not a recipient read
+receipt. The built-in adapters do not currently declare this capability, so
+ambiguous sends may require reconciliation before a human or caller retries.
+
 ## Implementing a Channel Adapter
 
 ### Step 1: Create the Adapter Class

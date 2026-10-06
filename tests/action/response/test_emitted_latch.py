@@ -185,6 +185,46 @@ async def test_adapter_rejection_keeps_legacy_queue_behavior_without_required_ac
 
 
 @pytest.mark.asyncio
+async def test_adapter_exception_is_not_retried_without_idempotent_replay():
+    class UnkeyedAdapter(ChannelAdapter):
+        async def send(self, message: ResponseMessage) -> bool:
+            raise TimeoutError("provider acknowledgment timed out")
+
+    bus = ResponseBus()
+    adapter = UnkeyedAdapter(channel="partner")
+    adapter.send = AsyncMock(side_effect=TimeoutError("acknowledgment lost"))
+
+    delivered = await bus._send_to_adapter(
+        adapter, ResponseMessage(channel="partner", content="one message")
+    )
+
+    assert delivered is False
+    adapter.send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_adapter_exception_can_retry_when_idempotent_replay_is_declared():
+    class KeyedAdapter(ChannelAdapter):
+        async def send(self, message: ResponseMessage) -> bool:
+            return True
+
+    bus = ResponseBus()
+    adapter = KeyedAdapter(channel="partner")
+    adapter.supports_idempotent_replay = True
+    adapter.send = AsyncMock(side_effect=[TimeoutError("acknowledgment lost"), True])
+    message = ResponseMessage(channel="partner", content="one message")
+
+    delivered = await bus._send_to_adapter(adapter, message)
+
+    assert delivered is True
+    assert adapter.send.await_count == 2
+    assert [call.args[0].id for call in adapter.send.await_args_list] == [
+        message.id,
+        message.id,
+    ]
+
+
+@pytest.mark.asyncio
 async def test_incremental_stream_latches_first_chunk_and_allows_completion():
     bus = ResponseBus()
     interaction = Interaction()
