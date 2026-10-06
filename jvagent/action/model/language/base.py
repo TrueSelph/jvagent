@@ -834,6 +834,12 @@ class LanguageModelAction(BaseModelAction, ABC):
                         try:
                             chunk = await it.__anext__()
                         except StopAsyncIteration:
+                            await self._emit_model_attempt(
+                                "lm_query_stream",
+                                stream_attempt_number,
+                                "succeeded",
+                                asyncio.get_running_loop().time() - attempt_started,
+                            )
                             return
                         got_any_chunk = True
                         yield chunk

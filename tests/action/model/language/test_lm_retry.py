@@ -152,6 +152,13 @@ async def test_stream_retries_before_first_chunk():
     action.retry_jitter = False
     action.retry_initial_delay = 0.01
     stream_calls = {"n": 0}
+    events = []
+
+    class Interaction:
+        observability_metrics = events
+
+        async def save(self):
+            return None
 
     async def fake_query_stream(*args, **kwargs):
         stream_calls["n"] += 1
@@ -179,25 +186,82 @@ async def test_stream_retries_before_first_chunk():
             provider="openai",
         )
 
-    with patch.object(
-        OpenAILanguageModelAction,
-        "_query_stream",
-        AsyncMock(side_effect=fake_query_stream),
-    ):
-        with patch(
-            "jvagent.action.model.language.base.asyncio.sleep", new_callable=AsyncMock
+    set_interaction(Interaction())
+    try:
+        with patch.object(
+            OpenAILanguageModelAction,
+            "_query_stream",
+            AsyncMock(side_effect=fake_query_stream),
         ):
-            result = await action.query_messages(
-                messages=[{"role": "user", "content": "hi"}],
-                stream=True,
-            )
+            with patch(
+                "jvagent.action.model.language.base.asyncio.sleep",
+                new_callable=AsyncMock,
+            ):
+                result = await action.query_messages(
+                    messages=[{"role": "user", "content": "hi"}],
+                    stream=True,
+                )
 
-            chunks: list[str] = []
-            async for c in result.iter_stream():
-                chunks.append(c)
+                chunks: list[str] = []
+                async for c in result.iter_stream():
+                    chunks.append(c)
+    finally:
+        set_interaction(None)
 
     assert stream_calls["n"] == 2
     assert "".join(chunks) == "ab"
+    attempts = [
+        event["data"] for event in events if event["event_type"] == "model_attempt"
+    ]
+    assert [attempt["outcome"] for attempt in attempts] == ["failed", "succeeded"]
+    assert [attempt["attempt_number"] for attempt in attempts] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_empty_stream_is_recorded_as_successful_attempt():
+    events = []
+
+    class Interaction:
+        observability_metrics = events
+
+        async def save(self):
+            return None
+
+    action = OpenAILanguageModelAction()
+    action.max_retries = 0
+
+    async def empty_stream(*args, **kwargs):
+        async def no_chunks():
+            if False:
+                yield ""
+
+        return ModelActionResult(
+            stream=no_chunks(),
+            usage={},
+            model="gpt-4o-mini",
+            provider="openai",
+        )
+
+    set_interaction(Interaction())
+    try:
+        with patch.object(
+            OpenAILanguageModelAction,
+            "_query_stream",
+            AsyncMock(side_effect=empty_stream),
+        ):
+            result = await action.query_messages(
+                messages=[{"role": "user", "content": "hi"}], stream=True
+            )
+            chunks = [chunk async for chunk in result.iter_stream()]
+    finally:
+        set_interaction(None)
+
+    assert chunks == []
+    attempts = [
+        event["data"] for event in events if event["event_type"] == "model_attempt"
+    ]
+    assert len(attempts) == 1
+    assert attempts[0]["outcome"] == "succeeded"
 
 
 @pytest.mark.asyncio

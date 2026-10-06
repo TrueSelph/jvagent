@@ -104,15 +104,13 @@ async def test_heartbeat_cancels_owner_before_unrenewed_lease_expires():
         raise ConnectionError("temporary backend outage")
 
     started = asyncio.get_running_loop().time()
-    # Keep a scheduling margin before the lease deadline; a 20ms margin made
-    # this timing assertion flaky when the full suite briefly starved the loop.
-    owner = asyncio.create_task(
-        _run_owner_with_heartbeat(renew, ttl=0.16, interval=0.05)
-    )
+    # Keep a meaningful absolute scheduling margin before expiry. Very short
+    # synthetic leases can be overtaken by ordinary full-suite event-loop load.
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.6, interval=0.1))
     with pytest.raises(asyncio.CancelledError):
         await owner
 
-    assert asyncio.get_running_loop().time() - started < 0.16
+    assert asyncio.get_running_loop().time() - started < 0.6
 
 
 async def test_heartbeat_bounds_a_stalled_renewal_by_lease_deadline():
@@ -120,13 +118,11 @@ async def test_heartbeat_bounds_a_stalled_renewal_by_lease_deadline():
         await asyncio.Event().wait()
 
     started = asyncio.get_running_loop().time()
-    owner = asyncio.create_task(
-        _run_owner_with_heartbeat(renew, ttl=0.16, interval=0.05)
-    )
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.6, interval=0.1))
     with pytest.raises(asyncio.CancelledError):
         await owner
 
-    assert asyncio.get_running_loop().time() - started < 0.16
+    assert asyncio.get_running_loop().time() - started < 0.6
 
 
 async def test_redis_lock_renews_lease_while_held(monkeypatch):
