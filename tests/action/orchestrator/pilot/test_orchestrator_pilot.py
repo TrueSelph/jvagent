@@ -793,6 +793,27 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     async def search(_self, query: str, **_kwargs):
         assert query
         action_calls.append("web_search__search")
+        if parallel_search_mode["enabled"]:
+            return [
+                {
+                    "title": "Pilot evidence",
+                    "link": "https://example.com/evidence",
+                    "snippet": "The pilot uses typed capabilities.",
+                },
+                {
+                    "title": "Additional pilot evidence",
+                    "link": "https://example.com/alternate-evidence",
+                    "snippet": "An independently discovered supporting source.",
+                },
+                *[
+                    {
+                        "title": f"Overflow evidence {index}",
+                        "link": f"https://example.com/overflow/{index}",
+                        "snippet": "Additional bounded source.",
+                    }
+                    for index in range(29)
+                ],
+            ]
         if query == "pilot-alt":
             return [
                 {
@@ -1326,7 +1347,11 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     )
     monkeypatch.setattr(SerperWebSearchAction, "search", search)
     original_save = conversation.save
-    checkpoint_fault = {"pending": True, "run_saves": 0}
+    checkpoint_fault = {
+        "pending": True,
+        "evidence_checkpoints": 0,
+        "last_evidence": None,
+    }
 
     async def fail_first_evidence_checkpoint():
         task = next(
@@ -1339,10 +1364,18 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
             None,
         )
         if task is not None:
-            checkpoint_fault["run_saves"] += 1
-        if checkpoint_fault["pending"] and checkpoint_fault["run_saves"] == 2:
-            checkpoint_fault["pending"] = False
-            raise OSError("evidence checkpoint unavailable")
+            current_evidence = json.dumps(
+                task.get("snapshot", {}).get("evidence", []), sort_keys=True
+            )
+            if current_evidence != checkpoint_fault["last_evidence"]:
+                checkpoint_fault["evidence_checkpoints"] += 1
+                checkpoint_fault["last_evidence"] = current_evidence
+                if (
+                    checkpoint_fault["pending"]
+                    and checkpoint_fault["evidence_checkpoints"] == 2
+                ):
+                    checkpoint_fault["pending"] = False
+                    raise OSError("evidence checkpoint unavailable")
         await original_save()
 
     monkeypatch.setattr(conversation, "save", fail_first_evidence_checkpoint)
@@ -1465,11 +1498,14 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     parallel_task = proactive_conversation.tasks[-1]
     assert parallel_task["status"] == "completed"
     assert parallel_task["snapshot"]["tool_calls_used"] == 3
+    assert len(parallel_task["snapshot"]["evidence"]) == 30
+    assert parallel_task["snapshot"]["evidence_overflow_count"] == 1
     assert {item["url"] for item in parallel_task["snapshot"]["evidence"]} >= {
         "https://example.com/evidence",
         "https://example.com/alternate-evidence",
     }
-    assert checkpoint_evidence_counts[-1] == 2
+    assert checkpoint_evidence_counts[-1] == 30
+    parallel_search_mode["enabled"] = False
 
     provider_request = httpx.Request("POST", "https://ollama.com/api/chat")
     provider_response = httpx.Response(401, request=provider_request)

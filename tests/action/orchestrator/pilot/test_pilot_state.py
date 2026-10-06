@@ -76,7 +76,9 @@ async def test_pilot_task_snapshot_survives_recreation_and_is_caller_scoped():
     conversation = DurableConversation(durable=durable)
     tasks = PilotTaskStore(conversation)
     handle = await tasks.create(
-        _snapshot(), title="research", description="Research the question"
+        _snapshot(evidence_overflow_count=3),
+        title="research",
+        description="Research the question",
     )
     assert handle.task_type == PILOT_TASK_TYPE
     assert handle.status == "active"
@@ -94,6 +96,7 @@ async def test_pilot_task_snapshot_survives_recreation_and_is_caller_scoped():
         config_digest="sha256-config",
     )
     assert found.status == "active"
+    assert snapshot.evidence_overflow_count == 3
     assert snapshot.question == "What does the evidence establish?"
     assert conversation.flush_count == 1
 

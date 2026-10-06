@@ -78,6 +78,13 @@ class PilotEvidenceCollector:
         # stale, session-wide citation pool.
         self._references: dict[str, EvidenceReference] = {}
         self._fetch_aliases: dict[str, str] = {}
+        self._overflow_urls: set[str] = set()
+        self._overflow_fetch_requests: set[str] = set()
+
+    @property
+    def overflow_count(self) -> int:
+        """Number of distinct source URLs withheld by the per-run cap."""
+        return len(self._overflow_urls)
 
     @staticmethod
     def _normalize_url(value: Any) -> str:
@@ -155,6 +162,8 @@ class PilotEvidenceCollector:
                 or len(self._references) < self.max_references
             ):
                 self._references[source_id] = ref
+            else:
+                self._overflow_urls.add(item_url)
 
         # Fetch provenance comes from the Action's typed receipt, never text
         # markers that could be forged by a page body or another Action.
@@ -216,6 +225,9 @@ class PilotEvidenceCollector:
                 ):
                     self._references[ref.source_id] = ref
                     self._fetch_aliases[requested_url] = ref.source_id
+                else:
+                    self._overflow_urls.add(final_url)
+                    self._overflow_fetch_requests.add(requested_url)
 
     def snapshot(self) -> tuple[EvidenceReference, ...]:
         """Return bounded references in deterministic order."""
@@ -244,11 +256,15 @@ class PilotEvidenceCollector:
                     if isinstance(nested, list):
                         self._annotate_search_items(nested)
                         break
+                if self._overflow_urls:
+                    decoded["pilot_evidence_limit_reached"] = True
+                    decoded["pilot_evidence_omitted_count"] = self.overflow_count
             return json.dumps(decoded, ensure_ascii=False, separators=(",", ":"))
         elif tool_name.endswith(("__fetch", "__get")):
             requested = self._normalize_url(args.get("url"))
             if not requested:
-                return content
+                return self._sanitize_fetch_source_marker(content)
+            content = self._sanitize_fetch_source_marker(content)
             reference = next(
                 (
                     item
@@ -259,12 +275,45 @@ class PilotEvidenceCollector:
             )
             if reference is not None:
                 return content + f"\n\nObserved source ID: {reference.source_id}"
+            if requested in self._overflow_fetch_requests:
+                return (
+                    content + "\n\nThis page was fetched but not retained as evidence: "
+                    "the per-run source limit has been reached. Do not cite it."
+                )
         return content
+
+    @classmethod
+    def _sanitize_fetch_source_marker(cls, content: str) -> str:
+        """Remove URL credentials from the host-generated source header."""
+        lines = content.splitlines()
+        for index, line in enumerate(lines[:5]):
+            if line.startswith("# Source: "):
+                source_url = line[len("# Source: ") :].strip()
+                normalized = cls._normalize_url(source_url)
+                lines[index] = (
+                    f"# Source: {normalized}"
+                    if normalized
+                    else "# Source: [unsafe URL removed]"
+                )
+                break
+        return "\n".join(lines)
 
     def _annotate_search_items(self, values: list[Any]) -> None:
         for item in values:
             if not isinstance(item, dict):
                 continue
+            for key in ("link", "url"):
+                raw_url = item.get(key)
+                if not isinstance(raw_url, str):
+                    continue
+                safe_url = self._normalize_url(raw_url)
+                if safe_url:
+                    item[key] = safe_url
+                else:
+                    item.pop(key, None)
+                    item["pilot_source_unavailable"] = (
+                        "unsafe source URL removed; do not cite"
+                    )
             url = self._normalize_url(item.get("link") or item.get("url"))
             reference = next(
                 (
@@ -276,6 +325,10 @@ class PilotEvidenceCollector:
             )
             if reference is not None:
                 item["pilot_source_id"] = reference.source_id
+            elif url in self._overflow_urls:
+                item["pilot_source_unavailable"] = (
+                    "per-run evidence source limit reached; do not cite"
+                )
 
     def validate(self, output: PilotOutput) -> None:
         """Require each claim to quote a fresh, successfully fetched source."""

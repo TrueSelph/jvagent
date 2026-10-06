@@ -318,6 +318,58 @@ def test_source_urls_over_reference_limit_are_ignored_without_aborting() -> None
     assert collector.snapshot() == ()
 
 
+def test_search_evidence_overflow_is_reported_and_unavailable_sources_are_marked() -> (
+    None
+):
+    collector = PilotEvidenceCollector()
+    collector.max_references = 1
+    content = json.dumps(
+        {
+            "organic": [
+                {"link": f"https://example.test/{index}", "snippet": "source"}
+                for index in range(3)
+            ]
+        }
+    )
+
+    asyncio.run(collector.observe(_context(), "web_search__search", {}, content))
+    annotated = json.loads(collector.annotate_result("web_search__search", {}, content))
+
+    assert len(collector.snapshot()) == 1
+    assert collector.overflow_count == 2
+    assert annotated["pilot_evidence_limit_reached"] is True
+    assert annotated["pilot_evidence_omitted_count"] == 2
+    results = annotated["organic"]
+    assert results[0]["pilot_source_id"]
+    assert all("pilot_source_id" not in item for item in results[1:])
+    assert all("pilot_source_unavailable" in item for item in results[1:])
+
+
+def test_fetched_source_overflow_is_disclosed_to_the_model() -> None:
+    collector = PilotEvidenceCollector()
+    collector.max_references = 1
+    search_content = json.dumps(
+        [{"link": "https://example.test/search", "snippet": "search"}]
+    )
+    asyncio.run(collector.observe(_context(), "web_search__search", {}, search_content))
+    requested = "https://example.test/fetched"
+    fetched_content = _fetch_result(
+        "# Source: https://example.test/fetched\n\nFetched page", requested
+    )
+    asyncio.run(
+        collector.observe(
+            _context(), "web_fetch__fetch", {"url": requested}, fetched_content
+        )
+    )
+
+    annotated = collector.annotate_result(
+        "web_fetch__fetch", {"url": requested}, fetched_content
+    )
+    assert collector.overflow_count == 1
+    assert "not retained as evidence" in annotated
+    assert "Do not cite it" in annotated
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -498,6 +550,11 @@ def test_fetched_evidence_citation_does_not_expose_signed_query_credentials() ->
     rendered = output_user_text(output, (reference,))
     assert "top-secret" not in rendered
     assert "section=summary" in rendered
+    tool_result = collector.annotate_result(
+        "web_fetch__fetch", {"url": requested_url}, fetched_content
+    )
+    assert "top-secret" not in tool_result
+    assert "# Source: https://example.test/article?section=summary" in tool_result
 
 
 def test_prior_run_evidence_is_not_carried_into_new_collector() -> None:
@@ -536,6 +593,22 @@ def test_source_urls_are_canonical_and_reject_embedded_credentials() -> None:
     assert len(references) == 1
     assert references[0].url == "https://example.test/article"
     assert references[0].source_id.startswith("url-sha256:")
+    annotated = json.loads(
+        collector.annotate_result(
+            "web_search__search",
+            {},
+            json.dumps(
+                [
+                    {
+                        "link": "https://example.test/article?token=do-not-disclose",
+                        "snippet": "safe snippet",
+                    }
+                ]
+            ),
+        )
+    )
+    assert annotated[0]["link"] == "https://example.test/article"
+    assert "do-not-disclose" not in json.dumps(annotated)
 
 
 def test_same_provider_result_id_cannot_alias_different_sources() -> None:

@@ -312,6 +312,7 @@ class PilotSnapshot(PilotModel):
     unsettled_model_requests: int = Field(default=0, ge=0)
     unreported_model_usage_responses: int = Field(default=0, ge=0)
     tool_calls_used: int = Field(default=0, ge=0)
+    evidence_overflow_count: int = Field(default=0, ge=0, le=10000)
     reported_input_tokens_used: int = Field(default=0, ge=0)
     reported_output_tokens_used: int = Field(default=0, ge=0)
     estimated_input_tokens_used: int = Field(default=0, ge=0)

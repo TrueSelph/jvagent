@@ -1780,10 +1780,16 @@ class OrchestratorInteractAction(
             arguments: Any,
             content: str,
         ) -> str:
+            nonlocal snapshot
             async with pilot_snapshot_lock:
                 await evidence.observe(run_context, tool_name, arguments, content)
-                interim = snapshot.model_copy(update={"evidence": evidence.snapshot()})
-                await pilot_store.save(handle, interim)
+                snapshot = snapshot.model_copy(
+                    update={
+                        "evidence": evidence.snapshot(),
+                        "evidence_overflow_count": evidence.overflow_count,
+                    }
+                )
+                await pilot_store.save(handle, snapshot)
                 return evidence.annotate_result(tool_name, dict(arguments), content)
 
         async def publish_pilot_tool_event(
