@@ -5133,7 +5133,10 @@ class OrchestratorInteractAction(
         conversation = getattr(visitor, "conversation", None)
         ctx = getattr(conversation, "context", None)
         if not isinstance(ctx, dict):
-            return turn_cost
+            raise RuntimeError(
+                "conversation cost settlement unavailable; refusing to continue "
+                "under the configured spend ceiling"
+            )
         try:
             from jvagent.memory.distributed_conversation_lock import (
                 conversation_mutation_lock,
@@ -5163,7 +5166,16 @@ class OrchestratorInteractAction(
                     ctx["_cost_accounting_incomplete"] = True
                 await conversation.save()
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("orchestrator: conversation cost persist failed: %s", exc)
+            ctx["_cost_accounting_incomplete"] = True
+            logger.error(
+                "orchestrator: conversation cost settlement failed; spend blocked "
+                "(error_type=%s)",
+                type(exc).__name__,
+            )
+            raise RuntimeError(
+                "conversation cost settlement failed; refusing to continue under "
+                "the configured spend ceiling"
+            ) from None
         return turn_cost
 
     async def healthcheck(self) -> Any:

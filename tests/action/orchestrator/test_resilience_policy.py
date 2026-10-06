@@ -436,6 +436,26 @@ async def test_unknown_provider_marks_conversation_cost_incomplete_and_blocks_ne
 
 
 @pytest.mark.asyncio
+async def test_failed_cost_persistence_fails_closed_and_blocks_followup_spend(
+    make_visitor, caplog
+):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.interaction.observability_metrics = [_model_call_event()]
+    visitor.conversation.save.side_effect = OSError("sensitive database detail")
+
+    with pytest.raises(RuntimeError, match="settlement failed") as raised:
+        await ex._settle_conversation_cost(visitor)
+
+    assert "sensitive database detail" not in str(raised.value)
+    assert visitor.conversation.context["_cost_accounting_incomplete"] is True
+    assert ex._conversation_budget_exhausted(visitor) is True
+    assert "OSError" in caplog.text
+    assert "sensitive database detail" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_pilot_failure_still_settles_known_conversation_cost(
     make_visitor, monkeypatch
 ):

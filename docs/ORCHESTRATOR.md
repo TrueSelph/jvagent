@@ -164,7 +164,9 @@ Orchestrator and all off by default except the breaker:
   before the conversation can resume under a spend ceiling. Failed or cancelled
   provider transport attempts without usage/cost receipts are also treated as
   unpriced. A reported cost of `$0` is a valid receipt and does not trigger this
-  state.
+  state. If settlement cannot be durably saved, the turn fails closed and the
+  conversation is marked incomplete in memory; resolve the storage failure and
+  reconcile persisted provider usage before resuming the conversation.
 - **Structured decisions** — with `tool_protocol` resolved to `json` and a model
   that supports structured output, the decision schema travels as
   `response_format: json_schema` (or a forced `orchestrator_decision` tool on
