@@ -15,6 +15,7 @@ from jvagent.action.orchestrator.pilot.contracts import (
     PilotRunContext,
     ResearchBrief,
     ResearchFinding,
+    normalize_evidence_url,
     output_user_text,
 )
 from jvagent.action.orchestrator.pilot.runtime import (
@@ -437,13 +438,66 @@ def test_long_fetch_url_uses_bounded_stable_source_id() -> None:
     (reference,) = collector.snapshot()
     assert len(reference.source_id) <= 256
     assert reference.source_id.startswith("url-sha256:")
-    assert reference.url == url
+    assert reference.url == "https://example.test/" + "x" * 400
     annotated = collector.annotate_result(
         "web_fetch__fetch",
         {"url": url},
         _fetch_result(f"# Source: {url}\n\narticle", url),
     )
     assert f"Observed source ID: {reference.source_id}" in annotated
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("page=2&token=secret&sort=recent", "page=2&sort=recent"),
+        (
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=secret"
+            "&X-Amz-Signature=secret&download=1",
+            "download=1",
+        ),
+        ("api-key=secret&client_secret=secret&keep=a%20b", "keep=a+b"),
+    ],
+)
+def test_evidence_url_removes_query_credentials_but_keeps_normal_parameters(
+    query: str, expected: str
+) -> None:
+    normalized = normalize_evidence_url(f"https://example.test/resource?{query}")
+
+    assert normalized == f"https://example.test/resource?{expected}"
+    assert "secret" not in normalized
+
+
+def test_fetched_evidence_citation_does_not_expose_signed_query_credentials() -> None:
+    requested_url = "https://example.test/article?token=top-secret&section=summary"
+    collector = PilotEvidenceCollector()
+    fetched_content = _fetch_result(
+        "# Source: https://example.test/article?token=top-secret&section=summary\n\n"
+        "The source reports the observed result.",
+        requested_url,
+    )
+    asyncio.run(
+        collector.observe(
+            _context(), "web_fetch__fetch", {"url": requested_url}, fetched_content
+        )
+    )
+
+    (reference,) = collector.snapshot()
+    assert reference.url == "https://example.test/article?section=summary"
+    output = ResearchBrief(
+        question="q",
+        findings=(
+            ResearchFinding(
+                claim="The source reports the observed result.",
+                source_ids=(reference.source_id,),
+                supporting_source_id=reference.source_id,
+                supporting_quote="The source reports the observed result.",
+            ),
+        ),
+    )
+    rendered = output_user_text(output, (reference,))
+    assert "top-secret" not in rendered
+    assert "section=summary" in rendered
 
 
 def test_prior_run_evidence_is_not_carried_into_new_collector() -> None:

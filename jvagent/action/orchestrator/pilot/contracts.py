@@ -7,7 +7,7 @@ import re
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Annotated, Literal, Optional, Union
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -16,9 +16,39 @@ MAX_PILOT_CONTEXT_CHARS = 20_000
 MAX_PILOT_EVIDENCE_AGE_SECONDS = 86_400
 MAX_PILOT_EVIDENCE_CLOCK_SKEW_SECONDS = 300
 
+_CREDENTIAL_QUERY_KEYS = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth",
+    "authorization",
+    "awsaccesskeyid",
+    "client_secret",
+    "credential",
+    "googleaccessid",
+    "key",
+    "password",
+    "passwd",
+    "secret",
+    "sig",
+    "signature",
+    "token",
+    "x_amz_algorithm",
+    "x_amz_credential",
+    "x_amz_date",
+    "x_amz_expires",
+    "x_amz_security_token",
+    "x_amz_signature",
+    "x_goog_algorithm",
+    "x_goog_credential",
+    "x_goog_date",
+    "x_goog_expires",
+    "x_goog_signature",
+}
+
 
 def normalize_evidence_url(value: str) -> str:
-    """Return a canonical, credential-free HTTP(S) URL or an empty string."""
+    """Return a canonical HTTP(S) URL without user-info or credential queries."""
 
     if not isinstance(value, str) or not value or "\\" in value:
         return ""
@@ -61,7 +91,16 @@ def normalize_evidence_url(value: str) -> str:
             return ""
     if port is not None and port != (80 if scheme == "http" else 443):
         host = f"{host}:{port}"
-    return urlunsplit((scheme, host, parsed.path or "/", parsed.query, ""))
+    safe_query = urlencode(
+        [
+            (key, query_value)
+            for key, query_value in parse_qsl(
+                parsed.query, keep_blank_values=True, strict_parsing=False
+            )
+            if key.casefold().replace("-", "_") not in _CREDENTIAL_QUERY_KEYS
+        ]
+    )
+    return urlunsplit((scheme, host, parsed.path or "/", safe_query, ""))
 
 
 class PilotModel(BaseModel):
