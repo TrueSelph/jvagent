@@ -1442,10 +1442,29 @@ class OrchestratorInteractAction(
             snapshot,
             reason="interrupted run requires an explicit restart",
         )
+        exact_restart = (
+            snapshot.question == question and snapshot.proactive_task_id is None
+        )
+        if exact_restart and snapshot.usage_accounting_complete:
+            # The task is now terminal and its counters remain the parent for
+            # the fresh Agent run below. Replaying Pydantic history is not
+            # supported, but an identical explicit user resend can restart
+            # without forcing a redundant third message.
+            return True
+        if exact_restart:
+            notice = (
+                "A previous research attempt has unresolved provider usage, "
+                "so I stopped before another model request. Its saved state "
+                "was retained for administrator review."
+            )
+        else:
+            notice = (
+                "A previous research run was interrupted before it finished. "
+                "Its last saved evidence was retained. Please send the request "
+                "again to start a fresh run."
+            )
         delivered = await responder.publish(
-            "A previous research run was interrupted before it finished. "
-            "Its last saved evidence was retained. Please send the request "
-            "again to start a fresh run.",
+            notice,
             visitor=visitor,
         )
         if not delivered or not self._turn_delivered(interaction):

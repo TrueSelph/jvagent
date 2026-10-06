@@ -597,6 +597,66 @@ async def test_ambiguous_pilot_recovery_delivers_notice_before_new_work():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "question, accounting_complete, expected_continue",
+    [
+        ("same question", True, True),
+        ("same question", False, False),
+        ("different question", True, False),
+    ],
+)
+async def test_interrupted_pilot_restarts_only_exact_accounted_request(
+    question, accounting_complete, expected_continue
+):
+    orchestrator = OrchestratorInteractAction()
+    snapshot = PilotSnapshot(
+        caller=PilotCaller(agent_id="a", user_id="u", session_id="s"),
+        skill_id="research",
+        skill_digest="skill-digest",
+        config_digest="config-digest",
+        question="same question",
+        usage_accounting_complete=accounting_complete,
+        unsettled_model_requests=0 if accounting_complete else 1,
+    )
+    handle = SimpleNamespace(id="task-interrupted")
+    settled = []
+
+    class Store:
+        async def fail_interrupted(self, actual_handle, actual_snapshot, *, reason):
+            settled.append((actual_handle, actual_snapshot, reason))
+
+    published = []
+    interaction = SimpleNamespace(has_emitted=lambda: True)
+
+    class Responder:
+        async def publish(self, content, *, visitor):
+            published.append(content)
+            return True
+
+    continued = await orchestrator._settle_interrupted_pilot_run(
+        Store(),
+        (handle, snapshot),
+        question=question,
+        responder=Responder(),
+        visitor=SimpleNamespace(),
+        interaction=interaction,
+    )
+
+    assert continued is expected_continue
+    assert settled == [
+        (handle, snapshot, "interrupted run requires an explicit restart")
+    ]
+    if expected_continue:
+        assert published == []
+    else:
+        assert len(published) == 1
+        if not accounting_complete:
+            assert "unresolved provider usage" in published[0]
+        else:
+            assert "send the request again" in published[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "budget_config, conversation_context, metrics",
     [
         (
