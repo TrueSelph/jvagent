@@ -435,6 +435,33 @@ async def test_unknown_provider_marks_conversation_cost_incomplete_and_blocks_ne
     assert ex._conversation_budget_exhausted(visitor) is True
 
 
+@pytest.mark.parametrize(
+    "corrupt_total", [-0.01, "not-a-number", float("inf"), float("nan"), True]
+)
+def test_corrupt_conversation_cost_fails_closed(make_visitor, corrupt_total):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.conversation.context["_cost_usd_total"] = corrupt_total
+
+    assert ex._conversation_budget_exhausted(visitor) is True
+
+
+@pytest.mark.asyncio
+async def test_cost_settlement_does_not_reset_corrupt_conversation_total(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.conversation.context["_cost_usd_total"] = -1.0
+    visitor.interaction.observability_metrics = [_model_call_event()]
+
+    with pytest.raises(RuntimeError, match="settlement failed"):
+        await ex._settle_conversation_cost(visitor)
+
+    assert visitor.conversation.context["_cost_usd_total"] == -1.0
+    assert visitor.conversation.context["_cost_accounting_incomplete"] is True
+
+
 @pytest.mark.asyncio
 async def test_failed_cost_persistence_fails_closed_and_blocks_followup_spend(
     make_visitor, caplog

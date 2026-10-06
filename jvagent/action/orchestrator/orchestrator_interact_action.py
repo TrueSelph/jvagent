@@ -26,6 +26,7 @@ import hashlib
 import inspect
 import json
 import logging
+import math
 import re
 import time
 import unicodedata
@@ -5177,11 +5178,17 @@ class OrchestratorInteractAction(
         conversation = getattr(visitor, "conversation", None)
         ctx = getattr(conversation, "context", None)
         if not isinstance(ctx, dict):
+            return math.inf
+        if "_cost_usd_total" not in ctx:
             return 0.0
+        raw_total = ctx.get("_cost_usd_total")
+        if isinstance(raw_total, bool):
+            return math.inf
         try:
-            return float(ctx.get("_cost_usd_total") or 0.0)
+            total = float(raw_total)
         except (TypeError, ValueError):
-            return 0.0
+            return math.inf
+        return total if math.isfinite(total) and total >= 0 else math.inf
 
     def _turn_budget_exhausted(self, visitor: Any) -> bool:
         ceiling = float(self.max_turn_cost_usd or 0.0)
@@ -5232,21 +5239,25 @@ class OrchestratorInteractAction(
                 async with conversation_mutation_lock(conv_id):
                     current = getattr(conversation, "context", None)
                     if not isinstance(current, dict):
-                        return turn_cost
-                    try:
-                        total = float(current.get("_cost_usd_total") or 0.0)
-                    except (TypeError, ValueError):
-                        total = 0.0
+                        raise RuntimeError("conversation cost state is unavailable")
+                    total = self._conversation_cost_usd(visitor)
+                    if not math.isfinite(total):
+                        current["_cost_accounting_incomplete"] = True
+                        await conversation.save()
+                        raise RuntimeError("conversation cost state is invalid")
                     if turn_cost > 0:
                         current["_cost_usd_total"] = total + turn_cost
                     if not complete:
                         current["_cost_accounting_incomplete"] = True
                     await conversation.save()
             else:
+                total = self._conversation_cost_usd(visitor)
+                if not math.isfinite(total):
+                    ctx["_cost_accounting_incomplete"] = True
+                    await conversation.save()
+                    raise RuntimeError("conversation cost state is invalid")
                 if turn_cost > 0:
-                    ctx["_cost_usd_total"] = (
-                        self._conversation_cost_usd(visitor) + turn_cost
-                    )
+                    ctx["_cost_usd_total"] = total + turn_cost
                 if not complete:
                     ctx["_cost_accounting_incomplete"] = True
                 await conversation.save()
