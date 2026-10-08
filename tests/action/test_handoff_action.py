@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from jvagent.action.handoff_action import HandoffAction
 from jvagent.action.handoff_action.handoff_action import (
     _bold_whatsapp_ask,
+    _contact_kind,
     _extract_saved_answer,
     _pending_question_text,
     _staff_outbound,
@@ -163,6 +164,16 @@ async def test_tools_follow_mode():
     assert "handoff__consult" in {t.name for t in await unknown.get_tools()}
 
 
+async def test_consult_message_rule_tells_model_to_synthesize():
+    action = HandoffAction()
+    tools = {t.name: t for t in await action.get_tools()}
+    props = tools["handoff__consult"].parameters_schema["properties"]
+    desc = props["message"]["description"]
+    assert "complete, grammatically full sentence" in desc
+    assert "continuation" in desc
+    assert "shorthand fragments" in desc
+
+
 async def test_transfer_asks_on_web_when_no_contact(monkeypatch):
     _install_aca_staff(monkeypatch)
     action = HandoffAction()
@@ -178,8 +189,8 @@ async def test_transfer_asks_on_web_when_no_contact(monkeypatch):
     with bind_dispatch_context(_Ctx("o.User.abc", channel="web")):
         r = await tools["handoff__transfer"].call(message="need a person")
     assert not r.is_error
-    assert "Relay this to the user" in r.content
-    assert "don't have that information" in r.content.lower()
+    assert "Tell the user this" in r.content
+    assert "sort that out with our team" in r.content.lower()
     assert "WhatsApp number" in r.content
     assert "email" not in r.content.lower().split("internal")[0]
     assert "handoff__transfer" in r.content
@@ -206,7 +217,7 @@ async def test_transfer_web_two_step_uses_confirm_not_repeat_limitation(
     with bind_dispatch_context(ctx):
         ask = await tools["handoff__transfer"].call(message="need a person")
     assert not ask.is_error
-    assert "don't have that information" in ask.content.lower()
+    assert "sort that out with our team" in ask.content.lower()
     assert "to" not in sent
     assert conversation.context.get("handoff_active_mode") == "transfer"
 
@@ -217,7 +228,7 @@ async def test_transfer_web_two_step_uses_confirm_not_repeat_limitation(
         )
     assert not confirm.is_error
     assert "staff member will reach out" in confirm.content.lower()
-    assert "don't have that information" not in confirm.content.lower()
+    assert "sort that out with our team" not in confirm.content.lower()
     assert sent["to"] == _STAFF_PHONE
     assert "Contact: 5926431530" in sent["message"]
 
@@ -418,7 +429,7 @@ async def test_transfer_web_ignores_saved_email_when_customer_contact_phone(
     ):
         r = await tools["handoff__transfer"].call(message="need help")
     assert not r.is_error
-    assert "Relay this to the user" in r.content
+    assert "Tell the user this" in r.content
     assert "to" not in sent
 
 
@@ -604,8 +615,8 @@ async def test_staff_lookup_holds_until_contact_or_decline(monkeypatch):
 
     r = await tools["handoff__consult"].call(message="where do you deliver?")
     assert not r.is_error
-    assert "Relay this to the user" in r.content
-    assert "don't have that information" in r.content.lower()
+    assert "Tell the user this" in r.content
+    assert "sort that out with our team" in r.content.lower()
     assert "WhatsApp number" in r.content
     assert "handoff__consult" in r.content
     assert sent["count"] == 0
@@ -622,9 +633,7 @@ async def test_staff_lookup_holds_until_contact_or_decline(monkeypatch):
         ),
         contact="592000",
     )
-    assert "don't have that information" in r.content
-    assert "check with the team" in r.content
-    assert "when they respond" in r.content
+    assert "checking with the team" in r.content
     assert sent["count"] == 1
     assert open_q["q"].user_contact == "592000"
     assert "Contact: 592000" in sent["message"]
@@ -641,18 +650,14 @@ async def test_staff_lookup_holds_until_contact_or_decline(monkeypatch):
     r = await tools["handoff__consult"].call(
         message="where do you deliver?", contact_declined=True
     )
-    assert "don't have that information" in r.content
-    assert "check with the team" in r.content
-    assert "when they respond" in r.content
+    assert "checking with the team" in r.content
     assert sent["count"] == 1
     assert open_q["q"].user_contact == "declined"
 
     with bind_dispatch_context(_Ctx("592111")):
         open_q.clear()
         r = await tools["handoff__consult"].call(message="what are your hours?")
-    assert "don't have that information" in r.content
-    assert "check with the team" in r.content
-    assert "when they respond" in r.content
+    assert "checking with the team" in r.content
     assert "WhatsApp number or email" not in r.content
 
 
@@ -686,7 +691,7 @@ async def test_declined_lookup_does_not_reply(monkeypatch):
         looked = await tools["handoff__consult"].call(
             message="where do you deliver?", contact_declined=True
         )
-    assert "when they respond" in looked.content
+    assert "checking with the team" in looked.content
     assert sent == [("whatsapp", _STAFF_PHONE)]
     assert len(action.pending_questions) == 1
     row = action.pending_questions[0]
@@ -728,8 +733,8 @@ async def test_staff_lookup_reuses_saved_contact(monkeypatch):
         again = await tools["handoff__consult"].call(message="Do you offer delivery")
         repeat = await tools["handoff__consult"].call(message="Do you offer delivery")
     assert "WhatsApp number or email" not in reused.content
-    assert "when they respond" in reused.content
-    assert "when they respond" in again.content
+    assert "checking with the team" in reused.content
+    assert "checking with the team" in again.content
     assert sent["count"] == 3
     assert all("Contact: 5926431530" in message for message in sent["messages"])
     assert [row["question"] for row in action.pending_questions] == [
@@ -738,7 +743,7 @@ async def test_staff_lookup_reuses_saved_contact(monkeypatch):
         "Do you offer delivery",
     ]
     assert {row["user_contact"] for row in action.pending_questions} == {"5926431530"}
-    assert "when they respond" in repeat.content
+    assert "checking with the team" in repeat.content
 
 
 async def test_consult_always_appends_separate_rows(monkeypatch):
@@ -1117,10 +1122,8 @@ def test_action_contributes_orchestration_routing_parameter():
     observe_params = orchestration_parameters(observe.parameters)
     assert observe_params[0].get("key") == "handoff_observe"
     rendered_observe = render_parameters(observe_params).lower()
-    assert "never send a message" in rendered_observe
     assert "handoff__observe" in rendered_observe
-    assert "handoff__pending_questions" in rendered_observe
-    assert "handoff__consult" in rendered_observe
+    assert "never send a message" not in rendered_observe
 
 
 def test_yaml_parameters_override_mode_defaults():
@@ -1694,11 +1697,459 @@ async def test_consult_records_completed_event(monkeypatch):
         looked = await tools["handoff__consult"].call(
             message="where do you deliver?", contact_declined=True
         )
-    assert "when they respond" in looked.content
+    assert "checking with the team" in looked.content
     assert interaction.events == [
-        ("Handoff started: consult.", "HandoffAction"),
-        ("Handoff completed: consult.", "HandoffAction"),
+        (
+            "Handoff started: sending the customer's query to staff for "
+            "consultation.",
+            "HandoffAction",
+        ),
+        (
+            "Handoff completed: the customer's query was sent to staff for "
+            "consultation. That request is closed — do not re-handle or look "
+            "up the previous request again unless user reask it again. Always run the matching skills/tools first to check for fresh data before falling back to handoff__consult; focus on the current request.",
+            "HandoffAction",
+        ),
     ]
+
+
+async def test_transfer_records_completed_event(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    action.mode = "transfer"
+    interaction = _Interaction()
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send(self, recipient, message):
+        return None
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    visitor = _Ctx("5926431530", channel="whatsapp", conversation=_Conversation())
+    visitor.interaction = interaction
+    with bind_dispatch_context(visitor):
+        looked = await tools["handoff__transfer"].call(
+            message="customer needs a person"
+        )
+    assert not looked.is_error
+    assert interaction.events == [
+        ("Handoff started: forwarding the issue summary to staff.", "HandoffAction"),
+        (
+            "Handoff completed: the issue summary was forwarded to staff. "
+            "This request is closed — keep helping on later messages only.",
+            "HandoffAction",
+        ),
+    ]
+
+
+def test_contact_kind_whatsapp_group_chat_id():
+    assert _contact_kind("120363428616636917") == "whatsapp_group"
+    assert _contact_kind("5926431530") == "whatsapp"
+
+
+async def test_consult_relay_carries_topic_not_canned_sentence(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send(self, recipient, message):
+        return None
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+
+    with bind_dispatch_context(
+        _Ctx("592000", channel="whatsapp", conversation=_Conversation())
+    ):
+        first = await tools["handoff__consult"].call(message="where do you deliver?")
+    with bind_dispatch_context(
+        _Ctx("592111", channel="whatsapp", conversation=_Conversation())
+    ):
+        second = await tools["handoff__consult"].call(message="what are your hours?")
+    # Steering, not a canned sentence: each relay names this request's topic.
+    assert "where do you deliver?" in first.content
+    assert "what are your hours?" in second.content
+    assert first.content != second.content
+    assert "sort that out with our team" not in first.content
+    assert "as soon as they respond" not in first.content
+    assert "INTERNAL" not in first.content
+
+
+async def test_consult_relay_literal_when_close_configured(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    action.consult_close = "I'll follow up shortly."
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send(self, recipient, message):
+        return None
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    with bind_dispatch_context(
+        _Ctx("592000", channel="whatsapp", conversation=_Conversation())
+    ):
+        result = await tools["handoff__consult"].call(message="where do you deliver?")
+    # Explicit yaml close forces the deterministic literal path.
+    assert "I'll follow up shortly." in result.content
+    assert "checking with the team" not in result.content
+
+
+async def test_consult_from_whatsapp_group_uses_author_not_group_id(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+        sent["message"] = message
+
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    author = "5923333333"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": author,
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(
+            message="Do you deliver to Bartica?"
+        )
+    assert not result.is_error
+    assert action.pending_questions[0]["user_contact"] == author
+    assert sent["to"] == _STAFF_PHONE
+
+
+async def test_consult_from_group_participant_field_without_author(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    author = "5927777777"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "",
+            "participant": f"{author}@c.us",
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(message="Need delivery info?")
+    assert not result.is_error
+    assert action.pending_questions[0]["user_contact"] == author
+    assert sent["to"] == _STAFF_PHONE
+
+
+async def test_consult_from_group_empty_author_fetches_message_by_id(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+    fetch_calls = []
+
+    class _API:
+        async def get_message_by_id(self, message_id):
+            fetch_calls.append(message_id)
+            return {
+                "message": {
+                    "_data": {"author": "5928888888@c.us"},
+                }
+            }
+
+    class _WA:
+        async def api(self):
+            return _API()
+
+    class _Agent:
+        id = "n.Agent.test"
+
+        async def get_action_by_type(self, name):
+            assert name == "WhatsAppAction"
+            return _WA()
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    msg_id = "true_120363428616636917@g.us_ABC123"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "",
+            "message_id": msg_id,
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(message="Need delivery info?")
+    assert not result.is_error
+    assert fetch_calls == [msg_id]
+    assert action.pending_questions[0]["user_contact"] == "5928888888"
+    assert sent["to"] == _STAFF_PHONE
+
+
+async def test_consult_from_group_empty_author_uses_group_id_fallback(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+        sent["message"] = message
+
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "",
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(message="Do you offer delivery?")
+    assert not result.is_error
+    assert "WhatsApp number" not in result.content
+    assert action.pending_questions[0]["user_contact"] == group_id
+    assert sent["to"] == _STAFF_PHONE
+    assert f"Group: {group_id}" in sent["message"]
+
+
+async def test_save_answer_replies_in_group_thread(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    group_id = "120363428616636917"
+    group_sends = []
+
+    class _API:
+        async def send_message(self, phone, message, is_group=False):
+            group_sends.append(
+                {"phone": phone, "message": message, "is_group": is_group}
+            )
+            return {"ok": True}
+
+    class _WA:
+        def is_configured(self):
+            return True
+
+        def _config_issues(self):
+            return []
+
+        def get_class_name(self):
+            return "WhatsAppAction"
+
+        async def api(self):
+            return _API()
+
+    class _Agent:
+        id = "n.Agent.test"
+
+        async def get_action_by_type(self, name):
+            assert name == "WhatsAppAction"
+            return _WA()
+
+    async def _get_agent(self):
+        return _Agent()
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+
+    async def _customer_reply(self, q, a):
+        return f"Reply: {a}"
+
+    monkeypatch.setattr(HandoffAction, "_customer_reply", _customer_reply)
+
+    async def _append_once(self, question, answer):
+        return question, answer, "n.DocumentNode.test"
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append_once)
+
+    tools = {t.name: t for t in await action.get_tools()}
+    with bind_dispatch_context(_Ctx(group_id, channel="whatsapp")):
+        await tools["handoff__consult"].call(message="Do you deliver?")
+    qid = action.pending_questions[0]["id"]
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        saved = await tools["handoff__save_answer"].call(
+            question_ids=[qid], answer="Yes, we deliver."
+        )
+    assert not saved.is_error
+    customer_sends = [s for s in group_sends if s["is_group"]]
+    assert len(customer_sends) == 1
+    assert customer_sends[0]["phone"] == group_id
+
+
+async def test_consult_from_group_without_isGroup_flag_uses_author(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    author = "5925555555"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": False,
+            "sender": group_id,
+            "author": author,
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(message="Stock on item X?")
+    assert not result.is_error
+    assert action.pending_questions[0]["user_contact"] == author
+    assert sent["to"] == _STAFF_PHONE
+
+
+async def test_consult_from_group_lid_author_resolves_via_api(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = {}
+
+    class _API:
+        async def convert_lid_to_phone_number(self, lid):
+            assert lid.endswith("@lid")
+            return "5926666666"
+
+    class _WA:
+        async def api(self):
+            return _API()
+
+    class _Agent:
+        id = "n.Agent.test"
+
+        async def get_action_by_type(self, name):
+            assert name == "WhatsAppAction"
+            return _WA()
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send(self, recipient, message):
+        sent["to"] = recipient
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "1234567890123456",
+        }
+    }
+    with bind_dispatch_context(visitor):
+        result = await tools["handoff__consult"].call(message="Need a quote.")
+    assert not result.is_error
+    assert action.pending_questions[0]["user_contact"] == "5926666666"
+    assert sent["to"] == _STAFF_PHONE
+
+
+async def test_save_answer_dms_group_author_not_group_chat_id(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    customer_sends = []
+
+    class _Agent:
+        id = "n.Agent.test"
+
+        async def get_action_by_type(self, name):
+            return None
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send_whatsapp(self, recipient, message):
+        if recipient != _STAFF_PHONE:
+            customer_sends.append(recipient)
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send_whatsapp)
+
+    async def _customer_reply(self, q, a):
+        return f"Answer: {a}"
+
+    monkeypatch.setattr(HandoffAction, "_customer_reply", _customer_reply)
+
+    async def _append_and_ingest_stub(self, question, answer):
+        return question, answer, "n.DocumentNode.test"
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append_and_ingest_stub)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+    author = "5923333333"
+    visitor = _Ctx(group_id, channel="whatsapp")
+    visitor.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": author,
+        }
+    }
+    with bind_dispatch_context(visitor):
+        await tools["handoff__consult"].call(message="Do you deliver to Bartica?")
+    qid = action.pending_questions[0]["id"]
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        saved = await tools["handoff__save_answer"].call(
+            question_ids=[qid], answer="Yes, we deliver there."
+        )
+    assert not saved.is_error
+    assert customer_sends == [author]
 
 
 async def test_observe_enrolls_group_numbers_and_does_not_reply(monkeypatch):
@@ -1766,7 +2217,7 @@ async def test_observe_enrolls_group_numbers_and_does_not_reply(monkeypatch):
             fact="The shop closes at 5pm on Fridays."
         )
     assert not result.is_error
-    assert "Do not send any message" in result.content
+    assert "Inform them in a simple note" in result.content
     assert enrolled == {
         "group": "staff",
         "users": ["5921111111", "5922222222"],

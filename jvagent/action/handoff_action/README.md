@@ -309,9 +309,12 @@ Question ids start with `pend_` from `handoff__pending_questions`. Chunk ids
 start with `n.DocumentNode.` from `[EVENT]` Handoff chunk lines. A `corr-` id
 is neither.
 
-Customer relay: intro (`handoff_intro`), contact ask (web when unresolved),
-close (`consult_close`). Each consult creates a new pending row and notifies
-staff. `handoff__consult` records pending + notifies; staff use save tools only.
+Customer relay: the completion reply is **generated** from model-facing steering
+(topic echo + check-with-team + reply-on-response), so the orchestrator voices a
+fresh acknowledgment per request. Each consult creates a new pending row and
+notifies staff. `handoff__consult` records pending + notifies; staff use save
+tools only. Setting `handoff_intro` and/or `consult_close` in `agent.yaml` forces
+a deterministic literal relay instead (the old `intro + close` behavior).
 
 ## Playbook: transfer
 
@@ -349,12 +352,22 @@ later customer messages.
 - Customer: later message → bot can still help (catalog, etc.)
 - Staff sender → no spurious `handoff__transfer` for staff messages
 
-`handoff__transfer` uses intro (`handoff_intro`), optional contact ask, close
-(`transfer_close`). Optional yaml: `handoff_intro`, `transfer_close`,
-`consult_close`. Relay only what the tool returns.
+`handoff__transfer` generates its completion reply the same way (steering, not a
+canned sentence); an optional contact ask is added on web when unresolved.
+Optional yaml: `handoff_intro`, `transfer_close`, `consult_close` — setting any of
+them reverts to a fixed literal relay. Relay only what the tool returns.
 
 **Contact resolution:** provided `contact`, then saved `handoff_contact`, then
 `user_id` when it matches `customer_contact` kind. On WhatsApp omit `contact`.
+For **group** consults or transfers, Handoff prefers the participant phone from
+`whatsapp_payload` (deep scan of nested JIDs, wwebjs `get_message_by_id` when
+needed, LID→phone), then saved `handoff_contact` / `handoff_whatsapp_author`.
+When no participant phone is available (after payload scan, optional
+`get_message_by_id`, and saved-context fallbacks), it stores the **group chat id**
+(dispatch `user_id`, e.g. `120363…`) as `user_contact` so consult can create
+pending rows without asking for a personal number. Staff notify stays a DM to staff; saved
+answers go back to the **group thread** (`send_message` with `is_group=True`).
+Group ids are never used as a staff DM target.
 
 ## Playbook: observe
 

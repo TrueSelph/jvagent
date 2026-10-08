@@ -57,13 +57,13 @@ def _register_orchestrator_vocabulary() -> None:
 _register_orchestrator_vocabulary()
 
 
-HANDOFF_INTRO = "I don't have that information yet."
+HANDOFF_INTRO = "Let me sort that out with our team."
 
 TRANSFER_CLOSE = (
     "I've passed it to the team and a staff member will reach out to you shortly."
 )
 
-CONSULT_CLOSE = "I'll check with the team and get back to you when they respond."
+CONSULT_CLOSE = "I'll get back to you as soon as they respond."
 
 HANDOFF_FOLLOWUP_THANKS = "Thanks."
 
@@ -199,12 +199,7 @@ def _parameters_for(
                 ),
                 "response": (
                     "Observe mode only — not customer consult or transfer. Call "
-                    "handoff__observe with that fact. Do not call "
-                    "handoff__consult, handoff__transfer, or "
-                    "handoff__pending_questions. Never send a message to the "
-                    "group. If nothing is worth keeping, send nothing. If the "
-                    "tool says this user cannot save answers, send nothing "
-                    "about permissions or saving."
+                    "handoff__observe with that fact."
                 ),
             }
         ]
@@ -389,6 +384,13 @@ def _bold_whatsapp_ask(question: str) -> str:
     return f"{prefix}*{core}*{punct}"
 
 
+def _staff_contact_suffix(token: str) -> str:
+    """Staff notify line for customer contact or group thread id."""
+    if _contact_kind(token) == "whatsapp_group":
+        return f"Group: {token}"
+    return f"Contact: {token}"
+
+
 def _staff_outbound(mode: str, message: str, contact: str = "") -> str:
     """Staff text: consult question + optional contact; transfer includes contact."""
     token = (contact or "").strip()
@@ -400,11 +402,13 @@ def _staff_outbound(mode: str, message: str, contact: str = "") -> str:
         bolded = _bold_whatsapp_ask(question)
         body = f"{bolded} {notes}".strip() if notes else bolded
         if token and token != "declined" and token not in body:
-            body = f"{body}\nContact: {token}".strip()
+            body = f"{body}\n{_staff_contact_suffix(token)}".strip()
         return body
     text = (message or "").strip()
     if token and token not in text:
-        text = f"{text}\nContact: {token}".strip()
+        suffix = _staff_contact_suffix(token)
+        if suffix not in text:
+            text = f"{text}\n{suffix}".strip()
     return text
 
 
@@ -433,27 +437,53 @@ def _dispatch_user_id() -> str:
 
 
 def _contact_kind(value: str) -> str:
-    """``whatsapp`` for a phone, ``email`` for an address, else empty."""
+    """``whatsapp`` / ``whatsapp_group`` / ``email``, else empty."""
+    from jvagent.action.whatsapp.utils.chat_ids import (
+        is_valid_whatsapp_phone,
+        is_whatsapp_group_chat_id,
+    )
+
     text = (value or "").strip()
     if not text or text.lower() == "declined":
         return ""
-    if "@" in text and " " not in text:
+    if (
+        "@" in text
+        and " " not in text
+        and not text.endswith(("@g.us", "@c.us", "@lid"))
+        and not is_whatsapp_group_chat_id(text)
+    ):
         return "email"
-    digits = re.sub(r"\D", "", text)
-    if digits and len(digits) >= 6 and re.fullmatch(r"[+\d][\d\s()-]*", text):
+    if is_whatsapp_group_chat_id(text):
+        return "whatsapp_group"
+    if is_valid_whatsapp_phone(text):
         return "whatsapp"
     return ""
 
 
 def _sender_contact(channel: str) -> str:
     """Dispatch user id when it is already a phone or email for this channel."""
+    from jvagent.action.whatsapp.utils.chat_ids import (
+        is_valid_whatsapp_phone,
+        is_whatsapp_group_chat_id,
+        participant_phone_from_payload,
+        whatsapp_payload_from_visitor_data,
+    )
+    from jvagent.tooling.tool_executor import get_tool_visitor
+
     user_id = _dispatch_user_id()
     if not user_id:
         return ""
     if channel == "email":
         return user_id if "@" in user_id and " " not in user_id else ""
-    digits = re.sub(r"\D", "", user_id)
-    if digits and len(digits) >= 6 and re.fullmatch(r"[+\d][\d\s()-]*", user_id):
+    visitor = get_tool_visitor()
+    data = getattr(visitor, "data", None) if visitor else None
+    payload = whatsapp_payload_from_visitor_data(data)
+    author = participant_phone_from_payload(payload, user_id)
+    if author:
+        return author
+    if is_whatsapp_group_chat_id(user_id):
+        return ""
+    if is_valid_whatsapp_phone(user_id):
         return user_id
     return ""
 
@@ -491,13 +521,34 @@ def _contact_matches_kind(value: str, kind: str) -> bool:
     normalized = _normalized_customer_contact_kind(kind)
     if normalized == "email":
         return ck == "email"
-    return ck == "whatsapp"
+    return ck in ("whatsapp", "whatsapp_group")
+
+
+def _group_dispatch_contact(payload: Optional[Dict[str, Any]], user_id: str) -> str:
+    """Group chat id from dispatch user_id when this turn is a group thread."""
+    from jvagent.action.whatsapp.utils.chat_ids import (
+        is_group_whatsapp_turn,
+        is_whatsapp_group_chat_id,
+        strip_whatsapp_suffix,
+    )
+
+    uid = str(user_id or "").strip()
+    if not uid or not is_whatsapp_group_chat_id(uid):
+        return ""
+    if not is_group_whatsapp_turn(payload, uid):
+        return ""
+    normalized = strip_whatsapp_suffix(uid)
+    if _contact_kind(normalized) != "whatsapp_group":
+        return ""
+    return normalized
 
 
 def _sanitize_contact(
     raw: Optional[str], *, customer_contact_kind: str = "phone"
 ) -> str:
     """Normalize tool or saved contact; drop placeholders and wrong kind."""
+    from jvagent.action.whatsapp.utils.chat_ids import strip_whatsapp_suffix
+
     text = _one_contact(raw)
     if not text:
         return ""
@@ -505,6 +556,8 @@ def _sanitize_contact(
         return ""
     if not _contact_matches_kind(text, customer_contact_kind):
         return ""
+    if _contact_kind(text) == "whatsapp_group":
+        return strip_whatsapp_suffix(text)
     return text
 
 
@@ -540,6 +593,39 @@ def _resolve_customer_contact(
         if candidate:
             return candidate
     return ""
+
+
+def _handoff_relay_steering(
+    mode: str,
+    topic: str,
+    *,
+    continuing_handoff: bool,
+) -> str:
+    """Model-facing steering for the completion relay (no finished sentence).
+
+    The orchestrator/reply model voices this into a fresh, natural
+    acknowledgment per request; the tool never hands back a canned line that
+    would be echoed verbatim.
+    """
+    subject = (topic or "").strip() or "their request"
+    if mode == "transfer":
+        lead = (
+            "Acknowledge what they asked in one natural sentence"
+            f' (their request: "{subject}"), then say you have passed it to the '
+            "team and a staff member will reach out."
+        )
+    else:
+        lead = (
+            "Acknowledge what they asked in one natural sentence"
+            f' (their request: "{subject}"), then say or paraphrase: you are checking with the '
+            "team on how to answer or move forward with your request and will get back to them once staff respond."
+        )
+    if continuing_handoff:
+        lead = "Thank them briefly, then " + lead[0].lower() + lead[1:]
+    return (
+        f"{lead} Keep it to 1-2 short sentences; do not promise a phone call; "
+        "do not add extra detail."
+    )
 
 
 def _join_handoff_parts(*parts: str) -> str:
@@ -616,7 +702,8 @@ def _missing_contact_handoff_result(
     label = _contact_label(_normalized_customer_contact_kind(customer_contact_kind))
     return ToolResult(
         content=(
-            "Relay this to the user and do not add the staff summary:\n"
+            "Tell the user this in your own short, natural wording — do not add "
+            "the staff summary:\n"
             f"{user_line}\n\n"
             "INTERNAL (do not say to the user): After they reply, call "
             f"{tool_name} again with the same message and contact set to their "
@@ -626,13 +713,18 @@ def _missing_contact_handoff_result(
 
 
 _HANDOFF_CONTACT_KEY = "handoff_contact"
+_HANDOFF_WHATSAPP_AUTHOR_KEY = "handoff_whatsapp_author"
 _HANDOFF_ACTIVE_MODE_KEY = "handoff_active_mode"
 _HANDOFF_ACTIVE_ISSUE_KEY = "handoff_active_issue"
 
 
 def _relay(line: str) -> ToolResult:
     return ToolResult(
-        content=("Relay this to the user and do not add the staff summary:\n" f"{line}")
+        content=(
+            "Tell the user this in your own short, natural wording — do not add "
+            "the staff summary:\n"
+            f"{line}"
+        )
     )
 
 
@@ -821,6 +913,137 @@ def _truncate(value: Any, limit: int = 300) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def _jid_string_from_nested(value: Any) -> str:
+    """Coerce webhook message id / author fields to a JID string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("_serialized", "user", "participant", "author"):
+            part = value.get(key)
+            if isinstance(part, str) and part.strip():
+                return part.strip()
+    return ""
+
+
+def _participant_jids_from_whatsapp_payload(payload: Dict[str, Any]) -> List[str]:
+    """Candidate participant JIDs from whatsapp_payload (handoff-local scan)."""
+    from jvagent.action.whatsapp.utils.chat_ids import (
+        is_whatsapp_group_chat_id,
+        strip_whatsapp_suffix,
+    )
+
+    if not isinstance(payload, dict):
+        return []
+    seen: set[str] = set()
+    out: List[str] = []
+
+    def add(raw: Any, *, allow_long_id: bool = False) -> None:
+        jid = _jid_string_from_nested(raw)
+        if not jid or jid in seen:
+            return
+        cleaned = strip_whatsapp_suffix(jid)
+        if "@g.us" in jid:
+            return
+        if not allow_long_id and is_whatsapp_group_chat_id(cleaned):
+            return
+        seen.add(jid)
+        out.append(jid)
+
+    add(payload.get("author"), allow_long_id=True)
+    for key in ("participant", "authorId", "participantId"):
+        add(payload.get(key))
+    quoted = payload.get("quoted_message") or {}
+    if isinstance(quoted, dict):
+        add(quoted.get("author"))
+        add(quoted.get("participant"))
+    sender = str(payload.get("sender") or "").strip()
+    if sender and not is_whatsapp_group_chat_id(sender):
+        add(sender)
+    for mid in payload.get("mentionedIds") or []:
+        if isinstance(mid, str) and mid.strip():
+            token = mid.split("@", 1)[0].strip() if "@" in mid else mid.strip()
+            add(token)
+    return out
+
+
+def _author_from_get_message_response(result: Any) -> str:
+    """Extract group participant JID from get_message_by_id API response."""
+    if not isinstance(result, dict):
+        return ""
+    roots: List[Any] = [result]
+    for key in ("message", "data", "response"):
+        nested = result.get(key)
+        if isinstance(nested, dict):
+            roots.append(nested)
+    for root in roots:
+        if not isinstance(root, dict):
+            continue
+        msg = root.get("message") if isinstance(root.get("message"), dict) else root
+        if not isinstance(msg, dict):
+            continue
+        for source in (msg.get("_data"), msg):
+            if not isinstance(source, dict):
+                continue
+            jid = _jid_string_from_nested(source.get("author"))
+            if jid:
+                return jid
+            msg_id = source.get("id")
+            if isinstance(msg_id, dict):
+                jid = _jid_string_from_nested(msg_id.get("participant"))
+                if jid:
+                    return jid
+    return ""
+
+
+def _handoff_whatsapp_context_snapshot(
+    *,
+    mode: str = "",
+    visitor_channel: str = "",
+    provided_clean: str = "",
+    contact_after_sync: str = "",
+    saved_contact: str = "",
+    saved_whatsapp_author: str = "",
+) -> str:
+    """Compact masked snapshot for group WhatsApp handoff diagnostics."""
+    from jvagent.action.whatsapp.utils.chat_ids import (
+        is_group_whatsapp_turn,
+        participant_phone_from_payload,
+        raw_author_from_payload,
+        whatsapp_payload_from_visitor_data,
+    )
+    from jvagent.tooling.tool_executor import get_tool_visitor
+
+    user_id = _dispatch_user_id()
+    channel = (visitor_channel or _dispatch_channel() or "").strip()
+    visitor = get_tool_visitor()
+    data = getattr(visitor, "data", None) if visitor else None
+    payload = whatsapp_payload_from_visitor_data(data)
+    payload_present = bool(
+        isinstance(data, dict) and isinstance(data.get("whatsapp_payload"), dict)
+    )
+    raw_author = raw_author_from_payload(payload)
+    participant = participant_phone_from_payload(payload, user_id)
+    message_id = str(payload.get("message_id") or "").strip()
+    payload_keys = ",".join(sorted(payload.keys())) if isinstance(payload, dict) else ""
+    return (
+        f"mode={mode or '?'} channel={channel or '?'} "
+        f"user_id={_mask(user_id)} is_group_turn={is_group_whatsapp_turn(payload, user_id)} "
+        f"payload_present={payload_present} isGroup={bool(payload.get('isGroup'))} "
+        f"sender={_mask(str(payload.get('sender') or ''))} "
+        f"author={_mask(raw_author)} author_len={len(raw_author)} "
+        f"author_present={bool(raw_author)} "
+        f"message_id_present={bool(message_id)} "
+        f"payload_keys={payload_keys} "
+        f"participant_from_payload={_mask(participant)} "
+        f"provided_clean={_mask(provided_clean)} "
+        f"contact_after_sync={_mask(contact_after_sync)} "
+        f"saved_contact={_mask(saved_contact)} "
+        f"saved_whatsapp_author={_mask(saved_whatsapp_author)}"
+    )
+
+
 def _handoff_json_path() -> Path:
     """``<files_root>/handoff.json`` (defaults to ``./.files/handoff.json``)."""
     from jvagent.core.sandbox import resolve_sandbox_root
@@ -840,6 +1063,23 @@ def _handoff_event(kind: str, detail: str = "", status: str = "completed") -> st
     detail = (detail or "").strip()
     if detail:
         return f'Handoff {status}: {kind} "{detail}".'
+    if status == "started" and kind == "consult":
+        return (
+            "Handoff started: sending the customer's query to staff for consultation."
+        )
+    if status == "completed" and kind == "consult":
+        return (
+            "Handoff completed: the customer's query was sent to staff for "
+            "consultation. That request is closed — do not re-handle or look "
+            "up the previous request again unless user reask it again. Always run the matching skills/tools first to check for fresh data before falling back to handoff__consult; focus on the current request."
+        )
+    if status == "started" and kind == "transfer":
+        return "Handoff started: forwarding the issue summary to staff."
+    if status == "completed" and kind == "transfer":
+        return (
+            "Handoff completed: the issue summary was forwarded to staff. "
+            "This request is closed — keep helping on later messages only."
+        )
     return f"Handoff {status}: {kind}."
 
 
@@ -900,16 +1140,25 @@ class HandoffAction(Action):
     )
 
     handoff_intro: str = attribute(
-        default=HANDOFF_INTRO,
-        description="Opening line when the customer has not yet heard this handoff.",
+        default="",
+        description=(
+            "Optional fixed opening line for the handoff relay. When unset, the "
+            "relay is generated from steering (see _handoff_relay_line)."
+        ),
     )
     consult_close: str = attribute(
-        default=CONSULT_CLOSE,
-        description="Closing line after consult staff notify (part 3).",
+        default="",
+        description=(
+            "Optional fixed consult close. Set to force a deterministic literal "
+            "relay; when unset, the reply is generated."
+        ),
     )
     transfer_close: str = attribute(
-        default=TRANSFER_CLOSE,
-        description="Closing line after transfer staff notify (part 3).",
+        default="",
+        description=(
+            "Optional fixed transfer close. Set to force a deterministic literal "
+            "relay; when unset, the reply is generated."
+        ),
     )
     consult_prompt: str = attribute(
         default="",
@@ -1024,23 +1273,28 @@ class HandoffAction(Action):
         self,
         message: Annotated[
             str,
-            "Sentence 1: the customer's question or request in their words, "
-            "kept short (you trim fillers; do not use Customer wants… or "
-            "Customer asked…). Optional sentence 2: what was already tried "
-            "(staff only). Never shown to the user.",
+            "Sentence 1: What the customer needs, written as a complete, "
+            "grammatically full sentence so staff grasp it immediately without "
+            "reading the chat. Always name the specific item, matter, or "
+            "question with full details (for a product, include its full name "
+            "and code; for a question, state the full ask). Do NOT start with "
+            "truncated action phrases or shorthand fragments. When the latest "
+            "message is only a continuation (such as a phone number, "
+            "acknowledgment, or confirmation), synthesize the full request from "
+            "recent turns into a complete sentence. Optional sentence 2: What "
+            "was already tried (staff only; never shown to the user).",
         ],
         contact: Annotated[
             Optional[str],
-            "Customer phone or email per agent customer_contact setting. "
-            "Omit on WhatsApp. Pass only after the user gives it when the tool "
-            "asked. No placeholders.",
+            "Customer phone or email. Omit on WhatsApp. Pass only when the "
+            "user gives it after the tool asks. No placeholders.",
         ] = None,
         contact_declined: Annotated[
             Optional[bool],
             "True if the user refused to share the configured contact type.",
         ] = None,
     ) -> ToolResult:
-        """Call when you cannot answer from KB/tools (consult mode). Relay only the tool line; do not reply in prose. Contact is resolved in code (see customer_contact on the action)."""
+        """Call when you cannot answer a query or handle a request."""
         return await self._dispatch_handoff(
             "consult",
             message,
@@ -1053,18 +1307,24 @@ class HandoffAction(Action):
         self,
         message: Annotated[
             str,
-            "Short summary of the issue for staff: what the customer wants "
-            "handled, built from the conversation. Never a placeholder. Never "
-            "shown to the user.",
+            "Sentence 1: What the customer needs handled, written as a "
+            "complete, grammatically full sentence so staff grasp it "
+            "immediately without reading the chat. Always name the specific "
+            "item or matter and the desired outcome with full details. Do NOT "
+            "start with truncated action phrases or shorthand fragments. When "
+            "the latest message is only a continuation (such as a phone "
+            "number, acknowledgment, or confirmation), synthesize the full "
+            "request from recent turns into a complete sentence. Optional "
+            "sentence 2: What was already tried (staff only; never shown to "
+            "the user).",
         ],
         contact: Annotated[
             Optional[str],
-            "Customer phone or email per agent customer_contact setting. "
-            "Omit on WhatsApp. Pass only after the user gives it when the tool "
-            "asked. No placeholders.",
+            "Customer phone or email. Omit on WhatsApp. Pass only when the "
+            "user gives it after the tool asks. No placeholders.",
         ] = None,
     ) -> ToolResult:
-        """Call when you cannot answer from KB/tools or the issue should move to staff (transfer mode). Relay only the tool line; keep helping on later turns. Contact is resolved in code (see customer_contact on the action)."""
+        """Call when a customer's issue should move to staff."""
         return await self._dispatch_handoff("transfer", message, contact)
 
     @tool(
@@ -1077,11 +1337,10 @@ class HandoffAction(Action):
         self,
         fact: Annotated[
             str,
-            "The useful fact, policy, or answer from the group message. Not "
-            "sent back to the group.",
+            "The useful fact, policy, or answer from the group message.",
         ],
     ) -> ToolResult:
-        """Store one useful fact from this WhatsApp group in the knowledge base and add the other group numbers as staff. Call this directly with the fact. Do not call handoff__pending_questions. Call only when the message contains something worth keeping. Send no message."""
+        """Store one useful fact from this WhatsApp group in the knowledge base. Call only when the group message contains something worth keeping."""
         fact = (fact or "").strip()
         if not fact:
             return ToolResult(
@@ -1101,38 +1360,54 @@ class HandoffAction(Action):
                 is_error=True,
             )
         await self._record_event(_handoff_event("observe"))
-        return ToolResult(
-            content=("The fact is stored. Do not send any message to the group.")
-        )
+        return ToolResult(content=("The fact is stored. Inform them in a simple note."))
 
     def _effective_consult_close(self) -> str:
         legacy = (self.consult_prompt or "").strip()
-        return legacy or (self.consult_close or CONSULT_CLOSE).strip()
+        return legacy or (self.consult_close or "").strip()
 
     def _effective_transfer_close(self) -> str:
         legacy = (self.transfer_prompt or "").strip()
-        return legacy or (self.transfer_close or TRANSFER_CLOSE).strip()
+        return legacy or (self.transfer_close or "").strip()
 
     def _handoff_relay_line(
-        self, mode: str, customer_contact_kind: str, *, continuing_handoff: bool
+        self,
+        mode: str,
+        customer_contact_kind: str,
+        *,
+        continuing_handoff: bool,
+        topic: str = "",
     ) -> str:
+        intro = (self.handoff_intro or "").strip()
         close = (
             self._effective_consult_close()
             if mode == "consult"
             else self._effective_transfer_close()
         )
-        followup_thanks = continuing_handoff
-        if followup_thanks and close.strip().lower().startswith("thanks"):
-            followup_thanks = False
-        return _compose_handoff_relay(
+        # Deterministic escape hatch: an operator set handoff_intro / *_close in
+        # agent.yaml, so relay the fixed literal line (old behavior).
+        if intro or close:
+            default_close = CONSULT_CLOSE if mode == "consult" else TRANSFER_CLOSE
+            resolved_close = close or default_close
+            followup_thanks = continuing_handoff
+            if followup_thanks and resolved_close.strip().lower().startswith("thanks"):
+                followup_thanks = False
+            return _compose_handoff_relay(
+                mode,
+                customer_contact_kind,
+                include_intro=not continuing_handoff,
+                include_contact_ask=False,
+                include_close=True,
+                intro=intro or HANDOFF_INTRO,
+                close=resolved_close,
+                followup_thanks=followup_thanks,
+            )
+        # Dynamic path: hand back steering; the orchestrator model voices a fresh
+        # acknowledgment for this request instead of echoing a canned sentence.
+        return _handoff_relay_steering(
             mode,
-            customer_contact_kind,
-            include_intro=not continuing_handoff,
-            include_contact_ask=False,
-            include_close=True,
-            intro=self.handoff_intro,
-            close=close,
-            followup_thanks=followup_thanks,
+            topic,
+            continuing_handoff=continuing_handoff,
         )
 
     async def _dispatch_handoff(
@@ -1167,7 +1442,20 @@ class HandoffAction(Action):
             await self._set_active(mode, issue)
             await self._record_event(_handoff_event(mode, status="started"))
         saved = await self._saved_contact()
+        saved_author = await self._saved_whatsapp_author()
         visitor_channel = _dispatch_channel()
+        logger.warning(
+            "handoff dispatch start mode=%s channel=%s continuing=%s snapshot=%s",
+            mode,
+            channel,
+            continuing_handoff,
+            _handoff_whatsapp_context_snapshot(
+                mode=mode,
+                visitor_channel=visitor_channel,
+                saved_contact=saved,
+                saved_whatsapp_author=saved_author,
+            ),
+        )
         provided_clean = _sanitize_contact(contact, customer_contact_kind=kind)
         if continuing_handoff and not provided_clean:
             from jvagent.tooling.tool_executor import get_tool_visitor
@@ -1189,22 +1477,95 @@ class HandoffAction(Action):
             visitor_channel=visitor_channel,
             customer_contact_kind=kind,
         )
+        logger.warning(
+            "handoff contact after sync resolve contact=%s provided=%s saved=%s "
+            "channel=%s snapshot=%s",
+            _mask(contact or ""),
+            _mask(str(effective_provided or "")),
+            _mask(saved),
+            visitor_channel,
+            _handoff_whatsapp_context_snapshot(
+                mode=mode,
+                visitor_channel=visitor_channel,
+                provided_clean=provided_clean,
+                contact_after_sync=contact or "",
+                saved_contact=saved,
+                saved_whatsapp_author=saved_author,
+            ),
+        )
+        if (
+            contact
+            and mode in ("consult", "transfer")
+            and not provided_clean
+            and not saved
+        ):
+            from jvagent.action.whatsapp.utils.chat_ids import (
+                participant_phone_from_payload,
+                whatsapp_payload_from_visitor_data,
+            )
+            from jvagent.tooling.tool_executor import get_tool_visitor
+
+            visitor = get_tool_visitor()
+            payload = whatsapp_payload_from_visitor_data(
+                getattr(visitor, "data", None) if visitor else None
+            )
+            if participant_phone_from_payload(payload, _dispatch_user_id()) == contact:
+                await self._save_contact(contact)
+                await self._update_context({_HANDOFF_WHATSAPP_AUTHOR_KEY: contact})
+        if not contact and visitor_channel == "whatsapp":
+            logger.warning(
+                "handoff group participant resolve attempt snapshot=%s",
+                _handoff_whatsapp_context_snapshot(
+                    mode=mode,
+                    visitor_channel=visitor_channel,
+                    provided_clean=provided_clean,
+                    contact_after_sync="",
+                    saved_contact=saved,
+                    saved_whatsapp_author=saved_author,
+                ),
+            )
+            participant = await self._resolve_whatsapp_participant_contact()
+            logger.warning(
+                "handoff group participant resolve result contact=%s",
+                _mask(participant or ""),
+            )
+            if participant:
+                contact = participant
+                await self._save_contact(contact)
+                await self._update_context({_HANDOFF_WHATSAPP_AUTHOR_KEY: contact})
         if not contact and not (mode == "consult" and contact_declined):
             tool_name = f"handoff__{mode}"
             if mode == "consult":
                 logger.warning(
-                    "handoff consult ask path no contact declined=%s %s",
+                    "handoff consult ask path no contact declined=%s %s snapshot=%s",
                     contact_declined,
                     await self._pending_debug_ids(),
+                    _handoff_whatsapp_context_snapshot(
+                        mode=mode,
+                        visitor_channel=visitor_channel,
+                        provided_clean=provided_clean,
+                        contact_after_sync="",
+                        saved_contact=saved,
+                        saved_whatsapp_author=saved_author,
+                    ),
                 )
             return _missing_contact_handoff_result(
                 mode, kind, tool_name, intro=self.handoff_intro
             )
+        relay_topic = (await self._active_issue()).strip() or (
+            _consult_issue_text(message, contact or "") or (message or "").strip()
+        )
         user_facing = self._handoff_relay_line(
-            mode, kind, continuing_handoff=continuing_handoff
+            mode, kind, continuing_handoff=continuing_handoff, topic=relay_topic
         )
 
         targets = await self._staff_targets(channel)
+        logger.warning(
+            "handoff staff targets channel=%s count=%d targets=%s",
+            channel,
+            len(targets),
+            [_mask(t) for t in targets],
+        )
         if not targets:
             logger.error(
                 "handoff %s: no staff targets for %s (AccessControlAction "
@@ -1246,6 +1607,13 @@ class HandoffAction(Action):
                     staff_message = stored_issue
             pending_q = _consult_issue_text(issue_source, contact or "")
             await self._add_pending(pending_q, recorded)
+            if not (recorded or "").strip():
+                logger.warning(
+                    "handoff consult pending recorded contact empty on send path "
+                    "contact=%s declined=%s",
+                    _mask(contact or ""),
+                    contact_declined,
+                )
         outbound = _staff_outbound(
             mode,
             staff_message if mode == "consult" else message,
@@ -1270,13 +1638,19 @@ class HandoffAction(Action):
         logger.info(
             "handoff %s summary dispatched via %s to %s", mode, channel, recipient
         )
+        if mode == "consult":
+            logger.warning(
+                "handoff consult dispatched staff recipient=%s pending_contact=%s",
+                _mask(recipient),
+                _mask(contact or ""),
+            )
         await self._record_event(_handoff_event(mode))
         await self._clear_active()
         return _relay(user_facing)
 
     @tool(name="handoff__pending_questions")
     async def list_pending_questions(self) -> ToolResult:
-        """List all unanswered customer pending questions. Call this first whenever the latest message is a statement, answer, or supplied business fact (not a question). Returns every pend_ id and question text — you choose which ids the staff message answers, then call handoff__save_answer with question_ids. If the list is empty, do not call handoff__consult and do not save the message."""
+        """List every unanswered customer pending question. Call when the latest message is a statement, answer, or business fact that may resolve a waiting question. Returns each pend_ id and question text."""
         try:
             pending = await self._list_pending()
         except Exception:
@@ -1332,7 +1706,7 @@ class HandoffAction(Action):
         ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Save the full answer for the chosen pending questions and return a confirmation. The only save tool in consult. question_ids must come only from handoff__pending_questions. A corr- correlation id is not a question id. This tool is the only source of the saved confirmation; never write it yourself."""
+        """Save the full answer for the chosen pending questions."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
         visitor = get_tool_visitor()
@@ -1420,7 +1794,7 @@ class HandoffAction(Action):
         ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Update the saved answer for one existing chunk and return a confirmation. chunk_id starts with n.DocumentNode and comes only from an event line that says Handoff chunk. A corr- correlation id is not a chunk id."""
+        """Update the saved answer for one existing chunk."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
         visitor = get_tool_visitor()
@@ -1521,8 +1895,16 @@ class HandoffAction(Action):
                 await self._send_email(
                     [contact], text, subject=short_q or "Your question"
                 )
+            elif kind in ("whatsapp", "whatsapp_group"):
+                await self._send_whatsapp_customer(contact, text)
             else:
-                await self._send_whatsapp(contact, text)
+                logger.warning(
+                    "handoff reply to customer skipped unknown contact kind "
+                    "contact=%r kind=%r",
+                    contact,
+                    kind,
+                )
+                return
         except Exception:
             logger.error(
                 "handoff reply to customer failed contact=%r",
@@ -1579,12 +1961,248 @@ class HandoffAction(Action):
         staff = await self._aca_staff_members()
         return sender in staff
 
+    async def _participant_phone_from_jid(self, jid: str, api: Any) -> str:
+        """Resolve a participant JID to a dialable phone (incl. LID conversion)."""
+        from jvagent.action.whatsapp.utils.chat_ids import (
+            is_valid_whatsapp_phone,
+            lid_jid_for_conversion,
+            strip_whatsapp_suffix,
+        )
+
+        raw = str(jid or "").strip()
+        if not raw or "@g.us" in raw:
+            return ""
+        cleaned = strip_whatsapp_suffix(raw)
+        if is_valid_whatsapp_phone(cleaned):
+            return cleaned
+        convert = getattr(api, "convert_lid_to_phone_number", None) if api else None
+        if not callable(convert):
+            return ""
+        lid = lid_jid_for_conversion(raw if "@" in raw else cleaned)
+        try:
+            resolved = await convert(lid)
+            resolved = strip_whatsapp_suffix(str(resolved or ""))
+            if is_valid_whatsapp_phone(resolved):
+                return resolved
+        except Exception:
+            logger.warning(
+                "handoff participant: LID conversion failed for jid=%s",
+                _mask(raw),
+                exc_info=True,
+            )
+        return ""
+
+    async def _resolve_whatsapp_participant_contact(self) -> str:
+        """Group participant phone from payload (LID→phone) or saved context."""
+        from jvagent.action.whatsapp.utils.chat_ids import (
+            is_group_whatsapp_turn,
+            participant_phone_from_payload,
+            raw_author_from_payload,
+            whatsapp_payload_from_visitor_data,
+        )
+        from jvagent.tooling.tool_executor import get_tool_visitor
+
+        user_id = _dispatch_user_id()
+        visitor = get_tool_visitor()
+        payload = whatsapp_payload_from_visitor_data(
+            getattr(visitor, "data", None) if visitor else None
+        )
+        if not is_group_whatsapp_turn(payload, user_id):
+            logger.warning(
+                "handoff participant: not a group turn user_id=%s isGroup=%s",
+                _mask(user_id),
+                bool(payload.get("isGroup")) if payload else False,
+            )
+            return ""
+
+        agent = await self.get_agent()
+        wa_action = None
+        if agent is not None:
+            get_by_type = getattr(agent, "get_action_by_type", None)
+            if callable(get_by_type):
+                wa_action = await get_by_type(self.handoff_notify_action_type)
+        api = await wa_action.api() if wa_action else None
+
+        phone = participant_phone_from_payload(payload, user_id)
+        if phone:
+            logger.warning(
+                "handoff participant: from payload author=%s",
+                _mask(phone),
+            )
+            return phone
+
+        for jid in _participant_jids_from_whatsapp_payload(payload):
+            phone = await self._participant_phone_from_jid(jid, api)
+            if phone:
+                logger.warning(
+                    "handoff participant: from payload scan jid=%s phone=%s",
+                    _mask(jid),
+                    _mask(phone),
+                )
+                return phone
+
+        raw_author = raw_author_from_payload(payload)
+        if raw_author:
+            phone = await self._participant_phone_from_jid(raw_author, api)
+            if phone:
+                logger.warning(
+                    "handoff participant: from raw author phone=%s",
+                    _mask(phone),
+                )
+                return phone
+
+        message_id = str(payload.get("message_id") or "").strip()
+        fetch = getattr(api, "get_message_by_id", None) if api else None
+        if message_id and callable(fetch):
+            try:
+                result = await fetch(message_id)
+                fetched_jid = _author_from_get_message_response(result)
+                if fetched_jid:
+                    phone = await self._participant_phone_from_jid(fetched_jid, api)
+                    if phone:
+                        logger.warning(
+                            "handoff participant: fetched message_id=%s author_len=%d phone=%s",
+                            _mask(message_id),
+                            len(fetched_jid),
+                            _mask(phone),
+                        )
+                        return phone
+                logger.warning(
+                    "handoff participant: get_message_by_id had no author message_id=%s",
+                    _mask(message_id),
+                )
+            except Exception:
+                logger.warning(
+                    "handoff participant: get_message_by_id failed message_id=%s",
+                    _mask(message_id),
+                    exc_info=True,
+                )
+        elif message_id:
+            logger.warning(
+                "handoff participant: no get_message_by_id on API message_id=%s",
+                _mask(message_id),
+            )
+
+        saved = _sanitize_contact(
+            await self._saved_contact(), customer_contact_kind="phone"
+        )
+        if saved:
+            logger.warning(
+                "handoff participant: fallback handoff_contact=%s",
+                _mask(saved),
+            )
+            return saved
+        author_saved = _sanitize_contact(
+            await self._saved_whatsapp_author(), customer_contact_kind="phone"
+        )
+        if author_saved:
+            logger.warning(
+                "handoff participant: fallback handoff_whatsapp_author=%s",
+                _mask(author_saved),
+            )
+            return author_saved
+        group_contact = _group_dispatch_contact(payload, user_id)
+        if group_contact:
+            logger.warning(
+                "handoff participant: fallback group user_id=%s",
+                _mask(group_contact),
+            )
+            return group_contact
+        raw_author = raw_author_from_payload(payload)
+        logger.warning(
+            "handoff participant: unresolved empty author=%s snapshot=%s",
+            _mask(raw_author),
+            _handoff_whatsapp_context_snapshot(
+                visitor_channel="whatsapp",
+                saved_contact=await self._saved_contact(),
+                saved_whatsapp_author=await self._saved_whatsapp_author(),
+            ),
+        )
+        return ""
+
+    async def _resolve_whatsapp_dm_recipient(self, recipient: str) -> str:
+        """Normalize a DM target; reject group chat ids and resolve LIDs when possible."""
+        from jvagent.action.whatsapp.utils.chat_ids import (
+            is_valid_whatsapp_phone,
+            is_whatsapp_group_chat_id,
+            strip_whatsapp_suffix,
+        )
+
+        raw = str(recipient or "").strip()
+        if not raw:
+            return ""
+        if is_whatsapp_group_chat_id(raw):
+            logger.warning(
+                "handoff whatsapp: refusing group chat id as DM recipient %s",
+                _mask(raw),
+            )
+            return ""
+        cleaned = strip_whatsapp_suffix(raw)
+        if not is_valid_whatsapp_phone(cleaned):
+            return ""
+        agent = await self.get_agent()
+        action = None
+        if agent is not None:
+            get_by_type = getattr(agent, "get_action_by_type", None)
+            if callable(get_by_type):
+                action = await get_by_type(self.handoff_notify_action_type)
+        if action is None:
+            return cleaned
+        api = await action.api()
+        if api is None:
+            return cleaned
+        if "@lid" in raw or raw.endswith("@lid"):
+            convert = getattr(api, "convert_lid_to_phone_number", None)
+            if callable(convert):
+                try:
+                    resolved = await convert(raw if "@" in raw else f"{cleaned}@lid")
+                    resolved = strip_whatsapp_suffix(str(resolved or ""))
+                    if is_valid_whatsapp_phone(resolved):
+                        return resolved
+                except Exception:
+                    logger.debug(
+                        "handoff whatsapp: LID conversion failed for %s",
+                        _mask(raw),
+                        exc_info=True,
+                    )
+        return cleaned
+
+    async def _send_whatsapp_customer(self, recipient: str, message: str) -> None:
+        """Deliver saved answer to customer DM or WhatsApp group thread."""
+        from jvagent.action.whatsapp.utils.chat_ids import strip_whatsapp_suffix
+
+        kind = _contact_kind(recipient)
+        if kind == "whatsapp_group":
+            group_id = strip_whatsapp_suffix(str(recipient or "").strip())
+            logger.warning(
+                "handoff whatsapp: sending group message to %s",
+                _mask(group_id),
+            )
+            await self._execute_whatsapp_send(group_id, message or "", is_group=True)
+            return
+        if kind != "whatsapp":
+            raise RuntimeError(
+                f"whatsapp customer send refused invalid recipient {_mask(recipient)}"
+            )
+        await self._send_whatsapp(recipient, message)
+
     async def _send_whatsapp(self, recipient: str, message: str) -> None:
+        dm_recipient = await self._resolve_whatsapp_dm_recipient(recipient)
+        if not dm_recipient:
+            raise RuntimeError(
+                f"whatsapp send refused invalid recipient {_mask(recipient)}"
+            )
+        await self._execute_whatsapp_send(dm_recipient, message or "", is_group=False)
+
+    async def _execute_whatsapp_send(
+        self, recipient: str, message: str, *, is_group: bool
+    ) -> None:
         masked = _mask(recipient)
         agent = await self.get_agent()
         logger.warning(
-            "handoff whatsapp: start recipient=%s body_chars=%d agent=%s",
+            "handoff whatsapp: start recipient=%s is_group=%s body_chars=%d agent=%s",
             masked,
+            is_group,
             len(message or ""),
             getattr(agent, "id", None),
         )
@@ -1630,11 +2248,14 @@ class HandoffAction(Action):
             logger.warning("handoff whatsapp: action.api() returned None")
             raise RuntimeError("whatsapp api() returned None")
         logger.warning(
-            "handoff whatsapp: sending via %s to %s",
+            "handoff whatsapp: sending via %s to %s is_group=%s",
             type(api).__name__,
             masked,
+            is_group,
         )
-        result = await api.send_message(phone=recipient, message=message or "")
+        result = await api.send_message(
+            phone=recipient, message=message or "", is_group=is_group
+        )
         logger.warning(
             "handoff whatsapp: provider result ok=%s http_status=%s error=%s raw=%s",
             (result or {}).get("ok") if isinstance(result, dict) else None,
@@ -1903,6 +2524,11 @@ class HandoffAction(Action):
         conversation = await self._conversation()
         context = getattr(conversation, "context", None) or {}
         return str(context.get(_HANDOFF_CONTACT_KEY) or "").strip()
+
+    async def _saved_whatsapp_author(self) -> str:
+        conversation = await self._conversation()
+        context = getattr(conversation, "context", None) or {}
+        return str(context.get(_HANDOFF_WHATSAPP_AUTHOR_KEY) or "").strip()
 
     async def _save_contact(self, contact: str) -> None:
         contact = (contact or "").strip()
