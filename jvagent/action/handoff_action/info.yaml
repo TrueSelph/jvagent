@@ -7,8 +7,8 @@ package:
     title: Handoff Action
     description: >-
       One handoff mode at a time. consult asks staff and replies when they
-      answer (handoff__consult, handoff__pending_questions,
-      handoff__save_answer, handoff__update_chunk). transfer leaves the
+      answer (handoff__consult, handoff__save_answer, handoff__update_chunk;
+      the pending queue rides the staff-turn parameter). transfer leaves the
       conversation (handoff__transfer). observe stores WhatsApp group facts
       in PageIndex and adds group numbers to AccessControl, without replying
       (handoff__observe). Pin the active mode's tools on the orchestrator.

@@ -4,9 +4,11 @@ One mode at a time (``HandoffAction.mode``). That mode is the only tool set
 ``get_tools()`` publishes. Pin those tools on the orchestrator — there is no
 skill SOP.
 
-- ``consult`` — ``handoff__consult``, ``handoff__pending_questions``,
-  ``handoff__save_answer``, ``handoff__update_chunk``. Ask staff, tell the user
-  you will return, then save the answer and reply to the user.
+- ``consult`` — ``handoff__consult``, ``handoff__save_answer``,
+  ``handoff__update_chunk``. Ask staff, tell the user you will return, then save
+  the answer and reply to the user. On a staff turn the current unanswered
+  questions are injected into the orchestration prompt as a parameter (id and
+  question only), so the staff sender needs no read tool to pick the ids.
 - ``transfer`` — ``handoff__transfer``. Summarize for staff, tell the user a
   staff member will follow up; the conversation continues on later messages.
 - ``observe`` — ``handoff__observe``. In a WhatsApp group, store a useful fact
@@ -83,7 +85,6 @@ _MODE_TOOLS = {
     "consult": frozenset(
         {
             "handoff__consult",
-            "handoff__pending_questions",
             "handoff__save_answer",
             "handoff__update_chunk",
         }
@@ -116,11 +117,25 @@ _CUSTOMER_CANNOT_ANSWER_CONDITION = (
 )
 
 
+def _pending_questions_block(rows: Optional[List[Dict[str, Any]]]) -> str:
+    """Compact JSON ``[{"id","question"}]`` for the staff-turn parameter."""
+    compact = [
+        {
+            "id": _question_field(row, "id"),
+            "question": _question_field(row, "question")[:300],
+        }
+        for row in (rows or [])
+        if _question_field(row, "id")
+    ]
+    return json.dumps(compact, ensure_ascii=False)
+
+
 def _parameters_for(
     mode: str,
     staff: bool = False,
     *,
     customer_contact_kind: str = "phone",
+    pending_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Orchestration parameter(s) for this mode and sender."""
     mode = mode if mode in _MODE_TOOLS else "consult"
@@ -131,23 +146,19 @@ def _parameters_for(
             {
                 "scope": "orchestration",
                 "key": "handoff_consult_staff",
-                "condition": (
-                    "the sender is staff and the latest message answers a "
-                    "customer question or corrects a saved answer"
-                ),
                 "response": (
-                    "This rule overrides the active skill and any skill "
-                    "procedure. Call handoff__pending_questions and read the "
-                    "full list of pend_ ids and questions. Choose every pend_ "
-                    "id the staff message answers (same issue, multiple "
-                    "customers). Call handoff__save_answer with question_ids "
-                    "and the full answer text. Do not call handoff__consult. "
+                    "The questions awaiting an answer are listed below. "
+                    "Choose every id whose question this message answers "
+                    "(several questions may share one answer) and call "
+                    "handoff__save_answer with question_ids and the full answer "
+                    "text. Do not call handoff__consult. "
                     "Call handoff__update_chunk only when an [EVENT] line says "
                     "Handoff chunk and the id starts with n.DocumentNode. A "
                     "corr- correlation id is not a question id or a chunk id. "
-                    "If the pending list is empty, do not save. Reply in the "
+                    "If the list is empty, do not save. Reply in the "
                     "conversation. If a save tool says this user cannot save "
-                    "answers, send nothing about permissions or saving."
+                    "answers, send nothing about permissions or saving. "
+                    f"PENDING QUESTIONS: {_pending_questions_block(pending_rows)}"
                 ),
             }
         ]
@@ -156,12 +167,10 @@ def _parameters_for(
             {
                 "scope": "orchestration",
                 "key": "handoff_transfer_staff",
-                "condition": "the sender is staff",
                 "response": (
-                    "Do not call handoff__transfer to escalate a customer issue "
-                    "from a staff message. Reply in the conversation when "
-                    "appropriate. Transfer mode notifies staff only when the "
-                    "customer (non-staff sender) triggers handoff__transfer."
+                    "Do not call handoff__transfer to escalate a message that "
+                    "needs no escalation; reply in the conversation when "
+                    "appropriate."
                 ),
             }
         ]
@@ -174,7 +183,7 @@ def _parameters_for(
                 "response": (
                     "This rule overrides the active skill and any skill "
                     "procedure. Call handoff__transfer with a short summary of "
-                    "the issue in message (what the customer needs handled — "
+                    "the issue in message (what needs handling — "
                     "not Customer wants… placeholders). Do not reply in text or "
                     "ask for contact yourself — relay only the line the tool "
                     "returns. The tool resolves contact "
@@ -184,7 +193,7 @@ def _parameters_for(
                     f"replies with their {contact_phrase}, call again with the "
                     "same message and contact. Never pass placeholders. On later "
                     "messages keep helping when you can; call handoff__transfer "
-                    "again when another issue needs staff."
+                    "again when another issue needs escalation."
                 ),
             }
         ]
@@ -198,7 +207,7 @@ def _parameters_for(
                     "or answer worth keeping"
                 ),
                 "response": (
-                    "Observe mode only — not customer consult or transfer. Call "
+                    "Observe mode only — not consult or transfer. Call "
                     "handoff__observe with that fact."
                 ),
             }
@@ -210,7 +219,10 @@ def _parameters_for(
             "condition": _CUSTOMER_CANNOT_ANSWER_CONDITION,
             "response": (
                 "This rule overrides the active skill and any skill "
-                "procedure. If the latest message is a question you cannot "
+                "procedure. First route anything the other skills do not own "
+                "to the faq fallback; escalate here only while it still cannot "
+                "answer the question or complete the request. If the latest "
+                "message is a question you cannot "
                 "answer, or a request you cannot complete, call "
                 "handoff__consult now. Do not reply in text. Do not ask "
                 "permission. Relay only the line the tool returns. Sentence 1 "
@@ -241,7 +253,7 @@ def _question_field(question: Any, name: str) -> str:
 
 
 def _question_row(question: Any) -> Dict[str, Any]:
-    """Normalize a pending question (dict or object) for tool output."""
+    """Normalize a pending question (dict or object) for the save flow."""
     if isinstance(question, dict):
         return {
             "id": str(question.get("id") or ""),
@@ -1203,7 +1215,8 @@ class HandoffAction(Action):
         default_factory=list,
         description=(
             "Customer questions waiting for a staff answer. Source of truth for "
-            "handoff__pending_questions / save_answer (reloaded from DB on read)."
+            "the staff-turn parameter and handoff__save_answer (reloaded from DB "
+            "on read)."
         ),
     )
 
@@ -1232,10 +1245,22 @@ class HandoffAction(Action):
             return list(stored)
         user_id = str(getattr(visitor, "user_id", "") or "").strip()
         members = await self._aca_staff_members()
+        is_staff = bool(user_id) and user_id in members
+        pending_rows: Optional[List[Dict[str, Any]]] = None
+        if is_staff and self._normalized_mode() == "consult":
+            try:
+                pending_rows = await self._list_pending()
+            except Exception:
+                logger.warning(
+                    "handoff contributed_parameters: pending list unavailable",
+                    exc_info=True,
+                )
+                pending_rows = []
         return _parameters_for(
             self._normalized_mode(),
-            staff=bool(user_id) and user_id in members,
+            staff=is_staff,
             customer_contact_kind=self._normalized_customer_contact_kind(),
+            pending_rows=pending_rows,
         )
 
     def _normalized_customer_contact_kind(self) -> str:
@@ -1294,7 +1319,7 @@ class HandoffAction(Action):
             "True if the user refused to share the configured contact type.",
         ] = None,
     ) -> ToolResult:
-        """Call when you cannot answer a query or handle a request."""
+        """Escalate one question or request you cannot answer or complete — including a request you have no tool to perform — to the team. Returns the single line to send."""
         return await self._dispatch_handoff(
             "consult",
             message,
@@ -1324,7 +1349,7 @@ class HandoffAction(Action):
             "user gives it after the tool asks. No placeholders.",
         ] = None,
     ) -> ToolResult:
-        """Call when a customer's issue should move to staff."""
+        """Escalate an issue the assistant cannot resolve to the team."""
         return await self._dispatch_handoff("transfer", message, contact)
 
     @tool(
@@ -1648,50 +1673,6 @@ class HandoffAction(Action):
         await self._clear_active()
         return _relay(user_facing)
 
-    @tool(name="handoff__pending_questions")
-    async def list_pending_questions(self) -> ToolResult:
-        """List every unanswered customer pending question. Call when the latest message is a statement, answer, or business fact that may resolve a waiting question. Returns each pend_ id and question text."""
-        try:
-            pending = await self._list_pending()
-        except Exception:
-            logger.warning(
-                "handoff pending_questions failed action_agent_id=%r",
-                getattr(self, "agent_id", None),
-                exc_info=True,
-            )
-            return ToolResult(
-                content="handoff failed: could not list pending questions.",
-                is_error=True,
-            )
-        if not pending:
-            logger.warning(
-                "handoff pending_questions empty action_agent_id=%r",
-                getattr(self, "agent_id", None),
-            )
-            return ToolResult(
-                content=(
-                    "No pending questions. Do not call handoff__consult and do "
-                    "not save the message. Reply in the conversation."
-                )
-            )
-        lines = [
-            "- {id} | {question}".format(
-                id=_question_field(q, "id") or "unknown",
-                question=_question_field(q, "question")[:300],
-            )
-            for q in pending
-        ]
-        return ToolResult(
-            content=(
-                "Pending questions (choose question_ids for handoff__save_answer):\n"
-                + "\n".join(lines)
-                + "\n\nQuestion ids start with pend_. Pick every id this staff "
-                "answer resolves (same issue, multiple customers). Call "
-                "handoff__save_answer with question_ids and the full answer "
-                "text. Do not reply to the user yet."
-            )
-        )
-
     @tool(
         name="handoff__save_answer",
         idempotency_class=IdempotencyClass.NON_RETRYABLE,
@@ -1702,11 +1683,11 @@ class HandoffAction(Action):
         self,
         question_ids: Annotated[
             List[str],
-            "One or more pend_ ids from handoff__pending_questions that this answer resolves.",
+            "One or more pend_ ids from the pending questions list that this answer resolves.",
         ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Save the full answer for the chosen pending questions."""
+        """Save the full answer for the chosen pend_ ids from the pending questions list, reply to them, and store it."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
         visitor = get_tool_visitor()
@@ -1794,7 +1775,7 @@ class HandoffAction(Action):
         ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
-        """Update the saved answer for one existing chunk."""
+        """Update the stored answer for one existing handoff chunk, using the chunk id from a Handoff chunk event line."""
         from jvagent.tooling.tool_executor import get_tool_visitor
 
         visitor = get_tool_visitor()

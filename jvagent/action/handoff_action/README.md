@@ -6,7 +6,7 @@ deny rules only for that mode's tools. There is no handoff skill.
 
 | Mode | Pin these tools | What it does |
 |---|---|---|
-| `consult` (default) | `handoff__consult`, `handoff__pending_questions`, `handoff__save_answer`, `handoff__update_chunk` | Ask staff, tell the user you will return, save the answer, and reply to the user. |
+| `consult` (default) | `handoff__consult`, `handoff__save_answer`, `handoff__update_chunk` | Ask staff, tell the user you will return, save the answer, and reply to the user. The current pending questions are injected into the staff-turn prompt as a parameter (id + question only) — no read tool. |
 | `transfer` | `handoff__transfer` | Send staff a summary and tell the user a staff member will follow up; later messages run normally. |
 | `observe` | `handoff__observe` | In a WhatsApp group, store a useful fact in PageIndex, add the other numbers to staff, and send nothing. |
 
@@ -68,25 +68,24 @@ matches, it **overrides** the active skill and any skill procedure.
 | Mode | Sender | Key | Condition (verbatim) | Response (summary) |
 |---|---|---|---|---|
 | consult | customer | `handoff_consult` | you cannot answer a customer question, or you cannot complete the request from the knowledge base and tools, or the request is outside what the store sells (a "do you sell X" question the knowledge base cannot answer) — a quote, stock confirmation, bulk or B2B order, an upset customer, or the user wants a person or wants something reported | Call `handoff__consult` now; relay only tool line; sentence 1 = customer's words; contact rules per channel |
-| consult | staff | `handoff_consult_staff` | the sender is staff and the latest message answers a customer question or corrects a saved answer | `handoff__pending_questions` → `handoff__save_answer`; id rules for `pend_` and chunks |
+| consult | staff | `handoff_consult_staff` | (unconditional; injected only for staff) | Staff-turn parameter carries `PENDING QUESTIONS: [{"id","question"}]`; choose matching ids and call `handoff__save_answer`; id rules for `pend_` and chunks |
 | transfer | customer | `handoff_transfer` | *(same condition as consult customer)* | Call `handoff__transfer` with short summary; relay only tool line; keep helping on later turns |
-| transfer | staff | `handoff_transfer_staff` | the sender is staff | Do not call `handoff__transfer` for customer escalation; reply in thread |
-| observe | any | `handoff_observe` | the latest WhatsApp group message contains a fact, policy, or answer worth keeping | Call `handoff__observe`; no group message; no consult/transfer/pending tools |
+| transfer | staff | `handoff_transfer_staff` | (unconditional; injected only for staff) | Do not call `handoff__transfer` for a message needing no escalation; reply in thread |
+| observe | any | `handoff_observe` | the latest WhatsApp group message contains a fact, policy, or answer worth keeping | Call `handoff__observe`; no group message; no consult/transfer tools |
 
 **Override:** a non-empty `parameters` list on the action in agent.yaml
 **replaces** auto rules entirely. Use for custom agents or narrow transfer
 behavior — see [Parameters override](#parameters-override).
 
-The staff consult rule applies when the latest message **answers a customer
-question** or **corrects a saved answer**. A staff location statement with no
-matching pending question does not match until the rule text in code is
-widened.
+The staff consult rule applies on every staff turn and lists the current
+unanswered questions in the parameter; the model matches the staff message to
+those ids.
 
 ## Skills vs handoff (rules of thumb)
 
 - The orchestrator loop prefers **skills first** (`use_skill` before ad-hoc tools).
 - FAQ is for customer **questions** answered from PageIndex, not staff **statements** or saves.
-- Do **not** put `handoff__pending_questions`, `handoff__save_answer`, or
+- Do **not** put `handoff__save_answer`, `handoff__update_chunk`, or
   "call handoff in FAQ description" in FAQ skills — that makes FAQ match staff
   turns and the model opens with `use_skill` before handoff routing.
 - Use FAQ **Do not use when** / description so staff answers do **not** activate faq.
@@ -252,16 +251,15 @@ reply when staff saves.
 ### Setup
 
 - `mode: consult`, `handoff_channels.consult: whatsapp` | `email`
-- Pin four tools on orchestrator
+- Pin three tools on orchestrator
 - Permissions on **every channel** (`default`, `whatsapp`, …): customers →
-  `handoff__consult` only; staff → pending/save/update only
+  `handoff__consult` only; staff → save/update only
 
 ```yaml
 - action: jvagent/orchestrator
   context:
     pinned_tools:
       - handoff__consult
-      - handoff__pending_questions
       - handoff__save_answer
       - handoff__update_chunk
 ```
@@ -285,9 +283,6 @@ permissions:
       handoff__consult:
         deny: [{ group: staff, enabled: true }]
         allow: [{ group: all, enabled: true }]
-      handoff__pending_questions:
-        deny: []
-        allow: [{ group: staff, enabled: true }]
       handoff__save_answer:
         deny: []
         allow: [{ group: staff, enabled: true }]
@@ -296,18 +291,18 @@ permissions:
         allow: [{ group: staff, enabled: true }]
   whatsapp:
     tools:
-      # same four-tool matrix
+      # same three-tool matrix
 ```
 
 ### Smoke tests
 
 - Customer: policy question with empty PageIndex → `handoff__consult`, relay only
-- Staff: answer matching pending → `handoff__pending_questions` + `handoff__save_answer`
+- Staff: answer matching pending → param ids + `handoff__save_answer`
 - Customer receives async reply after save
 
-Question ids start with `pend_` from `handoff__pending_questions`. Chunk ids
-start with `n.DocumentNode.` from `[EVENT]` Handoff chunk lines. A `corr-` id
-is neither.
+Question ids start with `pend_` in the staff-turn `PENDING QUESTIONS` parameter.
+Chunk ids start with `n.DocumentNode.` from `[EVENT]` Handoff chunk lines. A
+`corr-` id is neither.
 
 Customer relay: the completion reply is **generated** from model-facing steering
 (topic echo + check-with-team + reply-on-response), so the orchestrator voices a
@@ -419,7 +414,7 @@ you use. List only the **active mode's** tools.
 
 After pins, each name under `permissions[channel].tools` is dropped when
 `has_tool_access` is false. **Consult:** customers see `handoff__consult` only;
-staff see save/list tools. **Transfer:** no handoff `tools` entries.
+staff see save/update tools. **Transfer:** no handoff `tools` entries.
 **Observe:** staff allow on `handoff__observe` only.
 
 ## Staff save confirmation and customer reply

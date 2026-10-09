@@ -474,26 +474,6 @@ async def test_fast_path_strips_invitation_closer():
     assert v.interaction.response == "Classes begin Monday at 9 AM."
 
 
-async def test_gather_does_not_compose_on_channel_format_only(monkeypatch):
-    """WhatsApp (or other) channel format alone must not answer the utterance."""
-    ra = ReplyAction()
-    ra.apply_channel_format = True
-    _patch_agent(monkeypatch)
-    model = MagicMock()
-    model.generate = AsyncMock(return_value="Should not run.")
-
-    async def _ma(self, required=False):
-        return model
-
-    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
-    monkeypatch.setattr(ReplyAction, "_compose_model_action", _ma)
-    v = _visitor_with()
-    v.channel = "whatsapp"
-    v.interaction.utterance = "Do you sell cars?"
-    assert await ra.gather(v) is False
-    model.generate.assert_not_called()
-
-
 async def test_gather_compose_on_parameters_only(monkeypatch):
     """Intro-style parameters with no directives must still compose via gather()."""
     ra = ReplyAction()

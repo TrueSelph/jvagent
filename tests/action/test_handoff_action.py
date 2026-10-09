@@ -145,7 +145,6 @@ async def test_tools_follow_mode():
     consult_tools = await consult.get_tools()
     assert {t.name for t in consult_tools} == {
         "handoff__consult",
-        "handoff__pending_questions",
         "handoff__save_answer",
         "handoff__update_chunk",
     }
@@ -791,7 +790,9 @@ async def test_consult_always_appends_separate_rows(monkeypatch):
     assert len(action.pending_questions) == 3
 
 
-async def test_pending_questions_lists_all_id_and_question_only(monkeypatch):
+async def test_staff_turn_parameter_lists_id_and_question_only(monkeypatch):
+    from jvagent.action.parameters import render_parameters
+
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
     action = _bind_action(HandoffAction())
@@ -807,34 +808,27 @@ async def test_pending_questions_lists_all_id_and_question_only(monkeypatch):
         question="What are your hours?",
         user_contact="5922222222",
     )
-    _seed_pending(
-        action,
-        id="pend_c",
-        question="Customer wants the store location/address.",
-        user_contact="5923333333",
-    )
-    tools = {t.name: t for t in await action.get_tools()}
-    visitor = _Ctx(_STAFF_PHONE)
-    visitor.utterance = "we are located in Guyana on water street"
-    with bind_dispatch_context(visitor):
-        listed = await tools["handoff__pending_questions"].call()
-    assert not listed.is_error
-    assert "contact=" not in listed.content.lower()
-    assert "pend_a" in listed.content
-    assert "pend_b" in listed.content
-    assert "pend_c" in listed.content
-    assert "choose question_ids" in listed.content.lower()
+    params = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
+    rendered = render_parameters(params)
+    assert "PENDING QUESTIONS:" in rendered
+    assert "pend_a" in rendered
+    assert "pend_b" in rendered
+    assert "5921111111" not in rendered
+    assert "user_contact" not in rendered
+    assert "created_at" not in rendered
+    assert "handoff__pending_questions" not in rendered
 
 
-async def test_pending_questions_empty_queue(monkeypatch):
+async def test_staff_turn_parameter_empty_queue(monkeypatch):
+    from jvagent.action.parameters import render_parameters
+
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
     action = _bind_action(HandoffAction())
-    tools = {t.name: t for t in await action.get_tools()}
-    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
-        listed = await tools["handoff__pending_questions"].call()
-    assert not listed.is_error
-    assert "No pending questions" in listed.content
+    params = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
+    rendered = render_parameters(params)
+    assert "PENDING QUESTIONS: []" in rendered
+    assert "do not save" in rendered.lower()
 
 
 async def test_save_answer_group_one_ingest_multi_reply(monkeypatch):
@@ -995,7 +989,6 @@ async def test_pending_list_is_shared_and_save_stays_staff_only(monkeypatch):
     aca = _aca_for_tools()
     tools = {t.name: t for t in await action.get_tools()}
     with bind_dispatch_context(_Ctx("999")):
-        listed_tool = await tools["handoff__pending_questions"].call()
         denied = await _run_gated_tool(
             tools["handoff__save_answer"],
             aca=aca,
@@ -1003,8 +996,6 @@ async def test_pending_list_is_shared_and_save_stays_staff_only(monkeypatch):
             question_ids=["q1"],
             answer="Yes, we deliver.",
         )
-    assert not listed_tool.is_error
-    assert "Do you offer delivery?" in listed_tool.content
     assert not denied.is_error
     assert "cannot save answers" in denied.content
     assert "Do not tell the user" in denied.content
@@ -1154,10 +1145,10 @@ async def test_contributed_parameters_follow_staff_access(monkeypatch):
     monkeypatch.setattr(HandoffAction, "_aca_staff_members", _members)
     staff = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
     rendered = render_parameters(staff)
-    assert "pend_" in rendered
+    assert "PENDING QUESTIONS:" in rendered
     assert "corr-" in rendered
     assert "not a question id or a chunk id" in rendered
-    assert "handoff__pending_questions" in rendered
+    assert "handoff__pending_questions" not in rendered
 
     customer = await action.contributed_parameters(SimpleNamespace(user_id="999"))
     customer_text = render_parameters(customer)
@@ -2332,7 +2323,6 @@ async def test_gated_tools_leave_the_visible_set_for_a_non_staff_sender():
     aca = _aca_for_tools()
     names = [
         "handoff__consult",
-        "handoff__pending_questions",
         "handoff__save_answer",
         "handoff__update_chunk",
     ]
@@ -2350,7 +2340,6 @@ async def test_gated_tools_leave_the_visible_set_for_a_non_staff_sender():
     assert "handoff__save_answer" not in customer_visible
     assert "handoff__update_chunk" not in customer_visible
     assert "handoff__consult" in customer_visible
-    assert "handoff__pending_questions" in customer_tools
 
     staff_tools = {name: object() for name in names}
     staff_visible = set(names)
@@ -2372,7 +2361,6 @@ def _consult_matrix():
             "deny": [{"group": "staff", "enabled": True}],
             "allow": [{"group": "all", "enabled": True}],
         },
-        "handoff__pending_questions": staff_only,
         "handoff__save_answer": staff_only,
         "handoff__update_chunk": staff_only,
     }
@@ -2390,13 +2378,11 @@ async def test_consult_tools_split_by_sender():
     aca = _aca_for_tools(permissions=_consult_matrix())
     names = [
         "handoff__consult",
-        "handoff__pending_questions",
         "handoff__save_answer",
         "handoff__update_chunk",
         "pageindex__search",
     ]
     staff_only = {
-        "handoff__pending_questions",
         "handoff__save_answer",
         "handoff__update_chunk",
     }
@@ -2426,7 +2412,6 @@ async def test_consult_tools_split_by_sender():
     assert (
         staff_visible
         & {
-            "handoff__pending_questions",
             "handoff__save_answer",
             "handoff__update_chunk",
         }
