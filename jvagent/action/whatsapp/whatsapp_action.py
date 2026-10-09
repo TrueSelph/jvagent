@@ -227,8 +227,50 @@ class WhatsAppAction(Action):
         ),
     )
 
+    save_group_users: bool = attribute(
+        default=False,
+        description=(
+            "When true, upsert group chats into group_users "
+            "(conversation user_id → sender display name) on each inbound group turn."
+        ),
+    )
+
+    group_users: Dict[str, str] = attribute(
+        default_factory=dict,
+        description=(
+            "Map of group conversation user_id (the id access control checks) "
+            "to the latest sender display name (notifyName)."
+        ),
+    )
+
     # Internal state tracking (not persisted)
     _session_registered: bool = False
+
+    async def record_group_user_from_inbound(self, ctx: Any) -> None:
+        """Persist conversation user_id → sender_name when save_group_users is enabled.
+
+        On group turns, access control checks ``visitor.user_id``, which is the
+        group chat id (``ctx.group_id``), not the participant phone.
+        """
+        if not self.save_group_users:
+            return
+        user_id = str(getattr(ctx, "group_id", "") or "").strip()
+        name = str(getattr(ctx, "sender_name", "") or "").strip()
+        if not user_id:
+            return
+        current = dict(self.group_users or {})
+        if current.get(user_id) == name:
+            return
+        is_new = user_id not in current
+        current[user_id] = name
+        self.group_users = current
+        await self.save()
+        if is_new:
+            logger.info(
+                "WhatsApp group_users: added user_id=%s sender_name=%s",
+                user_id,
+                name,
+            )
 
     def is_meta_provider(self) -> bool:
         return (self.provider or "").strip() == "meta"

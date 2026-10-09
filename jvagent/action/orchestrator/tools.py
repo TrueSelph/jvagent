@@ -96,6 +96,19 @@ def wrap_action_tool(
 
         call_args = dict(args or {})
         reject_model_authority_fields(call_args)
+        if getattr(tool, "requires_tool_permission", False):
+            from jvagent.action.orchestrator.access import is_named_tool_allowed
+
+            if not await is_named_tool_allowed(
+                agent,
+                tool_name=name,
+                user_id=user_id,
+                channel=channel,
+            ):
+                return (
+                    getattr(tool, "permission_denied_message", None)
+                    or "(access denied)"
+                )
         if effective_access_label is not None and not await is_tool_allowed(
             agent, label=effective_access_label, user_id=user_id, channel=channel
         ):

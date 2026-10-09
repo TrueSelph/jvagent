@@ -415,7 +415,9 @@ def orchestration_parameters(parameters: Optional[List[Any]]) -> List[Dict[str, 
     return in_scope(parameters, SCOPE_ORCHESTRATION)
 
 
-async def accumulate_action_parameters(interaction: Any, actions: List[Any]) -> bool:
+async def accumulate_action_parameters(
+    interaction: Any, actions: List[Any], visitor: Any = None
+) -> bool:
     """Queue every action's scoped parameters onto ``interaction.parameters``.
 
     The accumulation step of the common subsystem: each action contributes its
@@ -432,8 +434,16 @@ async def accumulate_action_parameters(interaction: Any, actions: List[Any]) -> 
         # Stamp the resolved scope onto each param (unspecified → response) so
         # the pooled, persisted, observable entries always carry an explicit
         # scope — no read-time guessing downstream.
+        contributor = getattr(action, "contributed_parameters", None)
+        if visitor is not None and callable(contributor):
+            try:
+                raw = await contributor(visitor)
+            except Exception:
+                raw = getattr(action, "parameters", None) or []
+        else:
+            raw = getattr(action, "parameters", None) or []
         scoped: List[Dict[str, Any]] = []
-        for p in getattr(action, "parameters", None) or []:
+        for p in raw or []:
             if not isinstance(p, dict):
                 continue
             entry = dict(p)

@@ -27,11 +27,17 @@ Do **not** call with empty arguments or when nothing changed.
 
 ## When to call `leadgen__retrieve`
 
-Call when you need profile context but the user did not provide new data this turn:
+Call mid-conversation, once a request cycle is already underway, when you need
+profile context and the visitor supplied no new lead data this turn:
 
-- Start of conversation (after greeting)
-- Before gap-fill questions
+- Before a gap-fill question, after the new request cycle has already been opened with `leadgen__prepare_request`
 - After `leadgen__capture` in the same turn (retrieve is optional — capture response includes `missing_fields`)
+
+Do **not** call `leadgen__retrieve` to open a turn. When the visitor returns
+after a sync — including a bare greeting like "hey" with no product named — the
+next request cycle starts with `leadgen__prepare_request`, not retrieve.
+Retrieve loads the now-cleared live record and would re-ask for contact details
+the visitor already gave.
 
 ## Gap-fill — ask on every turn until captured
 

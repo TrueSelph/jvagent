@@ -414,7 +414,7 @@ class OrchestratorLoopMixin:
         # flow through the subsystem of record (observable + deduped) and each
         # injection site renders its scope.
         interaction = getattr(visitor, "interaction", None)
-        await self._accumulate_parameters(interaction)
+        await self._accumulate_parameters(interaction, visitor)
 
         # Conversation cost ceiling (ADR-0046): a turn that starts over it makes
         # no model call at all — the user is told plainly, and the activation
