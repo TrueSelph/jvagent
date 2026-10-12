@@ -433,8 +433,7 @@ class MCPAction(Action):
                 http_client = None
                 if (
                     auth_cfg
-                    and str(auth_cfg.get("type") or "").strip().lower()
-                    == "service_key"
+                    and str(auth_cfg.get("type") or "").strip().lower() == "service_key"
                 ):
                     from jvagent.action.mcp.service_key_auth import (
                         build_service_key_client,
@@ -442,9 +441,7 @@ class MCPAction(Action):
 
                     http_client = build_service_key_client(
                         service_key=str(auth_cfg.get("service_key") or ""),
-                        key_env=str(
-                            auth_cfg.get("key_env") or "INTEGRAL_SERVICE_KEY"
-                        ),
+                        key_env=str(auth_cfg.get("key_env") or "INTEGRAL_SERVICE_KEY"),
                         user_id=str(auth_cfg.get("user_id") or ""),
                         user_id_env=str(
                             auth_cfg.get("user_id_env") or "INTEGRAL_SERVICE_USER_ID"
