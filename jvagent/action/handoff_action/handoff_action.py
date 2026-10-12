@@ -27,7 +27,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, Callable, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -37,6 +37,8 @@ from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
+
+_PENDING_MUTATE_RETRIES = 8
 
 
 def _register_orchestrator_vocabulary() -> None:
@@ -594,11 +596,30 @@ def _resolve_customer_contact(
     saved: Optional[str],
     visitor_channel: str,
     customer_contact_kind: str = "phone",
+    participant: Optional[str] = None,
+    group_turn: bool = False,
 ) -> str:
-    """Provided, then saved, then identity — all sanitized for the configured kind."""
+    """Resolve a customer contact for the configured kind.
+
+    Default order: provided → saved → identity.
+
+    On a WhatsApp group turn the conversation-scoped saved contact may belong
+    to a prior participant, so order is provided → current participant →
+    saved only when the participant could not be resolved → identity.
+    """
     kind = _normalized_customer_contact_kind(customer_contact_kind)
+    provided_s = _sanitize_contact(provided, customer_contact_kind=kind)
+    if provided_s:
+        return provided_s
+    if group_turn:
+        participant_s = _sanitize_contact(participant, customer_contact_kind=kind)
+        if participant_s:
+            return participant_s
+        saved_s = _sanitize_contact(saved, customer_contact_kind=kind)
+        if saved_s:
+            return saved_s
+        return _identity_contact(visitor_channel, customer_contact_kind=kind)
     for candidate in (
-        _sanitize_contact(provided, customer_contact_kind=kind),
         _sanitize_contact(saved, customer_contact_kind=kind),
         _identity_contact(visitor_channel, customer_contact_kind=kind),
     ):
@@ -1220,6 +1241,14 @@ class HandoffAction(Action):
         ),
     )
 
+    pending_questions_version: int = attribute(
+        default=0,
+        description=(
+            "Monotonic version for optimistic pending_questions updates across "
+            "concurrent sessions."
+        ),
+    )
+
     # -- tools -----------------------------------------------------------------
 
     def __getattribute__(self, name: str) -> Any:
@@ -1496,19 +1525,58 @@ class HandoffAction(Action):
         if provided_clean:
             await self._save_contact(provided_clean)
         effective_provided = provided_clean if provided_clean else contact
+        group_turn = False
+        participant = ""
+        if visitor_channel == "whatsapp":
+            from jvagent.action.whatsapp.utils.chat_ids import (
+                is_group_whatsapp_turn,
+                participant_phone_from_payload,
+                whatsapp_payload_from_visitor_data,
+            )
+            from jvagent.tooling.tool_executor import get_tool_visitor
+
+            visitor = get_tool_visitor()
+            payload = whatsapp_payload_from_visitor_data(
+                getattr(visitor, "data", None) if visitor else None
+            )
+            user_id = _dispatch_user_id()
+            group_turn = is_group_whatsapp_turn(payload, user_id)
+            if group_turn:
+                participant = participant_phone_from_payload(payload, user_id)
+                if not participant:
+                    logger.warning(
+                        "handoff group participant resolve attempt snapshot=%s",
+                        _handoff_whatsapp_context_snapshot(
+                            mode=mode,
+                            visitor_channel=visitor_channel,
+                            provided_clean=provided_clean,
+                            contact_after_sync="",
+                            saved_contact=saved,
+                            saved_whatsapp_author=saved_author,
+                        ),
+                    )
+                    participant = await self._resolve_whatsapp_participant_contact()
+                    logger.warning(
+                        "handoff group participant resolve result contact=%s",
+                        _mask(participant or ""),
+                    )
         contact = _resolve_customer_contact(
             provided=effective_provided,
             saved=saved,
             visitor_channel=visitor_channel,
             customer_contact_kind=kind,
+            participant=participant or None,
+            group_turn=group_turn,
         )
         logger.warning(
             "handoff contact after sync resolve contact=%s provided=%s saved=%s "
-            "channel=%s snapshot=%s",
+            "channel=%s group_turn=%s participant=%s snapshot=%s",
             _mask(contact or ""),
             _mask(str(effective_provided or "")),
             _mask(saved),
             visitor_channel,
+            group_turn,
+            _mask(participant or ""),
             _handoff_whatsapp_context_snapshot(
                 mode=mode,
                 visitor_channel=visitor_channel,
@@ -1521,8 +1589,17 @@ class HandoffAction(Action):
         if (
             contact
             and mode in ("consult", "transfer")
+            and group_turn
+            and contact == (participant or contact)
+        ):
+            await self._save_contact(contact)
+            await self._update_context({_HANDOFF_WHATSAPP_AUTHOR_KEY: contact})
+        elif (
+            contact
+            and mode in ("consult", "transfer")
             and not provided_clean
             and not saved
+            and not group_turn
         ):
             from jvagent.action.whatsapp.utils.chat_ids import (
                 participant_phone_from_payload,
@@ -1535,27 +1612,6 @@ class HandoffAction(Action):
                 getattr(visitor, "data", None) if visitor else None
             )
             if participant_phone_from_payload(payload, _dispatch_user_id()) == contact:
-                await self._save_contact(contact)
-                await self._update_context({_HANDOFF_WHATSAPP_AUTHOR_KEY: contact})
-        if not contact and visitor_channel == "whatsapp":
-            logger.warning(
-                "handoff group participant resolve attempt snapshot=%s",
-                _handoff_whatsapp_context_snapshot(
-                    mode=mode,
-                    visitor_channel=visitor_channel,
-                    provided_clean=provided_clean,
-                    contact_after_sync="",
-                    saved_contact=saved,
-                    saved_whatsapp_author=saved_author,
-                ),
-            )
-            participant = await self._resolve_whatsapp_participant_contact()
-            logger.warning(
-                "handoff group participant resolve result contact=%s",
-                _mask(participant or ""),
-            )
-            if participant:
-                contact = participant
                 await self._save_contact(contact)
                 await self._update_context({_HANDOFF_WHATSAPP_AUTHOR_KEY: contact})
         if not contact and not (mode == "consult" and contact_declined):
@@ -1721,33 +1777,70 @@ class HandoffAction(Action):
                 )
             group.append(row)
         anchor = group[0]
-        try:
-            short_q, short_a, chunk_id = await self._append_and_ingest(
-                _question_field(anchor, "question"), cleaned
-            )
-        except Exception as exc:
-            logger.error("handoff__save_answer ingest failed: %s", exc, exc_info=True)
+        already_ingested = all(
+            str(_question_field(row, "answer") or "").strip() for row in group
+        )
+        short_q = str(_question_field(anchor, "question") or "").strip()
+        short_a = cleaned
+        chunk_id = str(_question_field(anchor, "chunk_id") or "").strip()
+        if not already_ingested:
+            try:
+                short_q, short_a, chunk_id = await self._append_and_ingest(
+                    _question_field(anchor, "question"), cleaned
+                )
+            except Exception as exc:
+                logger.error(
+                    "handoff__save_answer ingest failed: %s", exc, exc_info=True
+                )
+                return ToolResult(
+                    content=(
+                        "handoff failed: could not save the answer to the knowledge "
+                        "base. Report the issue to the team."
+                    ),
+                    is_error=True,
+                )
+            for row in group:
+                rid = _question_field(row, "id")
+                if rid:
+                    await self._mark_pending_answered(
+                        rid, answer=cleaned, chunk_id=chunk_id, node=row
+                    )
+        replied_contacts: set[str] = set()
+        delivery_failures: List[str] = []
+        for row in group:
+            contact = str(_question_field(row, "user_contact") or "").strip()
+            rid = _question_field(row, "id")
+            if not contact or contact.lower() == "declined":
+                if rid:
+                    await self._remove_pending(rid, answer=cleaned, node=row)
+                continue
+            if contact in replied_contacts:
+                if rid:
+                    await self._remove_pending(rid, answer=cleaned, node=row)
+                continue
+            replied_contacts.add(contact)
+            delivered = await self._reply_to_customer(row, short_q, short_a)
+            if delivered:
+                if rid:
+                    await self._remove_pending(rid, answer=cleaned, node=row)
+            else:
+                delivery_failures.append(rid or contact)
+                if rid:
+                    await self._mark_pending_delivery_failed(
+                        rid, answer=cleaned, chunk_id=chunk_id, node=row
+                    )
+        if delivery_failures:
+            ids = ", ".join(delivery_failures)
             return ToolResult(
                 content=(
-                    "handoff failed: could not save the answer to the knowledge "
-                    "base. Report the issue to the team."
+                    "handoff partial failure: the answer was saved to the "
+                    "knowledge base, but delivery to the customer failed for "
+                    f"{ids}. Keep those pend_ ids and retry delivery."
                 ),
                 is_error=True,
             )
-        for row in group:
-            rid = _question_field(row, "id")
-            if rid:
-                await self._remove_pending(rid, answer=cleaned, node=row)
-        replied_contacts: set[str] = set()
-        for row in group:
-            contact = str(_question_field(row, "user_contact") or "").strip()
-            if not contact or contact.lower() == "declined":
-                continue
-            if contact in replied_contacts:
-                continue
-            replied_contacts.add(contact)
-            await self._reply_to_customer(row, short_q, short_a)
-        await self._record_chunk_event(chunk_id, short_q)
+        if chunk_id:
+            await self._record_chunk_event(chunk_id, short_q)
         await self._record_event(_handoff_event("save_answer", short_q))
         await self._clear_active()
         return ToolResult(
@@ -1863,14 +1956,15 @@ class HandoffAction(Action):
 
     async def _reply_to_customer(
         self, question: Any, short_q: str, short_a: str
-    ) -> None:
+    ) -> bool:
+        """Send the saved answer to the customer. True only on successful send."""
         contact = str(_question_field(question, "user_contact") or "").strip()
         if not contact or contact.lower() == "declined":
-            return
+            return True
         text = await self._customer_reply(short_q, short_a)
         kind = _contact_kind(contact)
         if not kind:
-            return
+            return False
         try:
             if kind == "email":
                 await self._send_email(
@@ -1885,15 +1979,16 @@ class HandoffAction(Action):
                     contact,
                     kind,
                 )
-                return
+                return False
         except Exception:
             logger.error(
                 "handoff reply to customer failed contact=%r",
                 contact,
                 exc_info=True,
             )
-            return
+            return False
         await self._record_event("Handoff delivered the saved answer to the customer.")
+        return True
 
     def _channel_for(self, mode: str) -> str:
         channel = (
@@ -2334,6 +2429,12 @@ class HandoffAction(Action):
                 exc_info=True,
             )
 
+    def _pending_lock(self):
+        from jvagent.core.async_locks import get_loop_lock
+
+        aid = str(getattr(self, "id", "") or "").strip() or "default"
+        return get_loop_lock(f"handoff_pending:{aid}")
+
     async def _refresh_pending_state(self) -> None:
         """Reload pending_questions from durable Action storage onto this instance."""
         aid = str(getattr(self, "id", "") or "").strip()
@@ -2351,19 +2452,33 @@ class HandoffAction(Action):
             return
         rows = getattr(fresh, "pending_questions", None)
         self.pending_questions = list(rows) if isinstance(rows, list) else []
+        try:
+            self.pending_questions_version = int(
+                getattr(fresh, "pending_questions_version", 0) or 0
+            )
+        except Exception:
+            self.pending_questions_version = 0
+
+    def _open_pending_rows(self) -> List[Dict[str, Any]]:
+        """Rows still needing staff attention or customer delivery."""
+        out: List[Dict[str, Any]] = []
+        for row in self.pending_questions or []:
+            if not isinstance(row, dict):
+                continue
+            answer = str(row.get("answer") or "").strip()
+            status = str(row.get("delivery_status") or "").strip()
+            if not answer or status in ("pending", "failed"):
+                out.append(row)
+        return out
 
     def _unanswered_rows(self) -> List[Dict[str, Any]]:
-        return [
-            row
-            for row in (self.pending_questions or [])
-            if isinstance(row, dict) and not str(row.get("answer") or "").strip()
-        ]
+        return self._open_pending_rows()
 
     async def _list_pending(self) -> List[Dict[str, Any]]:
         """Pending questions as dict rows for tool output."""
         await self._refresh_pending_state()
         loaded_id = await self._agent_id()
-        rows = [_question_row(row) for row in self._unanswered_rows()]
+        rows = [_question_row(row) for row in self._open_pending_rows()]
         logger.warning(
             "handoff list_pending action_agent_id=%r loaded_agent_id=%r count=%s",
             getattr(self, "agent_id", None),
@@ -2377,7 +2492,7 @@ class HandoffAction(Action):
         if not qid:
             return None
         await self._refresh_pending_state()
-        for row in self._unanswered_rows():
+        for row in self._open_pending_rows():
             if str(row.get("id") or "") == qid:
                 return row
         return None
@@ -2386,6 +2501,41 @@ class HandoffAction(Action):
         self.pending_questions = list(rows)
         await self.save()
         await self._invalidate_pending_caches()
+
+    async def _mutate_pending_rows(
+        self,
+        mutator: Callable[[List[Dict[str, Any]]], Any],
+    ) -> Any:
+        """Atomically refresh/mutate/persist pending_questions with versioning."""
+        async with self._pending_lock():
+            last_exc: Optional[BaseException] = None
+            for _ in range(_PENDING_MUTATE_RETRIES):
+                await self._refresh_pending_state()
+                expected = int(getattr(self, "pending_questions_version", 0) or 0)
+                rows = [
+                    dict(row)
+                    for row in (self.pending_questions or [])
+                    if isinstance(row, dict)
+                ]
+                result = mutator(rows)
+                if hasattr(result, "__await__"):
+                    result = await result
+                await self._refresh_pending_state()
+                current = int(getattr(self, "pending_questions_version", 0) or 0)
+                if current != expected:
+                    last_exc = RuntimeError(
+                        "handoff pending_questions version conflict "
+                        f"(expected {expected}, saw {current})"
+                    )
+                    continue
+                self.pending_questions_version = expected + 1
+                await self._persist_pending_rows(rows)
+                return result
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError(
+                "handoff pending_questions mutation failed after retries"
+            )
 
     async def _add_pending(self, message: str, contact: str = "") -> Dict[str, Any]:
         """Append a pending question on this Action and verify it is listable."""
@@ -2401,22 +2551,24 @@ class HandoffAction(Action):
             agent_id,
             stored_contact,
         )
-        try:
-            await self._refresh_pending_state()
-            entry = {
-                "id": f"pend_{uuid.uuid4().hex}",
-                "question": message or "",
-                "user_channel": channel,
-                "user_contact": stored_contact,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            rows = self._unanswered_rows()
+        entry = {
+            "id": f"pend_{uuid.uuid4().hex}",
+            "question": message or "",
+            "user_channel": channel,
+            "user_contact": stored_contact,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def _append(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             rows.append(entry)
-            await self._persist_pending_rows(rows)
+            return entry
+
+        try:
+            await self._mutate_pending_rows(_append)
             await self._refresh_pending_state()
             if not any(
                 str(row.get("id") or "") == entry["id"]
-                for row in self._unanswered_rows()
+                for row in self._open_pending_rows()
             ):
                 raise RuntimeError(
                     f"handoff question {entry['id']} was created but is not listable"
@@ -2448,19 +2600,70 @@ class HandoffAction(Action):
         if not qid:
             logger.warning("handoff update_pending missing question_id")
             return
-        await self._refresh_pending_state()
-        rows = self._unanswered_rows()
-        changed = False
         stored = (user_contact or "").strip()
-        for row in rows:
-            if str(row.get("id") or "") == qid:
-                row["user_contact"] = stored
-                changed = True
-                break
+
+        def _update(rows: List[Dict[str, Any]]) -> bool:
+            for row in rows:
+                if str(row.get("id") or "") == qid:
+                    row["user_contact"] = stored
+                    return True
+            return False
+
+        changed = await self._mutate_pending_rows(_update)
         if not changed:
             logger.warning("handoff update_pending missing question_id=%r", qid)
+
+    async def _patch_pending_row(
+        self,
+        question_id: str,
+        *,
+        updates: Dict[str, Any],
+        node: Any = None,
+    ) -> None:
+        qid = (question_id or "").strip() or _question_field(node, "id").strip()
+        if not qid:
             return
-        await self._persist_pending_rows(rows)
+
+        def _patch(rows: List[Dict[str, Any]]) -> bool:
+            for row in rows:
+                if str(row.get("id") or "") == qid:
+                    row.update(updates)
+                    return True
+            return False
+
+        await self._mutate_pending_rows(_patch)
+
+    async def _mark_pending_answered(
+        self,
+        question_id: str,
+        *,
+        answer: str,
+        chunk_id: str = "",
+        node: Any = None,
+    ) -> None:
+        updates: Dict[str, Any] = {
+            "answer": answer or "",
+            "delivery_status": "pending",
+        }
+        if chunk_id:
+            updates["chunk_id"] = chunk_id
+        await self._patch_pending_row(question_id, updates=updates, node=node)
+
+    async def _mark_pending_delivery_failed(
+        self,
+        question_id: str,
+        *,
+        answer: str,
+        chunk_id: str = "",
+        node: Any = None,
+    ) -> None:
+        updates: Dict[str, Any] = {
+            "answer": answer or "",
+            "delivery_status": "failed",
+        }
+        if chunk_id:
+            updates["chunk_id"] = chunk_id
+        await self._patch_pending_row(question_id, updates=updates, node=node)
 
     async def _remove_pending(
         self, question_id: str, *, answer: str = "", node: Any = None
@@ -2470,16 +2673,15 @@ class HandoffAction(Action):
         if not qid:
             logger.warning("handoff remove_pending missing question_id")
             return
-        await self._refresh_pending_state()
-        kept = [
-            row
-            for row in (self.pending_questions or [])
-            if not (isinstance(row, dict) and str(row.get("id") or "") == qid)
-        ]
-        if len(kept) == len(self.pending_questions or []):
+
+        def _remove(rows: List[Dict[str, Any]]) -> bool:
+            before = len(rows)
+            rows[:] = [row for row in rows if str(row.get("id") or "") != qid]
+            return len(rows) != before
+
+        changed = await self._mutate_pending_rows(_remove)
+        if not changed:
             logger.warning("handoff remove_pending missing question_id=%r", qid)
-            return
-        await self._persist_pending_rows(kept)
 
     async def _conversation(self) -> Any:
         """Current conversation from the tool visitor, when one is bound."""
@@ -2702,25 +2904,39 @@ class HandoffAction(Action):
             import_documents,
         )
 
-        try:
-            exported = await export_documents(
-                collection_name=collection, doc_name=HANDOFF_DOC_NAME
-            )
-        except Exception:
-            logger.debug("handoff: export of handoff.md skipped", exc_info=True)
-            exported = {}
-        graph = _append_handoff_chunk(exported or {}, short_q, short_a, collection)
+        # Absent documents return an empty graph; other export failures must
+        # abort before any destructive delete/import.
+        exported = await export_documents(
+            collection_name=collection, doc_name=HANDOFF_DOC_NAME
+        )
+        prior_graph = exported or {}
+        graph = _append_handoff_chunk(prior_graph, short_q, short_a, collection)
         nodes = graph.get("nodes") or []
         chunk_id = str(nodes[-1].get("id") or "") if nodes else ""
         _handoff_json_path().write_text(
             json.dumps(graph, indent=2) + "\n", encoding="utf-8"
         )
 
+        deleted = False
         try:
             await delete_document(HANDOFF_DOC_NAME, collection_name=collection)
+            deleted = True
         except Exception:  # document may not exist yet — import replaces it
             logger.debug("handoff: prior handoff.md delete skipped", exc_info=True)
-        await import_documents(graph, purge=False, collection_name=collection)
+        try:
+            await import_documents(graph, purge=False, collection_name=collection)
+        except Exception:
+            if deleted and prior_graph.get("roots"):
+                try:
+                    await import_documents(
+                        prior_graph, purge=False, collection_name=collection
+                    )
+                except Exception:
+                    logger.error(
+                        "handoff: failed to restore handoff.md after import error",
+                        exc_info=True,
+                    )
+            raise
         return short_q, short_a, chunk_id
 
     async def healthcheck(self) -> Any:

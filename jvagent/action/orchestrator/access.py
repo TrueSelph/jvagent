@@ -70,6 +70,56 @@ async def drop_unpermitted_tools(
             longtail.discard(name)
 
 
+async def named_tool_rule_applies(agent: Any, *, tool_name: str, channel: str) -> bool:
+    """True when ``permissions[channel].tools`` has an entry for *tool_name*."""
+    ac = await _resolve_access_control(agent)
+    if ac is None:
+        return False
+    names = getattr(ac, "tool_permission_names", None)
+    if not callable(names):
+        return False
+    try:
+        return str(tool_name or "") in set(names(channel) or ())
+    except Exception as exc:
+        logger.debug(
+            "orchestrator.access: tool_permission_names failed for %s: %s",
+            tool_name,
+            exc,
+        )
+        return False
+
+
+async def denied_named_tool_names(
+    agent: Any, *, user_id: Optional[str], channel: str
+) -> set:
+    """Configured ``permissions[channel].tools`` names this sender cannot call."""
+    ac = await _resolve_access_control(agent)
+    if ac is None:
+        return set()
+    names_fn = getattr(ac, "tool_permission_names", None)
+    check = getattr(ac, "has_tool_access", None)
+    if not callable(names_fn) or not callable(check):
+        return set()
+    try:
+        names = set(names_fn(channel) or ())
+    except Exception:
+        return set()
+    denied: set = set()
+    for name in names:
+        try:
+            allowed = bool(await check(user_id or "", name, channel))
+        except Exception as exc:
+            logger.warning(
+                "orchestrator.access: has_tool_access raised for %s — " "excluding: %s",
+                name,
+                exc,
+            )
+            allowed = False
+        if not allowed:
+            denied.add(str(name))
+    return denied
+
+
 async def is_named_tool_allowed(
     agent: Any, *, tool_name: str, user_id: Optional[str], channel: str
 ) -> bool:
@@ -124,7 +174,9 @@ async def is_tool_allowed(
 
 __all__ = [
     "delegate_resource_label",
+    "denied_named_tool_names",
     "drop_unpermitted_tools",
     "is_named_tool_allowed",
     "is_tool_allowed",
+    "named_tool_rule_applies",
 ]

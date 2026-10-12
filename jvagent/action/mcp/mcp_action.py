@@ -266,7 +266,10 @@ class MCPAction(Action):
             "sandbox_mode, sandbox_user_scoped, sandbox_root, "
             "show_tools (default true; false keeps the server hosted but omits "
             "its tools from get_tools / the orchestrator), "
-            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers)."
+            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers), "
+            "auth (optional: {type: service_key, key_env, user_id/user_id_env, "
+            "workspace_id/workspace_id_env} — signs every streamable_http request "
+            "with Core's service-key envelope)."
         ),
     )
     model_action_type: str = attribute(
@@ -424,6 +427,35 @@ class MCPAction(Action):
                 )
                 args = a
             else:
+                auth_cfg = (
+                    raw.get("auth") if isinstance(raw.get("auth"), dict) else None
+                )
+                http_client = None
+                if (
+                    auth_cfg
+                    and str(auth_cfg.get("type") or "").strip().lower()
+                    == "service_key"
+                ):
+                    from jvagent.action.mcp.service_key_auth import (
+                        build_service_key_client,
+                    )
+
+                    http_client = build_service_key_client(
+                        service_key=str(auth_cfg.get("service_key") or ""),
+                        key_env=str(
+                            auth_cfg.get("key_env") or "INTEGRAL_SERVICE_KEY"
+                        ),
+                        user_id=str(auth_cfg.get("user_id") or ""),
+                        user_id_env=str(
+                            auth_cfg.get("user_id_env") or "INTEGRAL_SERVICE_USER_ID"
+                        ),
+                        workspace_id=str(auth_cfg.get("workspace_id") or ""),
+                        workspace_id_env=str(
+                            auth_cfg.get("workspace_id_env") or "INTEGRAL_WORKSPACE_ID"
+                        ),
+                        connect_timeout=connect_timeout,
+                        read_timeout=call_timeout,
+                    )
                 client = MCPClientWrapper(
                     transport,
                     command=command,
@@ -432,6 +464,7 @@ class MCPAction(Action):
                     url=url,
                     connect_timeout=connect_timeout,
                     call_timeout=call_timeout,
+                    http_client=http_client,
                 )
 
             ulock = asyncio.Lock()

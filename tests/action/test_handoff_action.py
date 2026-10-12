@@ -43,11 +43,13 @@ class _PendingStore:
     """Shared durable pending_questions keyed by action id (simulates Action.get)."""
 
     by_action: dict = {}
+    versions: dict = {}
     ACTION_ID = "n.HandoffAction.test"
 
     @classmethod
     def reset(cls):
         cls.by_action = {}
+        cls.versions = {}
 
     @classmethod
     def rows_for(cls, action_id=None):
@@ -86,15 +88,19 @@ def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
         aid = str(getattr(self, "id", "") or action_id).strip() or action_id
         object.__setattr__(self, "id", aid)
         _PendingStore.by_action[aid] = [
-            row for row in (self.pending_questions or []) if isinstance(row, dict)
+            dict(row) for row in (self.pending_questions or []) if isinstance(row, dict)
         ]
+        _PendingStore.versions[aid] = int(
+            getattr(self, "pending_questions_version", 0) or 0
+        )
 
     async def _get(cls, eid):
         aid = str(eid or "").strip()
         rows = _PendingStore.by_action.get(aid, [])
         fresh = SimpleNamespace(
             id=aid,
-            pending_questions=list(rows),
+            pending_questions=[dict(row) for row in rows],
+            pending_questions_version=int(_PendingStore.versions.get(aid, 0) or 0),
         )
         return fresh
 
@@ -114,6 +120,9 @@ def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
 def _bind_action(action, action_id=_PendingStore.ACTION_ID):
     object.__setattr__(action, "id", action_id)
     action.pending_questions = list(_PendingStore.by_action.get(action_id, []))
+    action.pending_questions_version = int(
+        _PendingStore.versions.get(action_id, 0) or 0
+    )
     return action
 
 
@@ -131,6 +140,9 @@ def _seed_pending(action, **kwargs):
     aid = str(getattr(action, "id", "") or _PendingStore.ACTION_ID)
     object.__setattr__(action, "id", aid)
     _PendingStore.by_action[aid] = list(rows)
+    _PendingStore.versions[aid] = int(
+        getattr(action, "pending_questions_version", 0) or 0
+    )
     return row
 
 
@@ -1027,6 +1039,7 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
     assert listed[0]["user_contact"] == "5926431530"
 
     await reader._update_pending(created["id"], user_contact="5920001111")
+    await writer._refresh_pending_state()
     assert writer.pending_questions[0]["user_contact"] == "5920001111"
     assert (await reader._list_pending())[0]["user_contact"] == "5920001111"
 
@@ -1046,7 +1059,11 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
     async def _append(self, question, answer):
         return question, answer, "n.DocumentNode.test"
 
+    async def _reply_ok(self, question, short_q, short_a):
+        return True
+
     monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply_ok)
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
         saved = await tools["handoff__save_answer"].call(
             question_ids=[created["id"]], answer="Yes, we deliver for 5000."
@@ -2497,3 +2514,240 @@ async def test_wrap_denied_save_does_not_run_the_tool():
     wrapped = wrap_action_tool(tool, agent=None, user_id="999", channel="whatsapp")
     assert await wrapped.run({}) == SAVE_DENIED_LINE
     assert "yes" not in called
+
+
+def test_resolve_customer_contact_group_prefers_participant_over_saved():
+    from jvagent.action.handoff_action.handoff_action import _resolve_customer_contact
+
+    assert (
+        _resolve_customer_contact(
+            provided=None,
+            saved="5921111111",
+            visitor_channel="whatsapp",
+            participant="5922222222",
+            group_turn=True,
+        )
+        == "5922222222"
+    )
+    assert (
+        _resolve_customer_contact(
+            provided="5923333333",
+            saved="5921111111",
+            visitor_channel="whatsapp",
+            participant="5922222222",
+            group_turn=True,
+        )
+        == "5923333333"
+    )
+
+
+async def test_group_consults_use_current_participant_not_prior_saved(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    conversation = _Conversation()
+    sent = []
+
+    async def _send(self, recipient, message):
+        sent.append(recipient)
+
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send)
+    tools = {t.name: t for t in await action.get_tools()}
+    group_id = "120363428616636917"
+
+    alice = _Ctx(group_id, channel="whatsapp", conversation=conversation)
+    alice.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "5921110001",
+        }
+    }
+    with bind_dispatch_context(alice):
+        await tools["handoff__consult"].call(message="Alice question")
+
+    bob = _Ctx(group_id, channel="whatsapp", conversation=conversation)
+    bob.data = {
+        "whatsapp_payload": {
+            "isGroup": True,
+            "sender": group_id,
+            "author": "5921110002",
+        }
+    }
+    with bind_dispatch_context(bob):
+        await tools["handoff__consult"].call(message="Bob question")
+
+    contacts = [row["user_contact"] for row in action.pending_questions]
+    assert contacts == ["5921110001", "5921110002"]
+
+
+async def test_concurrent_add_pending_keeps_both_rows(monkeypatch):
+    import asyncio
+
+    _install_pending_store(monkeypatch)
+    a = _bind_action(HandoffAction())
+    b = _bind_action(HandoffAction())
+
+    async def _one(action, message, contact):
+        with bind_dispatch_context(_Ctx(contact, channel="whatsapp")):
+            return await action._add_pending(message, contact)
+
+    await asyncio.gather(
+        _one(a, "question a", "5921110001"),
+        _one(b, "question b", "5921110002"),
+    )
+    rows = _PendingStore.rows_for()
+    assert len(rows) == 2
+    assert {row["question"] for row in rows} == {"question a", "question b"}
+
+
+async def test_append_and_ingest_aborts_when_export_fails(monkeypatch, tmp_path):
+    json_path = tmp_path / "handoff.json"
+    monkeypatch.setattr(
+        "jvagent.action.handoff_action.handoff_action._handoff_json_path",
+        lambda: json_path,
+    )
+    deleted = {"hit": False}
+
+    async def _export(collection_name="default", doc_name=None, root_id=None):
+        raise RuntimeError("export unavailable")
+
+    async def _delete(doc_name, collection_name="default"):
+        deleted["hit"] = True
+
+    async def _import(data, purge=False, collection_name=None):
+        raise AssertionError("import should not run")
+
+    async def _condense(self, question, answer):
+        return question, answer
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    monkeypatch.setattr("jvagent.action.pageindex.documents.export_documents", _export)
+    monkeypatch.setattr("jvagent.action.pageindex.documents.delete_document", _delete)
+    monkeypatch.setattr("jvagent.action.pageindex.documents.import_documents", _import)
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_condense_qa", _condense)
+
+    action = HandoffAction()
+    try:
+        await action._append_and_ingest("q", "a")
+        assert False, "expected export failure to propagate"
+    except RuntimeError as exc:
+        assert "export unavailable" in str(exc)
+    assert deleted["hit"] is False
+
+
+async def test_append_and_ingest_restores_prior_graph_when_import_fails(
+    monkeypatch, tmp_path
+):
+    json_path = tmp_path / "handoff.json"
+    monkeypatch.setattr(
+        "jvagent.action.handoff_action.handoff_action._handoff_json_path",
+        lambda: json_path,
+    )
+    prior = {
+        "roots": [
+            {
+                "id": "n.DocumentRootNode.existing",
+                "entity": "DocumentRootNode",
+                "doc_name": "handoff.md",
+                "collection_name": "n.Agent.test",
+                "metadata": {"access": "public"},
+                "chunks": 1,
+            }
+        ],
+        "nodes": [{"id": "n.DocumentNode.existing", "title": "old"}],
+        "edges": [],
+    }
+    imports = []
+
+    async def _export(collection_name="default", doc_name=None, root_id=None):
+        return prior
+
+    async def _delete(doc_name, collection_name="default"):
+        return True
+
+    async def _import(data, purge=False, collection_name=None):
+        imports.append(data)
+        if len(imports) == 1:
+            raise RuntimeError("import failed")
+
+    async def _condense(self, question, answer):
+        return "short q", "short a"
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    monkeypatch.setattr("jvagent.action.pageindex.documents.export_documents", _export)
+    monkeypatch.setattr("jvagent.action.pageindex.documents.delete_document", _delete)
+    monkeypatch.setattr("jvagent.action.pageindex.documents.import_documents", _import)
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_condense_qa", _condense)
+
+    action = HandoffAction()
+    try:
+        await action._append_and_ingest("q", "a")
+        assert False, "expected import failure"
+    except RuntimeError as exc:
+        assert "import failed" in str(exc)
+    assert len(imports) == 2
+    assert imports[1]["nodes"][0]["id"] == "n.DocumentNode.existing"
+
+
+async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    row = _seed_pending(
+        action,
+        id="pend_delivery",
+        question="Do you deliver?",
+        user_contact="5926431530",
+    )
+    ingested = {"count": 0}
+    sends = {"count": 0}
+
+    async def _append(self, question, answer):
+        ingested["count"] += 1
+        return question, answer, "n.DocumentNode.test"
+
+    async def _send_customer(self, contact, text):
+        sends["count"] += 1
+        if sends["count"] == 1:
+            raise RuntimeError("whatsapp down")
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp_customer", _send_customer)
+    monkeypatch.setattr(
+        HandoffAction, "_customer_reply", AsyncMock(return_value="here is the answer")
+    )
+
+    tools = {t.name: t for t in await action.get_tools()}
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        failed = await tools["handoff__save_answer"].call(
+            question_ids=[row["id"]], answer="Yes, we deliver."
+        )
+    assert failed.is_error
+    assert "delivery" in failed.content.lower()
+    assert ingested["count"] == 1
+    assert len(action.pending_questions) == 1
+    assert action.pending_questions[0]["delivery_status"] == "failed"
+    assert action.pending_questions[0]["answer"] == "Yes, we deliver."
+
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        retried = await tools["handoff__save_answer"].call(
+            question_ids=[row["id"]], answer="Yes, we deliver."
+        )
+    assert not retried.is_error
+    assert ingested["count"] == 1  # no duplicate KB write
+    assert action.pending_questions == []

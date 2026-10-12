@@ -597,3 +597,74 @@ def test_access_gate_fails_closed_without_access_control() -> None:
     )
     aca = _FakeACA({"HandoffAction": {"staff": ["111"]}}, enforce=False)
     assert not OrchestratorInteractAction._skill_access_control_allowed(doc, "111", aca)
+
+
+async def test_assemble_tools_hides_identity_gated_skill_custom_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identity-hidden skills drop ``<skill>__*`` custom tools from the surface."""
+    orch = OrchestratorInteractAction()
+    staff_doc = SkillDoc(
+        name="staff_only",
+        description="private",
+        body="b",
+        access_action="HandoffAction",
+        allowed_groups=("staff",),
+        requires_tools=("staff_only__private_data",),
+    )
+    faq_doc = SkillDoc(name="faq", description="FAQs", body="b")
+    aca = _FakeACA({"HandoffAction": {"staff": ["111"]}})
+
+    monkeypatch.setattr(orch, "_discover_skills", lambda _agent: [staff_doc, faq_doc])
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_resolve_action",
+        AsyncMock(return_value=aca),
+    )
+
+    class _FakeAction:
+        def get_class_name(self) -> str:
+            return "CustomAction"
+
+        async def get_tools(self):
+            return [
+                _make_tool("staff_only__private_data"),
+                _make_tool("faq__search"),
+            ]
+
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_enabled_actions",
+        AsyncMock(return_value=[_FakeAction()]),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "_safe_agent", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_enforce_required_actions",
+        AsyncMock(side_effect=lambda d: d),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_select_code_execution_action",
+        staticmethod(lambda _actions: None),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction, "get_responder", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        "jvagent.action.orchestrator.skill_tasks.compose_skill_activate_hooks",
+        lambda *a, **k: (None, None),
+    )
+
+    visitor = MagicMock()
+    visitor.user_id = "999"
+    visitor.channel = "whatsapp"
+    visitor.utterance = "hi"
+    skill_docs: List[Any] = []
+    visible: Set[str] = set()
+    tools = await orch._assemble_tools(visitor, [], visible, None, "hi", skill_docs, {})
+    assert "staff_only" not in {getattr(d, "name", "") for d in skill_docs}
+    assert "staff_only__private_data" not in tools
+    assert "faq__search" in tools

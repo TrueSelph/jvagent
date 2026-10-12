@@ -42,6 +42,7 @@ class MCPClientWrapper:
         url: str = "",
         connect_timeout: float = 10.0,
         call_timeout: float = 30.0,
+        http_client: Optional[Any] = None,
     ) -> None:
         """Initialize wrapper config.
 
@@ -53,6 +54,9 @@ class MCPClientWrapper:
             url: For streamable_http, endpoint URL.
             connect_timeout: Timeout in seconds for connect + initialize + list_tools.
             call_timeout: Timeout in seconds for call_tool.
+            http_client: Optional pre-configured httpx.AsyncClient for the
+                streamable_http transport (e.g. carrying auth headers). Owned by
+                this wrapper and closed on disconnect.
         """
         self._transport = transport
         self._command = command
@@ -61,6 +65,7 @@ class MCPClientWrapper:
         self._url = url
         self._connect_timeout = connect_timeout
         self._call_timeout = call_timeout
+        self._http_client = http_client
         self._stack: Optional[AsyncExitStack] = None
         self._session: Any = None
         self._read_stream: Any = None
@@ -151,7 +156,11 @@ class MCPClientWrapper:
 
         stack = AsyncExitStack()
         try:
-            transport_ctx = streamable_http_client(self._url)
+            transport_ctx = (
+                streamable_http_client(self._url, http_client=self._http_client)
+                if self._http_client is not None
+                else streamable_http_client(self._url)
+            )
             read_stream, write_stream, _session_id = await stack.enter_async_context(
                 transport_ctx
             )
@@ -182,6 +191,11 @@ class MCPClientWrapper:
         elif self._stack is not None:
             await self._stack.aclose()
             self._stack = None
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception:
+                pass
         self._session = None
         self._read_stream = None
         self._write_stream = None
