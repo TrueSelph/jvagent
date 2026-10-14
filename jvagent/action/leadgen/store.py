@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_REQUIRED_FIELDS: List[str] = [
-    "name",
+    "full_name",
     "organization",
     "email",
     "phone",
@@ -25,16 +25,16 @@ DEFAULT_REQUIRED_FIELDS: List[str] = [
 DEFAULT_OPTIONAL_FIELDS: List[str] = [
     "project_description",
     "project_location",
-    "role",
-    "industry",
-    "team_size",
-    "budget",
-    "timeline",
-    "pain_points",
+    "contact_role",
+    "company_industry",
+    "company_size",
+    "project_budget",
+    "project_timeline",
+    "project_pain_points",
     "current_tools",
     "communication_preference",
-    "interested_products",
-    "requested_items",
+    "quote_items",
+    "order_items",
     "feedback",
 ]
 

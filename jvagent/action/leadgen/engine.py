@@ -294,8 +294,8 @@ async def handle_capture(
     if channel.lower() == "whatsapp":
         if "phone" not in raw_fields and user.user_id:
             raw_fields.setdefault("phone", user.user_id)
-        if not raw_fields.get("name") and getattr(user, "name", None):
-            raw_fields.setdefault("name", user.name)
+        if not raw_fields.get("full_name") and getattr(user, "name", None):
+            raw_fields.setdefault("full_name", user.name)
 
     validated, err = await validate_fields(raw_fields, spec)
     if err:

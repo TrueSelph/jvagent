@@ -62,7 +62,7 @@ class GapFillDef:
 @dataclass
 class SyncDef:
     mode: SyncMode = "on_capture"
-    min_fields: List[str] = field(default_factory=lambda: ["name"])
+    min_fields: List[str] = field(default_factory=lambda: ["full_name"])
     require_any: List[str] = field(default_factory=lambda: ["phone", "email"])
     destinations: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -165,7 +165,7 @@ def _parse_sync(data: Any) -> SyncDef:
         raise ValueError("sync.mode must be on_capture, on_complete, or manual")
     return SyncDef(
         mode=mode,  # type: ignore[arg-type]
-        min_fields=[str(x) for x in (data.get("min_fields") or ["name"]) if x],
+        min_fields=[str(x) for x in (data.get("min_fields") or ["full_name"]) if x],
         require_any=[
             str(x) for x in (data.get("require_any") or ["phone", "email"]) if x
         ],

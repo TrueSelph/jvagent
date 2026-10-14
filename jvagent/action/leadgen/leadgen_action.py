@@ -52,7 +52,7 @@ class LeadGenAction(Action):
         ),
     )
     sync_min_fields: List[str] = attribute(
-        default_factory=lambda: ["name"],
+        default_factory=lambda: ["full_name"],
         description=(
             "Fields that must all be present before an action-level sync fires."
         ),

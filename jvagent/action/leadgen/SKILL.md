@@ -61,4 +61,4 @@ Never mention sync status to the user — continue the conversation naturally.
 
 ## Never expose internals
 
-Do not send raw profile JSON, field names like `requested_items`, digests, or `sync_result` to the user.
+Do not send raw profile JSON, field names like `order_items`, digests, or `sync_result` to the user.
