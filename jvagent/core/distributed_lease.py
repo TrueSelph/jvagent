@@ -25,6 +25,8 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Optional
 
+from jvspatial import create_task
+
 from jvagent.memory.distributed_conversation_lock import (
     _dynamo_table,
     _lease_renew_interval,
@@ -119,8 +121,10 @@ async def _redis_lease(key: str, redis_url: str, ttl: int) -> AsyncIterator[None
         async def _renew() -> None:
             await client.eval(renew_script, 1, rkey, token, str(ttl))
 
-        heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key)
+        heartbeat = await create_task(
+            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key),
+            name="lease_heartbeat",
+            concurrent=True,
         )
         yield
     finally:
@@ -227,8 +231,10 @@ async def _dynamo_lease(key: str, table_name: str, ttl: int) -> AsyncIterator[No
         async def _renew() -> None:
             await asyncio.to_thread(renew)
 
-        heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key)
+        heartbeat = await create_task(
+            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), key),
+            name="lease_heartbeat",
+            concurrent=True,
         )
         yield
     finally:

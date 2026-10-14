@@ -53,6 +53,12 @@ def build_oauth_setup(
 ) -> List[Dict[str, Any]]:
     """Per-service OAuth endpoints for configured Google/Microsoft MCP servers."""
     from .hydrate import mcp_google_workspace_auth_url
+    from .integral_provider import (
+        INTEGRAL_LABEL,
+        INTEGRAL_SERVER,
+        INTEGRAL_SERVICE,
+        mcp_integral_core_auth_url,
+    )
     from .microsoft_hydrate import mcp_microsoft_365_auth_url
     from .microsoft_scopes import (
         MICROSOFT_365_SERVER,
@@ -133,6 +139,14 @@ def build_oauth_setup(
             ),
             MICROSOFT_SERVICE_LABELS,
             mcp_microsoft_365_auth_url,
+        )
+
+    if INTEGRAL_SERVER in names:
+        _append(
+            INTEGRAL_SERVER,
+            [INTEGRAL_SERVICE],
+            {INTEGRAL_SERVICE: INTEGRAL_LABEL},
+            mcp_integral_core_auth_url,
         )
 
     return setup

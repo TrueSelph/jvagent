@@ -19,14 +19,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
 import os
 import time
 from typing import AsyncGenerator
 
 import httpx
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 60.0
@@ -58,9 +55,8 @@ class ServiceKeyAuth(httpx.Auth):
         self._user_id = user_id
         self._workspace_id = (workspace_id or "").strip()
 
-    async def async_auth_flow(
-        self, request: httpx.Request
-    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+    def apply_auth(self, request: httpx.Request) -> None:
+        """Sign *request* with a fresh timestamp + HMAC."""
         timestamp = str(int(time.time()))
         request.headers["X-Integral-Service-Key"] = self._service_key
         request.headers["X-Integral-User-Id"] = self._user_id
@@ -70,6 +66,11 @@ class ServiceKeyAuth(httpx.Auth):
         )
         if self._workspace_id:
             request.headers["X-Integral-Scope"] = f"ws:{self._workspace_id}"
+
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        self.apply_auth(request)
         yield request
 
 
@@ -115,7 +116,21 @@ def build_service_key_client(
     timeout = httpx.Timeout(
         connect=connect_timeout, read=read_timeout, write=read_timeout, pool=None
     )
+    auth = ServiceKeyAuth(resolved_key, resolved_user, resolved_ws)
+
+    async def _ensure_service_key(request: httpx.Request) -> None:
+        # httpx drops the service-key headers when it follows a *cross-origin*
+        # redirect and does not re-run a custom httpx.Auth flow for that hop;
+        # request event hooks run on every hop, so re-sign when they are missing.
+        if "x-integral-service-key" in request.headers:
+            return
+        auth.apply_auth(request)
+
     return httpx.AsyncClient(
-        auth=ServiceKeyAuth(resolved_key, resolved_user, resolved_ws),
+        auth=auth,
         timeout=timeout,
+        # The MCP SDK raises on any 3xx (``raise_for_status``), so follow
+        # redirects; ``_ensure_service_key`` re-signs on the redirect hop.
+        follow_redirects=True,
+        event_hooks={"request": [_ensure_service_key]},
     )

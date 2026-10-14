@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
 
+from jvspatial import create_task
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
@@ -759,11 +760,12 @@ class WhatsAppAction(Action):
                 timeout,
             )
 
-    def _fire_meta_webhook_register_task(self) -> None:
+    async def _fire_meta_webhook_register_task(self) -> None:
         """Fire-and-forget register on long-running hosts (strongly referenced)."""
-        task = asyncio.create_task(
+        task = await create_task(
             self._run_deferred_meta_webhook_register_after_startup(),
             name="meta_whatsapp_webhook_register",
+            concurrent=True,
         )
         _BACKGROUND_TASKS.add(task)
         task.add_done_callback(_BACKGROUND_TASKS.discard)
@@ -773,13 +775,13 @@ class WhatsAppAction(Action):
         if WhatsAppAction._is_serverless_runtime():
             await self._run_deferred_meta_webhook_register_after_startup()
             return
-        self._fire_meta_webhook_register_task()
+        await self._fire_meta_webhook_register_task()
 
     async def _schedule_deferred_meta_webhook_register(self) -> None:
         """Register Meta webhook override after the HTTP server is listening.
 
         ``on_startup`` runs inside ``asyncio.run(pre_startup_bootstrap)``; a bare
-        ``asyncio.create_task`` there is cancelled when that loop closes. Hook
+        ``jvspatial.create_task`` there is cancelled when that loop closes. Hook
         into the jvspatial server lifecycle instead (same pattern as startup
         summary). On serverless the lifecycle hook **awaits** register so
         Lambda does not freeze before ``jvconnect_webhook_secret`` is saved.

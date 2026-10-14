@@ -189,14 +189,24 @@ async def maybe_auto_sync(
 ) -> Dict[str, Any]:
     sync_cfg = spec.sync
     if not force and sync_cfg.mode == "manual":
+        logger.debug("leadgen sync: skipped (manual mode) user=%s", user_id)
         return {"status": "skipped", "reason": "manual mode"}
     if not force and sync_cfg.mode == "on_complete":
-        if record.get_missing_fields():
+        missing = record.get_missing_fields()
+        if missing:
+            logger.debug(
+                "leadgen sync: skipped (required fields incomplete: %s) user=%s",
+                missing,
+                user_id,
+            )
             return {"status": "skipped", "reason": "required fields incomplete"}
     if not force and sync_cfg.mode == "on_capture":
         if not sync_mod.sync_threshold_met(
             profile_data, sync_cfg.min_fields, sync_cfg.require_any
         ):
+            logger.debug(
+                "leadgen sync: skipped (sync thresholds not met) user=%s", user_id
+            )
             return {"status": "skipped", "reason": "sync thresholds not met"}
 
     destinations = list(sync_cfg.destinations)
@@ -204,6 +214,7 @@ async def maybe_auto_sync(
         destinations = list(action.sync_destinations)
 
     if not destinations:
+        logger.debug("leadgen sync: no destinations configured user=%s", user_id)
         return {"status": "no-op", "reason": "no destinations configured"}
 
     results, any_success = await sync_mod.sync_to_destinations(
@@ -213,7 +224,11 @@ async def maybe_auto_sync(
         updated = dict(profile_data)
         updated[sync_mod.DIGEST_KEY] = sync_mod.compute_digest(profile_data)
         await record.set_yaml(updated)
-    return {"status": "sync-complete" if any_success else "no-op", "results": results}
+    status = "sync-complete" if any_success else "no-op"
+    logger.debug(
+        "leadgen sync: status=%s results=%s user=%s", status, results, user_id
+    )
+    return {"status": status, "results": results}
 
 
 def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
