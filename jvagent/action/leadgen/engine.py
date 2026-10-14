@@ -225,9 +225,7 @@ async def maybe_auto_sync(
         updated[sync_mod.DIGEST_KEY] = sync_mod.compute_digest(profile_data)
         await record.set_yaml(updated)
     status = "sync-complete" if any_success else "no-op"
-    logger.debug(
-        "leadgen sync: status=%s results=%s user=%s", status, results, user_id
-    )
+    logger.debug("leadgen sync: status=%s results=%s user=%s", status, results, user_id)
     return {"status": status, "results": results}
 
 
