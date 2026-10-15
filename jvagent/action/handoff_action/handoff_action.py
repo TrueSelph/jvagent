@@ -25,7 +25,6 @@ import os
 import random
 import re
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
@@ -37,6 +36,7 @@ from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
+
 
 def _register_orchestrator_vocabulary() -> None:
     """Declare ``handoff__`` a trusted directive source.
@@ -1237,22 +1237,8 @@ class HandoffAction(Action):
         ),
     )
 
-    pending_questions: List[Dict[str, Any]] = attribute(
-        default_factory=list,
-        description=(
-            "Customer questions waiting for a staff answer. Source of truth for "
-            "the staff-turn parameter and handoff__save_answer (reloaded from DB "
-            "on read)."
-        ),
-    )
-
-    pending_questions_version: int = attribute(
-        default=0,
-        description=(
-            "Monotonic version for optimistic pending_questions updates across "
-            "concurrent sessions."
-        ),
-    )
+    # Pending questions are durable HandoffQuestion nodes (not Action attributes).
+    # ``_pending_rows_cache`` is an in-memory mirror filled by ``_refresh_pending_state``.
 
     # -- tools -----------------------------------------------------------------
 
@@ -2441,13 +2427,45 @@ class HandoffAction(Action):
         aid = str(getattr(self, "id", "") or "").strip() or "default"
         return get_loop_lock(f"handoff_pending:{aid}")
 
+    @staticmethod
+    def _action_context_bag(action: Any) -> Dict[str, Any]:
+        """Return the mutable context dict on an Action/Node, if present."""
+        bag = getattr(action, "context", None)
+        return bag if isinstance(bag, dict) else {}
+
+    @classmethod
+    def _legacy_pending_rows(cls, fresh: Any) -> List[Dict[str, Any]]:
+        """Read leftover Action-blob pending rows (pre-HandoffQuestion migrate)."""
+        bag = cls._action_context_bag(fresh)
+        legacy_src = bag.get("pending_questions")
+        if not isinstance(legacy_src, list):
+            legacy_src = getattr(fresh, "pending_questions", None) or []
+        return [
+            dict(row)
+            for row in legacy_src
+            if isinstance(row, dict) and str(row.get("id") or "").strip()
+        ]
+
+    async def _clear_legacy_pending_blob(self) -> None:
+        """Drop obsolete pending_* keys from the Action context and persist."""
+        bag = self._action_context_bag(self)
+        if not bag:
+            return
+        changed = False
+        for key in ("pending_questions", "pending_questions_version"):
+            if key in bag:
+                bag.pop(key, None)
+                changed = True
+        if changed:
+            await self.save()
+
     async def _refresh_pending_state(self) -> None:
         """Reload open questions from HandoffQuestion nodes onto this instance."""
         from jvagent.action.handoff_action.store import HandoffQuestion
 
         agent_id = await self._agent_id()
         if not agent_id:
-            self.pending_questions = []
+            self._pending_rows_cache: List[Dict[str, Any]] = []
             return
         try:
             nodes = await HandoffQuestion.pending(agent_id)
@@ -2457,9 +2475,9 @@ class HandoffAction(Action):
             )
             return
         rows = [_question_row(node) for node in nodes]
-        # One-time migrate: durable Action list → independent nodes.
-        # Never re-import from the in-memory cache after a successful node query
-        # (an empty node result is authoritative).
+        # One-time migrate: durable Action context list → independent nodes.
+        # An empty node result is authoritative for the cache; only the stored
+        # Action context blob (not the in-memory cache) is considered legacy.
         if not rows:
             legacy: List[Dict[str, Any]] = []
             aid = str(getattr(self, "id", "") or "").strip()
@@ -2467,12 +2485,8 @@ class HandoffAction(Action):
                 try:
                     await self._evict_self_cache()
                     fresh = await type(self).get(aid)
-                    legacy_src = getattr(fresh, "pending_questions", None) or []
-                    legacy = [
-                        dict(row)
-                        for row in legacy_src
-                        if isinstance(row, dict) and str(row.get("id") or "").strip()
-                    ]
+                    if fresh is not None:
+                        legacy = self._legacy_pending_rows(fresh)
                 except Exception:
                     legacy = []
             for row in legacy:
@@ -2507,16 +2521,14 @@ class HandoffAction(Action):
                 try:
                     nodes = await HandoffQuestion.pending(agent_id)
                     rows = [_question_row(node) for node in nodes]
-                    # Clear the legacy Action blob once nodes own the data.
-                    self.pending_questions = []
-                    await self.save()
+                    await self._clear_legacy_pending_blob()
                 except Exception:
                     logger.warning(
                         "handoff legacy pending clear failed agent_id=%s",
                         agent_id,
                         exc_info=True,
                     )
-        self.pending_questions = [row for row in rows if self._row_is_open(row)]
+        self._pending_rows_cache = [row for row in rows if self._row_is_open(row)]
 
     @staticmethod
     def _row_is_open(row: Dict[str, Any]) -> bool:
@@ -2530,7 +2542,7 @@ class HandoffAction(Action):
     def _open_pending_rows(self) -> List[Dict[str, Any]]:
         """Rows still needing staff attention or customer delivery."""
         out: List[Dict[str, Any]] = []
-        for row in self.pending_questions or []:
+        for row in getattr(self, "_pending_rows_cache", None) or []:
             if isinstance(row, dict) and self._row_is_open(row):
                 out.append(row)
         return out
@@ -2552,7 +2564,7 @@ class HandoffAction(Action):
         return rows
 
     async def _get_pending_question(self, question_id: str) -> Any:
-        from jvagent.action.handoff_action.store import HandoffQuestion, STATUS_PENDING
+        from jvagent.action.handoff_action.store import STATUS_PENDING, HandoffQuestion
 
         qid = (question_id or "").strip()
         if not qid:
@@ -2561,9 +2573,9 @@ class HandoffAction(Action):
         if node is None:
             return None
         row = _question_row(node)
-        if str(getattr(node, "status", "") or "") == STATUS_PENDING or self._row_is_open(
-            row
-        ):
+        if str(
+            getattr(node, "status", "") or ""
+        ) == STATUS_PENDING or self._row_is_open(row):
             return row
         return None
 

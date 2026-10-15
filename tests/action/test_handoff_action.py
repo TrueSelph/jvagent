@@ -105,7 +105,8 @@ def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
 
     async def _get(cls, eid):
         aid = str(eid or "").strip()
-        return SimpleNamespace(id=aid, pending_questions=[], pending_questions_version=0)
+        # Empty context bag — no legacy Action pending blob.
+        return SimpleNamespace(id=aid, context={})
 
     async def _noop_cache(self):
         return None
@@ -201,8 +202,8 @@ def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
 
 def _bind_action(action, action_id=_PendingStore.ACTION_ID):
     object.__setattr__(action, "id", action_id)
-    action.pending_questions = _PendingStore.rows_for()
-    action.pending_questions_version = 0
+    object.__setattr__(action, "context", {})
+    action._pending_rows_cache = _PendingStore.rows_for()
     return action
 
 
@@ -227,7 +228,7 @@ def _seed_pending(action, **kwargs):
     _PendingStore.by_id[qid] = dict(row)
     aid = str(getattr(action, "id", "") or _PendingStore.ACTION_ID)
     object.__setattr__(action, "id", aid)
-    action.pending_questions = _PendingStore.rows_for()
+    action._pending_rows_cache = _PendingStore.rows_for()
     return {
         "id": qid,
         "question": row["question"],
@@ -239,6 +240,11 @@ def _seed_pending(action, **kwargs):
         "chunk_id": row["chunk_id"],
         "status": row["status"],
     }
+
+
+async def _pending_rows(action):
+    """Refresh and return open pending rows for assertions."""
+    return await action._list_pending()
 
 
 def test_defaults():
@@ -444,7 +450,7 @@ async def test_consult_web_infers_contact_from_utterance_on_active_handoff(
         )
     assert not second.is_error
     assert sent["count"] == 1
-    assert action.pending_questions[0]["question"] == "where is your office?"
+    assert (await _pending_rows(action))[0]["question"] == "where is your office?"
     assert "Contact: 5927371531" in sent["message"]
 
 
@@ -600,9 +606,9 @@ async def test_consult_stores_message_without_code_refinement(monkeypatch):
             message="can u check where u are located again"
         )
     assert not result.is_error
-    assert len(action.pending_questions) == 1
+    assert len(await _pending_rows(action)) == 1
     assert (
-        action.pending_questions[0]["question"]
+        (await _pending_rows(action))[0]["question"]
         == "can u check where u are located again"
     )
 
@@ -644,8 +650,8 @@ async def test_consult_preserves_customer_ask_on_contact_follow_up(monkeypatch):
         )
     assert not second.is_error
     assert sent["count"] == 1
-    assert action.pending_questions[0]["question"] == "what is your address?"
-    assert "Customer wants" not in action.pending_questions[0]["question"]
+    assert (await _pending_rows(action))[0]["question"] == "what is your address?"
+    assert "Customer wants" not in (await _pending_rows(action))[0]["question"]
     assert "what is your address?" in sent["message"]
 
 
@@ -683,8 +689,8 @@ async def test_consult_prefers_utterance_for_stored_location_ask(monkeypatch):
             message="5927371531",
             contact="5927371531",
         )
-    assert action.pending_questions[0]["question"] == "where r u located"
-    assert "store address" not in action.pending_questions[0]["question"].lower()
+    assert (await _pending_rows(action))[0]["question"] == "where r u located"
+    assert "store address" not in (await _pending_rows(action))[0]["question"].lower()
 
 
 async def test_staff_lookup_holds_until_contact_or_decline(monkeypatch):
@@ -799,8 +805,8 @@ async def test_declined_lookup_does_not_reply(monkeypatch):
         )
     assert "checking with the team" in looked.content
     assert sent == [("whatsapp", _STAFF_PHONE)]
-    assert len(action.pending_questions) == 1
-    row = action.pending_questions[0]
+    assert len(await _pending_rows(action)) == 1
+    row = (await _pending_rows(action))[0]
     assert row["user_contact"] == "declined"
     question_id = row["id"]
     sent.clear()
@@ -810,7 +816,7 @@ async def test_declined_lookup_does_not_reply(monkeypatch):
         )
     assert not saved.is_error
     assert sent == []
-    assert action.pending_questions == []
+    assert await _pending_rows(action) == []
 
 
 async def test_staff_lookup_reuses_saved_contact(monkeypatch):
@@ -843,12 +849,12 @@ async def test_staff_lookup_reuses_saved_contact(monkeypatch):
     assert "checking with the team" in again.content
     assert sent["count"] == 3
     assert all("Contact: 5926431530" in message for message in sent["messages"])
-    assert [row["question"] for row in action.pending_questions] == [
+    assert [row["question"] for row in await _pending_rows(action)] == [
         "Do you sell car parts",
         "Do you offer delivery",
         "Do you offer delivery",
     ]
-    assert {row["user_contact"] for row in action.pending_questions} == {"5926431530"}
+    assert {row["user_contact"] for row in await _pending_rows(action)} == {"5926431530"}
     assert "checking with the team" in repeat.content
 
 
@@ -876,8 +882,8 @@ async def test_consult_always_appends_separate_rows(monkeypatch):
         first = await tools["handoff__consult"].call(message=question)
     assert not first.is_error
     assert sent["count"] == 1
-    assert len(action.pending_questions) == 1
-    assert action.pending_questions[0]["user_contact"] == "5923333333"
+    assert len(await _pending_rows(action)) == 1
+    assert (await _pending_rows(action))[0]["user_contact"] == "5923333333"
     with bind_dispatch_context(_Ctx("5924444444", channel="whatsapp")):
         second = await tools["handoff__consult"].call(
             message=question, contact="5924444444"
@@ -885,8 +891,8 @@ async def test_consult_always_appends_separate_rows(monkeypatch):
     assert not second.is_error
     assert sent["count"] == 2
     assert "Contact: 5924444444" in sent["messages"][-1]
-    assert len(action.pending_questions) == 2
-    contacts = {row["user_contact"] for row in action.pending_questions}
+    assert len(await _pending_rows(action)) == 2
+    contacts = {row["user_contact"] for row in await _pending_rows(action)}
     assert contacts == {"5923333333", "5924444444"}
     with bind_dispatch_context(_Ctx("5923333333", channel="whatsapp")):
         third = await tools["handoff__consult"].call(
@@ -894,7 +900,7 @@ async def test_consult_always_appends_separate_rows(monkeypatch):
         )
     assert not third.is_error
     assert sent["count"] == 3
-    assert len(action.pending_questions) == 3
+    assert len(await _pending_rows(action)) == 3
 
 
 async def test_staff_turn_parameter_lists_id_and_question_only(monkeypatch):
@@ -977,9 +983,9 @@ async def test_save_answer_group_one_ingest_multi_reply(monkeypatch):
             message="Where are you located? I need the store location.",
             contact="5924444444",
         )
-    assert len(action.pending_questions) == 2
-    id_a = action.pending_questions[0]["id"]
-    id_b = action.pending_questions[1]["id"]
+    assert len(await _pending_rows(action)) == 2
+    id_a = (await _pending_rows(action))[0]["id"]
+    id_b = (await _pending_rows(action))[1]["id"]
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
         saved = await tools["handoff__save_answer"].call(
             question_ids=[id_a, id_b], answer="123 Main St"
@@ -987,7 +993,7 @@ async def test_save_answer_group_one_ingest_multi_reply(monkeypatch):
     assert not saved.is_error
     assert ingest_calls["count"] == 1
     assert sorted(customer_sends) == ["5923333333", "5924444444"]
-    assert action.pending_questions == []
+    assert await _pending_rows(action) == []
 
 
 async def test_transfer_sends_web_contact(monkeypatch):
@@ -1124,9 +1130,9 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
     monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
     with bind_dispatch_context(_Ctx("5926431530", channel="whatsapp")):
         created = await writer._add_pending("Do you offer delivery?", "5926431530")
-    assert len(writer.pending_questions) == 1
+    assert len(await _pending_rows(writer)) == 1
     assert created["id"].startswith("pend_")
-    assert created["id"] == writer.pending_questions[0]["id"]
+    assert created["id"] == (await _pending_rows(writer))[0]["id"]
 
     listed = await reader._list_pending()
     assert len(listed) == 1
@@ -1135,7 +1141,7 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
 
     await reader._update_pending(created["id"], user_contact="5920001111")
     await writer._refresh_pending_state()
-    assert writer.pending_questions[0]["user_contact"] == "5920001111"
+    assert (await _pending_rows(writer))[0]["user_contact"] == "5920001111"
     assert (await reader._list_pending())[0]["user_contact"] == "5920001111"
 
     aca = _aca_for_tools()
@@ -1362,12 +1368,12 @@ async def test_staff_lookup_stores_question_only_sends_bold_notes(monkeypatch):
             contact="5926431530",
         )
     assert not result.is_error
-    assert len(action.pending_questions) == 1
+    assert len(await _pending_rows(action)) == 1
     assert (
-        action.pending_questions[0]["question"]
+        (await _pending_rows(action))[0]["question"]
         == "Customer asked for the company's location."
     )
-    assert "No information found" not in action.pending_questions[0]["question"]
+    assert "No information found" not in (await _pending_rows(action))[0]["question"]
     assert sent["to"] == _STAFF_PHONE
     assert "Customer asked for *the company's location*." in sent["message"]
     assert "No information found in the knowledge base." in sent["message"]
@@ -1409,7 +1415,7 @@ async def test_resolve_saves_cleaned_answer_and_thanks(monkeypatch):
         )
     assert not result.is_error
     expected = "no we do not sell cars and we do not take trade-ins"
-    assert action.pending_questions == []
+    assert await _pending_rows(action) == []
     assert await action._list_pending() == []
     assert saved["ingested"] == ("Do you sell cars?", expected)
     assert "Tell the user:" in result.content
@@ -1931,7 +1937,7 @@ async def test_consult_from_whatsapp_group_uses_author_not_group_id(monkeypatch)
             message="Do you deliver to Bartica?"
         )
     assert not result.is_error
-    assert action.pending_questions[0]["user_contact"] == author
+    assert (await _pending_rows(action))[0]["user_contact"] == author
     assert sent["to"] == _STAFF_PHONE
 
 
@@ -1960,7 +1966,7 @@ async def test_consult_from_group_participant_field_without_author(monkeypatch):
     with bind_dispatch_context(visitor):
         result = await tools["handoff__consult"].call(message="Need delivery info?")
     assert not result.is_error
-    assert action.pending_questions[0]["user_contact"] == author
+    assert (await _pending_rows(action))[0]["user_contact"] == author
     assert sent["to"] == _STAFF_PHONE
 
 
@@ -2015,7 +2021,7 @@ async def test_consult_from_group_empty_author_fetches_message_by_id(monkeypatch
         result = await tools["handoff__consult"].call(message="Need delivery info?")
     assert not result.is_error
     assert fetch_calls == [msg_id]
-    assert action.pending_questions[0]["user_contact"] == "5928888888"
+    assert (await _pending_rows(action))[0]["user_contact"] == "5928888888"
     assert sent["to"] == _STAFF_PHONE
 
 
@@ -2044,7 +2050,7 @@ async def test_consult_from_group_empty_author_uses_group_id_fallback(monkeypatc
         result = await tools["handoff__consult"].call(message="Do you offer delivery?")
     assert not result.is_error
     assert "WhatsApp number" not in result.content
-    assert action.pending_questions[0]["user_contact"] == group_id
+    assert (await _pending_rows(action))[0]["user_contact"] == group_id
     assert sent["to"] == _STAFF_PHONE
     assert f"Group: {group_id}" in sent["message"]
 
@@ -2101,7 +2107,7 @@ async def test_save_answer_replies_in_group_thread(monkeypatch):
     tools = {t.name: t for t in await action.get_tools()}
     with bind_dispatch_context(_Ctx(group_id, channel="whatsapp")):
         await tools["handoff__consult"].call(message="Do you deliver?")
-    qid = action.pending_questions[0]["id"]
+    qid = (await _pending_rows(action))[0]["id"]
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
         saved = await tools["handoff__save_answer"].call(
             question_ids=[qid], answer="Yes, we deliver."
@@ -2136,7 +2142,7 @@ async def test_consult_from_group_without_isGroup_flag_uses_author(monkeypatch):
     with bind_dispatch_context(visitor):
         result = await tools["handoff__consult"].call(message="Stock on item X?")
     assert not result.is_error
-    assert action.pending_questions[0]["user_contact"] == author
+    assert (await _pending_rows(action))[0]["user_contact"] == author
     assert sent["to"] == _STAFF_PHONE
 
 
@@ -2183,7 +2189,7 @@ async def test_consult_from_group_lid_author_resolves_via_api(monkeypatch):
     with bind_dispatch_context(visitor):
         result = await tools["handoff__consult"].call(message="Need a quote.")
     assert not result.is_error
-    assert action.pending_questions[0]["user_contact"] == "5926666666"
+    assert (await _pending_rows(action))[0]["user_contact"] == "5926666666"
     assert sent["to"] == _STAFF_PHONE
 
 
@@ -2231,7 +2237,7 @@ async def test_save_answer_dms_group_author_not_group_chat_id(monkeypatch):
     }
     with bind_dispatch_context(visitor):
         await tools["handoff__consult"].call(message="Do you deliver to Bartica?")
-    qid = action.pending_questions[0]["id"]
+    qid = (await _pending_rows(action))[0]["id"]
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
         saved = await tools["handoff__save_answer"].call(
             question_ids=[qid], answer="Yes, we deliver there."
@@ -2558,7 +2564,7 @@ async def test_denied_save_is_silent_and_writes_nothing(monkeypatch):
     assert denied.content == SAVE_DENIED_LINE
     assert not denied.is_error
     assert "hit" not in ingested
-    assert action.pending_questions[0]["id"] == "q1"
+    assert (await _pending_rows(action))[0]["id"] == "q1"
 
     action.mode = "observe"
     tools = {t.name: t for t in await action.get_tools()}
@@ -2657,7 +2663,7 @@ async def test_group_consults_use_current_participant_not_prior_saved(monkeypatc
     with bind_dispatch_context(bob):
         await tools["handoff__consult"].call(message="Bob question")
 
-    contacts = [row["user_contact"] for row in action.pending_questions]
+    contacts = [row["user_contact"] for row in await _pending_rows(action)]
     assert contacts == ["5921110001", "5921110002"]
 
 
@@ -2832,9 +2838,9 @@ async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
     assert failed.is_error
     assert "delivery" in failed.content.lower()
     assert ingested["count"] == 1
-    assert len(action.pending_questions) == 1
-    assert action.pending_questions[0]["delivery_status"] == "failed"
-    assert action.pending_questions[0]["answer"] == "Yes, we deliver."
+    assert len(await _pending_rows(action)) == 1
+    assert (await _pending_rows(action))[0]["delivery_status"] == "failed"
+    assert (await _pending_rows(action))[0]["answer"] == "Yes, we deliver."
 
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
         retried = await tools["handoff__save_answer"].call(
@@ -2842,4 +2848,4 @@ async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
         )
     assert not retried.is_error
     assert ingested["count"] == 1  # no duplicate KB write
-    assert action.pending_questions == []
+    assert await _pending_rows(action) == []
