@@ -68,7 +68,7 @@ matches, it **overrides** the active skill and any skill procedure.
 | Mode | Sender | Key | Condition (verbatim) | Response (summary) |
 |---|---|---|---|---|
 | consult | customer | `handoff_consult` | you cannot answer a customer question, or you cannot complete the request from the knowledge base and tools, or the request is outside what the store sells (a "do you sell X" question the knowledge base cannot answer) — a quote, stock confirmation, bulk or B2B order, an upset customer, or the user wants a person or wants something reported | Call `handoff__consult` now; relay only tool line; sentence 1 = customer's words; contact rules per channel |
-| consult | staff | `handoff_consult_staff` | (unconditional; injected only for staff) | Staff-turn parameter carries `PENDING QUESTIONS: [{"id","question"}]`; choose matching ids and call `handoff__save_answer`; id rules for `pend_` and chunks |
+| consult | staff | `handoff_consult_staff` | (unconditional; injected only for staff) | Staff-turn parameter carries `PENDING QUESTIONS: [{"id","question"}]`; include only ids this message fully answers (group only same-topic/rephrase); call `handoff__save_answer`; id rules for `pend_` and chunks |
 | transfer | customer | `handoff_transfer` | *(same condition as consult customer)* | Call `handoff__transfer` with short summary; relay only tool line; keep helping on later turns |
 | transfer | staff | `handoff_transfer_staff` | (unconditional; injected only for staff) | Do not call `handoff__transfer` for a message needing no escalation; reply in thread |
 | observe | any | `handoff_observe` | the latest WhatsApp group message contains a fact, policy, or answer worth keeping | Call `handoff__observe`; no group message; no consult/transfer tools |

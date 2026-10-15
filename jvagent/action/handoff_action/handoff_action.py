@@ -147,10 +147,16 @@ def _parameters_for(
                 "key": "handoff_consult_staff",
                 "response": (
                     "The questions awaiting an answer are listed below. "
-                    "Choose every id whose question this message answers "
-                    "(several questions may share one answer) and call "
-                    "handoff__save_answer with question_ids and the full answer "
-                    "text. Do not call handoff__consult. "
+                    "Include a pend_ id only when this message fully answers "
+                    "that question. Group multiple ids only when the questions "
+                    "mean the same thing (same topic or intent, or clear "
+                    "rephrases of one ask). If questions are different topics "
+                    "(for example delivery vs location), save only the "
+                    "matching id(s) and leave the others pending. When unsure, "
+                    "include only the clearest match. Never attach an answer "
+                    "that does not address a question. Call "
+                    "handoff__save_answer with those question_ids and the full "
+                    "answer text. Do not call handoff__consult. "
                     "Call handoff__update_chunk only when an [EVENT] line says "
                     "Handoff chunk and the id starts with n.DocumentNode. A "
                     "corr- correlation id is not a question id or a chunk id. "
@@ -1734,7 +1740,9 @@ class HandoffAction(Action):
         self,
         question_ids: Annotated[
             List[str],
-            "One or more pend_ ids from the pending questions list that this answer resolves.",
+            "pend_ ids this answer resolves. Include only ids whose questions "
+            "this text fully answers; group ids only when questions share the "
+            "same topic/intent. Do not include unrelated pending questions.",
         ],
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:

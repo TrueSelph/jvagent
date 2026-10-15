@@ -928,6 +928,8 @@ async def test_staff_turn_parameter_lists_id_and_question_only(monkeypatch):
     assert "PENDING QUESTIONS:" in rendered
     assert "pend_a" in rendered
     assert "pend_b" in rendered
+    assert "same topic or intent" in rendered
+    assert "leave the others pending" in rendered
     assert "5921111111" not in rendered
     assert "user_contact" not in rendered
     assert "created_at" not in rendered
