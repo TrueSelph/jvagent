@@ -58,6 +58,8 @@ class HandoffQuestion(Node):
     session_id: str = attribute(default="")
     status: str = attribute(indexed=True, default=STATUS_PENDING)
     answer: str = attribute(default="")
+    delivery_status: str = attribute(default="")
+    chunk_id: str = attribute(default="")
     created_at: str = attribute(default="")
     resolved_at: str = attribute(default="")
 
@@ -72,19 +74,27 @@ class HandoffQuestion(Node):
         user_channel: str = "default",
         user_contact: str = "",
         session_id: str = "",
+        question_id: str = "",
     ) -> "HandoffQuestion":
+        create_kwargs = {
+            "agent_id": agent_id,
+            "question": question,
+            "notes": notes,
+            "user_id": user_id,
+            "user_channel": user_channel,
+            "user_contact": user_contact,
+            "session_id": session_id,
+            "status": STATUS_PENDING,
+            "delivery_status": "",
+            "chunk_id": "",
+            "answer": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        qid = (question_id or "").strip()
+        if qid:
+            create_kwargs["id"] = qid
         async with _on_prime():
-            created = await cls.create(
-                agent_id=agent_id,
-                question=question,
-                notes=notes,
-                user_id=user_id,
-                user_channel=user_channel,
-                user_contact=user_contact,
-                session_id=session_id,
-                status=STATUS_PENDING,
-                created_at=datetime.now(timezone.utc).isoformat(),
-            )
+            created = await cls.create(**create_kwargs)
             stored = await cls.get(created.id)
         if stored is None:
             logger.warning(
@@ -152,6 +162,7 @@ class HandoffQuestion(Node):
                 self._graph_context = ctx
             self.status = STATUS_RESOLVED
             self.answer = answer
+            self.delivery_status = ""
             self.resolved_at = datetime.now(timezone.utc).isoformat()
             await self.save()
 
@@ -160,6 +171,16 @@ class HandoffQuestion(Node):
             if ctx is not None:
                 self._graph_context = ctx
             self.user_contact = (contact or "").strip()
+            await self.save()
+
+    async def apply_updates(self, updates: dict) -> None:
+        """Patch selected fields and persist under the prime database."""
+        async with _on_prime() as ctx:
+            if ctx is not None:
+                self._graph_context = ctx
+            for key, value in updates.items():
+                if hasattr(self, key):
+                    setattr(self, key, value)
             await self.save()
 
 

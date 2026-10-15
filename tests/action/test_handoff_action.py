@@ -40,20 +40,27 @@ class _Conversation:
 
 
 class _PendingStore:
-    """Shared durable pending_questions keyed by action id (simulates Action.get)."""
+    """Shared durable HandoffQuestion records keyed by agent id."""
 
-    by_action: dict = {}
-    versions: dict = {}
+    by_id: dict = {}
+    AGENT_ID = "n.Agent.shared"
     ACTION_ID = "n.HandoffAction.test"
+    # When True, create_question succeeds but pending() hides rows (listable failure).
+    hide_on_list: bool = False
 
     @classmethod
     def reset(cls):
-        cls.by_action = {}
-        cls.versions = {}
+        cls.by_id = {}
+        cls.hide_on_list = False
 
     @classmethod
-    def rows_for(cls, action_id=None):
-        return list(cls.by_action.get(action_id or cls.ACTION_ID, []))
+    def rows_for(cls, agent_id=None):
+        aid = agent_id or cls.AGENT_ID
+        return [
+            dict(row)
+            for row in cls.by_id.values()
+            if row.get("agent_id") == aid and row.get("status") == "pending"
+        ]
 
 
 def _install_aca_staff(monkeypatch, members=None):
@@ -80,29 +87,25 @@ def _install_aca_staff(monkeypatch, members=None):
 
 
 def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
-    """Stub Action save/get + cache so pending_questions is shared across instances."""
+    """Stub HandoffQuestion + Action helpers for independent pending rows."""
+    from jvagent.action.handoff_action import store as handoff_store
+
     _PendingStore.reset()
     _PendingStore.ACTION_ID = action_id
+
+    class _Agent:
+        id = _PendingStore.AGENT_ID
+
+    async def _get_agent(self):
+        return _Agent()
 
     async def _save(self):
         aid = str(getattr(self, "id", "") or action_id).strip() or action_id
         object.__setattr__(self, "id", aid)
-        _PendingStore.by_action[aid] = [
-            dict(row) for row in (self.pending_questions or []) if isinstance(row, dict)
-        ]
-        _PendingStore.versions[aid] = int(
-            getattr(self, "pending_questions_version", 0) or 0
-        )
 
     async def _get(cls, eid):
         aid = str(eid or "").strip()
-        rows = _PendingStore.by_action.get(aid, [])
-        fresh = SimpleNamespace(
-            id=aid,
-            pending_questions=[dict(row) for row in rows],
-            pending_questions_version=int(_PendingStore.versions.get(aid, 0) or 0),
-        )
-        return fresh
+        return SimpleNamespace(id=aid, pending_questions=[], pending_questions_version=0)
 
     async def _noop_cache(self):
         return None
@@ -110,40 +113,132 @@ def _install_pending_store(monkeypatch, action_id=_PendingStore.ACTION_ID):
     async def _noop_invalidate(self):
         await self._evict_self_cache()
 
+    class _QNode:
+        def __init__(self, data: dict):
+            self.__dict__.update(data)
+
+        async def save(self):
+            _PendingStore.by_id[str(self.id)] = {
+                "id": str(self.id),
+                "agent_id": str(getattr(self, "agent_id", "") or ""),
+                "question": str(getattr(self, "question", "") or ""),
+                "notes": str(getattr(self, "notes", "") or ""),
+                "user_id": str(getattr(self, "user_id", "") or ""),
+                "user_channel": str(getattr(self, "user_channel", "") or "default"),
+                "user_contact": str(getattr(self, "user_contact", "") or ""),
+                "session_id": str(getattr(self, "session_id", "") or ""),
+                "status": str(getattr(self, "status", "") or "pending"),
+                "answer": str(getattr(self, "answer", "") or ""),
+                "delivery_status": str(getattr(self, "delivery_status", "") or ""),
+                "chunk_id": str(getattr(self, "chunk_id", "") or ""),
+                "created_at": str(getattr(self, "created_at", "") or ""),
+                "resolved_at": str(getattr(self, "resolved_at", "") or ""),
+            }
+
+        async def mark_resolved(self, answer: str):
+            self.status = "resolved"
+            self.answer = answer or ""
+            self.delivery_status = ""
+            await self.save()
+
+        async def update_user_contact(self, contact: str):
+            self.user_contact = (contact or "").strip()
+            await self.save()
+
+        async def apply_updates(self, updates: dict):
+            for key, value in updates.items():
+                setattr(self, key, value)
+            await self.save()
+
+    async def _create_question(cls, **kwargs):
+        qid = str(kwargs.get("question_id") or f"pend_{len(_PendingStore.by_id) + 1}")
+        data = {
+            "id": qid,
+            "agent_id": str(kwargs.get("agent_id") or _PendingStore.AGENT_ID),
+            "question": str(kwargs.get("question") or ""),
+            "notes": str(kwargs.get("notes") or ""),
+            "user_id": str(kwargs.get("user_id") or ""),
+            "user_channel": str(kwargs.get("user_channel") or "default"),
+            "user_contact": str(kwargs.get("user_contact") or ""),
+            "session_id": str(kwargs.get("session_id") or ""),
+            "status": "pending",
+            "answer": "",
+            "delivery_status": "",
+            "chunk_id": "",
+            "created_at": str(kwargs.get("created_at") or "2026-01-01T00:00:00+00:00"),
+            "resolved_at": "",
+        }
+        _PendingStore.by_id[qid] = dict(data)
+        return _QNode(data)
+
+    async def _pending(cls, agent_id: str):
+        if _PendingStore.hide_on_list:
+            return []
+        out = []
+        for row in _PendingStore.by_id.values():
+            if row.get("agent_id") == agent_id and row.get("status") == "pending":
+                out.append(_QNode(dict(row)))
+        return out
+
+    async def _get_question(cls, question_id: str):
+        row = _PendingStore.by_id.get(str(question_id or ""))
+        return _QNode(dict(row)) if row else None
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
     monkeypatch.setattr(HandoffAction, "save", _save)
     monkeypatch.setattr(HandoffAction, "get", classmethod(_get))
     monkeypatch.setattr(HandoffAction, "_evict_self_cache", _noop_cache)
     monkeypatch.setattr(HandoffAction, "_invalidate_pending_caches", _noop_invalidate)
+    monkeypatch.setattr(
+        handoff_store.HandoffQuestion, "create_question", classmethod(_create_question)
+    )
+    monkeypatch.setattr(handoff_store.HandoffQuestion, "pending", classmethod(_pending))
+    monkeypatch.setattr(
+        handoff_store.HandoffQuestion, "get_question", classmethod(_get_question)
+    )
     return _PendingStore
 
 
 def _bind_action(action, action_id=_PendingStore.ACTION_ID):
     object.__setattr__(action, "id", action_id)
-    action.pending_questions = list(_PendingStore.by_action.get(action_id, []))
-    action.pending_questions_version = int(
-        _PendingStore.versions.get(action_id, 0) or 0
-    )
+    action.pending_questions = _PendingStore.rows_for()
+    action.pending_questions_version = 0
     return action
 
 
 def _seed_pending(action, **kwargs):
+    qid = kwargs.get("id") or f"q_{len(_PendingStore.by_id) + 1}"
     row = {
-        "id": kwargs.get("id") or f"q_{len(action.pending_questions or []) + 1}",
+        "id": qid,
+        "agent_id": _PendingStore.AGENT_ID,
         "question": kwargs.get("question", ""),
         "user_channel": kwargs.get("user_channel", "default"),
         "user_contact": kwargs.get("user_contact", ""),
         "created_at": kwargs.get("created_at", ""),
+        "status": "pending",
+        "answer": kwargs.get("answer", ""),
+        "delivery_status": kwargs.get("delivery_status", ""),
+        "chunk_id": kwargs.get("chunk_id", ""),
+        "notes": "",
+        "user_id": "",
+        "session_id": "",
+        "resolved_at": "",
     }
-    rows = list(action.pending_questions or [])
-    rows.append(row)
-    action.pending_questions = rows
+    _PendingStore.by_id[qid] = dict(row)
     aid = str(getattr(action, "id", "") or _PendingStore.ACTION_ID)
     object.__setattr__(action, "id", aid)
-    _PendingStore.by_action[aid] = list(rows)
-    _PendingStore.versions[aid] = int(
-        getattr(action, "pending_questions_version", 0) or 0
-    )
-    return row
+    action.pending_questions = _PendingStore.rows_for()
+    return {
+        "id": qid,
+        "question": row["question"],
+        "user_channel": row["user_channel"],
+        "user_contact": row["user_contact"],
+        "created_at": row["created_at"],
+        "answer": row["answer"],
+        "delivery_status": row["delivery_status"],
+        "chunk_id": row["chunk_id"],
+        "status": row["status"],
+    }
 
 
 def test_defaults():
@@ -1074,23 +1169,8 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
 
 async def test_add_pending_raises_when_not_listable(monkeypatch):
     _install_pending_store(monkeypatch)
-
-    class _Agent:
-        id = "n.Agent.shared"
-
+    _PendingStore.hide_on_list = True
     action = _bind_action(HandoffAction())
-
-    async def _get_agent(self):
-        return _Agent()
-
-    async def _save_no_persist(self):
-        # Simulate write that never becomes visible to Action.get.
-        aid = str(getattr(self, "id", "") or _PendingStore.ACTION_ID)
-        object.__setattr__(self, "id", aid)
-        _PendingStore.by_action[aid] = []
-
-    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
-    monkeypatch.setattr(HandoffAction, "save", _save_no_persist)
     with bind_dispatch_context(_Ctx("5926431530", channel="whatsapp")):
         try:
             await action._add_pending("Do you offer delivery?", "5926431530")
@@ -2584,9 +2664,27 @@ async def test_group_consults_use_current_participant_not_prior_saved(monkeypatc
 async def test_concurrent_add_pending_keeps_both_rows(monkeypatch):
     import asyncio
 
+    from jvagent.action.handoff_action import store as handoff_store
+
     _install_pending_store(monkeypatch)
     a = _bind_action(HandoffAction())
     b = _bind_action(HandoffAction())
+    # Independent process-local locks so this exercises cross-worker overlap.
+    monkeypatch.setattr(a, "_pending_lock", lambda: asyncio.Lock())
+    monkeypatch.setattr(b, "_pending_lock", lambda: asyncio.Lock())
+
+    barrier = asyncio.Barrier(2)
+    real_create = handoff_store.HandoffQuestion.create_question
+
+    async def _create_with_barrier(cls, **kwargs):
+        await barrier.wait()
+        return await real_create(**kwargs)
+
+    monkeypatch.setattr(
+        handoff_store.HandoffQuestion,
+        "create_question",
+        classmethod(_create_with_barrier),
+    )
 
     async def _one(action, message, contact):
         with bind_dispatch_context(_Ctx(contact, channel="whatsapp")):
@@ -2703,8 +2801,6 @@ async def test_append_and_ingest_restores_prior_graph_when_import_fails(
 
 
 async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
-    from unittest.mock import AsyncMock
-
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
     action = _bind_action(HandoffAction())
@@ -2715,22 +2811,18 @@ async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
         user_contact="5926431530",
     )
     ingested = {"count": 0}
-    sends = {"count": 0}
+    replies = {"count": 0}
 
     async def _append(self, question, answer):
         ingested["count"] += 1
         return question, answer, "n.DocumentNode.test"
 
-    async def _send_customer(self, contact, text):
-        sends["count"] += 1
-        if sends["count"] == 1:
-            raise RuntimeError("whatsapp down")
+    async def _reply(self, question, short_q, short_a):
+        replies["count"] += 1
+        return replies["count"] > 1
 
     monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
-    monkeypatch.setattr(HandoffAction, "_send_whatsapp_customer", _send_customer)
-    monkeypatch.setattr(
-        HandoffAction, "_customer_reply", AsyncMock(return_value="here is the answer")
-    )
+    monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply)
 
     tools = {t.name: t for t in await action.get_tools()}
     with bind_dispatch_context(_Ctx(_STAFF_PHONE)):

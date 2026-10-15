@@ -3,17 +3,27 @@
 Core advertises the MCP endpoint without a trailing slash; its Starlette Mount
 answers ``POST /api/mcp`` with a 307 to ``/api/mcp/``. The MCP SDK consumes the
 client we pass as-is and raises on that response, so both auth clients must
-follow redirects.
+follow redirects — but only to the configured trusted origin.
 """
 
+from __future__ import annotations
+
+import httpx
+import pytest
+
 from jvagent.action.mcp.integral_oauth_auth import build_integral_oauth_client
+from jvagent.action.mcp.redirect_trust import UntrustedRedirectError
 from jvagent.action.mcp.service_key_auth import build_service_key_client
+
+_TRUSTED = "https://core.invalid/api/mcp"
+_SERVICE_KEY = "k" * 32
 
 
 async def test_integral_oauth_client_follows_redirects():
     client = build_integral_oauth_client(
         server_name="integral_core",
         account="integral",
+        mcp_url=_TRUSTED,
         connect_timeout=1.0,
         read_timeout=1.0,
     )
@@ -25,60 +35,14 @@ async def test_integral_oauth_client_follows_redirects():
 
 async def test_service_key_client_follows_redirects():
     client = build_service_key_client(
-        service_key="k" * 32,
+        service_key=_SERVICE_KEY,
         user_id="u",
+        mcp_url=_TRUSTED,
         connect_timeout=1.0,
         read_timeout=1.0,
     )
     try:
         assert client.follow_redirects is True
-    finally:
-        await client.aclose()
-
-
-def _request_auth_hook(client, name):
-    hooks = [h for h in client._event_hooks["request"] if h.__name__ == name]
-    assert hooks, f"missing request hook {name}"
-    return hooks[0]
-
-
-async def test_integral_hook_reapplies_bearer_on_redirect_hop():
-    """A cross-origin redirect strips ``Authorization``; the hook must re-add it."""
-
-    async def _fake_token():
-        return "tok"
-
-    client = build_integral_oauth_client(
-        server_name="integral_core",
-        account="integral",
-        connect_timeout=1.0,
-        read_timeout=1.0,
-    )
-    try:
-        client._auth._valid_token = _fake_token
-        request = client.build_request("POST", "https://example.invalid/api/mcp/")
-        if "authorization" in request.headers:
-            del request.headers["authorization"]
-        await _request_auth_hook(client, "_ensure_auth")(request)
-        assert request.headers["Authorization"] == "Bearer tok"
-    finally:
-        await client.aclose()
-
-
-async def test_service_key_hook_resigns_on_redirect_hop():
-    client = build_service_key_client(
-        service_key="k" * 32,
-        user_id="u",
-        connect_timeout=1.0,
-        read_timeout=1.0,
-    )
-    try:
-        request = client.build_request("POST", "https://example.invalid/api/mcp/")
-        if "x-integral-service-key" in request.headers:
-            del request.headers["x-integral-service-key"]
-        await _request_auth_hook(client, "_ensure_service_key")(request)
-        assert request.headers["X-Integral-Service-Key"] == "k" * 32
-        assert request.headers["X-Integral-Signature"]
     finally:
         await client.aclose()
 
@@ -175,3 +139,212 @@ async def test_integral_refresh_falls_back_to_env_scope(monkeypatch):
     }
     await auth._refresh(_FakeNode(), payload)
     assert captured["scope"] == "integral:read"
+
+
+def _oauth_client_with_token(transport: httpx.MockTransport, mcp_url: str):
+    client = build_integral_oauth_client(
+        server_name="integral_core",
+        account="integral",
+        mcp_url=mcp_url,
+        connect_timeout=1.0,
+        read_timeout=1.0,
+        transport=transport,
+    )
+
+    async def _fake_token():
+        return "tok"
+
+    client._auth._valid_token = _fake_token
+    return client
+
+
+def _service_key_client(transport: httpx.MockTransport, mcp_url: str):
+    return build_service_key_client(
+        service_key=_SERVICE_KEY,
+        user_id="u",
+        mcp_url=mcp_url,
+        connect_timeout=1.0,
+        read_timeout=1.0,
+        transport=transport,
+    )
+
+
+async def test_oauth_same_origin_trailing_slash_keeps_bearer():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("authorization"),
+            )
+        )
+        if request.url.path.rstrip("/") == "/api/mcp" and not request.url.path.endswith(
+            "/"
+        ):
+            return httpx.Response(
+                307, headers={"location": "/api/mcp/"}, request=request
+            )
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    client = _oauth_client_with_token(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        resp = await client.post(_TRUSTED)
+        assert resp.status_code == 200
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 2
+    assert seen[0][0] == "https://core.invalid/api/mcp"
+    assert seen[1][0] == "https://core.invalid/api/mcp/"
+    assert seen[0][1] == "Bearer tok"
+    assert seen[1][1] == "Bearer tok"
+
+
+async def test_oauth_cross_origin_redirect_never_sends_bearer():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("authorization"),
+            )
+        )
+        if "core.invalid" in request.url.host:
+            return httpx.Response(
+                307,
+                headers={"location": "https://other.invalid/api/mcp/"},
+                request=request,
+            )
+        return httpx.Response(200, json={"leaked": True}, request=request)
+
+    client = _oauth_client_with_token(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        with pytest.raises(UntrustedRedirectError):
+            await client.post(_TRUSTED)
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 1
+    assert seen[0][0] == "https://core.invalid/api/mcp"
+    assert all("other.invalid" not in url for url, _ in seen)
+
+
+async def test_oauth_https_to_http_downgrade_never_sends_bearer():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("authorization"),
+                request.url.scheme,
+            )
+        )
+        if request.url.scheme == "https":
+            return httpx.Response(
+                307,
+                headers={"location": "http://core.invalid/api/mcp/"},
+                request=request,
+            )
+        return httpx.Response(200, json={"leaked": True}, request=request)
+
+    client = _oauth_client_with_token(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        with pytest.raises(UntrustedRedirectError):
+            await client.post(_TRUSTED)
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 1
+    assert seen[0][2] == "https"
+
+
+async def test_service_key_same_origin_trailing_slash_keeps_headers():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("x-integral-service-key"),
+            )
+        )
+        if request.url.path.rstrip("/") == "/api/mcp" and not request.url.path.endswith(
+            "/"
+        ):
+            return httpx.Response(
+                307, headers={"location": "/api/mcp/"}, request=request
+            )
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    client = _service_key_client(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        resp = await client.post(_TRUSTED)
+        assert resp.status_code == 200
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 2
+    assert seen[0][1] == _SERVICE_KEY
+    assert seen[1][1] == _SERVICE_KEY
+
+
+async def test_service_key_cross_origin_redirect_never_sends_key():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("x-integral-service-key"),
+            )
+        )
+        if "core.invalid" in request.url.host:
+            return httpx.Response(
+                307,
+                headers={"location": "https://other.invalid/api/mcp/"},
+                request=request,
+            )
+        return httpx.Response(200, json={"leaked": True}, request=request)
+
+    client = _service_key_client(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        with pytest.raises(UntrustedRedirectError):
+            await client.post(_TRUSTED)
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 1
+    assert all("other.invalid" not in url for url, _ in seen)
+
+
+async def test_service_key_https_to_http_downgrade_never_sends_key():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (
+                str(request.url),
+                request.headers.get("x-integral-service-key"),
+                request.url.scheme,
+            )
+        )
+        if request.url.scheme == "https":
+            return httpx.Response(
+                307,
+                headers={"location": "http://core.invalid/api/mcp/"},
+                request=request,
+            )
+        return httpx.Response(200, json={"leaked": True}, request=request)
+
+    client = _service_key_client(httpx.MockTransport(handler), _TRUSTED)
+    try:
+        with pytest.raises(UntrustedRedirectError):
+            await client.post(_TRUSTED)
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 1
+    assert seen[0][2] == "https"

@@ -25,6 +25,13 @@ from typing import AsyncGenerator
 
 import httpx
 
+from jvagent.action.mcp.redirect_trust import (
+    is_trusted_url,
+    make_redirect_validator,
+    origin_of,
+    strip_service_key_headers,
+)
+
 DEFAULT_CONNECT_TIMEOUT = 10.0
 DEFAULT_READ_TIMEOUT = 60.0
 
@@ -91,8 +98,10 @@ def build_service_key_client(
     user_id_env: str = "INTEGRAL_SERVICE_USER_ID",
     workspace_id: str = "",
     workspace_id_env: str = "INTEGRAL_WORKSPACE_ID",
+    mcp_url: str = "",
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
     read_timeout: float = DEFAULT_READ_TIMEOUT,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> httpx.AsyncClient:
     """Build an ``httpx.AsyncClient`` that signs every request for Core.
 
@@ -117,20 +126,34 @@ def build_service_key_client(
         connect=connect_timeout, read=read_timeout, write=read_timeout, pool=None
     )
     auth = ServiceKeyAuth(resolved_key, resolved_user, resolved_ws)
+    trusted = origin_of(mcp_url)
 
     async def _ensure_service_key(request: httpx.Request) -> None:
-        # httpx drops the service-key headers when it follows a *cross-origin*
-        # redirect and does not re-run a custom httpx.Auth flow for that hop;
-        # request event hooks run on every hop, so re-sign when they are missing.
+        # Custom X-Integral-* headers are NOT stripped by httpx on cross-origin
+        # redirects. Only re-sign for the configured MCP origin; strip secrets
+        # and refuse to attach them on any other hop.
+        url = str(request.url)
+        if trusted is not None and not is_trusted_url(url, trusted):
+            strip_service_key_headers(request)
+            return
         if "x-integral-service-key" in request.headers:
+            if trusted is None or is_trusted_url(url, trusted):
+                return
+            strip_service_key_headers(request)
+            return
+        if trusted is None:
             return
         auth.apply_auth(request)
 
-    return httpx.AsyncClient(
-        auth=auth,
-        timeout=timeout,
-        # The MCP SDK raises on any 3xx (``raise_for_status``), so follow
-        # redirects; ``_ensure_service_key`` re-signs on the redirect hop.
-        follow_redirects=True,
-        event_hooks={"request": [_ensure_service_key]},
-    )
+    kwargs: dict = {
+        "auth": auth,
+        "timeout": timeout,
+        "follow_redirects": True,
+        "event_hooks": {
+            "request": [_ensure_service_key],
+            "response": [make_redirect_validator(trusted)],
+        },
+    }
+    if transport is not None:
+        kwargs["transport"] = transport
+    return httpx.AsyncClient(**kwargs)

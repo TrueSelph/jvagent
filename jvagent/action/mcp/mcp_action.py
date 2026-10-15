@@ -460,6 +460,7 @@ class MCPAction(Action):
                                 auth_cfg.get("workspace_id_env")
                                 or "INTEGRAL_WORKSPACE_ID"
                             ),
+                            mcp_url=str(raw.get("url") or ""),
                             connect_timeout=connect_timeout,
                             read_timeout=call_timeout,
                         )

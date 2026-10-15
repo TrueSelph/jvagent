@@ -22,6 +22,12 @@ from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 import httpx
 
+from jvagent.action.mcp.redirect_trust import (
+    is_trusted_url,
+    make_redirect_validator,
+    origin_of,
+    strip_authorization_headers,
+)
 from jvagent.action.mcp_oauth.integral_provider import (
     DEFAULT_ACCOUNT,
     INTEGRAL_SERVER,
@@ -257,6 +263,7 @@ def build_integral_oauth_client(
     mcp_url: str = "",
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
     read_timeout: float = DEFAULT_READ_TIMEOUT,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> httpx.AsyncClient:
     """Build an ``httpx.AsyncClient`` that bears the stored Integral OAuth token."""
     resolved_account = _resolve(account, account_env) or DEFAULT_ACCOUNT
@@ -273,21 +280,34 @@ def build_integral_oauth_client(
         issuer=resolved_issuer,
         mcp_url=mcp_url,
     )
+    trusted = origin_of(mcp_url)
 
     async def _ensure_auth(request: httpx.Request) -> None:
-        # httpx strips ``Authorization`` when it follows a *cross-origin* redirect
-        # (Core's ``/api/mcp`` -> ``/api/mcp/`` on the API port) and does not
-        # re-run a custom httpx.Auth flow for the redirect hop. Request event
-        # hooks DO run for every hop, so re-apply the bearer when it is missing.
+        # httpx strips ``Authorization`` on *cross-origin* redirects and does
+        # not re-run a custom Auth flow for that hop. Re-apply the bearer only
+        # for the configured MCP origin; never restore it on an untrusted hop.
+        url = str(request.url)
+        if trusted is not None and not is_trusted_url(url, trusted):
+            strip_authorization_headers(request)
+            return
         if "authorization" in request.headers:
+            return
+        if trusted is None:
+            # Without a configured mcp_url we cannot safely re-attach credentials.
             return
         await auth.apply_auth(request)
 
-    return httpx.AsyncClient(
-        auth=auth,
-        timeout=timeout,
-        # The MCP SDK raises on any 3xx (``raise_for_status``), so follow
-        # redirects; ``_ensure_auth`` re-applies the bearer on the redirect hop.
-        follow_redirects=True,
-        event_hooks={"request": [_ensure_auth]},
-    )
+    kwargs: dict = {
+        "auth": auth,
+        "timeout": timeout,
+        # The MCP SDK raises on any 3xx, so follow same-origin redirects;
+        # untrusted targets are rejected by the response hook.
+        "follow_redirects": True,
+        "event_hooks": {
+            "request": [_ensure_auth],
+            "response": [make_redirect_validator(trusted)],
+        },
+    }
+    if transport is not None:
+        kwargs["transport"] = transport
+    return httpx.AsyncClient(**kwargs)

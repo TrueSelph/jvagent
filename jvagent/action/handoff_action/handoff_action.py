@@ -27,7 +27,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, Callable, ClassVar, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -37,9 +37,6 @@ from jvagent.tooling.tool_decorator import tool
 from jvagent.tooling.tool_result import ToolResult
 
 logger = logging.getLogger(__name__)
-
-_PENDING_MUTATE_RETRIES = 8
-
 
 def _register_orchestrator_vocabulary() -> None:
     """Declare ``handoff__`` a trusted directive source.
@@ -263,6 +260,10 @@ def _question_row(question: Any) -> Dict[str, Any]:
             "user_channel": str(question.get("user_channel") or ""),
             "user_contact": str(question.get("user_contact") or ""),
             "created_at": str(question.get("created_at") or ""),
+            "answer": str(question.get("answer") or ""),
+            "delivery_status": str(question.get("delivery_status") or ""),
+            "chunk_id": str(question.get("chunk_id") or ""),
+            "status": str(question.get("status") or ""),
         }
     return {
         "id": str(getattr(question, "id", "") or ""),
@@ -270,6 +271,10 @@ def _question_row(question: Any) -> Dict[str, Any]:
         "user_channel": str(getattr(question, "user_channel", "") or ""),
         "user_contact": str(getattr(question, "user_contact", "") or ""),
         "created_at": str(getattr(question, "created_at", "") or ""),
+        "answer": str(getattr(question, "answer", "") or ""),
+        "delivery_status": str(getattr(question, "delivery_status", "") or ""),
+        "chunk_id": str(getattr(question, "chunk_id", "") or ""),
+        "status": str(getattr(question, "status", "") or ""),
     }
 
 
@@ -2430,44 +2435,103 @@ class HandoffAction(Action):
             )
 
     def _pending_lock(self):
+        """Same-process nicety only; durability comes from HandoffQuestion nodes."""
         from jvagent.core.async_locks import get_loop_lock
 
         aid = str(getattr(self, "id", "") or "").strip() or "default"
         return get_loop_lock(f"handoff_pending:{aid}")
 
     async def _refresh_pending_state(self) -> None:
-        """Reload pending_questions from durable Action storage onto this instance."""
-        aid = str(getattr(self, "id", "") or "").strip()
-        if not aid:
+        """Reload open questions from HandoffQuestion nodes onto this instance."""
+        from jvagent.action.handoff_action.store import HandoffQuestion
+
+        agent_id = await self._agent_id()
+        if not agent_id:
+            self.pending_questions = []
             return
-        await self._evict_self_cache()
         try:
-            fresh = await type(self).get(aid)
+            nodes = await HandoffQuestion.pending(agent_id)
         except Exception:
             logger.warning(
-                "handoff pending refresh failed action_id=%s", aid, exc_info=True
+                "handoff pending refresh failed agent_id=%s", agent_id, exc_info=True
             )
             return
-        if fresh is None:
-            return
-        rows = getattr(fresh, "pending_questions", None)
-        self.pending_questions = list(rows) if isinstance(rows, list) else []
-        try:
-            self.pending_questions_version = int(
-                getattr(fresh, "pending_questions_version", 0) or 0
-            )
-        except Exception:
-            self.pending_questions_version = 0
+        rows = [_question_row(node) for node in nodes]
+        # One-time migrate: durable Action list → independent nodes.
+        # Never re-import from the in-memory cache after a successful node query
+        # (an empty node result is authoritative).
+        if not rows:
+            legacy: List[Dict[str, Any]] = []
+            aid = str(getattr(self, "id", "") or "").strip()
+            if aid:
+                try:
+                    await self._evict_self_cache()
+                    fresh = await type(self).get(aid)
+                    legacy_src = getattr(fresh, "pending_questions", None) or []
+                    legacy = [
+                        dict(row)
+                        for row in legacy_src
+                        if isinstance(row, dict) and str(row.get("id") or "").strip()
+                    ]
+                except Exception:
+                    legacy = []
+            for row in legacy:
+                try:
+                    await HandoffQuestion.create_question(
+                        agent_id=agent_id,
+                        question=str(row.get("question") or ""),
+                        user_channel=str(row.get("user_channel") or "default"),
+                        user_contact=str(row.get("user_contact") or ""),
+                        question_id=str(row.get("id") or ""),
+                    )
+                    node = await HandoffQuestion.get_question(str(row.get("id") or ""))
+                    if node is not None:
+                        updates = {}
+                        if row.get("answer"):
+                            updates["answer"] = str(row.get("answer") or "")
+                        if row.get("delivery_status"):
+                            updates["delivery_status"] = str(
+                                row.get("delivery_status") or ""
+                            )
+                        if row.get("chunk_id"):
+                            updates["chunk_id"] = str(row.get("chunk_id") or "")
+                        if updates:
+                            await node.apply_updates(updates)
+                except Exception:
+                    logger.warning(
+                        "handoff legacy pending migrate failed id=%r",
+                        row.get("id"),
+                        exc_info=True,
+                    )
+            if legacy:
+                try:
+                    nodes = await HandoffQuestion.pending(agent_id)
+                    rows = [_question_row(node) for node in nodes]
+                    # Clear the legacy Action blob once nodes own the data.
+                    self.pending_questions = []
+                    await self.save()
+                except Exception:
+                    logger.warning(
+                        "handoff legacy pending clear failed agent_id=%s",
+                        agent_id,
+                        exc_info=True,
+                    )
+        self.pending_questions = [row for row in rows if self._row_is_open(row)]
+
+    @staticmethod
+    def _row_is_open(row: Dict[str, Any]) -> bool:
+        answer = str(row.get("answer") or "").strip()
+        status = str(row.get("delivery_status") or "").strip()
+        node_status = str(row.get("status") or "").strip()
+        if node_status == "resolved" and status not in ("pending", "failed"):
+            return False
+        return not answer or status in ("pending", "failed")
 
     def _open_pending_rows(self) -> List[Dict[str, Any]]:
         """Rows still needing staff attention or customer delivery."""
         out: List[Dict[str, Any]] = []
         for row in self.pending_questions or []:
-            if not isinstance(row, dict):
-                continue
-            answer = str(row.get("answer") or "").strip()
-            status = str(row.get("delivery_status") or "").strip()
-            if not answer or status in ("pending", "failed"):
+            if isinstance(row, dict) and self._row_is_open(row):
                 out.append(row)
         return out
 
@@ -2488,57 +2552,24 @@ class HandoffAction(Action):
         return rows
 
     async def _get_pending_question(self, question_id: str) -> Any:
+        from jvagent.action.handoff_action.store import HandoffQuestion, STATUS_PENDING
+
         qid = (question_id or "").strip()
         if not qid:
             return None
-        await self._refresh_pending_state()
-        for row in self._open_pending_rows():
-            if str(row.get("id") or "") == qid:
-                return row
+        node = await HandoffQuestion.get_question(qid)
+        if node is None:
+            return None
+        row = _question_row(node)
+        if str(getattr(node, "status", "") or "") == STATUS_PENDING or self._row_is_open(
+            row
+        ):
+            return row
         return None
 
-    async def _persist_pending_rows(self, rows: List[Dict[str, Any]]) -> None:
-        self.pending_questions = list(rows)
-        await self.save()
-        await self._invalidate_pending_caches()
-
-    async def _mutate_pending_rows(
-        self,
-        mutator: Callable[[List[Dict[str, Any]]], Any],
-    ) -> Any:
-        """Atomically refresh/mutate/persist pending_questions with versioning."""
-        async with self._pending_lock():
-            last_exc: Optional[BaseException] = None
-            for _ in range(_PENDING_MUTATE_RETRIES):
-                await self._refresh_pending_state()
-                expected = int(getattr(self, "pending_questions_version", 0) or 0)
-                rows = [
-                    dict(row)
-                    for row in (self.pending_questions or [])
-                    if isinstance(row, dict)
-                ]
-                result = mutator(rows)
-                if hasattr(result, "__await__"):
-                    result = await result
-                await self._refresh_pending_state()
-                current = int(getattr(self, "pending_questions_version", 0) or 0)
-                if current != expected:
-                    last_exc = RuntimeError(
-                        "handoff pending_questions version conflict "
-                        f"(expected {expected}, saw {current})"
-                    )
-                    continue
-                self.pending_questions_version = expected + 1
-                await self._persist_pending_rows(rows)
-                return result
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError(
-                "handoff pending_questions mutation failed after retries"
-            )
-
     async def _add_pending(self, message: str, contact: str = "") -> Dict[str, Any]:
-        """Append a pending question on this Action and verify it is listable."""
+        """Create an independent HandoffQuestion node and verify it is listable."""
+        from jvagent.action.handoff_action.store import HandoffQuestion
         from jvagent.tooling.tool_executor import get_dispatch_context
 
         ctx = get_dispatch_context()
@@ -2551,20 +2582,17 @@ class HandoffAction(Action):
             agent_id,
             stored_contact,
         )
-        entry = {
-            "id": f"pend_{uuid.uuid4().hex}",
-            "question": message or "",
-            "user_channel": channel,
-            "user_contact": stored_contact,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        def _append(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-            rows.append(entry)
-            return entry
-
+        qid = f"pend_{uuid.uuid4().hex}"
         try:
-            await self._mutate_pending_rows(_append)
+            async with self._pending_lock():
+                created = await HandoffQuestion.create_question(
+                    agent_id=agent_id,
+                    question=message or "",
+                    user_channel=channel,
+                    user_contact=stored_contact,
+                    question_id=qid,
+                )
+            entry = _question_row(created)
             await self._refresh_pending_state()
             if not any(
                 str(row.get("id") or "") == entry["id"]
@@ -2596,22 +2624,19 @@ class HandoffAction(Action):
         node: Any = None,
     ) -> None:
         """Update contact on one pending question (replaces with single contact)."""
+        from jvagent.action.handoff_action.store import HandoffQuestion
+
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             logger.warning("handoff update_pending missing question_id")
             return
         stored = (user_contact or "").strip()
-
-        def _update(rows: List[Dict[str, Any]]) -> bool:
-            for row in rows:
-                if str(row.get("id") or "") == qid:
-                    row["user_contact"] = stored
-                    return True
-            return False
-
-        changed = await self._mutate_pending_rows(_update)
-        if not changed:
+        question = await HandoffQuestion.get_question(qid)
+        if question is None:
             logger.warning("handoff update_pending missing question_id=%r", qid)
+            return
+        await question.update_user_contact(stored)
+        await self._refresh_pending_state()
 
     async def _patch_pending_row(
         self,
@@ -2620,18 +2645,17 @@ class HandoffAction(Action):
         updates: Dict[str, Any],
         node: Any = None,
     ) -> None:
+        from jvagent.action.handoff_action.store import HandoffQuestion
+
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             return
-
-        def _patch(rows: List[Dict[str, Any]]) -> bool:
-            for row in rows:
-                if str(row.get("id") or "") == qid:
-                    row.update(updates)
-                    return True
-            return False
-
-        await self._mutate_pending_rows(_patch)
+        question = await HandoffQuestion.get_question(qid)
+        if question is None:
+            logger.warning("handoff patch_pending missing question_id=%r", qid)
+            return
+        await question.apply_updates(updates)
+        await self._refresh_pending_state()
 
     async def _mark_pending_answered(
         self,
@@ -2668,20 +2692,19 @@ class HandoffAction(Action):
     async def _remove_pending(
         self, question_id: str, *, answer: str = "", node: Any = None
     ) -> None:
-        """Drop a pending question from the Action list after it is answered."""
+        """Mark a pending question resolved after successful customer delivery."""
+        from jvagent.action.handoff_action.store import HandoffQuestion
+
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             logger.warning("handoff remove_pending missing question_id")
             return
-
-        def _remove(rows: List[Dict[str, Any]]) -> bool:
-            before = len(rows)
-            rows[:] = [row for row in rows if str(row.get("id") or "") != qid]
-            return len(rows) != before
-
-        changed = await self._mutate_pending_rows(_remove)
-        if not changed:
+        question = await HandoffQuestion.get_question(qid)
+        if question is None:
             logger.warning("handoff remove_pending missing question_id=%r", qid)
+            return
+        await question.mark_resolved(answer or "")
+        await self._refresh_pending_state()
 
     async def _conversation(self) -> Any:
         """Current conversation from the tool visitor, when one is bound."""
