@@ -1239,6 +1239,10 @@ class HandoffAction(Action):
 
     # Pending questions are durable HandoffQuestion nodes (not Action attributes).
     # ``_pending_rows_cache`` is an in-memory mirror filled by ``_refresh_pending_state``.
+    _pending_rows_cache: List[Dict[str, Any]] = attribute(
+        private=True,
+        default_factory=list,
+    )
 
     # -- tools -----------------------------------------------------------------
 
@@ -2465,7 +2469,7 @@ class HandoffAction(Action):
 
         agent_id = await self._agent_id()
         if not agent_id:
-            self._pending_rows_cache: List[Dict[str, Any]] = []
+            self._pending_rows_cache = []
             return
         try:
             nodes = await HandoffQuestion.pending(agent_id)
