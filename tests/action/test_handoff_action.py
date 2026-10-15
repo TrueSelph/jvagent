@@ -43,7 +43,7 @@ class _PendingStore:
     """Shared durable HandoffQuestion records keyed by agent id."""
 
     by_id: dict = {}
-    AGENT_ID = "n.Agent.shared"
+    AGENT_ID = "n.Agent.test"
     ACTION_ID = "n.HandoffAction.test"
     # When True, create_question succeeds but pending() hides rows (listable failure).
     hide_on_list: bool = False
@@ -209,9 +209,10 @@ def _bind_action(action, action_id=_PendingStore.ACTION_ID):
 
 def _seed_pending(action, **kwargs):
     qid = kwargs.get("id") or f"q_{len(_PendingStore.by_id) + 1}"
+    agent_id = kwargs.get("agent_id") or _PendingStore.AGENT_ID
     row = {
         "id": qid,
-        "agent_id": _PendingStore.AGENT_ID,
+        "agent_id": agent_id,
         "question": kwargs.get("question", ""),
         "user_channel": kwargs.get("user_channel", "default"),
         "user_contact": kwargs.get("user_contact", ""),
@@ -228,7 +229,7 @@ def _seed_pending(action, **kwargs):
     _PendingStore.by_id[qid] = dict(row)
     aid = str(getattr(action, "id", "") or _PendingStore.ACTION_ID)
     object.__setattr__(action, "id", aid)
-    action._pending_rows_cache = _PendingStore.rows_for()
+    action._pending_rows_cache = _PendingStore.rows_for(agent_id)
     return {
         "id": qid,
         "question": row["question"],
@@ -1077,9 +1078,6 @@ async def test_pending_list_is_shared_and_save_stays_staff_only(monkeypatch):
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
 
-    class _Agent:
-        id = "n.Agent.shared"
-
     action = _bind_action(HandoffAction())
     other = _bind_action(HandoffAction())
     _seed_pending(
@@ -1089,11 +1087,6 @@ async def test_pending_list_is_shared_and_save_stays_staff_only(monkeypatch):
         user_channel="whatsapp",
         user_contact="5926431530",
     )
-
-    async def _get_agent(self):
-        return _Agent()
-
-    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
     listed = await action._list_pending()
     assert any(row["id"] == "q1" for row in listed)
     # Same action id: second instance refreshes and sees the shared pending list.
@@ -1119,16 +1112,9 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
 
-    class _Agent:
-        id = "n.Agent.shared"
-
     writer = _bind_action(HandoffAction())
     reader = _bind_action(HandoffAction())
 
-    async def _get_agent(self):
-        return _Agent()
-
-    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
     with bind_dispatch_context(_Ctx("5926431530", channel="whatsapp")):
         created = await writer._add_pending("Do you offer delivery?", "5926431530")
     assert len(await _pending_rows(writer)) == 1
@@ -2849,3 +2835,56 @@ async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
     assert not retried.is_error
     assert ingested["count"] == 1  # no duplicate KB write
     assert await _pending_rows(action) == []
+
+
+async def test_pending_question_id_scoped_to_current_agent(monkeypatch):
+    """Agent A must not get/update/remove a pending row owned by agent B."""
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+
+    agent_a = "n.Agent.A"
+    agent_b = "n.Agent.B"
+    action_a = _bind_action(HandoffAction(), action_id="n.HandoffAction.A")
+    action_b = _bind_action(HandoffAction(), action_id="n.HandoffAction.B")
+
+    async def _get_agent(self):
+        aid = str(getattr(self, "id", "") or "")
+        if aid.endswith(".A"):
+            return SimpleNamespace(id=agent_a)
+        return SimpleNamespace(id=agent_b)
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+
+    owned_by_b = _seed_pending(
+        action_b,
+        id="pend_owned_by_b",
+        agent_id=agent_b,
+        question="B's private question",
+        user_contact="5926431530",
+    )
+
+    assert await action_a._get_pending_question(owned_by_b["id"]) is None
+    await action_a._update_pending(owned_by_b["id"], user_contact="5920000000")
+    await action_a._remove_pending(owned_by_b["id"], answer="stolen")
+    assert _PendingStore.by_id[owned_by_b["id"]]["status"] == "pending"
+    assert _PendingStore.by_id[owned_by_b["id"]]["user_contact"] == "5926431530"
+
+    tools_a = {t.name: t for t in await action_a.get_tools()}
+
+    async def _append(self, question, answer):
+        raise AssertionError("agent A must not ingest agent B's question")
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        denied = await tools_a["handoff__save_answer"].call(
+            question_ids=[owned_by_b["id"]], answer="No."
+        )
+    assert denied.is_error
+    assert "no pending question" in denied.content.lower()
+    assert _PendingStore.by_id[owned_by_b["id"]]["status"] == "pending"
+
+    row = await action_b._get_pending_question(owned_by_b["id"])
+    assert row is not None
+    assert row["question"] == "B's private question"
+    await action_b._remove_pending(owned_by_b["id"], answer="answered by B")
+    assert _PendingStore.by_id[owned_by_b["id"]]["status"] == "resolved"

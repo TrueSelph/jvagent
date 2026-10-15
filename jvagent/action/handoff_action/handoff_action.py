@@ -2431,37 +2431,32 @@ class HandoffAction(Action):
         aid = str(getattr(self, "id", "") or "").strip() or "default"
         return get_loop_lock(f"handoff_pending:{aid}")
 
-    @staticmethod
-    def _action_context_bag(action: Any) -> Dict[str, Any]:
-        """Return the mutable context dict on an Action/Node, if present."""
-        bag = getattr(action, "context", None)
-        return bag if isinstance(bag, dict) else {}
+    async def _owned_pending_question(self, question_id: str) -> Any:
+        """Load a HandoffQuestion only when it belongs to this action's agent.
 
-    @classmethod
-    def _legacy_pending_rows(cls, fresh: Any) -> List[Dict[str, Any]]:
-        """Read leftover Action-blob pending rows (pre-HandoffQuestion migrate)."""
-        bag = cls._action_context_bag(fresh)
-        legacy_src = bag.get("pending_questions")
-        if not isinstance(legacy_src, list):
-            legacy_src = getattr(fresh, "pending_questions", None) or []
-        return [
-            dict(row)
-            for row in legacy_src
-            if isinstance(row, dict) and str(row.get("id") or "").strip()
-        ]
+        Fail closed on missing ids and cross-agent ids so save_answer / update /
+        remove cannot touch another agent's pending row.
+        """
+        from jvagent.action.handoff_action.store import HandoffQuestion
 
-    async def _clear_legacy_pending_blob(self) -> None:
-        """Drop obsolete pending_* keys from the Action context and persist."""
-        bag = self._action_context_bag(self)
-        if not bag:
-            return
-        changed = False
-        for key in ("pending_questions", "pending_questions_version"):
-            if key in bag:
-                bag.pop(key, None)
-                changed = True
-        if changed:
-            await self.save()
+        qid = (question_id or "").strip()
+        if not qid:
+            return None
+        node = await HandoffQuestion.get_question(qid)
+        if node is None:
+            return None
+        agent_id = await self._agent_id()
+        owner = str(getattr(node, "agent_id", "") or "").strip()
+        if not agent_id or owner != agent_id:
+            logger.warning(
+                "handoff pending ownership denied question_id=%r "
+                "node_agent_id=%r action_agent_id=%r",
+                qid,
+                owner,
+                agent_id,
+            )
+            return None
+        return node
 
     async def _refresh_pending_state(self) -> None:
         """Reload open questions from HandoffQuestion nodes onto this instance."""
@@ -2479,59 +2474,6 @@ class HandoffAction(Action):
             )
             return
         rows = [_question_row(node) for node in nodes]
-        # One-time migrate: durable Action context list → independent nodes.
-        # An empty node result is authoritative for the cache; only the stored
-        # Action context blob (not the in-memory cache) is considered legacy.
-        if not rows:
-            legacy: List[Dict[str, Any]] = []
-            aid = str(getattr(self, "id", "") or "").strip()
-            if aid:
-                try:
-                    await self._evict_self_cache()
-                    fresh = await type(self).get(aid)
-                    if fresh is not None:
-                        legacy = self._legacy_pending_rows(fresh)
-                except Exception:
-                    legacy = []
-            for row in legacy:
-                try:
-                    await HandoffQuestion.create_question(
-                        agent_id=agent_id,
-                        question=str(row.get("question") or ""),
-                        user_channel=str(row.get("user_channel") or "default"),
-                        user_contact=str(row.get("user_contact") or ""),
-                        question_id=str(row.get("id") or ""),
-                    )
-                    node = await HandoffQuestion.get_question(str(row.get("id") or ""))
-                    if node is not None:
-                        updates = {}
-                        if row.get("answer"):
-                            updates["answer"] = str(row.get("answer") or "")
-                        if row.get("delivery_status"):
-                            updates["delivery_status"] = str(
-                                row.get("delivery_status") or ""
-                            )
-                        if row.get("chunk_id"):
-                            updates["chunk_id"] = str(row.get("chunk_id") or "")
-                        if updates:
-                            await node.apply_updates(updates)
-                except Exception:
-                    logger.warning(
-                        "handoff legacy pending migrate failed id=%r",
-                        row.get("id"),
-                        exc_info=True,
-                    )
-            if legacy:
-                try:
-                    nodes = await HandoffQuestion.pending(agent_id)
-                    rows = [_question_row(node) for node in nodes]
-                    await self._clear_legacy_pending_blob()
-                except Exception:
-                    logger.warning(
-                        "handoff legacy pending clear failed agent_id=%s",
-                        agent_id,
-                        exc_info=True,
-                    )
         self._pending_rows_cache = [row for row in rows if self._row_is_open(row)]
 
     @staticmethod
@@ -2568,12 +2510,9 @@ class HandoffAction(Action):
         return rows
 
     async def _get_pending_question(self, question_id: str) -> Any:
-        from jvagent.action.handoff_action.store import STATUS_PENDING, HandoffQuestion
+        from jvagent.action.handoff_action.store import STATUS_PENDING
 
-        qid = (question_id or "").strip()
-        if not qid:
-            return None
-        node = await HandoffQuestion.get_question(qid)
+        node = await self._owned_pending_question(question_id)
         if node is None:
             return None
         row = _question_row(node)
@@ -2640,14 +2579,12 @@ class HandoffAction(Action):
         node: Any = None,
     ) -> None:
         """Update contact on one pending question (replaces with single contact)."""
-        from jvagent.action.handoff_action.store import HandoffQuestion
-
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             logger.warning("handoff update_pending missing question_id")
             return
         stored = (user_contact or "").strip()
-        question = await HandoffQuestion.get_question(qid)
+        question = await self._owned_pending_question(qid)
         if question is None:
             logger.warning("handoff update_pending missing question_id=%r", qid)
             return
@@ -2661,12 +2598,10 @@ class HandoffAction(Action):
         updates: Dict[str, Any],
         node: Any = None,
     ) -> None:
-        from jvagent.action.handoff_action.store import HandoffQuestion
-
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             return
-        question = await HandoffQuestion.get_question(qid)
+        question = await self._owned_pending_question(qid)
         if question is None:
             logger.warning("handoff patch_pending missing question_id=%r", qid)
             return
@@ -2709,13 +2644,11 @@ class HandoffAction(Action):
         self, question_id: str, *, answer: str = "", node: Any = None
     ) -> None:
         """Mark a pending question resolved after successful customer delivery."""
-        from jvagent.action.handoff_action.store import HandoffQuestion
-
         qid = (question_id or "").strip() or _question_field(node, "id").strip()
         if not qid:
             logger.warning("handoff remove_pending missing question_id")
             return
-        question = await HandoffQuestion.get_question(qid)
+        question = await self._owned_pending_question(qid)
         if question is None:
             logger.warning("handoff remove_pending missing question_id=%r", qid)
             return
