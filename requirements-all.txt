@@ -21,7 +21,7 @@ mcp>=1.0.0
 # the same package, the highest wins (that is what pip resolves to anyway).
 
 # From jvagent/typesense_vectorstore
-typesense>=2.0.0
+typesense>=2.1.0
 
 # From jvagent/openai_lm and jvagent/openai_embedding
 openai>=1.0.0
@@ -35,8 +35,8 @@ beautifulsoup4
 markdownify
 
 # From jvagent/stt_action/deepgram and jvagent/tts_action/elevenlabs
-deepgram-sdk>=7.9.0
-elevenlabs>=2.68.0
+deepgram-sdk>=7.12.0
+elevenlabs>=2.71.0
 
 # From jvagent/whatsapp
 filetype>=1.2.0
