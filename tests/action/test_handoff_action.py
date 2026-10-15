@@ -607,10 +607,9 @@ async def test_consult_stores_message_without_code_refinement(monkeypatch):
         )
     assert not result.is_error
     assert len(await _pending_rows(action)) == 1
-    assert (
-        (await _pending_rows(action))[0]["question"]
-        == "can u check where u are located again"
-    )
+    assert (await _pending_rows(action))[0][
+        "question"
+    ] == "can u check where u are located again"
 
 
 async def test_consult_preserves_customer_ask_on_contact_follow_up(monkeypatch):
@@ -854,7 +853,9 @@ async def test_staff_lookup_reuses_saved_contact(monkeypatch):
         "Do you offer delivery",
         "Do you offer delivery",
     ]
-    assert {row["user_contact"] for row in await _pending_rows(action)} == {"5926431530"}
+    assert {row["user_contact"] for row in await _pending_rows(action)} == {
+        "5926431530"
+    }
     assert "checking with the team" in repeat.content
 
 
@@ -1369,10 +1370,9 @@ async def test_staff_lookup_stores_question_only_sends_bold_notes(monkeypatch):
         )
     assert not result.is_error
     assert len(await _pending_rows(action)) == 1
-    assert (
-        (await _pending_rows(action))[0]["question"]
-        == "Customer asked for the company's location."
-    )
+    assert (await _pending_rows(action))[0][
+        "question"
+    ] == "Customer asked for the company's location."
     assert "No information found" not in (await _pending_rows(action))[0]["question"]
     assert sent["to"] == _STAFF_PHONE
     assert "Customer asked for *the company's location*." in sent["message"]
