@@ -19,11 +19,11 @@ leadgen:
     Reference leadgen skill for product inquiries. Copy to agents/.../skills/<name>/
     and register in agent.yaml orchestrator skills.
   fields:
-    - key: name
+    - key: full_name
       required: true
       guidance: Full name of the contact
       validator: person_name
-      aliases: [full_name, contact_name]
+      aliases: [name, contact_name]
     - key: organization
       required: false
       guidance: Company or organization name
@@ -38,7 +38,7 @@ leadgen:
       guidance: Phone number with country code if possible
       validator: phone
       phone_locale: E164
-    - key: interested_products
+    - key: quote_items
       required: false
       guidance: Products or services the lead is interested in
       merge: true
@@ -47,10 +47,10 @@ leadgen:
       guidance: Brief description of their project or need
   gap_fill:
     batch: true
-    priority: [name, phone, email, organization]
+    priority: [full_name, phone, email, organization]
   sync:
     mode: on_capture
-    min_fields: [name]
+    min_fields: [full_name]
     require_any: [phone, email]
     # Any MCP server + tool — a flat file, spreadsheet, email, CRM, or DB.
     # Only server/tool/arguments change; the sync path is identical.

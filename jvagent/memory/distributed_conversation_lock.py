@@ -21,10 +21,12 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional, Tuple
 
+from jvspatial import create_task
+
 logger = logging.getLogger(__name__)
 
 # Holder = (conversation_id, holding-task-identity). The task identity MUST be
-# part of the guard: ``asyncio.create_task`` copies the current contextvar
+# part of the guard: ``jvspatial.create_task`` copies the current contextvar
 # context into the child task, so a background task spawned while the turn holds
 # the lock would otherwise inherit ``_lock_holder`` and the reentrancy check
 # would report the lock as held — letting that background task (e.g. a
@@ -270,8 +272,10 @@ async def _redis_conversation_lock(
         async def _renew() -> None:
             await client.eval(renew_script, 1, key, token, str(ttl))
 
-        heartbeat = asyncio.create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), conversation_id)
+        heartbeat = await create_task(
+            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), conversation_id),
+            name="conversation_lock_heartbeat",
+            concurrent=True,
         )
         yield
     finally:
@@ -418,10 +422,12 @@ async def _dynamo_conversation_lock(
         async def _renew() -> None:
             await asyncio.to_thread(renew)
 
-        heartbeat = asyncio.create_task(
+        heartbeat = await create_task(
             _run_lease_heartbeat(
                 _renew, _lease_renew_interval(ttl_sec), conversation_id
-            )
+            ),
+            name="conversation_lock_heartbeat",
+            concurrent=True,
         )
         yield
     finally:

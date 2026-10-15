@@ -119,6 +119,99 @@ class AccessControlAction(Action):
             logger.error(f"Error checking access for user {user_id}: {e}")
             return False
 
+    async def has_tool_access(
+        self,
+        user_id: str,
+        tool_name: str,
+        channel: str = "default",
+    ) -> bool:
+        """Check ``permissions[channel].tools[tool_name]`` allow/deny.
+
+        Does not fall through to the channel ``any`` rule or ``default_deny``.
+        A missing ``tools`` entry denies. ``group`` matches that group under
+        every ``user_groups`` label unless the rule sets ``action``, which
+        limits the lookup to that label.
+        """
+        try:
+            channel = normalize_channel(channel)
+            if not self.policy_applies():
+                return False
+            uid = (user_id or "").strip()
+            tool_name = (tool_name or "").strip()
+            if not uid or not tool_name:
+                return False
+            channel_perms = self.permissions.get(channel)
+            if not isinstance(channel_perms, dict):
+                channel_perms = self.permissions.get("default", {})
+            if not isinstance(channel_perms, dict):
+                return False
+            tools = channel_perms.get("tools")
+            if not isinstance(tools, dict):
+                return False
+            entry = tools.get(tool_name)
+            if not isinstance(entry, dict):
+                return False
+            for deny_rule in entry.get("deny") or []:
+                rule = self._normalize_rule(deny_rule)
+                if rule.get("enabled", True) and self._matches_tool_rule(uid, rule):
+                    return False
+            for allow_rule in entry.get("allow") or []:
+                rule = self._normalize_rule(allow_rule)
+                if rule.get("enabled", True) and self._matches_tool_rule(uid, rule):
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Error checking tool access for user {user_id}: {e}")
+            return False
+
+    def tool_permission_names(self, channel: str = "default") -> set:
+        """Tool names with an allow/deny entry on this channel."""
+        channel = normalize_channel(channel)
+        channel_perms = self.permissions.get(channel)
+        if not isinstance(channel_perms, dict):
+            channel_perms = self.permissions.get("default", {})
+        tools = channel_perms.get("tools") if isinstance(channel_perms, dict) else None
+        if not isinstance(tools, dict):
+            return set()
+        return {str(name) for name in tools}
+
+    def _user_in_named_group(
+        self, user_id: str, group_name: str, label: str = ""
+    ) -> bool:
+        """True when ``user_id`` is in ``group_name``.
+
+        A label limits the lookup to that ``user_groups`` key. An empty label
+        searches every key, so ``staff`` matches ``HandoffAction.staff``.
+        """
+        if label:
+            groups = self._resolve_user_groups(label)
+            members = groups.get(group_name)
+            return isinstance(members, list) and user_id in members
+        for groups in (self.user_groups or {}).values():
+            if not isinstance(groups, dict):
+                continue
+            members = groups.get(group_name)
+            if isinstance(members, list) and user_id in members:
+                return True
+        return False
+
+    def _matches_tool_rule(self, user_id: str, rule: Dict) -> bool:
+        """Match a tool allow/deny rule."""
+        rule_user = rule.get("user")
+        if rule_user is not None:
+            if rule_user in ["all", "any"]:
+                return True
+            if rule_user == user_id:
+                return True
+        rule_group = rule.get("group")
+        if rule_group:
+            if rule_group in ["all", "any"]:
+                return True
+            label = str(rule.get("action") or "").strip()
+            if self._user_in_named_group(user_id, rule_group, label):
+                return True
+        return False
+
     def _check_access(self, user_id: str, channel: str, resource: str) -> bool:
         """Check access using permissions structure."""
         channel_perms = self.permissions.get(

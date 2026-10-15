@@ -1137,6 +1137,50 @@ class OrchestratorInteractAction(
             return False
         return True
 
+    @staticmethod
+    def _skill_declares_access_gate(doc: Any) -> bool:
+        action = (getattr(doc, "access_action", "") or "").strip()
+        allowed = tuple(getattr(doc, "allowed_groups", ()) or ())
+        denied = tuple(getattr(doc, "denied_groups", ()) or ())
+        return bool(action and (allowed or denied))
+
+    @staticmethod
+    def _skill_access_control_allowed(
+        doc: Any, user_id: str, access_control: Any
+    ) -> bool:
+        """Identity gate via AccessControlAction groups (any action label).
+
+        Skills with no ``access-action`` / groups pass. Gated skills fail closed
+        when AccessControl is missing, not enforcing, or the user is absent /
+        not in an allowed group / in a denied group.
+        """
+        if not OrchestratorInteractAction._skill_declares_access_gate(doc):
+            return True
+        if (
+            access_control is None
+            or not getattr(access_control, "policy_applies", lambda: False)()
+        ):
+            return False
+        uid = (user_id or "").strip()
+        if not uid:
+            return False
+        label = (getattr(doc, "access_action", "") or "").strip()
+        try:
+            groups = access_control.get_user_groups(action_label=label) or {}
+        except Exception:
+            return False
+        if not isinstance(groups, dict):
+            return False
+        allowed = tuple(getattr(doc, "allowed_groups", ()) or ())
+        denied = tuple(getattr(doc, "denied_groups", ()) or ())
+        if allowed:
+            if not any(uid in (groups.get(name) or []) for name in allowed):
+                return False
+        if denied:
+            if any(uid in (groups.get(name) or []) for name in denied):
+                return False
+        return True
+
     # ------------------------------------------------------------------
     # Tool surface (per-turn; binds the visitor)
     # ------------------------------------------------------------------
@@ -1207,7 +1251,7 @@ class OrchestratorInteractAction(
         # tool_servers MCP gate) and the wrapping each family needs, so a later
         # re-add (ensure_skill_tools_materialized) cannot re-derive a surface
         # this assembly deliberately excluded.
-        policy = self._tool_surface_policy(visitor, actions, agent=agent)
+        policy = await self._tool_surface_policy(visitor, actions, agent=agent)
         action_ids = sorted(
             getattr(a, "id", "") for a in actions if getattr(a, "id", None)
         )
@@ -1246,7 +1290,13 @@ class OrchestratorInteractAction(
                         visible.add(name)
                 else:
                     wrap_visitor = visitor if bind_visitor else None
-                    tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
+                    tools[name] = wrap_action_tool(
+                        tool,
+                        visitor=wrap_visitor,
+                        agent=agent,
+                        user_id=getattr(visitor, "user_id", None),
+                        channel=getattr(visitor, "channel", "default") or "default",
+                    )
                     longtail.add(name)
             for name, tool in cached_surface.mcp_tools.items():
                 tools[name] = policy.wrap_mcp(tool)
@@ -1323,7 +1373,13 @@ class OrchestratorInteractAction(
                         # decides visibility after assembly). Actions that set
                         # ``binds_tools_to_visitor`` receive the live visitor at wrap.
                         wrap_visitor = visitor if bind_visitor else None
-                        tools[name] = wrap_action_tool(tool, visitor=wrap_visitor)
+                        tools[name] = wrap_action_tool(
+                            tool,
+                            visitor=wrap_visitor,
+                            agent=agent,
+                            user_id=getattr(visitor, "user_id", None),
+                            channel=getattr(visitor, "channel", "default") or "default",
+                        )
                         longtail.add(name)
 
             # MCP tool servers (via jvagent/mcp MCPAction; ADR-0015). Tools surface
@@ -1535,6 +1591,18 @@ class OrchestratorInteractAction(
         # ``deny-access-directive`` are collected so their message can be
         # surfaced in skills_section (the model relays it verbatim when the
         # user's intent matched the blocked skill).
+        # Identity gate: skills with access-action + allowed/denied-groups are
+        # shown only when AccessControlAction places the visitor in the right
+        # groups. Fail closed when AccessControl is absent or not enforcing.
+        access_control = await self._resolve_action("AccessControlAction")
+        access_hidden = [
+            d
+            for d in docs
+            if not self._skill_access_control_allowed(
+                d, getattr(visitor, "user_id", "") or "", access_control
+            )
+        ]
+        docs = [d for d in docs if d not in access_hidden]
         channel = getattr(visitor, "channel", "default") or "default"
         allowed_docs: List[Any] = []
         blocked_docs: List[Any] = []
@@ -1548,11 +1616,15 @@ class OrchestratorInteractAction(
         # so other interviews keep working. Also drop any name the skill listed
         # in its ``requires_tools``/``allowed-tools`` so a blocked JV skill's
         # referenced tools aren't surfaced on its behalf.
-        if blocked_docs:
-            blocked_names = {getattr(d, "name", "") for d in blocked_docs}
+        hidden_docs = list(blocked_docs) + access_hidden
+        if hidden_docs:
+            # Prefix drop covers channel-blocked and identity-hidden skills'
+            # own ``<name>__*`` custom tools. Shared tool namespaces (e.g.
+            # ``handoff__*``) drop only the tools each hidden skill declares.
+            blocked_names = {getattr(d, "name", "") for d in hidden_docs}
             blocked_prefixes = tuple(f"{n}__" for n in blocked_names if n)
             drop_names: Set[str] = set()
-            for d in blocked_docs:
+            for d in hidden_docs:
                 drop_names |= {t for t in getattr(d, "requires_tools", ()) or () if t}
             for name in list(tools.keys()):
                 if name in drop_names or (
@@ -1645,6 +1717,23 @@ class OrchestratorInteractAction(
         for d in docs:
             if getattr(d, "always_active", False):
                 visible |= {t for t in getattr(d, "requires_tools", ()) if t in tools}
+        # Tool permissions win over pins: a save tool the sender cannot call
+        # leaves the prompt and the callable map.
+        from jvagent.action.orchestrator.access import (
+            _resolve_access_control,
+            drop_unpermitted_tools,
+        )
+
+        ac = await _resolve_access_control(agent)
+        if ac is not None:
+            await drop_unpermitted_tools(
+                ac,
+                user_id=getattr(visitor, "user_id", None),
+                channel=getattr(visitor, "channel", "default") or "default",
+                tools=tools,
+                visible=visible,
+                longtail=longtail,
+            )
         # Hard exclude (wins over lean + pins): drop from tools so find_tool /
         # load_tool / dispatch cannot reach them. Applied last intentionally.
         if policy.denied_patterns:
@@ -1698,7 +1787,7 @@ class OrchestratorInteractAction(
             logger.debug("harness snapshot descriptor update skipped: %s", exc)
         return tools
 
-    def _tool_surface_policy(
+    async def _tool_surface_policy(
         self,
         visitor: Any,
         actions: List[Any],
@@ -1709,9 +1798,11 @@ class OrchestratorInteractAction(
 
         Built from the channel-resolved config so ``_assemble_tools`` and any
         later re-add (``ensure_skill_tools_materialized``) apply exactly the
-        same rules. Pure — safe to rebuild at each seam rather than threading
+        same rules. Safe to rebuild at each seam rather than threading
         per-turn state through the loop.
         """
+        from jvagent.action.orchestrator.access import denied_named_tool_names
+
         selector = self.tool_servers
         allowed_mcp: Optional[FrozenSet[str]]
         if isinstance(selector, str) and selector.strip() == "-all":
@@ -1722,13 +1813,50 @@ class OrchestratorInteractAction(
                 names |= mcp_action_names(mcp_action)
             allowed_mcp = frozenset(names)
         denied = self._channel_cfg(visitor, "denied_tools", self.denied_tools)
+        user_id = getattr(visitor, "user_id", None)
+        channel = getattr(visitor, "channel", "default") or "default"
+        excluded_names: Set[str] = set()
+        excluded_prefixes: List[str] = []
+        try:
+            skill_docs = self._discover_skills(agent)
+            skill_docs = await self._enforce_required_actions(skill_docs)
+            access_control = await self._resolve_action("AccessControlAction")
+            access_hidden = [
+                d
+                for d in skill_docs
+                if not self._skill_access_control_allowed(
+                    d, user_id or "", access_control
+                )
+            ]
+            visible_docs = [d for d in skill_docs if d not in access_hidden]
+            channel_hidden = [
+                d for d in visible_docs if not self._skill_channel_allowed(d, channel)
+            ]
+            hidden_docs = list(channel_hidden) + access_hidden
+            for d in hidden_docs:
+                skill_name = getattr(d, "name", "") or ""
+                if skill_name:
+                    excluded_prefixes.append(f"{skill_name}__")
+                excluded_names |= {
+                    t for t in getattr(d, "requires_tools", ()) or () if t
+                }
+        except Exception as exc:
+            logger.debug("orchestrator: skill exclusion policy skipped: %s", exc)
+        try:
+            excluded_names |= await denied_named_tool_names(
+                agent, user_id=user_id, channel=channel
+            )
+        except Exception as exc:
+            logger.debug("orchestrator: named-tool exclusion policy skipped: %s", exc)
         return ToolSurfacePolicy(
             denied_patterns=tuple(str(p) for p in (denied or [])),
             allowed_mcp_names=allowed_mcp,
             mcp_action_class=self._mcp_action_class(),
             agent=agent,
-            user_id=getattr(visitor, "user_id", None),
-            channel=getattr(visitor, "channel", "default") or "default",
+            user_id=user_id,
+            channel=channel,
+            excluded_tool_names=frozenset(excluded_names),
+            excluded_skill_prefixes=tuple(excluded_prefixes),
         )
 
     @staticmethod
@@ -1961,7 +2089,7 @@ class OrchestratorInteractAction(
             activated=activated,
             observations=observations,
             skill_docs=skill_docs,
-            policy=self._tool_surface_policy(visitor, loop_actions, agent=agent),
+            policy=await self._tool_surface_policy(visitor, loop_actions, agent=agent),
         )
 
     async def _apply_task_lock_after_use_skill(
@@ -2174,7 +2302,7 @@ class OrchestratorInteractAction(
             visitor,
             tools,
             visible,
-            policy=self._tool_surface_policy(visitor, loop_actions, agent=agent),
+            policy=await self._tool_surface_policy(visitor, loop_actions, agent=agent),
         )
         if doc.name not in activated:
             activated.append(doc.name)
@@ -2580,7 +2708,9 @@ class OrchestratorInteractAction(
     # Loop
     # ------------------------------------------------------------------
 
-    async def _accumulate_parameters(self, interaction: Any) -> None:
+    async def _accumulate_parameters(
+        self, interaction: Any, visitor: Any = None
+    ) -> None:
         """Pool every enabled action's scoped parameters onto
         ``interaction.parameters`` — the accumulation step of the common
         subsystem. Params are queued like directives (observable, persisted,
@@ -2594,7 +2724,7 @@ class OrchestratorInteractAction(
         agent = await self._safe_agent()
         actions = await self._enabled_actions(agent) if agent else [self]
         try:
-            if await accumulate_action_parameters(interaction, actions):
+            if await accumulate_action_parameters(interaction, actions, visitor):
                 await interaction.save()
         except Exception as exc:
             logger.debug("orchestrator: accumulating parameters failed: %s", exc)

@@ -662,6 +662,34 @@ async def whatsapp_interact(request: Request, agent_id: str) -> Dict[str, Any]:
                     f"Webhook: convert_lid done in {int((time.perf_counter() - t0) * 1000)}ms"
                 )
 
+        _group_inbound = bool(getattr(data, "isGroup", False)) or (
+            data.author and data.sender and data.author != data.sender
+        )
+        if not whatsapp_action.is_meta_provider() and _group_inbound and data.author:
+            from jvagent.action.whatsapp.utils.chat_ids import (
+                is_valid_whatsapp_phone,
+                lid_jid_for_conversion,
+                strip_whatsapp_suffix,
+            )
+
+            author_clean = strip_whatsapp_suffix(str(data.author))
+            if not is_valid_whatsapp_phone(author_clean):
+                lid = (
+                    data.author
+                    if "@lid" in str(data.author)
+                    else lid_jid_for_conversion(author_clean)
+                )
+                converted = await wa.convert_lid_to_phone_number(lid)
+                data.author = strip_whatsapp_suffix(str(converted or ""))
+
+        if _group_inbound:
+            from jvagent.action.whatsapp.utils.group_inbound_log import (
+                build_group_inbound_context,
+            )
+
+            group_ctx = build_group_inbound_context(data)
+            await whatsapp_action.record_group_user_from_inbound(group_ctx)
+
         sender = data.sender
         sender_name = data.sender_name
 

@@ -101,6 +101,8 @@ class WWebJSAPI(BaseWhatsAppAPI):
         if isinstance(msg_id, str):
             msg_id = {"_serialized": msg_id, "fromMe": False}
 
+        author = WWebJSAPI._group_message_author(msg_data, msg_id)
+
         # Build standard format
         wppconnect_data = {
             "event": "onmessage",
@@ -126,6 +128,7 @@ class WWebJSAPI(BaseWhatsAppAPI):
                 "pushname": msg_data.get("notifyName", ""),
             },
             "quotedMsg": msg_data.get("quotedMsg", {}),
+            "author": author,
         }
 
         # Handle special message types
@@ -146,6 +149,37 @@ class WWebJSAPI(BaseWhatsAppAPI):
             wppconnect_data["lng"] = message.get("location", {}).get("longitude", "")
 
         return wppconnect_data
+
+    @staticmethod
+    def _jid_string_from_nested(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            for key in ("_serialized", "user", "participant", "author"):
+                part = value.get(key)
+                if isinstance(part, str) and part.strip():
+                    return part.strip()
+        return ""
+
+    @classmethod
+    def _group_message_author(cls, msg_data: dict, msg_id: dict) -> str:
+        """Participant JID/phone for group inbound (wwebjs often omits top-level author)."""
+        author = cls._jid_string_from_nested(msg_data.get("author"))
+        if author:
+            return author
+        if isinstance(msg_id, dict):
+            for key in ("participant", "author"):
+                author = cls._jid_string_from_nested(msg_id.get(key))
+                if author:
+                    return author
+        nested_id = msg_data.get("id")
+        if isinstance(nested_id, dict):
+            author = cls._jid_string_from_nested(nested_id.get("participant"))
+            if author:
+                return author
+        return ""
 
     # ========================================================================
     # SESSION MANAGEMENT
@@ -626,6 +660,14 @@ class WWebJSAPI(BaseWhatsAppAPI):
     async def get_chat_by_id(self, phone: str) -> dict:
         """GET /client/getChatById/{sessionId}"""
         chat_id = self._format_chat_id(phone, False)
+        data = {"chatId": chat_id}
+        return await self.send_rest_request(
+            f"client/getChatById/{self.session}", data=data
+        )
+
+    async def get_group_chat_by_id(self, group_id: str) -> dict:
+        """GET /client/getChatById/{sessionId} for a group JID."""
+        chat_id = self._format_chat_id(group_id, True)
         data = {"chatId": chat_id}
         return await self.send_rest_request(
             f"client/getChatById/{self.session}", data=data
