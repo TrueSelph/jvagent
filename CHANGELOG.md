@@ -8,6 +8,27 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Handoff staff answers saved as customer replies.** The staff-turn rule now
+  defines answer scope instead of requiring a per-question match: a fact, price,
+  policy, timing, or next step that settles an open question is the answer, a
+  next step or policy settles every question of that kind, and the agent must
+  never write the customer-facing text itself. The reply path is limited to a
+  question back, a no-content message, or an empty queue, so a general staff
+  line ("you need to contact us to make any purchase") is saved against the asks
+  it settles rather than echoed to the customer. `handoff__save_answer` and its
+  `question_ids` description state the same scope and that the tool performs
+  delivery.
+- **Handoff consult staff answers.** Staff detection now normalizes phone/JID
+  forms and checks the WhatsApp group author, so group replies receive the
+  pending-question rule and the save tools. The staff rule explicitly overrides
+  customer skills and accepts a substantial (not necessarily perfect) answer.
+  `handoff__save_answer` now reports whether the customer was notified: a
+  pending row with no contact or `declined` is removed but no longer reported
+  as a successful delivery, and `_reply_to_customer` returns
+  `delivered` / `skipped` / `failed`.
+
 ### Added
 
 - **Skill identity gating via AccessControl groups.** Skills may declare
@@ -21,6 +42,7 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 ### Changed
 
 - Pin the published `jvspatial==0.1.1` release across package metadata and requirements, incorporating PostgreSQL index naming and schema bootstrap fixes.
+- **Handoff consult/transfer rule sharpened.** The escalation trigger is now a short clause ("the answer is not in this turn's tool results, or the request needs something the tools cannot provide") instead of a 41-word condition. The consult rule leads with the call, forbids writing the holding line ("checking with the team", "will follow up") before `handoff__consult` returns, and keeps the quote / stock / bulk-B2B / upset-customer / wants-a-person triggers as one compact sentence. Transfer gains the same holding-line prohibition.
 
 ## [0.1.8rc19] - 2026-09-27
 

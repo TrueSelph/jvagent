@@ -24,11 +24,12 @@ _STAFF_PHONE_B = "5922222222"
 
 
 class _Ctx:
-    def __init__(self, user_id="", channel="whatsapp", conversation=None):
+    def __init__(self, user_id="", channel="whatsapp", conversation=None, data=None):
         self.user_id = user_id
         self.channel = channel
         self.conversation = conversation
         self.session_id = ""
+        self.data = data
 
 
 class _Conversation:
@@ -282,9 +283,11 @@ async def test_consult_message_rule_tells_model_to_synthesize():
     tools = {t.name: t for t in await action.get_tools()}
     props = tools["handoff__consult"].parameters_schema["properties"]
     desc = props["message"]["description"]
-    assert "complete, grammatically full sentence" in desc
+    assert "restated in their own words" in desc
+    assert "complete, self-contained sentence" in desc
+    assert "never a keyword" in desc.lower()
+    assert "Customer wants" in desc
     assert "continuation" in desc
-    assert "shorthand fragments" in desc
 
 
 async def test_transfer_asks_on_web_when_no_contact(monkeypatch):
@@ -759,6 +762,12 @@ async def test_staff_lookup_holds_until_contact_or_decline(monkeypatch):
 
     open_q.clear()
     sent["count"] = 0
+
+    # A decline is only honored after an actual ask in an earlier turn.
+    async def _asked(self):
+        return "n.Interaction.previous"
+
+    monkeypatch.setattr(HandoffAction, "_asked_interaction", _asked)
     r = await tools["handoff__consult"].call(
         message="where do you deliver?", contact_declined=True
     )
@@ -800,6 +809,11 @@ async def test_declined_lookup_does_not_reply(monkeypatch):
     monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
     tools = {t.name: t for t in await action.get_tools()}
     with bind_dispatch_context(_Ctx("o.User.abc", channel="default")):
+
+        async def _asked(self):
+            return "n.Interaction.previous"
+
+        monkeypatch.setattr(HandoffAction, "_asked_interaction", _asked)
         looked = await tools["handoff__consult"].call(
             message="where do you deliver?", contact_declined=True
         )
@@ -905,6 +919,61 @@ async def test_consult_always_appends_separate_rows(monkeypatch):
     assert len(await _pending_rows(action)) == 3
 
 
+async def test_save_answer_resolves_similar_pendings_for_all_customers(monkeypatch):
+    """One staff answer resolves every similar pending and reports once."""
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    staff_notices = []
+    delivered = []
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send_whatsapp(self, recipient, message):
+        staff_notices.append(recipient)
+
+    async def _send_email(self, recipients, message, subject="Human handoff request"):
+        staff_notices.append(tuple(recipients))
+
+    async def _append(self, question, answer):
+        return question, answer, "n.DocumentNode.test"
+
+    async def _reply(self, row, question, answer):
+        delivered.append(str(row.get("user_contact") or ""))
+        return "delivered"
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send_whatsapp)
+    monkeypatch.setattr(HandoffAction, "_send_email", _send_email)
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply)
+    tools = {t.name: t for t in await action.get_tools()}
+    question = "Where are you located?"
+    with bind_dispatch_context(_Ctx("5921111111", channel="whatsapp")):
+        await tools["handoff__consult"].call(message=question, contact="5921111111")
+    with bind_dispatch_context(_Ctx("5922222222", channel="whatsapp")):
+        await tools["handoff__consult"].call(message=question, contact="5922222222")
+
+    rows = await _pending_rows(action)
+    assert len(rows) == 2
+    assert len(staff_notices) == 2
+
+    # The staff model decides which pendings the answer resolves; the tool does
+    # not guess similarity. Passing both ids replies to both customers once.
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE, channel="whatsapp")):
+        saved = await tools["handoff__save_answer"].call(
+            question_ids=[row["id"] for row in rows],
+            answer="We are on Water Street.",
+        )
+    assert not saved.is_error
+    assert set(delivered) == {"5921111111", "5922222222"}
+    assert "sent to 2 customer(s)" in saved.content
+
+
 async def test_staff_turn_parameter_lists_id_and_question_only(monkeypatch):
     from jvagent.action.parameters import render_parameters
 
@@ -946,6 +1015,23 @@ async def test_staff_turn_parameter_empty_queue(monkeypatch):
     rendered = render_parameters(params)
     assert "PENDING QUESTIONS: []" in rendered
     assert "do not save" in rendered.lower()
+
+
+async def test_staff_turn_rule_defines_answer_scope(monkeypatch):
+    """A policy or next step is the answer for every question of that kind."""
+    from jvagent.action.parameters import render_parameters
+
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    params = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
+    rendered = render_parameters(params)
+    assert "settles an open question" in rendered
+    assert "how to buy settles every buy or order ask" in rendered
+    assert "never write the customer-facing text" in rendered
+    assert "asks you a question" in rendered
+    assert "substantially answers" not in rendered
+    assert "clearest match" not in rendered
 
 
 async def test_save_answer_group_one_ingest_multi_reply(monkeypatch):
@@ -1049,6 +1135,101 @@ async def test_staff_targets_and_allowlist(monkeypatch):
         assert await action._is_staff()
 
 
+async def test_staff_detection_normalizes_plus_and_jid(monkeypatch):
+    _install_aca_staff(monkeypatch, [_STAFF_PHONE])
+    action = HandoffAction()
+    with bind_dispatch_context(_Ctx(f"+{_STAFF_PHONE}")):
+        assert await action._is_staff()
+    with bind_dispatch_context(_Ctx(f"{_STAFF_PHONE}@c.us")):
+        assert await action._is_staff()
+    with bind_dispatch_context(_Ctx("9999999999")):
+        assert not await action._is_staff()
+
+
+async def test_staff_detection_matches_group_participant(monkeypatch):
+    _install_aca_staff(monkeypatch, [_STAFF_PHONE])
+    action = HandoffAction()
+    ctx = _Ctx(
+        "120363000000000000@g.us",
+        data={
+            "whatsapp_payload": {
+                "isGroup": True,
+                "author": f"{_STAFF_PHONE}@c.us",
+            }
+        },
+    )
+    with bind_dispatch_context(ctx):
+        assert await action._is_staff()
+
+
+async def test_staff_rule_overrides_customer_skills(monkeypatch):
+    from jvagent.action.parameters import render_parameters
+
+    action = HandoffAction()
+
+    async def _members(self):
+        return [_STAFF_PHONE]
+
+    monkeypatch.setattr(HandoffAction, "_aca_staff_members", _members)
+    params = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
+    rendered = render_parameters(params)
+    assert "overrides the active skill" in rendered
+    assert "staff, not a customer" in rendered
+
+
+async def test_reply_to_customer_returns_skipped_without_contact():
+    action = HandoffAction()
+    assert await action._reply_to_customer({"user_contact": ""}, "q", "a") == "skipped"
+    assert (
+        await action._reply_to_customer({"user_contact": "declined"}, "q", "a")
+        == "skipped"
+    )
+
+
+async def test_save_answer_reports_skipped_delivery(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    _seed_pending(action, id="pend_skip", question="Where?", user_contact="")
+
+    async def _append(self, question, answer):
+        return question, answer, "n.DocumentNode.test"
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    tools = {t.name: t for t in await action.get_tools()}
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        saved = await tools["handoff__save_answer"].call(
+            question_ids=["pend_skip"], answer="We are on Main Street."
+        )
+    assert not saved.is_error
+    assert "no contact on file" in saved.content
+    assert "not notified" in saved.content
+    assert await _pending_rows(action) == []
+
+
+async def test_save_answer_reports_delivered(monkeypatch):
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    _seed_pending(action, id="pend_ok", question="Where?", user_contact="5921111111")
+
+    async def _append(self, question, answer):
+        return question, answer, "n.DocumentNode.test"
+
+    async def _reply(self, question, short_q, short_a):
+        return "delivered"
+
+    monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
+    monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply)
+    tools = {t.name: t for t in await action.get_tools()}
+    with bind_dispatch_context(_Ctx(_STAFF_PHONE)):
+        saved = await tools["handoff__save_answer"].call(
+            question_ids=["pend_ok"], answer="We are on Main Street."
+        )
+    assert not saved.is_error
+    assert "customer has been notified" in saved.content
+
+
 async def test_is_staff_uses_access_control_group(monkeypatch):
     _install_aca_staff(monkeypatch, ["5929999999"])
     action = HandoffAction()
@@ -1150,7 +1331,7 @@ async def test_pending_crud_add_list_update_remove(monkeypatch):
         return question, answer, "n.DocumentNode.test"
 
     async def _reply_ok(self, question, short_q, short_a):
-        return True
+        return "delivered"
 
     monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
     monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply_ok)
@@ -1188,7 +1369,15 @@ def test_action_contributes_orchestration_routing_parameter():
     assert "call handoff__consult now" in rendered.lower()
     assert "do not reply in text" in rendered.lower()
     assert "do not ask permission" in rendered.lower()
+    assert "do not write any holding or follow-up promise" in rendered.lower()
+    assert "before the call returns" in rendered.lower()
     assert "use_skill" not in rendered
+
+    condition = str(params[0].get("condition") or "")
+    assert len(condition.split()) <= 20
+    assert "not in this turn's tool results" in condition
+    for moved_trigger in ("quote", "stock confirmation", "bulk", "upset customer"):
+        assert moved_trigger in rendered.lower()
 
     transfer = HandoffAction()
     transfer.mode = "transfer"
@@ -1196,7 +1385,10 @@ def test_action_contributes_orchestration_routing_parameter():
     assert transfer_params[0].get("key") == "handoff_transfer"
     transfer_rendered = render_parameters(transfer_params)
     assert "handoff__transfer" in transfer_rendered
-    assert "knowledge base" in transfer_rendered.lower()
+    assert "not in this turn's tool results" in transfer_rendered.lower()
+    assert "do not write the escalation line before the call returns" in (
+        transfer_rendered.lower()
+    )
     assert "overrides the active skill" in transfer_rendered.lower()
     assert transfer_params[0].get("condition") == params[0].get("condition")
 
@@ -1207,6 +1399,21 @@ def test_action_contributes_orchestration_routing_parameter():
     rendered_observe = render_parameters(observe_params).lower()
     assert "handoff__observe" in rendered_observe
     assert "never send a message" not in rendered_observe
+
+
+def test_consult_rule_binds_the_holding_line_to_the_call():
+    """The holding line may only follow a completed handoff__consult call."""
+    from jvagent.action.parameters import orchestration_parameters, render_parameters
+
+    rendered = render_parameters(
+        orchestration_parameters(HandoffAction().parameters)
+    ).lower()
+
+    assert "call handoff__consult now" in rendered
+    assert "do not write any holding or follow-up promise" in rendered
+    assert "before the call returns" in rendered
+    # The trigger is stated once, as the rendered condition prefix.
+    assert rendered.count("not in this turn's tool results") == 1
 
 
 def test_yaml_parameters_override_mode_defaults():
@@ -1238,7 +1445,7 @@ async def test_contributed_parameters_follow_staff_access(monkeypatch):
     staff = await action.contributed_parameters(SimpleNamespace(user_id=_STAFF_PHONE))
     rendered = render_parameters(staff)
     assert "PENDING QUESTIONS:" in rendered
-    assert "corr-" in rendered
+    assert "correlation id" in rendered
     assert "not a question id or a chunk id" in rendered
     assert "handoff__pending_questions" not in rendered
 
@@ -1275,7 +1482,7 @@ async def test_contributed_parameters_follow_staff_access(monkeypatch):
     )
     transfer_customer_text = render_parameters(transfer_customer)
     assert "handoff__transfer" in transfer_customer_text
-    assert "knowledge base" in transfer_customer_text.lower()
+    assert "not in this turn's tool results" in transfer_customer_text.lower()
 
 
 def test_extract_saved_answer_strips_prefix_and_prefers_longer_utterance():
@@ -1407,7 +1614,9 @@ async def test_resolve_saves_cleaned_answer_and_thanks(monkeypatch):
     assert await action._list_pending() == []
     assert saved["ingested"] == ("Do you sell cars?", expected)
     assert "Tell the user:" in result.content
-    assert "Your answer is saved and will be used in the future" in result.content
+    assert (
+        "the answer is saved, but the customer has no contact on file" in result.content
+    )
     assert "Do you sell cars?" not in result.content
 
 
@@ -1755,6 +1964,40 @@ def test_handoff_namespace_is_registered_as_trusted():
     assert is_untrusted_directive_source("somepkg__tool")
 
 
+async def test_declined_without_prior_ask_asks_for_contact(monkeypatch):
+    """A decline is invalid until the customer was actually asked, in an earlier turn."""
+    _install_aca_staff(monkeypatch)
+    _install_pending_store(monkeypatch)
+    action = _bind_action(HandoffAction())
+    sent = []
+
+    class _Agent:
+        id = "n.Agent.test"
+
+    async def _get_agent(self):
+        return _Agent()
+
+    async def _send_whatsapp(self, recipient, message):
+        sent.append(("whatsapp", recipient))
+
+    async def _send_email(self, recipients, message, subject="Human handoff request"):
+        sent.append(("email", recipients))
+
+    monkeypatch.setattr(HandoffAction, "get_agent", _get_agent)
+    monkeypatch.setattr(HandoffAction, "_send_whatsapp", _send_whatsapp)
+    monkeypatch.setattr(HandoffAction, "_send_email", _send_email)
+    tools = {t.name: t for t in await action.get_tools()}
+
+    with bind_dispatch_context(_Ctx("o.User.abc", channel="default")):
+        r = await tools["handoff__consult"].call(
+            message="where do you deliver?", contact_declined=True
+        )
+
+    assert "WhatsApp number" in r.content
+    assert sent == []
+    assert await _pending_rows(action) == []
+
+
 async def test_consult_records_completed_event(monkeypatch):
     _install_aca_staff(monkeypatch)
     _install_pending_store(monkeypatch)
@@ -1776,6 +2019,9 @@ async def test_consult_records_completed_event(monkeypatch):
     visitor = _Ctx("o.User.abc", channel="default", conversation=_Conversation())
     visitor.interaction = interaction
     with bind_dispatch_context(visitor):
+        await action._update_context(
+            {"handoff_asked_interaction": "n.Interaction.previous"}
+        )
         looked = await tools["handoff__consult"].call(
             message="where do you deliver?", contact_declined=True
         )
@@ -2813,7 +3059,7 @@ async def test_save_answer_retains_pending_when_delivery_fails(monkeypatch):
 
     async def _reply(self, question, short_q, short_a):
         replies["count"] += 1
-        return replies["count"] > 1
+        return "delivered" if replies["count"] > 1 else "failed"
 
     monkeypatch.setattr(HandoffAction, "_append_and_ingest", _append)
     monkeypatch.setattr(HandoffAction, "_reply_to_customer", _reply)
