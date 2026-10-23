@@ -35,7 +35,9 @@ _FIELD_KEYS = frozenset(
         "phone_locale",
     }
 )
-_GAP_FILL_KEYS = frozenset({"batch", "priority", "qualification", "project_qualification"})
+_GAP_FILL_KEYS = frozenset(
+    {"batch", "priority", "qualification", "project_qualification"}
+)
 _SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 

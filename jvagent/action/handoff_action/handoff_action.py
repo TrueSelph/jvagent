@@ -114,8 +114,7 @@ def _contact_label(kind: str) -> str:
 # Gated on the owning skill/tool having run, so the condition is not true before any
 # tool call in the turn.
 _CUSTOMER_CANNOT_ANSWER_CONDITION = (
-    "the owning skill or tool ran and the answer is not in this turn's "
-    "tool results"
+    "the owning skill or tool ran and the answer is not in this turn's " "tool results"
 )
 
 

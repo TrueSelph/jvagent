@@ -243,7 +243,9 @@ def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
     fields = {k: v for k, v in profile_data.items() if not str(k).startswith("_")}
     qualification = [k for k in spec.gap_fill.qualification if not fields.get(k)]
     next_optional = qualification[0] if qualification and not missing else None
-    project_scope = bool(fields.get("project_description") or fields.get("project_location"))
+    project_scope = bool(
+        fields.get("project_description") or fields.get("project_location")
+    )
     project_next = None
     if project_scope and not missing and not next_optional:
         project_pending = [
