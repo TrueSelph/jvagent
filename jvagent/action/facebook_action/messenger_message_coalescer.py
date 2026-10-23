@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
+from jvspatial import create_task
+
 from jvagent.action.facebook_action.facebook_api import FacebookAPI
 
 logger = logging.getLogger(__name__)
@@ -123,9 +125,10 @@ class MessengerMessageCoalescer:
             old = buf.get("task")
             if old is not None:
                 old.cancel()
-            buf["task"] = asyncio.create_task(
+            buf["task"] = await create_task(
                 cls._flush_after_quiet(buffer_key, window_seconds, on_flush),
                 name=f"messenger_coalesce_{buffer_key[:40]}",
+                concurrent=True,
             )
 
     @classmethod

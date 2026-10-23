@@ -189,14 +189,24 @@ async def maybe_auto_sync(
 ) -> Dict[str, Any]:
     sync_cfg = spec.sync
     if not force and sync_cfg.mode == "manual":
+        logger.debug("leadgen sync: skipped (manual mode) user=%s", user_id)
         return {"status": "skipped", "reason": "manual mode"}
     if not force and sync_cfg.mode == "on_complete":
-        if record.get_missing_fields():
+        missing = record.get_missing_fields()
+        if missing:
+            logger.debug(
+                "leadgen sync: skipped (required fields incomplete: %s) user=%s",
+                missing,
+                user_id,
+            )
             return {"status": "skipped", "reason": "required fields incomplete"}
     if not force and sync_cfg.mode == "on_capture":
         if not sync_mod.sync_threshold_met(
             profile_data, sync_cfg.min_fields, sync_cfg.require_any
         ):
+            logger.debug(
+                "leadgen sync: skipped (sync thresholds not met) user=%s", user_id
+            )
             return {"status": "skipped", "reason": "sync thresholds not met"}
 
     destinations = list(sync_cfg.destinations)
@@ -204,6 +214,7 @@ async def maybe_auto_sync(
         destinations = list(action.sync_destinations)
 
     if not destinations:
+        logger.debug("leadgen sync: no destinations configured user=%s", user_id)
         return {"status": "no-op", "reason": "no destinations configured"}
 
     results, any_success = await sync_mod.sync_to_destinations(
@@ -213,7 +224,9 @@ async def maybe_auto_sync(
         updated = dict(profile_data)
         updated[sync_mod.DIGEST_KEY] = sync_mod.compute_digest(profile_data)
         await record.set_yaml(updated)
-    return {"status": "sync-complete" if any_success else "no-op", "results": results}
+    status = "sync-complete" if any_success else "no-op"
+    logger.debug("leadgen sync: status=%s results=%s user=%s", status, results, user_id)
+    return {"status": status, "results": results}
 
 
 def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
@@ -227,12 +240,29 @@ def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
     """
     profile_data = record.get_yaml() or {}
     missing = record.get_missing_fields()
+    fields = {k: v for k, v in profile_data.items() if not str(k).startswith("_")}
+    qualification = [k for k in spec.gap_fill.qualification if not fields.get(k)]
+    next_optional = qualification[0] if qualification and not missing else None
+    project_scope = bool(fields.get("project_description") or fields.get("project_location"))
+    project_next = None
+    if project_scope and not missing and not next_optional:
+        project_pending = [
+            k for k in spec.gap_fill.project_qualification if not fields.get(k)
+        ]
+        project_next = project_pending[0] if project_pending else None
     return {
-        "fields": {k: v for k, v in profile_data.items() if not str(k).startswith("_")},
+        "fields": fields,
         "missing_fields": missing,
         "field_reference": fields_reference(spec),
         "gap_fill_priority": spec.gap_fill.priority,
         "next_ask": next_ask(spec, missing),
+        # First still-empty always-relevant qualification field, once the
+        # required fields are complete. Null means none remains; it never by
+        # itself authorizes a closing.
+        "next_optional": next_optional,
+        # First still-empty project-only qualification field, exposed only when
+        # a project was described and the always-relevant set is complete.
+        "next_project_optional": project_next,
     }
 
 
@@ -281,8 +311,8 @@ async def handle_capture(
     if channel.lower() == "whatsapp":
         if "phone" not in raw_fields and user.user_id:
             raw_fields.setdefault("phone", user.user_id)
-        if not raw_fields.get("name") and getattr(user, "name", None):
-            raw_fields.setdefault("name", user.name)
+        if not raw_fields.get("full_name") and getattr(user, "name", None):
+            raw_fields.setdefault("full_name", user.name)
 
     validated, err = await validate_fields(raw_fields, spec)
     if err:

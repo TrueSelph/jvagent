@@ -14,6 +14,10 @@ configuration ruled out:
 - AccessControl labels — MCP tools dispatch through
   ``tool:delegate:{name}`` (ADR-0012 inv. 6); re-wrapping one without its label
   silently drops per-user gating.
+- Hidden skills — channel-blocked or identity-gated skills drop their
+  ``<skill>__*`` custom tools and declared ``requires_tools`` names.
+- Named tool permissions — ``permissions[channel].tools`` entries the sender
+  cannot call stay unreachable even if a skill later materializes them.
 
 :class:`ToolSurfacePolicy` is the single object carrying those rules, built once
 per turn from the orchestrator's (channel-resolved) config so assembly and
@@ -56,6 +60,9 @@ class ToolSurfacePolicy:
     frozenset therefore means "no MCP server is selected", not "unrestricted".
     ``agent`` / ``user_id`` / ``channel`` supply the AccessControl context used
     when wrapping MCP tools.
+    ``excluded_tool_names`` are exact names removed by skill gating or named
+    tool permissions; ``excluded_skill_prefixes`` drops ``<skill>__*`` custom
+    tools for hidden skills.
     """
 
     denied_patterns: Tuple[str, ...] = ()
@@ -64,6 +71,8 @@ class ToolSurfacePolicy:
     agent: Any = None
     user_id: Optional[str] = None
     channel: str = "default"
+    excluded_tool_names: FrozenSet[str] = frozenset()
+    excluded_skill_prefixes: Tuple[str, ...] = ()
 
     # -- exclusions ---------------------------------------------------------
 
@@ -85,9 +94,15 @@ class ToolSurfacePolicy:
         return out
 
     def is_denied(self, name: str) -> bool:
-        """True if *name* is hard-excluded by ``denied_tools``."""
+        """True if *name* is hard-excluded from this turn's surface."""
         if name in STEER_EXEMPT:
             return False
+        if name in self.excluded_tool_names:
+            return True
+        if self.excluded_skill_prefixes and name.startswith(
+            self.excluded_skill_prefixes
+        ):
+            return True
         return bool(self.denied_names([name]))
 
     def is_mcp_action(self, action: Any) -> bool:
@@ -125,7 +140,13 @@ class ToolSurfacePolicy:
 
     def wrap_action(self, tool: Any, *, visitor: Any = None) -> SkillTool:
         """Wrap a plain capability tool (visitor bound only when requested)."""
-        return wrap_action_tool(tool, visitor=visitor)
+        return wrap_action_tool(
+            tool,
+            visitor=visitor,
+            agent=self.agent,
+            user_id=self.user_id,
+            channel=self.channel,
+        )
 
     def materialize(
         self, tool: Any, *, action: Any, visitor: Any = None
