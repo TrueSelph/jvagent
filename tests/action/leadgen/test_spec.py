@@ -39,5 +39,5 @@ def test_load_example_leadgen_skill():
     spec = load_leadgen_spec_from_skill(EXAMPLE_SKILL)
     assert spec is not None
     assert spec.name == "example_leadgen"
-    assert "name" in spec.field_keys()
+    assert "full_name" in spec.field_keys()
     assert spec.sync.mode == "on_capture"

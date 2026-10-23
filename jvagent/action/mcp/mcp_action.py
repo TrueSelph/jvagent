@@ -266,7 +266,15 @@ class MCPAction(Action):
             "sandbox_mode, sandbox_user_scoped, sandbox_root, "
             "show_tools (default true; false keeps the server hosted but omits "
             "its tools from get_tools / the orchestrator), "
-            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers)."
+            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers), "
+            "auth (optional: {type: service_key, key_env, user_id/user_id_env, "
+            "workspace_id/workspace_id_env} — signs every streamable_http request "
+            "with Core's service-key envelope; or {type: oauth, account/account_env, "
+            "scopes (list) / scope (space-separated string) — the Core OAuth scopes "
+            "(e.g. integral:read, integral:propose, integral:execute) passed through "
+            "verbatim; scope_id/scope_id_env, issuer/issuer_env} — bears a stored "
+            "Integral OAuth 2.1 access token from the MCPs-panel connect flow; the "
+            "entry url is used for refresh discovery)."
         ),
     )
     model_action_type: str = attribute(
@@ -424,6 +432,87 @@ class MCPAction(Action):
                 )
                 args = a
             else:
+                auth_cfg = (
+                    raw.get("auth") if isinstance(raw.get("auth"), dict) else None
+                )
+                http_client = None
+                if (
+                    auth_cfg
+                    and str(auth_cfg.get("type") or "").strip().lower() == "service_key"
+                ):
+                    from jvagent.action.mcp.service_key_auth import (
+                        build_service_key_client,
+                    )
+
+                    try:
+                        http_client = build_service_key_client(
+                            service_key=str(auth_cfg.get("service_key") or ""),
+                            key_env=str(
+                                auth_cfg.get("key_env") or "INTEGRAL_SERVICE_KEY"
+                            ),
+                            user_id=str(auth_cfg.get("user_id") or ""),
+                            user_id_env=str(
+                                auth_cfg.get("user_id_env")
+                                or "INTEGRAL_SERVICE_USER_ID"
+                            ),
+                            workspace_id=str(auth_cfg.get("workspace_id") or ""),
+                            workspace_id_env=str(
+                                auth_cfg.get("workspace_id_env")
+                                or "INTEGRAL_WORKSPACE_ID"
+                            ),
+                            mcp_url=str(raw.get("url") or ""),
+                            connect_timeout=connect_timeout,
+                            read_timeout=call_timeout,
+                        )
+                    except ValueError as exc:
+                        logger.warning(
+                            "MCPAction: disabling server '%s' — service-key auth "
+                            "not configured: %s",
+                            name,
+                            exc,
+                        )
+                        continue
+                elif (
+                    auth_cfg
+                    and str(auth_cfg.get("type") or "").strip().lower() == "oauth"
+                ):
+                    from jvagent.action.mcp.integral_oauth_auth import (
+                        build_integral_oauth_client,
+                    )
+                    from jvagent.action.mcp_oauth.integral_provider import (
+                        resolve_scopes_from_auth,
+                    )
+
+                    resolved_scopes = resolve_scopes_from_auth(auth_cfg)
+                    try:
+                        http_client = build_integral_oauth_client(
+                            server_name=name,
+                            account=str(auth_cfg.get("account") or ""),
+                            account_env=str(
+                                auth_cfg.get("account_env") or "INTEGRAL_MCP_ACCOUNT"
+                            ),
+                            scope_id=str(auth_cfg.get("scope_id") or ""),
+                            scope_id_env=str(
+                                auth_cfg.get("scope_id_env")
+                                or "INTEGRAL_MCP_WORKSPACE_ID"
+                            ),
+                            scope=resolved_scopes,
+                            issuer=str(auth_cfg.get("issuer") or ""),
+                            issuer_env=str(
+                                auth_cfg.get("issuer_env") or "INTEGRAL_OAUTH_ISSUER"
+                            ),
+                            mcp_url=str(raw.get("url") or ""),
+                            connect_timeout=connect_timeout,
+                            read_timeout=call_timeout,
+                        )
+                    except ValueError as exc:
+                        logger.warning(
+                            "MCPAction: disabling server '%s' — integral oauth "
+                            "not configured: %s",
+                            name,
+                            exc,
+                        )
+                        continue
                 client = MCPClientWrapper(
                     transport,
                     command=command,
@@ -432,6 +521,7 @@ class MCPAction(Action):
                     url=url,
                     connect_timeout=connect_timeout,
                     call_timeout=call_timeout,
+                    http_client=http_client,
                 )
 
             ulock = asyncio.Lock()
@@ -461,6 +551,17 @@ class MCPAction(Action):
                 base_url=url,
                 show_tools=show_tools,
             )
+
+    async def ensure_servers(self) -> None:
+        """(Re)build the server registry if this instance has none.
+
+        ``self._servers_by_name`` is runtime-only PrivateAttr state. An action
+        instance loaded from storage (e.g. resolved via ``Action.get``) starts
+        with an empty registry even though the persisted ``self.servers`` config
+        is present, so callers must be able to rebuild it on demand.
+        """
+        if not self._servers_by_name:
+            await self._build_server_entries()
 
     async def _provision_sandboxes(self) -> None:
         from jvagent.core.app import App

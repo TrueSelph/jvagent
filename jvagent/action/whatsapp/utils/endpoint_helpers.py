@@ -6,6 +6,7 @@ messages, creating walkers, handling media, and managing interactions.
 
 import asyncio
 import base64
+import inspect
 import logging
 import re
 from typing import Any, Dict, Optional, Tuple
@@ -703,6 +704,41 @@ except Exception:  # pragma: no cover - jvspatial always present in runtime
     )
 
 
+async def _whatsapp_direct_all_group_messages(action_node: WhatsAppAction) -> bool:
+    """True when any enabled action opts in via ``whatsapp_direct_all_group_messages``."""
+    try:
+        agent = await action_node.get_agent()
+        if agent is None:
+            return False
+        mgr = await agent.get_actions_manager()
+        if mgr is None:
+            return False
+        actions = await mgr.get_all_actions(enabled_only=True)
+    except Exception:
+        logger.debug(
+            "whatsapp: could not enumerate actions for group-directed hook",
+            exc_info=True,
+        )
+        return False
+    for action in actions or []:
+        hook = getattr(action, "whatsapp_direct_all_group_messages", None)
+        if not callable(hook):
+            continue
+        try:
+            result = hook()
+            if inspect.isawaitable(result):
+                result = await result
+            if result:
+                return True
+        except Exception:
+            logger.debug(
+                "whatsapp: whatsapp_direct_all_group_messages hook failed on %s",
+                type(action).__name__,
+                exc_info=True,
+            )
+    return False
+
+
 async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
     """Determine if message is directed at the bot.
 
@@ -715,6 +751,10 @@ async def is_directed_message(action_node: WhatsAppAction, data: Any) -> bool:
     """
 
     if not data.isGroup:
+        return True
+
+    # An enabled action may opt in (e.g. silent group observer) — not only @mentions.
+    if await _whatsapp_direct_all_group_messages(action_node):
         return True
 
     # Extract body from message or caption

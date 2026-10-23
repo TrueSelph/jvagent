@@ -35,7 +35,9 @@ _FIELD_KEYS = frozenset(
         "phone_locale",
     }
 )
-_GAP_FILL_KEYS = frozenset({"batch", "priority"})
+_GAP_FILL_KEYS = frozenset(
+    {"batch", "priority", "qualification", "project_qualification"}
+)
 _SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 
@@ -57,12 +59,20 @@ class FieldDef:
 class GapFillDef:
     batch: bool = True
     priority: List[str] = field(default_factory=list)
+    # Optional fields that apply to every request cycle (e.g. role, industry,
+    # company size). capture_state names the first empty one as next_optional so
+    # the agent has a structured ask once the required fields are complete.
+    qualification: List[str] = field(default_factory=list)
+    # Qualification fields that apply only once a project is described (budget,
+    # timeline, pain points, contact preference). capture_state names the first
+    # empty one as next_project_optional after the always-relevant set is done.
+    project_qualification: List[str] = field(default_factory=list)
 
 
 @dataclass
 class SyncDef:
     mode: SyncMode = "on_capture"
-    min_fields: List[str] = field(default_factory=lambda: ["name"])
+    min_fields: List[str] = field(default_factory=lambda: ["full_name"])
     require_any: List[str] = field(default_factory=lambda: ["phone", "email"])
     destinations: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -151,6 +161,10 @@ def _parse_gap_fill(data: Any) -> GapFillDef:
     return GapFillDef(
         batch=bool(data.get("batch", True)),
         priority=[str(x) for x in (data.get("priority") or []) if x],
+        qualification=[str(x) for x in (data.get("qualification") or []) if x],
+        project_qualification=[
+            str(x) for x in (data.get("project_qualification") or []) if x
+        ],
     )
 
 
@@ -165,7 +179,7 @@ def _parse_sync(data: Any) -> SyncDef:
         raise ValueError("sync.mode must be on_capture, on_complete, or manual")
     return SyncDef(
         mode=mode,  # type: ignore[arg-type]
-        min_fields=[str(x) for x in (data.get("min_fields") or ["name"]) if x],
+        min_fields=[str(x) for x in (data.get("min_fields") or ["full_name"]) if x],
         require_any=[
             str(x) for x in (data.get("require_any") or ["phone", "email"]) if x
         ],
