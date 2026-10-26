@@ -10,6 +10,7 @@ import string
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
 import httpx
+from jvspatial import create_task
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
@@ -815,9 +816,9 @@ class FacebookAction(Action):
         """Register Messenger webhook after the HTTP server is listening.
 
         ``on_startup`` runs inside ``asyncio.run(pre_startup_bootstrap)``; a bare
-        ``asyncio.create_task`` there may fire before uvicorn is listening, causing
+        ``jvspatial.create_task`` there may fire before uvicorn is listening, causing
         Meta's verification GET to fail. Hook into the jvspatial server lifecycle
-        instead (same pattern as WhatsAppAction). Falls back to asyncio.create_task
+        instead (same pattern as WhatsAppAction). Falls back to jvspatial.create_task
         if lifecycle_manager is unavailable.
         """
         action_id = str(getattr(self, "id", "") or "")
@@ -874,9 +875,10 @@ class FacebookAction(Action):
                             timeout,
                         )
 
-                asyncio.create_task(
+                await create_task(
                     _run_after_startup(),
                     name="facebook_messenger_webhook_register",
+                    concurrent=True,
                 )
 
             server.lifecycle_manager.add_startup_hook(
@@ -911,6 +913,8 @@ class FacebookAction(Action):
                     await asyncio.sleep(delay_sec)
                 await self._run_startup_messenger_webhook_register()
 
+            # Sync method (a startup-hook scheduler): jvspatial's ``create_task``
+            # is async, so schedule the fallback on the running loop directly.
             _task = asyncio.create_task(_fallback_deferred())
             _BACKGROUND_TASKS.add(_task)
             _task.add_done_callback(_BACKGROUND_TASKS.discard)

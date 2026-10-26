@@ -36,6 +36,7 @@ import logging
 from typing import Any, AsyncIterator, Optional, Tuple
 
 from fastapi import Request, WebSocket, WebSocketDisconnect
+from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.exceptions import ValidationError
 
@@ -210,7 +211,7 @@ async def stt_stream_handler(websocket: WebSocket, agent_id: str) -> None:
                 with contextlib.suppress(asyncio.QueueFull):
                     queue.put_nowait(None)
 
-    reader_task = asyncio.create_task(ws_reader())
+    reader_task = await create_task(ws_reader(), name="stt_ws_reader", concurrent=True)
     try:
         await stt.stream_transcribe(audio_iter(), on_event)
         if overflow:

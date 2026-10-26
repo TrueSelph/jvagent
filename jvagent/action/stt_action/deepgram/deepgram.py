@@ -7,6 +7,7 @@ from typing import AsyncIterator, Awaitable, Callable, Dict, Optional, Union
 
 from deepgram import AsyncDeepgramClient
 from deepgram.core.api_error import ApiError
+from jvspatial import create_task
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 from pydantic import PrivateAttr
@@ -254,7 +255,9 @@ class DeepgramSTTAction(BaseSTTAction):
                         elif mtype == "UtteranceEnd":
                             await on_event({"type": "utterance_end"})
 
-                recv_task = asyncio.create_task(_receiver())
+                recv_task = await create_task(
+                    _receiver(), name="deepgram_receiver", concurrent=True
+                )
                 try:
                     async for chunk in audio_iter:
                         if chunk:

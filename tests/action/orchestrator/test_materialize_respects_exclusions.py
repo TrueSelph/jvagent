@@ -260,3 +260,115 @@ async def test_pruned_action_tool_is_still_materialized(
     assert "weather__current" in out_tools
     assert "weather__current" in out_visible
     assert await out_tools["weather__current"].run({}) == "ran weather__current"
+
+
+# --- 4. named tool permissions survive late materialization -----------------
+
+
+async def test_named_tool_permission_denial_survives_materialization(
+    make_orchestrator, make_visitor
+):
+    """permissions[channel].tools drop must not be undone by skill unlock."""
+    action = _PlainToolsAction(["secrets__list"])
+    access_control = MagicMock()
+    access_control.policy_applies = MagicMock(return_value=True)
+    access_control.tool_permission_names = MagicMock(return_value={"secrets__list"})
+    access_control.has_tool_access = AsyncMock(return_value=False)
+    agent = MagicMock()
+    agent.get_access_control_action = AsyncMock(return_value=access_control)
+
+    ex = make_orchestrator(actions=[action], agent=agent)
+    visitor = make_visitor(utterance="hi", user_id="customer")
+
+    tools, visible = await _assemble(ex, visitor)
+    assert "secrets__list" not in tools
+
+    doc = SkillDoc(
+        name="needs_secrets",
+        description="d",
+        body="SOP",
+        requires_tools=("secrets__list",),
+    )
+    out_tools, out_visible, _section = await ex._apply_unlocked_skill_surface(
+        doc, [action], visitor, tools, visible, []
+    )
+    assert "secrets__list" not in out_tools
+    assert "secrets__list" not in out_visible
+
+    # Even if a tool is forced back onto the map, dispatch still denies.
+    from jvagent.action.orchestrator.tools import wrap_action_tool
+
+    wrapped = wrap_action_tool(
+        action._tools[0],
+        agent=agent,
+        user_id="customer",
+        channel="web",
+    )
+    assert await wrapped.run({}) == "(access denied)"
+
+
+# --- 5. identity-hidden skill custom tools stay excluded --------------------
+
+
+async def test_identity_hidden_skill_prefix_cannot_be_materialized(
+    make_orchestrator, make_visitor, monkeypatch
+):
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+    action = _PlainToolsAction(["staff_only__private_data", "faq__search"])
+    access_control = MagicMock()
+    access_control.policy_applies = MagicMock(return_value=True)
+    access_control.get_user_groups = MagicMock(return_value={"staff": ["111"]})
+    agent = MagicMock()
+    agent.get_access_control_action = AsyncMock(return_value=access_control)
+
+    ex = make_orchestrator(actions=[action], agent=agent)
+    visitor = make_visitor(utterance="hi", user_id="999")
+
+    staff_doc = SkillDoc(
+        name="staff_only",
+        description="private",
+        body="SOP",
+        access_action="HandoffAction",
+        allowed_groups=("staff",),
+        requires_tools=("staff_only__private_data",),
+    )
+    faq_doc = SkillDoc(
+        name="faq",
+        description="public",
+        body="SOP",
+        requires_tools=("faq__search",),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_discover_skills",
+        lambda self, _agent: [staff_doc, faq_doc],
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_enforce_required_actions",
+        AsyncMock(side_effect=lambda d: d),
+    )
+    monkeypatch.setattr(
+        OrchestratorInteractAction,
+        "_resolve_action",
+        AsyncMock(return_value=access_control),
+    )
+
+    tools, visible = await _assemble(ex, visitor)
+    assert "staff_only__private_data" not in tools
+    assert "faq__search" in tools
+
+    leaky = SkillDoc(
+        name="leaky",
+        description="d",
+        body="SOP",
+        requires_tools=("staff_only__private_data",),
+    )
+    out_tools, out_visible, _section = await ex._apply_unlocked_skill_surface(
+        leaky, [action], visitor, tools, visible, []
+    )
+    assert "staff_only__private_data" not in out_tools
+    assert "staff_only__private_data" not in out_visible

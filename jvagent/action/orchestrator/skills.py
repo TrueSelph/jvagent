@@ -82,6 +82,12 @@ class SkillDoc:
     allowed_channels: Tuple[str, ...] = ()
     denied_channels: Tuple[str, ...] = ()
     deny_access_directive: str = ""
+    # AccessControlAction identity gate: ``access_action`` is the user_groups
+    # scope (action class name). ``allowed_groups`` / ``denied_groups`` decide
+    # whether the current user_id may see the skill. Empty = no identity gate.
+    access_action: str = ""
+    allowed_groups: Tuple[str, ...] = ()
+    denied_groups: Tuple[str, ...] = ()
     digest: str = ""
     metadata: dict = field(default_factory=dict)
 
@@ -219,6 +225,9 @@ def discover_skill_docs(
                 allowed_channels=tuple(bundle.get("allowed_channels") or ()),
                 denied_channels=tuple(bundle.get("denied_channels") or ()),
                 deny_access_directive=str(bundle.get("deny_access_directive") or ""),
+                access_action=str(bundle.get("access_action") or ""),
+                allowed_groups=tuple(bundle.get("allowed_groups") or ()),
+                denied_groups=tuple(bundle.get("denied_groups") or ()),
                 digest=str(bundle.get("digest") or ""),
                 metadata=bundle.get("metadata") or {},
             )

@@ -96,6 +96,30 @@ def wrap_action_tool(
 
         call_args = dict(args or {})
         reject_model_authority_fields(call_args)
+        from jvagent.action.orchestrator.access import (
+            is_named_tool_allowed,
+            named_tool_rule_applies,
+        )
+
+        # Decorated tools always check; any tool listed in
+        # ``permissions[channel].tools`` also checks so assembly-time drops
+        # cannot be bypassed after materialization re-adds the tool.
+        check_named = bool(getattr(tool, "requires_tool_permission", False))
+        if not check_named:
+            check_named = await named_tool_rule_applies(
+                agent, tool_name=name, channel=channel
+            )
+        if check_named:
+            if not await is_named_tool_allowed(
+                agent,
+                tool_name=name,
+                user_id=user_id,
+                channel=channel,
+            ):
+                return (
+                    getattr(tool, "permission_denied_message", None)
+                    or "(access denied)"
+                )
         if effective_access_label is not None and not await is_tool_allowed(
             agent, label=effective_access_label, user_id=user_id, channel=channel
         ):

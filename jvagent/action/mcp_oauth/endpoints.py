@@ -15,6 +15,21 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvagent.action.oauth.state import consume_oauth_state, create_oauth_state
 from jvagent.core.public_url import get_public_base_url
 
+from .integral_provider import (
+    INTEGRAL_LABEL,
+    INTEGRAL_SERVER,
+    INTEGRAL_SERVICE,
+    build_authorize_url,
+    discover_authorization_server,
+    ensure_registered_client,
+    exchange_authorization_code,
+    load_registered_client,
+    normalize_token_payload,
+    pkce_challenge,
+    pkce_verifier,
+    resolve_mcp_url,
+    resolve_scopes_from_auth,
+)
 from .mcp_oauth_action import (
     MCPOAuthAction,
     mcp_oauth_state_action_id,
@@ -146,6 +161,52 @@ async def _enabled_microsoft_oauth_services(
     return await _enabled_oauth_services(
         oauth_action, MICROSOFT_ACTION_SERVICES, label="Microsoft"
     )
+
+
+async def _integral_mcp_url() -> str:
+    """Resolve the configured Integral MCP server URL from MCPAction."""
+    try:
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
+        from jvagent.action.mcp.mcp_action import MCPAction
+
+        manager = get_database_manager()
+        db = manager.get_database()
+        ctx = GraphContext(db)
+        nodes = await ctx.find_nodes(MCPAction, {})
+        mcp = nodes[0] if nodes else None
+        for raw in getattr(mcp, "servers", None) or []:
+            if isinstance(raw, dict) and str(raw.get("name") or "") == INTEGRAL_SERVER:
+                url = str(raw.get("url") or "").strip()
+                if url:
+                    return url
+    except Exception as exc:
+        logger.debug("Failed to read MCPAction Integral url: %s", exc)
+    return resolve_mcp_url()
+
+
+async def _integral_auth_cfg() -> Dict[str, Any]:
+    """Return the ``integral_core`` server's ``auth`` block, if configured."""
+    try:
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+
+        from jvagent.action.mcp.mcp_action import MCPAction
+
+        manager = get_database_manager()
+        db = manager.get_database()
+        ctx = GraphContext(db)
+        nodes = await ctx.find_nodes(MCPAction, {})
+        mcp = nodes[0] if nodes else None
+        for raw in getattr(mcp, "servers", None) or []:
+            if isinstance(raw, dict) and str(raw.get("name") or "") == INTEGRAL_SERVER:
+                auth = raw.get("auth")
+                if isinstance(auth, dict):
+                    return auth
+    except Exception as exc:
+        logger.debug("Failed to read MCPAction Integral auth: %s", exc)
+    return {}
 
 
 def _microsoft_client() -> Dict[str, str]:
@@ -390,7 +451,11 @@ def _oauth_error_html(message: str, status_code: int = 400) -> HTMLResponse:
 )
 async def get_mcp_auth_status(server_name: str) -> Dict[str, Any]:
     """Return per-service connected emails for an MCP OAuth server."""
-    supported = server_name in (GOOGLE_WORKSPACE_SERVER, MICROSOFT_365_SERVER)
+    supported = server_name in (
+        GOOGLE_WORKSPACE_SERVER,
+        MICROSOFT_365_SERVER,
+        INTEGRAL_SERVER,
+    )
     bindings: Dict[str, Dict[str, str]] = {}
     if supported:
         action = await _get_mcp_oauth_action()
@@ -418,10 +483,15 @@ async def get_mcp_auth_url(
     if not action or not action.enabled:
         raise ResourceNotFoundError(message="MCPOAuthAction not enabled or found.")
 
-    if server_name not in (GOOGLE_WORKSPACE_SERVER, MICROSOFT_365_SERVER):
+    if server_name not in (
+        GOOGLE_WORKSPACE_SERVER,
+        MICROSOFT_365_SERVER,
+        INTEGRAL_SERVER,
+    ):
         return _oauth_error_html(
             f"OAuth is not supported for server '{server_name}'. "
-            f"Supported: '{GOOGLE_WORKSPACE_SERVER}', '{MICROSOFT_365_SERVER}'.",
+            f"Supported: '{GOOGLE_WORKSPACE_SERVER}', '{MICROSOFT_365_SERVER}', "
+            f"'{INTEGRAL_SERVER}'.",
             400,
         )
 
@@ -434,6 +504,10 @@ async def get_mcp_auth_url(
 
     if server_name == MICROSOFT_365_SERVER:
         return await _microsoft_auth_page(
+            action, account=account, service=service, redirect_uri=redirect_uri
+        )
+    if server_name == INTEGRAL_SERVER:
+        return await _integral_auth_page(
             action, account=account, service=service, redirect_uri=redirect_uri
         )
     return await _google_auth_page(
@@ -549,6 +623,66 @@ async def _microsoft_auth_page(
     )
 
 
+async def _integral_auth_page(
+    action: MCPOAuthAction,
+    *,
+    account: str,
+    service: str,
+    redirect_uri: str,
+) -> HTMLResponse:
+    """Build the Integral Core (OAuth 2.1 / DCR + PKCE) authorization page."""
+    scope = resolve_scopes_from_auth(await _integral_auth_cfg())
+    mcp_url = await _integral_mcp_url()
+    try:
+        client_id, meta = await ensure_registered_client(
+            server_name=INTEGRAL_SERVER,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            mcp_url=mcp_url,
+        )
+    except Exception as exc:
+        logger.error("Integral OAuth client registration failed: %s", exc)
+        return _oauth_error_html(str(exc), 400)
+
+    verifier = pkce_verifier()
+    challenge = pkce_challenge(verifier)
+    state_token = await create_oauth_state(
+        action_id=mcp_oauth_state_action_id(account, service),
+        provider="mcp_integral",
+        code_verifier=verifier,
+        redirect_uri=redirect_uri,
+    )
+    try:
+        auth_url = build_authorize_url(
+            meta,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state_token,
+            code_challenge=challenge,
+            scope=scope,
+        )
+    except Exception as exc:
+        logger.error("Integral authorize URL build failed: %s", exc)
+        return _oauth_error_html(str(exc), 400)
+
+    issuer = str(meta.get("issuer") or "").strip()
+    access_copy = (
+        "Connect this agent to Integral Core. You'll be asked to sign in to "
+        "Integral and approve access, then the agent can file leads and query "
+        "entries on your behalf."
+    )
+    if issuer:
+        access_copy = f"{access_copy} (Authorization server: {issuer})"
+    return await _grant_html(
+        action,
+        title="Integral Core Authorization",
+        heading="Connect to Integral Core",
+        access_copy=access_copy,
+        button_label="Authorize with Integral",
+        auth_url=auth_url,
+    )
+
+
 async def _grant_html(
     action: MCPOAuthAction,
     *,
@@ -610,6 +744,8 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
         provider = "mcp_google"
     elif server_name == MICROSOFT_365_SERVER:
         provider = "mcp_microsoft"
+    elif server_name == INTEGRAL_SERVER:
+        provider = "mcp_integral"
     else:
         return _oauth_error_html(
             f"OAuth is not supported for server '{server_name}'.",
@@ -625,6 +761,10 @@ async def mcp_oauth_callback(server_name: str, code: str, state: str) -> HTMLRes
 
     if server_name == MICROSOFT_365_SERVER:
         result = await _exchange_microsoft_code(
+            action, code, record, account_name, service=service
+        )
+    elif server_name == INTEGRAL_SERVER:
+        result = await _exchange_integral_code(
             action, code, record, account_name, service=service
         )
     else:
@@ -696,6 +836,13 @@ async def _exchange_google_code(
     )
     scopes = granted_scopes_from_token_response(tokens, fallback_scopes)
 
+    # Persist the access-token expiry. Without it google-auth's
+    # ``from_authorized_user_info`` defaults expiry to ``utcnow() - 3:45`` and
+    # every freshly authorized token is treated as already expired, forcing an
+    # immediate refresh on first use. Mirror the Microsoft branch below.
+    expires_in = int(tokens.get("expires_in") or 3600)
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
+
     payload = {
         "type": "authorized_user",
         "client_id": creds["client_id"],
@@ -705,6 +852,7 @@ async def _exchange_google_code(
         "token_uri": "https://oauth2.googleapis.com/token",
         "scopes": scopes,
         "account_alias": account_name,
+        "expiry": expiry.isoformat(),
     }
     if service:
         payload["mcp_services"] = [service]
@@ -848,3 +996,56 @@ async def _exchange_microsoft_code(
         else "Microsoft 365"
     )
     return store_account, label
+
+
+async def _exchange_integral_code(
+    action: MCPOAuthAction,
+    code: str,
+    record: Any,
+    account_name: str,
+    service: str = "",
+) -> HTMLResponse | tuple[str, str]:
+    """Exchange an Integral authorization code (public client + PKCE)."""
+    mcp_url = await _integral_mcp_url()
+    try:
+        meta = await discover_authorization_server(mcp_url=mcp_url)
+    except Exception as exc:
+        return _oauth_error_html(f"Integral OAuth discovery failed: {exc}", 400)
+
+    client = await load_registered_client(INTEGRAL_SERVER)
+    if not client or not client.client_id:
+        return _oauth_error_html(
+            "No registered Integral OAuth client. Restart the connect flow from "
+            "the MCPs panel.",
+            400,
+        )
+
+    logger.info("Exchanging Integral auth code for tokens (account: %s)", account_name)
+    try:
+        tokens = await exchange_authorization_code(
+            meta,
+            client_id=client.client_id,
+            code=code,
+            code_verifier=record.code_verifier or "",
+            redirect_uri=record.redirect_uri,
+        )
+    except Exception as exc:
+        logger.error("Integral token exchange failed: %s", exc)
+        return _oauth_error_html(str(exc), 400)
+
+    store_account = (account_name or INTEGRAL_SERVICE).strip() or INTEGRAL_SERVICE
+    payload = normalize_token_payload(
+        tokens,
+        client_id=client.client_id,
+        token_uri=str(meta.get("token_endpoint") or ""),
+        account_name=store_account,
+        scope=resolve_scopes_from_auth(await _integral_auth_cfg()),
+    )
+    if service:
+        payload["mcp_services"] = [service]
+
+    # Store the token flat (not nested under ``service_tokens``) so the bearer
+    # auth client can read ``access_token`` directly.  ``mcp_services`` still
+    # drives the MCPs-panel binding display.
+    await action.save_oauth_token(INTEGRAL_SERVER, store_account, payload)
+    return store_account, INTEGRAL_LABEL
