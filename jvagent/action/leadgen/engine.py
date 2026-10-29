@@ -139,19 +139,43 @@ async def validate_fields(
     return validated, None
 
 
-def next_ask(spec: LeadGenSpec, missing_fields: List[str]) -> Optional[str]:
-    """The single next contact field to ask for, in gap-fill priority order.
+def _field_filled(fields: Dict[str, Any], key: str) -> bool:
+    val = fields.get(key)
+    if val is None:
+        return False
+    return bool(str(val).strip())
 
-    Returns the highest-priority still-missing field so the model has an explicit
-    target for the standing gap-fill ask, or ``None`` when nothing is missing.
-    """
-    if not missing_fields:
-        return None
-    missing = set(missing_fields)
-    for key in spec.gap_fill.priority:
-        if key in missing:
-            return key
-    return missing_fields[0]
+
+def _relevant_when_met(fields: Dict[str, Any], fdef: Any) -> bool:
+    """True when the field has no gate, or any listed key is already filled."""
+    gate = getattr(fdef, "relevant_when", None) or None
+    if not gate:
+        return True
+    any_present = gate.get("any_present") or []
+    if not any_present:
+        return True
+    return any(_field_filled(fields, k) for k in any_present)
+
+
+def open_fields(
+    record_fields: Dict[str, Any], spec: LeadGenSpec
+) -> List[Dict[str, Any]]:
+    """Empty declared fields that pass ``relevant_when`` (required + optional)."""
+    out: List[Dict[str, Any]] = []
+    for fdef in spec.fields:
+        if _field_filled(record_fields, fdef.key):
+            continue
+        if not _relevant_when_met(record_fields, fdef):
+            continue
+        entry: Dict[str, Any] = {
+            "key": fdef.key,
+            "guidance": fdef.guidance,
+            "required": fdef.required,
+        }
+        if fdef.relevant_when:
+            entry["relevant_when"] = dict(fdef.relevant_when)
+        out.append(entry)
+    return out
 
 
 def apply_merge_fields(
@@ -237,35 +261,59 @@ def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
     matter whether this particular call wrote anything. Built here rather than
     inline so the two exits from ``handle_capture`` cannot drift apart, which
     is the whole point of returning the merged record.
+
+    No server-picked next-field pointer: the model chooses from
+    ``missing_fields`` / ``open_fields`` and stamps ``ask_next`` on capture.
     """
     profile_data = record.get_yaml() or {}
     missing = record.get_missing_fields()
     fields = {k: v for k, v in profile_data.items() if not str(k).startswith("_")}
-    qualification = [k for k in spec.gap_fill.qualification if not fields.get(k)]
-    next_optional = qualification[0] if qualification and not missing else None
-    project_scope = bool(
-        fields.get("project_description") or fields.get("project_location")
-    )
-    project_next = None
-    if project_scope and not missing and not next_optional:
-        project_pending = [
-            k for k in spec.gap_fill.project_qualification if not fields.get(k)
-        ]
-        project_next = project_pending[0] if project_pending else None
     return {
         "fields": fields,
         "missing_fields": missing,
         "field_reference": fields_reference(spec),
         "gap_fill_priority": spec.gap_fill.priority,
-        "next_ask": next_ask(spec, missing),
-        # First still-empty always-relevant qualification field, once the
-        # required fields are complete. Null means none remains; it never by
-        # itself authorizes a closing.
-        "next_optional": next_optional,
-        # First still-empty project-only qualification field, exposed only when
-        # a project was described and the always-relevant set is complete.
-        "next_project_optional": project_next,
+        "open_fields": open_fields(fields, spec),
     }
+
+
+async def _set_pending_activation(
+    visitor: Any,
+    *,
+    ask_next: Optional[str],
+    spec: LeadGenSpec,
+) -> None:
+    """Persist the field the model will ask next, for the orchestrator guard.
+
+    Only ``ask_next`` stamps pending activation — there is no server-chosen
+    fallback. The action names its own skill so core never hardcodes a domain.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    if conversation is None or not hasattr(conversation, "update_context"):
+        return
+    field = str(ask_next or "").strip()
+    if field and field in set(spec.field_keys()):
+        payload: Optional[Dict[str, str]] = {
+            "skill": spec.name or "leadgen",
+            "tool": "leadgen__capture",
+            "field": field,
+        }
+    else:
+        payload = None
+    try:
+        await conversation.update_context({"pending_activation": payload})
+    except Exception as exc:  # noqa: BLE001 - a guard write must not fail capture
+        logger.warning("leadgen: pending activation save failed: %s", exc)
+
+
+def _pop_ask_next(raw_fields: Dict[str, Any], kwargs: Dict[str, Any]) -> Optional[str]:
+    """Pull ask_next from kwargs or the fields map (not a lead profile key)."""
+    ask_next = kwargs.pop("ask_next", None)
+    if ask_next is None and "ask_next" in raw_fields:
+        ask_next = raw_fields.pop("ask_next")
+    if ask_next is None:
+        return None
+    return str(ask_next).strip() or None
 
 
 async def handle_capture(
@@ -273,6 +321,7 @@ async def handle_capture(
     fields: Optional[Dict[str, Any]] = None,
     skill: Optional[str] = None,
     visitor: Any = None,
+    ask_next: Optional[str] = None,
     **kwargs: Any,
 ) -> str:
     user, interaction = await get_user_and_interaction(visitor)
@@ -280,13 +329,44 @@ async def handle_capture(
         return json.dumps({"error": "no active interaction"})
 
     raw_fields: Dict[str, Any] = dict(fields or {})
+    # ask_next may arrive as a top-level kwarg or inside fields/kwargs.
+    if ask_next is None:
+        ask_next = _pop_ask_next(raw_fields, kwargs)
+    else:
+        kwargs.pop("ask_next", None)
+        raw_fields.pop("ask_next", None)
     raw_fields.update(
-        {k: v for k, v in kwargs.items() if k not in ("visitor", "skill")}
+        {k: v for k, v in kwargs.items() if k not in ("visitor", "skill", "ask_next")}
     )
-    if not raw_fields:
-        return json.dumps({"status": "no-op", "reason": "no fields provided"})
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
+    if ask_next and ask_next not in set(spec.field_keys()):
+        return json.dumps(
+            {
+                "error": f"ask_next '{ask_next}' is not a declared leadgen field",
+                "status": "invalid-argument",
+            }
+        )
+
+    if not raw_fields and not ask_next:
+        return json.dumps({"status": "no-op", "reason": "no fields provided"})
+
+    if not raw_fields and ask_next:
+        # Stamp-only call: model is about to ask without new values this turn.
+        record = await LeadRecord.get_or_create_for_user(
+            user, required_fields=spec.get_required_fields() or None
+        )
+        state = capture_state(record, spec)
+        await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
+        return json.dumps(
+            {
+                "status": "pending",
+                "fields_saved": [],
+                "ask_next": ask_next,
+                **state,
+            }
+        )
+
     raw_fields = canonicalize_fields(raw_fields, spec)
 
     dedup_key = (user.user_id, json.dumps(raw_fields, sort_keys=True, default=str))
@@ -300,11 +380,14 @@ async def handle_capture(
         record = await LeadRecord.get_or_create_for_user(
             user, required_fields=spec.get_required_fields() or None
         )
+        state = capture_state(record, spec)
+        await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
         return json.dumps(
             {
                 "status": "deduplicated",
                 "fields_saved": [],
-                **capture_state(record, spec),
+                "ask_next": ask_next,
+                **state,
             }
         )
     _LAST_CAPTURE[dedup_key] = now
@@ -350,11 +433,14 @@ async def handle_capture(
     validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
     changed = await record.update_yaml(validated)
 
+    state = capture_state(record, spec)
     result: Dict[str, Any] = {
         "status": "updated" if changed else "no-op",
         "fields_saved": list(validated.keys()) if changed else [],
-        **capture_state(record, spec),
+        "ask_next": ask_next,
+        **state,
     }
+    await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
 
     if changed:
         await record.append_to_section(
@@ -405,16 +491,12 @@ async def handle_retrieve(
     )
     profile_data = record.get_yaml() or {}
     clean = {k: v for k, v in profile_data.items() if not k.startswith("_")}
+    state = capture_state(record, spec)
 
-    missing = record.get_missing_fields()
     return json.dumps(
         {
             "status": "ok" if clean else "empty_profile",
-            "fields": clean,
-            "missing_fields": missing,
-            "field_reference": fields_reference(spec),
-            "gap_fill_priority": spec.gap_fill.priority,
-            "next_ask": next_ask(spec, missing),
+            **state,
             "score": record.score,
             "enrichment_status": record.enrichment_status,
         }

@@ -12,7 +12,6 @@ from jvagent.action.leadgen.engine import (
     canonicalize_fields,
     handle_capture,
     merge_spec_with_action_defaults,
-    next_ask,
 )
 from jvagent.action.leadgen.leadgen_action import LeadGenAction
 from jvagent.action.leadgen.spec import FieldDef, GapFillDef, LeadGenSpec, SyncDef
@@ -33,28 +32,6 @@ def leadgen_action_with_spec():
     )
     action._registry._specs[spec.name] = spec
     return action, spec
-
-
-def test_next_ask_follows_priority_order():
-    spec = LeadGenSpec(
-        name="t",
-        fields=[FieldDef(key="name"), FieldDef(key="phone"), FieldDef(key="email")],
-        gap_fill=GapFillDef(priority=["name", "phone", "email"]),
-    )
-    # phone outranks email in priority
-    assert next_ask(spec, ["email", "phone"]) == "phone"
-    assert next_ask(spec, ["email"]) == "email"
-
-
-def test_next_ask_none_when_complete():
-    spec = LeadGenSpec(name="t", gap_fill=GapFillDef(priority=["name"]))
-    assert next_ask(spec, []) is None
-
-
-def test_next_ask_falls_back_to_first_missing():
-    spec = LeadGenSpec(name="t", gap_fill=GapFillDef(priority=["name"]))
-    # field not in priority list → fall back to first missing
-    assert next_ask(spec, ["budget"]) == "budget"
 
 
 def test_action_sync_config_applies_when_skill_has_none():
@@ -239,7 +216,10 @@ async def test_capture_result_includes_merged_fields():
         "organization",
     }
     assert second["missing_fields"] == []
-    assert second["next_ask"] is None
+    assert "next_ask" not in second
+    assert "next_optional" not in second
+    assert "next_project_optional" not in second
+    assert isinstance(second["open_fields"], list)
     assert second["fields"]["interested_products"] == products
     assert second["fields"]["name"] == "Tharick Jairam"
     assert second["fields"]["email"] == "tharick@example.com"
@@ -305,4 +285,5 @@ async def test_deduplicated_capture_still_returns_the_record():
     assert repeated["fields"] == written["fields"]
     assert repeated["fields"]["interested_products"] == "mesh"
     assert repeated["missing_fields"] == []
-    assert repeated["next_ask"] is None
+    assert "next_ask" not in repeated
+    assert "open_fields" in repeated

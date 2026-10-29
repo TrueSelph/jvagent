@@ -10,6 +10,12 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Fixed
 
+- **TTS media URLs work with authentication enabled.** `as_url=True` now returns
+  a signed proxy URL (`/p/{code}`) instead of the auth-protected
+  `/api/files/...` route, so WhatsApp/Messenger adapters and LLM providers can
+  fetch voice notes anonymously. Requires `JVSPATIAL_PROXY_ENABLED=true`; the
+  action logs a warning and falls back to the direct file route when proxy URLs
+  are unavailable.
 - **Handoff mode prompts corrected.** The consult/transfer trigger is now gated
   on the owning skill/tool having run ("after the owning skill or tool ran, the
   answer is not in this turn's tool results"), so it cannot fire before the first

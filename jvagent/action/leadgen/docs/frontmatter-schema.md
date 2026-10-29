@@ -25,8 +25,13 @@ leadgen:
       phone_locale: E164   # or GY
     - key: quote_items
       merge: true
+    - key: project_budget
+      guidance: Stated budget once a project is described
+      relevant_when:
+        any_present: [project_description]
   gap_fill:
     batch: true
+    # Soft preference order only — the model chooses from open_fields / missing_fields
     priority: [full_name, phone, email, organization]
   sync:
     mode: on_capture       # on_capture | on_complete | manual
@@ -57,13 +62,21 @@ allowed-tools: []
 |-----|------|-------------|
 | `key` | string | Canonical field name (required) |
 | `guidance` | string | Model-facing description |
-| `required` | bool | Included in gap-fill / on_complete sync |
+| `required` | bool | Included in `missing_fields` / on_complete sync |
 | `aliases` | list | Alternate names for capture |
 | `validator` | string | Built-in: `email`, `phone`, `phone_e164`, `phone_gy`, `person_name` |
 | `validator_args` | map | Passed to validator |
 | `decline_value` | string | Value when user refuses (stops re-asking) |
 | `merge` | bool | Comma-merge list fields on update |
 | `phone_locale` | string | `GY` forces Guyana normalization |
+| `relevant_when` | map | Optional gate: `{ any_present: [keys] }` — empty field only appears in `open_fields` when at least one listed key is filled |
+
+### Capture catalog (no forced next field)
+
+Tool results expose `missing_fields`, `open_fields` (empty fields that pass
+`relevant_when`, including required), `field_reference`, and soft
+`gap_fill_priority`. The model chooses what to ask next and stamps it with
+`ask_next` on `leadgen__capture`. There is no `next_ask` / `next_optional` pointer.
 
 ## Sync template tokens
 

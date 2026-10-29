@@ -13,7 +13,7 @@ allowed-tools:
 
 # Standard Leadgen Procedure
 
-Capturing the visitor's contact details is a **primary, standing goal of every conversation** — treat it as a staple, not an afterthought. Keep genuinely helping the visitor, and in the same breath keep steering toward their **name** and a way to reach them (**email or phone**). The server validates, persists, and auto-syncs when configured — you decide **when** to capture, not how storage works ([thin harness](docs/thin-harness.md)).
+Capturing the visitor's contact details is a **primary, standing goal of every conversation** — treat it as a staple, not an afterthought. Keep genuinely helping the visitor, and in the same breath keep steering toward their **name** and a way to reach them (**email or phone**). The server validates, persists, and auto-syncs when configured — you decide **when** to capture and **which** open field to ask next ([thin harness](docs/thin-harness.md)).
 
 ## When to call `leadgen__capture`
 
@@ -23,7 +23,9 @@ Call whenever the user's **latest message** provides or refuses lead information
 - **Refusals** — use `decline_value` from `field_reference` (e.g. `email="N/A"`, `organization="Personal"`)
 - Corrections — capture updated values in the same turn
 
-Do **not** call with empty arguments or when nothing changed.
+Whenever your reply will **ask** for a field, also pass `ask_next=<field_key>` (chosen from `open_fields` / `missing_fields`) so the next bare answer maps to that field. You may call with only `ask_next` when stamping an ask without new values.
+
+Do **not** call with empty arguments when nothing changed and you are not asking a field.
 
 ## When to call `leadgen__retrieve`
 
@@ -31,7 +33,7 @@ Call mid-conversation, once a request cycle is already underway, when you need
 profile context and the visitor supplied no new lead data this turn:
 
 - Before a gap-fill question, after the new request cycle has already been opened with `leadgen__prepare_request`
-- After `leadgen__capture` in the same turn (retrieve is optional — capture response includes `missing_fields`)
+- After `leadgen__capture` in the same turn (retrieve is optional — capture response includes `missing_fields` and `open_fields`)
 
 Do **not** call `leadgen__retrieve` to open a turn. When the visitor returns
 after a sync — including a bare greeting like "hey" with no product named — the
@@ -39,14 +41,17 @@ next request cycle starts with `leadgen__prepare_request`, not retrieve.
 Retrieve loads the now-cleared live record and would re-ask for contact details
 the visitor already gave.
 
-## Gap-fill — ask on every turn until captured
+## Gap-fill — you choose the next ask
 
-Contact capture is a staple: **after answering the visitor's question or request, proactively ask for the next missing field** from `gap_fill_priority` — do not wait for them to volunteer it. On every turn where required fields are still missing, close your reply with a concrete ask for the next one (**name** first, then **email or phone**).
+Contact capture is a staple: **after answering the visitor's question or request, proactively ask for a still-open field**. The tool does **not** name a single next field.
 
-- **Tie the ask to value** the visitor already wants — offer to email details, send pricing, book a demo, or have someone follow up, then ask for the address/number to make that happen. ("Happy to send the full comparison over — what's the best email for it?")
+- Read `missing_fields` (empty required keys), `open_fields` (empty relevant fields with guidance), `field_reference`, and soft `gap_fill_priority`.
+- **You decide** which one key to ask next from that catalog (prefer contact requireds while `missing_fields` is non-empty; then other open fields the skill cares about).
+- Pass `ask_next` with that key on the capture that precedes or accompanies your question.
+- **Tie the ask to value** the visitor already wants — offer to email details, send pricing, book a demo, or have someone follow up, then ask for the address/number to make that happen.
 - **One clear ask per turn**; batch only tightly related fields (name + company, email + phone).
-- **Persistent, not pushy** — keep it warm and reason-backed. If the visitor **declines or deflects a field**, capture its `decline_value` (e.g. `email="N/A"`), stop asking for *that* field, and move to the next priority — never badger a refused field.
-- Use `missing_fields` and `gap_fill_priority` from tool responses. Never expose raw field keys or YAML to the user.
+- **Persistent, not pushy** — keep it warm and reason-backed. If the visitor **declines or deflects a field**, capture its `decline_value` (e.g. `email="N/A"`), stop asking for *that* field, and pick another from `open_fields`.
+- Never expose raw field keys or YAML to the user.
 
 ## Sync
 

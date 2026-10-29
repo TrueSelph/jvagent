@@ -33,11 +33,11 @@ _FIELD_KEYS = frozenset(
         "decline_value",
         "merge",
         "phone_locale",
+        "relevant_when",
     }
 )
-_GAP_FILL_KEYS = frozenset(
-    {"batch", "priority", "qualification", "project_qualification"}
-)
+_GAP_FILL_KEYS = frozenset({"batch", "priority"})
+_RELEVANT_WHEN_KEYS = frozenset({"any_present"})
 _SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 
@@ -53,20 +53,17 @@ class FieldDef:
     decline_value: Optional[str] = None
     merge: bool = False
     phone_locale: str = ""
+    # When set, an empty field only appears in open_fields if at least one of
+    # ``any_present`` is already filled. Absent = always eligible when empty.
+    relevant_when: Optional[Dict[str, List[str]]] = None
 
 
 @dataclass
 class GapFillDef:
     batch: bool = True
+    # Soft preference order for the model (gap_fill_priority in tool results).
+    # Not a forced next-field pointer — the LLM chooses from open_fields.
     priority: List[str] = field(default_factory=list)
-    # Optional fields that apply to every request cycle (e.g. role, industry,
-    # company size). capture_state names the first empty one as next_optional so
-    # the agent has a structured ask once the required fields are complete.
-    qualification: List[str] = field(default_factory=list)
-    # Qualification fields that apply only once a project is described (budget,
-    # timeline, pain points, contact preference). capture_state names the first
-    # empty one as next_project_optional after the always-relevant set is done.
-    project_qualification: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -130,8 +127,22 @@ def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
         }
         if f.decline_value is not None:
             entry["decline_value"] = f.decline_value
+        if f.relevant_when:
+            entry["relevant_when"] = dict(f.relevant_when)
         out.append(entry)
     return out
+
+
+def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, List[str]]]:
+    if data is None or data == "":
+        return None
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must be a mapping")
+    reject_unknown_keys(data, _RELEVANT_WHEN_KEYS, path=path)
+    any_present = [str(x) for x in (data.get("any_present") or []) if x]
+    if not any_present:
+        return None
+    return {"any_present": any_present}
 
 
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
@@ -149,6 +160,9 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         decline_value=data.get("decline_value"),
         merge=bool(data.get("merge", False)),
         phone_locale=str(data.get("phone_locale", "") or ""),
+        relevant_when=_parse_relevant_when(
+            data.get("relevant_when"), path=f"{path}.relevant_when"
+        ),
     )
 
 
@@ -161,10 +175,6 @@ def _parse_gap_fill(data: Any) -> GapFillDef:
     return GapFillDef(
         batch=bool(data.get("batch", True)),
         priority=[str(x) for x in (data.get("priority") or []) if x],
-        qualification=[str(x) for x in (data.get("qualification") or []) if x],
-        project_qualification=[
-            str(x) for x in (data.get("project_qualification") or []) if x
-        ],
     )
 
 

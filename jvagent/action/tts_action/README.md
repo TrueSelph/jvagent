@@ -43,9 +43,11 @@ audio_bytes = await tts_action.invoke("Hello, world!")
 # Generate speech as base64 (for inline use, e.g. web players)
 audio_base64 = await tts_action.invoke("Hello, world!", as_base64=True)
 
-# Generate speech as file URL (for adapters that fetch and send the file)
+# Generate speech as file URL (signed proxy URL for adapters that fetch and send the file)
 audio_url = await tts_action.invoke("Hello, world!", as_url=True)
 ```
+
+`as_url=True` stores the audio and returns a signed proxy URL (`{JVSPATIAL_PROXY_PREFIX}/{code}`, default `/p/{code}`). The proxy route is anonymously readable and expires after one hour, so adapters such as WhatsApp and Messenger can fetch the media even when authentication is enabled. Set `JVSPATIAL_PROXY_ENABLED=true`; without it the action falls back to the auth-protected `/api/files/...` route and logs a warning.
 
 ### Voice and Model Management
 
@@ -87,7 +89,7 @@ Synthesize speech from text.
 ```json
 {
   "success": true,
-  "audio": "https://example.com/audio.mp3",
+  "audio": "https://example.com/p/abc123",
   "format": "url",
   "provider": "ElevenLabsTTSAction",
   "model": "eleven_turbo_v2",
@@ -107,7 +109,7 @@ Check TTS service health.
 ## API Methods
 
 ### `invoke(text: str, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
-Convert text to speech. Use `as_url=True` when output will be sent to adapters (e.g. WhatsApp). Use `as_base64=True` for inline audio (e.g. web players).
+Convert text to speech. Use `as_url=True` when output will be sent to adapters (e.g. WhatsApp); it returns a signed proxy URL that expires after one hour. Use `as_base64=True` for inline audio (e.g. web players).
 
 ### `get_audio_as(audio: bytes, as_base64: bool = False, as_url: bool = False) -> Optional[Union[str, bytes]]`
 Convert audio bytes to different formats.
@@ -128,3 +130,4 @@ Perform health check for the TTS service.
 ## Environment Variables
 
 - `ELEVENLABS_API_KEY`: Your ElevenLabs API key
+- `JVSPATIAL_PROXY_ENABLED`: Set to `true` so `as_url=True` returns an anonymously fetchable proxy URL when authentication is enabled

@@ -23,8 +23,8 @@ return visits).
 
 | Tool | Purpose |
 |------|---------|
-| `leadgen__capture` | Save partial lead fields; returns `missing_fields` + `next_ask` + `gap_fill_priority`; auto-syncs when thresholds met |
-| `leadgen__retrieve` | Load profile + `missing_fields` + `next_ask` + `field_reference` |
+| `leadgen__capture` | Save partial lead fields; returns `missing_fields` + `open_fields` + `gap_fill_priority`; pass `ask_next` when asking; auto-syncs when thresholds met |
+| `leadgen__retrieve` | Load profile + `missing_fields` + `open_fields` + `field_reference` |
 | `leadgen__status` | Progress snapshot |
 | `leadgen__sync` | Manual sync (`sync_mode: manual`) |
 
