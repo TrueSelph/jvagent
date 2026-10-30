@@ -58,14 +58,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
     async def _capture(
         fields: Optional[Dict[str, str]] = None,
         skill: Optional[str] = None,
-        ask_next: Optional[str] = None,
         visitor: Any = None,
         **kwargs: Any,
     ) -> str:
         return await action._handle_capture(
             fields=fields,
             skill=skill,
-            ask_next=ask_next,
             visitor=visitor,
             **kwargs,
         )
@@ -88,31 +86,19 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         "type": "string",
         "description": "Optional leadgen skill name.",
     }
-    capture_props["ask_next"] = {
-        "type": "string",
-        "description": (
-            "Field key you will ask for in this reply. Stamps pending_activation "
-            "so the next bare answer is captured into that field. Required whenever "
-            "your reply asks for a lead field. Choose from open_fields / missing_fields "
-            "— there is no server-picked next field."
-        ),
-    }
 
     return [
         Tool(
             name="leadgen__capture",
             description=(
-                "Save or update lead fields from the latest user message. "
-                "Call when the user provides personal, business, or interest information. "
-                "Use decline values from field_reference when the user refuses a field "
-                "(e.g. email='N/A'). Auto-syncs to configured destinations when thresholds "
-                "are met — do not call leadgen__sync in on_capture mode. "
-                "STANDING GOAL: collect contact details while helping. The response returns "
-                "missing_fields (empty required keys), open_fields (empty relevant fields "
-                "with guidance — required and optional), field_reference, and soft "
-                "gap_fill_priority. YOU choose which field to ask next from that catalog; "
-                "there is no next_ask pointer. Whenever your reply will ask for a field, "
-                "pass ask_next=<that key> so the next bare answer maps correctly."
+                "Save or update lead fields from the latest user message. Call when the "
+                "message provides or refuses lead information; send every new value in one "
+                "call; use the field's decline_value from field_reference for a refusal. "
+                "Auto-syncs to configured destinations when thresholds are met — do not call "
+                "leadgen__sync in on_capture mode. The result carries missing_fields, "
+                "optional_fields, open_fields, field_reference, gap_fill_priority, and "
+                "validation_errors. You choose the next field from the catalogue; ask required "
+                "first, optional only per its guidance; a capture is not a close."
             ),
             parameters_schema={
                 "type": "object",
@@ -124,7 +110,7 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__retrieve",
             description=(
-                "Load the current lead profile, missing_fields, open_fields, "
+                "Load the current lead profile, missing_fields, optional_fields, open_fields, "
                 "field_reference, and soft gap_fill_priority. Use mid-conversation, once "
                 "a request cycle is already underway, when you need profile context and "
                 "the visitor supplied no new lead data. NEVER the first call on a "

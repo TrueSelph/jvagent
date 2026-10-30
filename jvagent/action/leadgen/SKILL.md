@@ -13,57 +13,85 @@ allowed-tools:
 
 # Standard Leadgen Procedure
 
-Capturing the visitor's contact details is a **primary, standing goal of every conversation** — treat it as a staple, not an afterthought. Keep genuinely helping the visitor, and in the same breath keep steering toward their **name** and a way to reach them (**email or phone**). The server validates, persists, and auto-syncs when configured — you decide **when** to capture and **which** open field to ask next ([thin harness](docs/thin-harness.md)).
+The skill's field definitions and the runtime catalogue are the question set. The action validates, persists, and syncs; you choose the next best question from the catalogue and extract every value the visitor supplies.
 
-## When to call `leadgen__capture`
+## Opening and cycle
 
-Call whenever the user's **latest message** provides or refuses lead information:
+A request opens when the skill's context shows its intent; a greeting, small talk, or a standalone information question does not. The extended skill supplies the concrete business triggers. When the skill provides a prepare tool, use it to start or continue; otherwise use `leadgen__retrieve` for context. Never use retrieve to open a turn after a hand-off; the next cycle starts with the skill's prepare tool when it provides one.
 
-- Name, company, email, phone, project details, product interest
-- **Refusals** — use `decline_value` from `field_reference` (e.g. `email="N/A"`, `organization="Personal"`)
-- Corrections — capture updated values in the same turn
+## Read the catalogue
 
-Whenever your reply will **ask** for a field, also pass `ask_next=<field_key>` (chosen from `open_fields` / `missing_fields`) so the next bare answer maps to that field. You may call with only `ask_next` when stamping an ask without new values.
+Every capture/retrieve result carries `missing_fields` (required), `optional_fields` (candidates with guidance), `open_fields` (compatibility union), `field_reference` (key, guidance, required, decline_value, relevant_when), and `gap_fill_priority`.
 
-Do **not** call with empty arguments when nothing changed and you are not asking a field.
+The `guidance` may declare:
 
-## When to call `leadgen__retrieve`
+- `Group:` — a per-skill group label.
+- `Why:` — why the answer matters to the outcome.
+- `When:` — the timing or context worth asking.
+- `Prereq:` — the structural prerequisite (same as `relevant_when`).
+- `Capture-only:` — never ask.
+- `Ask-once:` — do not re-ask after a decline or skip.
+- `Sensitive:` — ask only when necessary and timely.
 
-Call mid-conversation, once a request cycle is already underway, when you need
-profile context and the visitor supplied no new lead data this turn:
+Ask required fields first. Ask one question per reply.
 
-- Before a gap-fill question, after the new request cycle has already been opened with `leadgen__prepare_request`
-- After `leadgen__capture` in the same turn (retrieve is optional — capture response includes `missing_fields` and `open_fields`)
+## Capture
 
-Do **not** call `leadgen__retrieve` to open a turn. When the visitor returns
-after a sync — including a bare greeting like "hey" with no product named — the
-next request cycle starts with `leadgen__prepare_request`, not retrieve.
-Retrieve loads the now-cleared live record and would re-ask for contact details
-the visitor already gave.
+Call `leadgen__capture` whenever the message provides or refuses lead information: a value, a correction, a refusal, or several values. Send every new value in one call; scan the message and map each value by content. Do not call with empty arguments when nothing changed. Never invent items or pitch catalogues.
 
-## Gap-fill — you choose the next ask
+- A value that clearly belongs to another field is captured there; the field last asked is only the fallback for an ambiguous value.
+- `validation_errors` in the result means those values were not saved; ask the rejected field again and keep the saved values.
+- Pass one string per field, never a list. A recapture replaces the stored value; send the complete current field, not a fragment.
+- Never capture boolean intent fields. Never resend an earlier value.
+- A capture is never the end of a turn. If the visitor goes off-topic, answer naturally first, then return to the loop.
 
-Contact capture is a staple: **after answering the visitor's question or request, proactively ask for a still-open field**. The tool does **not** name a single next field.
+## Decide the next question
 
-- Read `missing_fields` (empty required keys), `open_fields` (empty relevant fields with guidance), `field_reference`, and soft `gap_fill_priority`.
-- **You decide** which one key to ask next from that catalog (prefer contact requireds while `missing_fields` is non-empty; then other open fields the skill cares about).
-- Pass `ask_next` with that key on the capture that precedes or accompanies your question.
-- **Tie the ask to value** the visitor already wants — offer to email details, send pricing, book a demo, or have someone follow up, then ask for the address/number to make that happen.
-- **One clear ask per turn**; batch only tightly related fields (name + company, email + phone).
-- **Persistent, not pushy** — keep it warm and reason-backed. If the visitor **declines or deflects a field**, capture its `decline_value` (e.g. `email="N/A"`), stop asking for *that* field, and pick another from `open_fields`.
-- Never expose raw field keys or YAML to the user.
+- **Required:** while `missing_fields` is non-empty, ask one required key, soft-ordered by `gap_fill_priority`. A required field with no `decline_value` that the visitor refuses twice ends the attempt: say the request needs it, offer the sales contact, and stop. Never repeat a question verbatim; no receipt or possession wording while a required field is missing.
+- **Optional:** use `optional_fields`, each entry's `guidance`, and the conversation. Weigh:
+  - **Value:** would the answer materially improve the outcome?
+  - **Timing:** is now the right moment?
+  - **Engagement:** is the visitor still engaged?
+  Ask the highest-value optional; skip the low-value.
+- **Question budget:** required first, then the high-value optional for this request. Do not interrogate; there is no fixed count. End when the request is hand-off ready and no high-value optional remains.
+- **Probes:** when unsure whether an optional is worth asking, ask one short conversational sub-question. A probe is not a field; do not capture its answer. Use the answer to decide. Do not probe a sensitive detail.
+- **Groups:** a `Group` is a per-skill label. A refusal ends that group's line; ask no sibling in the group. Groups are not a core taxonomy.
+- **Prerequisites:** `relevant_when` is structural; the field appears only when its prerequisite is present.
+- **Capture-only:** never ask; capture when volunteered.
+- **Ask-once:** do not re-ask a field the visitor declined or skipped.
+- **Sensitive:** ask only when it is necessary for the next step and timely; never in a probe.
+- **Default:** an optional with no clear value is skipped.
+- **A `sync-complete` is not a close:** it authorizes the hand-off wording only. It never overrides a high-value optional.
+- If `gap_fill.batch` is true, tightly related fields may be asked together; otherwise one question per reply.
 
-## Sync
+## Retrieve and status
 
-When `sync.mode` is `on_capture` (default), the server auto-syncs after successful capture when thresholds are met. **Do not** call `leadgen__sync` unless `sync.mode` is `manual`.
+Call `leadgen__retrieve` mid-conversation when you need profile context and the visitor supplied no new lead data. Call it after a capture only when you need the merged state; every capture already returns the catalogue. Do not use retrieve to open a turn; when the visitor returns after a hand-off, the next cycle starts with the skill's prepare tool when it provides one. Retrieve reads the live record and can re-ask details the visitor already gave.
 
-Never mention sync status to the user — continue the conversation naturally.
+Use `leadgen__status` for lightweight progress when needed; it does not replace a capture.
 
-## Acknowledge naturally
+## Close and hand-off
 
-- ✅ "Got it — what's the best email to reach you at?"
-- ❌ "I have updated your lead profile"
+Close only when required fields are complete and no high-value optional remains — or the visitor asked to skip the rest. Use this turn's `sync_result` when present:
 
-## Never expose internals
+- `sync-complete` authorizes receipt, submission, forwarding, and hand-off wording.
+- A `skipped` sync means a required hand-off field or a threshold is still missing: do not close; ask the field its guidance identifies.
+- A `no-op` with an unchanged digest means the hand-off is already up to date; a `no-op` with a destination error is a failed hand-off.
+- `no destinations` is a draft: never claim the hand-off.
+- A blocked capture or a destination error is a failed hand-off: say so and offer the sales contact; do not claim success.
+- A `sync-complete` with a failed sales notification is still a CRM hand-off; do not say sales were notified.
+- Do not expose internal sync status otherwise.
 
-Do not send raw profile JSON, field names like `order_items`, digests, or `sync_result` to the user.
+## Cancellation and correction
+
+A withdrawal — cancel, stop, forget it, never mind, leave it, changed my mind, or a refusal to continue — is never a field value. Do not capture it, do not sync, and do not ask another field: use the skill's cancel tool, acknowledge in one sentence, and end. The contact profile is kept. A later greeting does not restart the request; a new request starts through the skill's opening.
+
+A correction is captured on the same turn; the corrected value replaces the stored one. Never resend an earlier value.
+
+## Voice and internals
+
+Acknowledge the value briefly and naturally; never say you updated a profile, a record, or the request. Do not send raw profile data, field keys, digests, or `sync_result` to the user.
+
+## Sync modes
+
+`sync.mode` is `on_capture`, `on_complete`, or `manual`. Do not call `leadgen__sync` unless the mode is `manual`; the action auto-syncs when the configured thresholds are met.

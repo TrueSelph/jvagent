@@ -82,39 +82,6 @@ def _stamp_observations(
         return
 
 
-def _pending_activation_observation(visitor: Any) -> Optional[Dict[str, Any]]:
-    """Model-only guard for a pending structured-capture field.
-
-    A capture action stores ``pending_activation`` in the conversation context
-    after it asks a field. The next turn must capture the user's value into that
-    field before replying; without this guard a weak model can answer in prose
-    or remap the value to a later field. The payload is generic (skill, tool,
-    field), so core never hardcodes a domain.
-    """
-    conversation = getattr(visitor, "conversation", None)
-    context = getattr(conversation, "context", None) or {}
-    pending = context.get("pending_activation")
-    if not isinstance(pending, dict):
-        return None
-    field = str(pending.get("field") or "").strip()
-    skill = str(pending.get("skill") or "").strip()
-    tool = str(pending.get("tool") or "").strip()
-    if not (field and skill and tool):
-        return None
-    return {
-        "tool": "(guard)",
-        "guard": "pending_activation",
-        "args": {},
-        "observation": (
-            f"(The last reply asked for {field}. The first action this turn must be "
-            f"use_skill {skill}, then {tool} with the user's value in {field}. "
-            "Do not remap the value to another field. After the capture, choose the "
-            "next ask from missing_fields or open_fields and pass ask_next when you "
-            "will ask another field.)"
-        ),
-    }
-
-
 class OrchestratorLoopMixin:
     def _no_decision_nudge(self) -> str:
         """The observation appended when the model returned nothing usable."""
@@ -655,9 +622,6 @@ class OrchestratorLoopMixin:
         loop_actions = await self._enabled_actions(agent) if agent else [self]
 
         observations: List[Dict[str, Any]] = []
-        pending_guard = _pending_activation_observation(visitor)
-        if pending_guard:
-            observations.append(pending_guard)
         # Pre-loop upload ingestion (ADR-0021 S4): persist EVERY uploaded file in
         # visitor.data to per-user storage as ONE consolidated source="upload"
         # artifact each — images enriched in place with a per-image

@@ -73,10 +73,10 @@ allowed-tools: []
 
 ### Capture catalog (no forced next field)
 
-Tool results expose `missing_fields`, `open_fields` (empty fields that pass
-`relevant_when`, including required), `field_reference`, and soft
-`gap_fill_priority`. The model chooses what to ask next and stamps it with
-`ask_next` on `leadgen__capture`. There is no `next_ask` / `next_optional` pointer.
+Tool results expose `missing_fields`, `optional_fields` (empty optional fields that pass
+`relevant_when`), `open_fields` (compatibility union of required + optional), `field_reference`,
+and `gap_fill_priority`. The model chooses the next field; there is no `next_ask` /
+`next_optional` pointer and no `ask_next` pending stamp.
 
 ## Sync template tokens
 

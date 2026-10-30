@@ -108,8 +108,10 @@ def canonicalize_fields(raw: Dict[str, Any], spec: LeadGenSpec) -> Dict[str, Any
 
 async def validate_fields(
     fields: Dict[str, Any], spec: LeadGenSpec
-) -> tuple[Dict[str, Any], Optional[str]]:
+) -> tuple[Dict[str, Any], Dict[str, str]]:
+    """Validate each supplied field; keep valid values and collect per-field errors."""
     validated: Dict[str, Any] = {}
+    errors: Dict[str, str] = {}
     for key, value in fields.items():
         if key.startswith("_"):
             validated[key] = value
@@ -119,8 +121,12 @@ async def validate_fields(
             validated[key] = value
             continue
         str_val = str(value).strip() if value is not None else ""
-        if not str_val and fdef.decline_value is not None:
-            validated[key] = fdef.decline_value
+        if not str_val:
+            if fdef.decline_value is not None:
+                validated[key] = fdef.decline_value
+            continue
+        if fdef.decline_value is not None and str_val == str(fdef.decline_value):
+            validated[key] = str_val
             continue
         validator_name = fdef.validator
         if fdef.key == "phone" and fdef.phone_locale == "GY":
@@ -132,11 +138,12 @@ async def validate_fields(
                 validator_name, str_val, fdef.validator_args
             )
             if err:
-                return {}, err
+                errors[key] = err
+                continue
             validated[key] = normalized
         else:
             validated[key] = str_val
-    return validated, None
+    return validated, errors
 
 
 def _field_filled(fields: Dict[str, Any], key: str) -> bool:
@@ -171,6 +178,33 @@ def open_fields(
             "key": fdef.key,
             "guidance": fdef.guidance,
             "required": fdef.required,
+        }
+        if fdef.relevant_when:
+            entry["relevant_when"] = dict(fdef.relevant_when)
+        out.append(entry)
+    return out
+
+
+def optional_fields(
+    record_fields: Dict[str, Any], spec: LeadGenSpec
+) -> List[Dict[str, Any]]:
+    """Empty optional fields that pass ``relevant_when``.
+
+    This is the LLM's optional-question pool: it chooses one only when the
+    field's guidance and the conversation make it relevant now.
+    """
+    out: List[Dict[str, Any]] = []
+    for fdef in spec.fields:
+        if fdef.required:
+            continue
+        if _field_filled(record_fields, fdef.key):
+            continue
+        if not _relevant_when_met(record_fields, fdef):
+            continue
+        entry: Dict[str, Any] = {
+            "key": fdef.key,
+            "guidance": fdef.guidance,
+            "required": False,
         }
         if fdef.relevant_when:
             entry["relevant_when"] = dict(fdef.relevant_when)
@@ -254,16 +288,12 @@ async def maybe_auto_sync(
 
 
 def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
-    """The record snapshot every capture result carries, whatever its status.
+    """The record snapshot every capture/retrieve result carries.
 
     Same keys and the same ``_`` filter as :func:`handle_retrieve`, so a caller
-    reads one set of keys no matter which tool produced the payload — and no
-    matter whether this particular call wrote anything. Built here rather than
-    inline so the two exits from ``handle_capture`` cannot drift apart, which
-    is the whole point of returning the merged record.
-
-    No server-picked next-field pointer: the model chooses from
-    ``missing_fields`` / ``open_fields`` and stamps ``ask_next`` on capture.
+    reads one set no matter which tool produced the payload. There is no
+    server-picked next-field pointer: the model chooses from
+    ``missing_fields`` (required) or ``optional_fields`` (optional).
     """
     profile_data = record.get_yaml() or {}
     missing = record.get_missing_fields()
@@ -271,49 +301,11 @@ def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
     return {
         "fields": fields,
         "missing_fields": missing,
+        "optional_fields": optional_fields(fields, spec),
         "field_reference": fields_reference(spec),
         "gap_fill_priority": spec.gap_fill.priority,
         "open_fields": open_fields(fields, spec),
     }
-
-
-async def _set_pending_activation(
-    visitor: Any,
-    *,
-    ask_next: Optional[str],
-    spec: LeadGenSpec,
-) -> None:
-    """Persist the field the model will ask next, for the orchestrator guard.
-
-    Only ``ask_next`` stamps pending activation — there is no server-chosen
-    fallback. The action names its own skill so core never hardcodes a domain.
-    """
-    conversation = getattr(visitor, "conversation", None)
-    if conversation is None or not hasattr(conversation, "update_context"):
-        return
-    field = str(ask_next or "").strip()
-    if field and field in set(spec.field_keys()):
-        payload: Optional[Dict[str, str]] = {
-            "skill": spec.name or "leadgen",
-            "tool": "leadgen__capture",
-            "field": field,
-        }
-    else:
-        payload = None
-    try:
-        await conversation.update_context({"pending_activation": payload})
-    except Exception as exc:  # noqa: BLE001 - a guard write must not fail capture
-        logger.warning("leadgen: pending activation save failed: %s", exc)
-
-
-def _pop_ask_next(raw_fields: Dict[str, Any], kwargs: Dict[str, Any]) -> Optional[str]:
-    """Pull ask_next from kwargs or the fields map (not a lead profile key)."""
-    ask_next = kwargs.pop("ask_next", None)
-    if ask_next is None and "ask_next" in raw_fields:
-        ask_next = raw_fields.pop("ask_next")
-    if ask_next is None:
-        return None
-    return str(ask_next).strip() or None
 
 
 async def handle_capture(
@@ -321,7 +313,6 @@ async def handle_capture(
     fields: Optional[Dict[str, Any]] = None,
     skill: Optional[str] = None,
     visitor: Any = None,
-    ask_next: Optional[str] = None,
     **kwargs: Any,
 ) -> str:
     user, interaction = await get_user_and_interaction(visitor)
@@ -329,43 +320,15 @@ async def handle_capture(
         return json.dumps({"error": "no active interaction"})
 
     raw_fields: Dict[str, Any] = dict(fields or {})
-    # ask_next may arrive as a top-level kwarg or inside fields/kwargs.
-    if ask_next is None:
-        ask_next = _pop_ask_next(raw_fields, kwargs)
-    else:
-        kwargs.pop("ask_next", None)
-        raw_fields.pop("ask_next", None)
+    kwargs.pop("ask_next", None)
+    raw_fields.pop("ask_next", None)
     raw_fields.update(
-        {k: v for k, v in kwargs.items() if k not in ("visitor", "skill", "ask_next")}
+        {k: v for k, v in kwargs.items() if k not in ("visitor", "skill")}
     )
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
-    if ask_next and ask_next not in set(spec.field_keys()):
-        return json.dumps(
-            {
-                "error": f"ask_next '{ask_next}' is not a declared leadgen field",
-                "status": "invalid-argument",
-            }
-        )
-
-    if not raw_fields and not ask_next:
+    if not raw_fields:
         return json.dumps({"status": "no-op", "reason": "no fields provided"})
-
-    if not raw_fields and ask_next:
-        # Stamp-only call: model is about to ask without new values this turn.
-        record = await LeadRecord.get_or_create_for_user(
-            user, required_fields=spec.get_required_fields() or None
-        )
-        state = capture_state(record, spec)
-        await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
-        return json.dumps(
-            {
-                "status": "pending",
-                "fields_saved": [],
-                "ask_next": ask_next,
-                **state,
-            }
-        )
 
     raw_fields = canonicalize_fields(raw_fields, spec)
 
@@ -381,12 +344,10 @@ async def handle_capture(
             user, required_fields=spec.get_required_fields() or None
         )
         state = capture_state(record, spec)
-        await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
         return json.dumps(
             {
                 "status": "deduplicated",
                 "fields_saved": [],
-                "ask_next": ask_next,
                 **state,
             }
         )
@@ -399,48 +360,51 @@ async def handle_capture(
         if not raw_fields.get("full_name") and getattr(user, "name", None):
             raw_fields.setdefault("full_name", user.name)
 
-    validated, err = await validate_fields(raw_fields, spec)
-    if err:
-        return json.dumps({"error": err, "status": "invalid-argument"})
+    validated, validation_errors = await validate_fields(raw_fields, spec)
 
     record = await LeadRecord.get_or_create_for_user(
         user, required_fields=spec.get_required_fields() or None
     )
     profile_data = record.get_yaml() or {}
+    changed = False
+    if validated:
+        ctx = HookExecutionContext(
+            spec=spec,
+            record=record,
+            profile_data=profile_data,
+            fields=validated,
+            visitor=visitor,
+            user=user,
+        )
+        if spec.handlers.post_capture:
+            ctx = await call_hook(spec, spec.handlers.post_capture, ctx)
+            validated = ctx.fields
 
-    ctx = HookExecutionContext(
-        spec=spec,
-        record=record,
-        profile_data=profile_data,
-        fields=validated,
-        visitor=visitor,
-        user=user,
-    )
-    if spec.handlers.post_capture:
-        ctx = await call_hook(spec, spec.handlers.post_capture, ctx)
-        validated = ctx.fields
+        if spec.handlers.qualify:
+            ctx = await call_hook(spec, spec.handlers.qualify, ctx)
+            if ctx.blocked:
+                return json.dumps(
+                    {
+                        "status": "blocked",
+                        "reason": ctx.block_reason or "qualification failed",
+                    }
+                )
 
-    if spec.handlers.qualify:
-        ctx = await call_hook(spec, spec.handlers.qualify, ctx)
-        if ctx.blocked:
-            return json.dumps(
-                {
-                    "status": "blocked",
-                    "reason": ctx.block_reason or "qualification failed",
-                }
-            )
-
-    validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
-    changed = await record.update_yaml(validated)
+        validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
+        changed = await record.update_yaml(validated)
 
     state = capture_state(record, spec)
     result: Dict[str, Any] = {
-        "status": "updated" if changed else "no-op",
+        "status": (
+            "updated"
+            if changed
+            else ("invalid-argument" if validation_errors else "no-op")
+        ),
         "fields_saved": list(validated.keys()) if changed else [],
-        "ask_next": ask_next,
         **state,
     }
-    await _set_pending_activation(visitor, ask_next=ask_next, spec=spec)
+    if validation_errors:
+        result["validation_errors"] = validation_errors
 
     if changed:
         await record.append_to_section(

@@ -8,6 +8,15 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Leadgen is LLM-driven.** Removed `ask_next` and the `pending_activation` guard;
+  capture/retrieve results now include `optional_fields` (the optional pool with
+  guidance) and `validation_errors`; the base procedure is generic (required first,
+  optional by guidance, content-first extraction, one question); validation is per
+  field and keeps valid values; declines bypass validators. Breaking for callers that
+  passed `ask_next`.
+
 ### Fixed
 
 - **TTS media URLs work with authentication enabled.** `as_url=True` now returns
