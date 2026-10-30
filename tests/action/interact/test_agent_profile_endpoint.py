@@ -11,26 +11,24 @@ from types import SimpleNamespace
 from jvagent.action.interact.avatar_endpoints import _first_str
 
 
-def test_role_is_preferred_over_the_operator_description():
-    """``description`` is the operator's note about the agent and is routinely
-    architectural — the example agent's begins "Orchestrator-pattern agent. One
-    orchestrator (-200) locks onto an active flow…", which is what a visitor to a
-    customer site actually saw. ``role`` is the customer-facing half of the
-    identity (ADR-0014) and is what belongs under the agent's name."""
+def test_description_is_preferred_over_role():
+    """``description`` is the customer-facing blurb under the agent's name in
+    the embed header. ``role`` (ADR-0014 identity half) is only a fallback when
+    description is unset."""
     agent = SimpleNamespace(
         role="a friendly assistant for order questions",
-        description="Orchestrator-pattern agent. One orchestrator (-200) locks onto…",
+        description="Order help for Evolve Business Solutions.",
     )
-    assert _first_str(agent, "role", "description") == (
-        "a friendly assistant for order questions"
+    assert _first_str(agent, "description", "role") == (
+        "Order help for Evolve Business Solutions."
     )
 
 
-def test_description_still_used_when_no_role_is_set():
-    agent = SimpleNamespace(role="", description="Handles billing questions.")
-    assert _first_str(agent, "role", "description") == "Handles billing questions."
+def test_role_still_used_when_no_description_is_set():
+    agent = SimpleNamespace(role="Handles billing questions.", description="")
+    assert _first_str(agent, "description", "role") == "Handles billing questions."
 
 
 def test_absent_on_both_yields_none():
-    assert _first_str(SimpleNamespace(), "role", "description") is None
-    assert _first_str(SimpleNamespace(role="   "), "role", "description") is None
+    assert _first_str(SimpleNamespace(), "description", "role") is None
+    assert _first_str(SimpleNamespace(description="   "), "description", "role") is None
