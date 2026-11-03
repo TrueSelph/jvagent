@@ -5,12 +5,31 @@ for graph-based persistence of document structure.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from jvspatial.core import Edge, Node
 from jvspatial.core.annotations import attribute
 
 from .config import get_pageindex_retrieval_excerpt_source
+
+
+def _pageindex_compound(
+    name: str,
+    fields: List[Tuple[str, int]],
+    entity_name: str,
+) -> Dict[str, Any]:
+    """Index spec with ``entity`` at the document root.
+
+    ``@compound_index`` field names are rewritten to ``context.<name>`` by
+    jvspatial. ``entity`` is stored beside ``context``, not inside it, so these
+    specs are returned from ``get_indexes`` already mapped.
+    """
+    return {
+        "fields": fields,
+        "unique": False,
+        "name": name,
+        "partialFilterExpression": {"entity": entity_name},
+    }
 
 
 class DocumentRootNode(Node):
@@ -50,6 +69,23 @@ class DocumentRootNode(Node):
         default=None,
         description="Number of DocumentNode chunks for this document",
     )
+
+    @classmethod
+    def get_indexes(cls) -> List[Dict[str, Any]]:
+        """Collection and document lookup. ``entity`` stays a top-level key."""
+        indexes = super().get_indexes()
+        indexes.append(
+            _pageindex_compound(
+                "pageindex_root_collection_doc",
+                [
+                    ("entity", 1),
+                    ("context.collection_name", 1),
+                    ("context.doc_name", 1),
+                ],
+                "DocumentRootNode",
+            )
+        )
+        return indexes
 
 
 class DocumentNode(Node):
@@ -104,6 +140,24 @@ class DocumentNode(Node):
         default=None,
         description="Breadcrumb of section titles from root to this node",
     )
+
+    @classmethod
+    def get_indexes(cls) -> List[Dict[str, Any]]:
+        """Collection, document, and node_id lookup. ``entity`` stays top-level."""
+        indexes = super().get_indexes()
+        indexes.append(
+            _pageindex_compound(
+                "pageindex_node_collection_doc_node",
+                [
+                    ("entity", 1),
+                    ("context.collection_name", 1),
+                    ("context.doc_name", 1),
+                    ("context.node_id", 1),
+                ],
+                "DocumentNode",
+            )
+        )
+        return indexes
 
 
 def node_enabled(node: "DocumentNode") -> bool:

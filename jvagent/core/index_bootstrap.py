@@ -21,10 +21,14 @@ What this module does
    ``ensure_indexes`` re-checks every class even if the process was already
    partially warmed up (e.g. a FastAPI lifespan hook that fired before this
    function).
-3. Iterates the full list of indexed entity classes and calls
-   ``ensure_indexes`` for each, which creates missing indexes and auto-drops /
-   recreates any that have changed options (via the adapter's conflict-handling
-   logic — for MongoDB this is the code-85/86 path in ``jvspatial.db.mongodb``).
+3. Iterates the indexed entity classes (core graph, ``Edge``, auth objects,
+   and optional tokens) and calls ``ensure_indexes`` for each, which creates
+   missing indexes and auto-drops / recreates any that have changed options
+   (via the adapter's conflict-handling logic — for MongoDB this is the
+   code-85/86 path in ``jvspatial.db.mongodb``).
+4. Creates edge and auth indexes that jvspatial does not declare, and, when
+   PageIndex uses MongoDB, ensures document indexes on that database.
+   Both steps stay behind ``JVSPATIAL_AUTO_CREATE_INDEXES``.
 
 Database adapter flexibility
 ----------------------------
@@ -42,7 +46,7 @@ User-facing documentation for this module lives in the jvagent repo:
 """
 
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +78,65 @@ DEPRECATED_INDEXES: Dict[str, List[str]] = {
         "agent_label",
     ],
 }
+
+
+# Indexes jvspatial 0.1.1 does not declare. Field paths are stored paths:
+# ``entity`` is top-level; model attributes live under ``context``.
+_DIRECT_INDEXES: List[Dict[str, Any]] = [
+    {
+        "collection": "edge",
+        "fields": [("target", 1), ("source", 1)],
+        "name": "idx_target_source",
+    },
+    {
+        "collection": "object",
+        "fields": [("entity", 1), ("context.email", 1)],
+        "name": "auth_user_email",
+        "unique": True,
+        "partialFilterExpression": {
+            "entity": "User",
+            "context.email": {"$gt": ""},
+        },
+    },
+    {
+        "collection": "object",
+        "fields": [
+            ("entity", 1),
+            ("context.token_lookup", 1),
+            ("context.is_active", 1),
+        ],
+        "name": "auth_refresh_lookup",
+        "partialFilterExpression": {"entity": "RefreshToken"},
+    },
+    {
+        "collection": "object",
+        "fields": [
+            ("entity", 1),
+            ("context.user_id", 1),
+            ("context.is_active", 1),
+        ],
+        "name": "auth_refresh_user_active",
+        "partialFilterExpression": {"entity": "RefreshToken"},
+    },
+    {
+        "collection": "object",
+        "fields": [("entity", 1), ("context.token_id", 1)],
+        "name": "auth_blacklist_token_id",
+        "partialFilterExpression": {"entity": "TokenBlacklist"},
+    },
+    {
+        "collection": "object",
+        "fields": [("entity", 1), ("context.key_hash", 1)],
+        "name": "auth_apikey_hash",
+        "partialFilterExpression": {"entity": "APIKey"},
+    },
+    {
+        "collection": "object",
+        "fields": [("entity", 1), ("context.token_lookup", 1)],
+        "name": "auth_password_reset_lookup",
+        "partialFilterExpression": {"entity": "PasswordResetToken"},
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +196,9 @@ async def _ensure_all_indexes() -> None:
                 exc,
             )
 
+    await _create_direct_indexes(ctx.database)
+    await _ensure_pageindex_indexes()
+
     logger.info("Index migration complete")
 
 
@@ -147,6 +213,14 @@ def _collect_entity_classes():
     from jvagent.memory.conversation import Conversation
     from jvagent.memory.interaction import Interaction
     from jvagent.memory.user import User
+    from jvspatial.api.auth.models import (
+        APIKey,
+        PasswordResetToken,
+        RefreshToken,
+        TokenBlacklist,
+    )
+    from jvspatial.api.auth.models import User as AuthUser
+    from jvspatial.core.entities.edge import Edge
 
     classes.extend(
         [
@@ -156,6 +230,12 @@ def _collect_entity_classes():
             Interaction,
             User,
             RepairState,
+            Edge,
+            AuthUser,
+            RefreshToken,
+            TokenBlacklist,
+            APIKey,
+            PasswordResetToken,
         ]
     )
 
@@ -183,3 +263,103 @@ def _collect_entity_classes():
         pass
 
     return classes
+
+
+def _auto_create_indexes_enabled() -> bool:
+    """Same gate as ``GraphContext.ensure_indexes`` (off by default on Lambda)."""
+    from jvspatial.env import env, parse_bool_basic
+    from jvspatial.runtime.serverless import is_serverless_mode
+
+    return env(
+        "JVSPATIAL_AUTO_CREATE_INDEXES",
+        default=not is_serverless_mode(),
+        parse=parse_bool_basic,
+    )
+
+
+async def _create_direct_indexes(db: Any) -> None:
+    """Create edge and auth indexes the jvspatial models do not declare."""
+    if not _auto_create_indexes_enabled():
+        return
+    if not hasattr(db, "create_index"):
+        return
+
+    for spec in _DIRECT_INDEXES:
+        kwargs: Dict[str, Any] = {"name": spec["name"], "background": True}
+        partial = spec.get("partialFilterExpression")
+        if partial is not None:
+            kwargs["partialFilterExpression"] = partial
+        try:
+            await db.create_index(
+                spec["collection"],
+                spec["fields"],
+                unique=bool(spec.get("unique", False)),
+                **kwargs,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Index migration: failed to create %s on %s: %s",
+                spec["name"],
+                spec["collection"],
+                exc,
+            )
+
+
+async def _ensure_pageindex_indexes() -> None:
+    """Ensure PageIndex document indexes on the PageIndex database.
+
+    Skips before opening that database when automatic index creation is off,
+    so a Lambda cold start does not connect only to no-op the DDL.
+    """
+    if not _auto_create_indexes_enabled():
+        return
+
+    try:
+        from jvagent.action.pageindex.config import (
+            PAGEINDEX_DB_NAME,
+            get_pageindex_config,
+            initialize_pageindex_database,
+        )
+        from jvagent.action.pageindex.models import DocumentNode, DocumentRootNode
+        from jvspatial.core.context import GraphContext
+        from jvspatial.db import get_database_manager
+    except ImportError as exc:
+        logger.info("Index migration: skipping PageIndex indexes (%s)", exc)
+        return
+
+    try:
+        config = get_pageindex_config()
+    except Exception as exc:
+        logger.warning("Index migration: could not read PageIndex config: %s", exc)
+        return
+
+    if config.get("db_type") != "mongodb":
+        logger.info(
+            "Index migration: PageIndex db_type=%s; skipping MongoDB indexes",
+            config.get("db_type"),
+        )
+        return
+
+    if not initialize_pageindex_database(config=config):
+        logger.warning("Index migration: PageIndex database was not initialized")
+        return
+
+    try:
+        db = get_database_manager().get_database(PAGEINDEX_DB_NAME)
+    except Exception as exc:
+        logger.warning(
+            "Index migration: PageIndex database is not registered: %s",
+            exc,
+        )
+        return
+
+    ctx = GraphContext(database=db)
+    for cls in (DocumentRootNode, DocumentNode):
+        try:
+            await ctx.ensure_indexes(cls)
+        except Exception as exc:
+            logger.warning(
+                "Index migration: failed to ensure indexes for %s: %s",
+                cls.__name__,
+                exc,
+            )
