@@ -184,3 +184,89 @@ The pending checkpoint is explicitly a development foundation. Its live browser
 evidence is a bounded HTTP 401 failure, not successful generation; that gate is
 open pending valid credentials. Current running disposable backend may predate
 these storage changes and must be restarted before a future positive smoke.
+
+## Published foundation and explicit skill admission
+
+Foundation commit 65795d4a pushed successfully to origin/codex/pydantic-harness-rebuild
+following clean pre-commit and full pre-push pytest. Local/remote SHA confirmed.
+The subsequent admission changes are not included in that published commit.
+
+JV skill declaration admission is now separated from official skill execution:
+requires-actions and requires-tools must be satisfied; required tools must be
+allowed; allowed/denied channel lists are enforced. Unknown spec, flow/prerequisite
+or extension semantics and output contracts without a qualified capability are
+rejected before model execution. In particular, research cannot silently lose
+its evidence_required contract: it stays unavailable through the native Action
+until the research capability is integrated. All 26 native tests pass, including
+11 added admission tests. These are deterministic policy tests, not provider or
+browser qualification. The known-rejected OpenAI credential is unchanged; no
+redundant live-provider request was made. Missing valid credentials remains a
+positive browser gate, not an excuse to drop protection or broaden admission.
+
+## Research policy extraction
+
+Moved typed evidence references/findings/briefs, URL normalization, freshness and
+quote/citation rendering into jvagent/skills/research/contracts.py. Moved source
+collection into research/evidence.py. Pilot contracts/runtime retain explicit
+compatibility imports and their conversational renderer; no second validator was
+introduced. Native research admission remains gated until output/tool-observation
+hooks are connected. The extracted modules import no pilot runtime.
+
+Existing evidence/contract slice passed (45 tests); the complete pilot test slice
+also exited 0 with opt-in external gates skipped. The 26 native tests pass.
+No model semantics were changed by extraction and no repeat of the invalid-key
+browser call was made. This refactor is source-test evidence, not native research
+browser qualification. New and moved files must pass repository hooks before the
+next checkpoint; successful native research remains an explicit open gate.
+
+## Native research output policy connected
+
+Installed a per-run skill output policy registry with evidence_required implemented
+by research/native.py. The core factory supplies the policy's typed output function
+to Pydantic AI and forwards successful tool results with host metadata for evidence
+observation before source-ID annotation. Final research output uses the existing
+source/freshness/quote validator and host citation renderer; ordinary skills retain
+plain text output. Unknown output contracts remain rejected. No pilot execution
+imports are required by the native research policy.
+
+Native regression exercises a reviewed read Action fetch receipt through the
+native tool surface, typed output-function call and rendered citations. Another
+rejects a fabricated source ID. This is deterministic FunctionModel evidence,
+not actual provider or browser qualification. Official Skills also requires name
+and directory agreement; factory now rejects mismatches instead of accepting a
+loader warning that silently skips the skill. Some existing assets will need a
+small naming migration or a scoped asset-normalization adapter.
+
+The known-invalid key still blocks successful native research/browser receipts;
+no equivalent rejected request was repeated. Runtime compatibility is broader,
+but general shared budget/recovery/deployment gates remain open.
+
+## Official spend policy integration
+
+Native composition now installs official SpendLimits with run/conversation dollar
+budgets (development defaults USD 2 / USD 20) and on_unpriced='raise'. A declared
+Conversation.native_spend field backs its BatchSpendStore interface, including
+replay tokens and expiry metadata. Invalid/negative/nonfinite amounts fail closed.
+The adapter is single-writer: no distributed reservation/fencing claim is made.
+The library checks accumulated spend between requests; in-flight/concurrent
+overshoot remains possible and must be documented and qualified.
+
+Native tests include serialization/reload, deduplication, invalid increments and
+an actual SpendLimits integration refusing a later run after a prior response
+crosses the conversation ceiling. Old conversation dollar totals are not migrated
+into these new counters yet: existing-session cutover remains prohibited until
+W5 migration reconciles them. Live pricing, unpriced-provider receipts and billing
+reconciliation are still unqualified due to the invalid model credential.
+
+## Cancellation and publication uncertainty
+
+Native cancellation settlement now shields the graph write through repeated caller
+cancellation, logs only run ID and exception type on write failure, and preserves
+the original CancelledError. Cancellation once final publication may have started
+records delivery_unknown, retaining output and complete known usage instead of
+labeling it a safely replayable cancelled run. No automatic resend is implemented.
+
+All 36 native tests pass, including cancellation during native output publication,
+second cancellation during persistence and persistence outage. These are injected
+boundary tests, not real disconnect/network delivery or backend crash evidence.
+The single-writer/lease, deadline and manual reconciliation UI gates remain open.

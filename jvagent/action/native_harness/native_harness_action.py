@@ -1,6 +1,7 @@
 """JV ingress/graph/egress adapter for native Pydantic execution."""
 
 import asyncio
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,29 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.orchestrator.access import is_tool_allowed
 from jvagent.harness.native import build_native_agent, run_native_agent
+
+
+async def persist_cancelled_receipt(interaction: Any) -> None:
+    """Attempt cancellation settlement without replacing caller cancellation."""
+    task = asyncio.create_task(interaction.save())
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # A second caller cancellation must not interrupt the graph write.
+            continue
+        except Exception:
+            break
+    try:
+        task.result()
+    except (Exception, asyncio.CancelledError) as exc:
+        logging.getLogger(__name__).error(
+            "native_cancellation_persist_failed",
+            extra={
+                "run_id": interaction.native_run.get("run_id"),
+                "exception_type": type(exc).__name__,
+            },
+        )
 
 
 class NativeHarnessAction(InteractAction):
@@ -22,18 +46,27 @@ class NativeHarnessAction(InteractAction):
     model: str = attribute(default="openai:gpt-4.1")
     skill_directory: str = attribute(default="")
     instructions: str = attribute(default="Help the user using the available skill.")
+    max_run_cost_usd: str = attribute(default="2.00")
+    max_conversation_cost_usd: str = attribute(default="20.00")
     max_requests: int = attribute(default=20)
     max_tokens: int = attribute(default=100_000)
     timeout_seconds: float = attribute(default=180.0)
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
+        from jvagent.harness.spend_store import ConversationSpendStore
         from jvagent.harness.step_store import InteractionStepStore
 
         host = await self.get_agent()
         interaction = getattr(visitor, "interaction", None)
         responder = await self.get_responder()
-        if host is None or interaction is None or responder is None:
+        conversation = getattr(visitor, "conversation", None)
+        if (
+            host is None
+            or interaction is None
+            or responder is None
+            or conversation is None
+        ):
             raise RuntimeError("Native execution requires admitted graph and responder")
         if not getattr(visitor, "user_id", None) or not getattr(
             visitor, "session_id", None
@@ -70,6 +103,11 @@ class NativeHarnessAction(InteractAction):
             access_check=access,
             instructions=self.instructions,
             step_store=InteractionStepStore(interaction),
+            spend_store=ConversationSpendStore(conversation),
+            max_run_cost_usd=self.max_run_cost_usd,
+            max_conversation_cost_usd=self.max_conversation_cost_usd,
+            available_actions=[action.get_class_name() for action in actions],
+            channel=getattr(visitor, "channel", "default"),
         )
         previous = await interaction.get_previous_interaction()
         history = []
@@ -167,6 +205,7 @@ class NativeHarnessAction(InteractAction):
             interaction.native_run = {
                 "run_id": run_id,
                 "status": "pending_delivery",
+                "usage_complete": True,
                 "usage": {
                     "requests": usage.requests,
                     "input_tokens": usage.input_tokens,
@@ -182,12 +221,17 @@ class NativeHarnessAction(InteractAction):
             interaction.native_run = {**interaction.native_run, "status": "delivered"}
             await interaction.save()
         except asyncio.CancelledError:
-            interaction.native_run = {
-                **interaction.native_run,
-                "status": "cancelled",
-                "usage_complete": False,
+            receipt = interaction.native_run
+            delivery_started = receipt.get("status") in {
+                "pending_delivery",
+                "delivered",
             }
-            await interaction.save()
+            interaction.native_run = {
+                **receipt,
+                "status": "delivery_unknown" if delivery_started else "cancelled",
+                "usage_complete": bool(receipt.get("usage_complete")),
+            }
+            await persist_cancelled_receipt(interaction)
             raise
         except Exception as exc:
             if interaction.native_run.get("status") == "running":

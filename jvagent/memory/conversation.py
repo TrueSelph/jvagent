@@ -87,7 +87,10 @@ class Conversation(DeferredSaveMixin, Node):
         created_at: Timestamp of conversation creation
         last_interaction_at: Timestamp of last interaction
         interaction_count: Number of interactions in this conversation
-        interaction_limit: Maximum number of interactions to keep (0 = disabled, no pruning)
+        native_spend: Dict[str, Any] = attribute(
+        default_factory=dict, description="Official Harness spend counters and replay tokens"
+    )
+    interaction_limit: Maximum number of interactions to keep (0 = disabled, no pruning)
         context: Conversation context dictionary for storing state
     """
 

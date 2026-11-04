@@ -7,9 +7,9 @@ checker. This module does not import the legacy Orchestrator or pilot engine.
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
-import yaml
-
 from jvagent.harness.contracts import reject_model_authority_fields
+from jvagent.harness.skill_admission import admit_skill
+from jvagent.skills.output_policies import SUPPORTED_OUTPUT_CONTRACTS, output_policy
 from jvagent.tooling.tool import Tool as JVTool
 
 AccessCheck = Callable[[str], Awaitable[bool]]
@@ -23,6 +23,11 @@ def build_native_agent(
     access_check: AccessCheck,
     instructions: str,
     step_store: Any = None,
+    spend_store: Any = None,
+    max_run_cost_usd: str = "2.00",
+    max_conversation_cost_usd: str = "20.00",
+    available_actions: Sequence[str] = (),
+    channel: str = "default",
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -35,20 +40,19 @@ def build_native_agent(
     from pydantic_ai_harness import Skills
 
     directory = skill_directory.resolve(strict=True)
-    text = (directory / "SKILL.md").read_text()
-    sections = text.split("---", 2)
-    if not text.startswith("---\n") or len(sections) != 3:
-        raise ValueError("Skill requires YAML frontmatter")
-    metadata = yaml.safe_load(sections[1])
-    if not isinstance(metadata, dict) or not isinstance(metadata.get("name"), str):
-        raise ValueError("Skill requires a name")
-    if metadata.get("task_lock") or metadata.get("requires_tasks"):
-        raise ValueError("Flow skills are not yet qualified")
+    metadata = admit_skill(
+        directory,
+        available_actions=available_actions,
+        available_tools=[tool.name for tool in tools],
+        channel=channel,
+        supported_output_contracts=SUPPORTED_OUTPUT_CONTRACTS,
+    )
+    if metadata["name"] != directory.name:
+        raise ValueError(
+            "Skill name must match its directory for official Skills loading"
+        )
+    policy = output_policy(metadata.get("output-contract", ""))
     allowed = metadata.get("allowed-tools", [])
-    if not isinstance(allowed, list) or any(not isinstance(v, str) for v in allowed):
-        raise ValueError("allowed-tools must be a list of exact tool names")
-    if any("*" in name or "?" in name for name in allowed):
-        raise ValueError("Wildcard tool declarations require migration")
     if len({tool.name for tool in tools}) != len(tools):
         raise ValueError("Duplicate Action tool names")
 
@@ -59,6 +63,8 @@ def build_native_agent(
             if not await access_check(original.access_label or original.name):
                 raise ModelRetry("Action access denied")
             result = await original.call(**arguments)
+            if policy is not None:
+                return await policy.observe(original.name, arguments, result)
             return str(result.content)
 
         return Tool.from_schema(
@@ -86,9 +92,32 @@ def build_native_agent(
         from pydantic_ai_harness import StepPersistence
 
         capabilities.append(StepPersistence(store=step_store))
+    if spend_store is not None:
+        from decimal import Decimal
+
+        from pydantic_ai_harness.spend import Budget, SpendLimits
+
+        run_budget = Decimal(max_run_cost_usd)
+        conversation_budget = Decimal(max_conversation_cost_usd)
+        if any(
+            not amount.is_finite() or amount <= 0
+            for amount in (run_budget, conversation_budget)
+        ):
+            raise ValueError("Spend ceilings must be finite and positive")
+        capabilities.append(
+            SpendLimits(
+                store=spend_store,
+                on_unpriced="raise",
+                budgets=[
+                    Budget(usd=run_budget, window="run"),
+                    Budget(usd=conversation_budget, window="conversation"),
+                ],
+            )
+        )
     return Agent(
         model,
         instructions=instructions,
+        output_type=policy.finish if policy is not None else str,
         tools=admitted,
         capabilities=capabilities,
         name="jvagent-native",
