@@ -2385,7 +2385,7 @@ async def test_t_list_docs_compact_payload_fits_observation_budget(caplog):
             return_value="n.Agent.silvie",
         ),
         patch(
-            "jvagent.tooling.tool_executor.get_tool_visitor",
+            "jvagent.tooling.context.get_tool_visitor",
             return_value=None,
         ),
         caplog.at_level(
@@ -2452,7 +2452,7 @@ async def test_t_list_docs_drops_entries_rather_than_overflow_budget():
             return_value=listed,
         ),
         patch.object(PageIndexAction, "_resolve_collection", return_value="col"),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         payload = await PageIndexAction._t_list_docs(action, summary=True)
 
@@ -2484,7 +2484,7 @@ async def test_t_search_omitted_limit_uses_configured_limit():
 
     with (
         patch.object(PageIndexAction, "search", new=_fake_search),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         await PageIndexAction._t_search(action, query="anything")
 
@@ -2505,7 +2505,7 @@ async def test_t_search_explicit_limit_is_forwarded():
 
     with (
         patch.object(PageIndexAction, "search", new=_fake_search),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         await PageIndexAction._t_search(action, query="anything", limit=3)
 

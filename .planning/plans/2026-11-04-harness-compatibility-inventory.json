@@ -1,6 +1,6 @@
 {
   "baseline": "7d689e4d",
-  "status": "proposed complete name inventory; no compatibility qualification implied",
+  "status": "baseline name inventory with incremental partial qualification; release gates remain open",
   "actions": [
     {
       "path": "jvagent/action/access_control/info.yaml",
@@ -259,7 +259,8 @@
       "name": "jvagent/pageindex_action",
       "archetype": "PageIndexAction",
       "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
-      "qualification": "pending"
+      "qualification": "partial: inherited direct search via PageIndexReadAction; model strategies, indexing and administrative endpoints pending",
+      "evidence": "2026-11-04-harness-rebuild-progress.md#populated-retrieval-and-identity-boundaries"
     },
     {
       "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",
@@ -1348,7 +1349,9 @@
           "informational"
         ]
       },
-      "disposition": "preserve-assets-review-execution"
+      "disposition": "preserve-assets-review-execution",
+      "qualification": "partial: unchanged skill, empty-index web fallback and populated public retrieval in real GPT-4.1 browser; restricted denial; representative quality evaluation pending",
+      "evidence": "2026-11-04-harness-rebuild-progress.md#populated-retrieval-and-identity-boundaries"
     },
     {
       "path": "jvagent/skills/artifact_handler/SKILL.md",

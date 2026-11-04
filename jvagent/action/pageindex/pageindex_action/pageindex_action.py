@@ -640,7 +640,7 @@ class PageIndexAction(Action):
         """Search the internal knowledge base for documents matching a query."""
         import json
 
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         query = query or kwargs.get("q") or kwargs.get("text") or ""
         if not query:
@@ -757,7 +757,7 @@ class PageIndexAction(Action):
         ``code_execution__bash`` and ``file_interface__*`` use.
         """
         from jvagent.action.file_interface import _core
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         from ..documents import DOC_TEXT_EXTENSIONS
 
@@ -808,7 +808,7 @@ class PageIndexAction(Action):
         fits in the orchestrator observation budget."""
         import json
 
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         result = await self.list_documents(

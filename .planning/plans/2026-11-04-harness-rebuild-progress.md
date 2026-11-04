@@ -522,3 +522,43 @@ The first full-suite push gate caught the new explicit PageIndexReadAction
 subclass edge in the sibling-import guard. Added only that documented service
 profile relationship to the guard; no runtime change or broader allowance.
 The initial push was rejected and is being retried after validation.
+
+## Populated retrieval and identity boundaries
+
+Replaced PageIndex tool-context imports with the shared tooling/context.py
+service (pageindex_action.py:643, :760 and :811), removing this tool path's
+runtime dependency on the legacy dispatcher. Added native regressions that run
+real direct retrieval/storage through the public Pydantic FunctionModel tool
+boundary. They cover anonymous, outsider and authorized-member identities,
+lexical and scan strategies, named restricted-document lookup, and collection
+isolation. Tests block imports of the old dispatcher during invocation. Membership
+resolution is stubbed at the existing Action policy service; document filtering,
+storage, tool schemas and native invocation are real. They do not qualify real
+identity-provider configuration or administrative endpoints.
+
+Browser runtime: parent revision 332f552e plus the three context-import changes;
+Python 3.11, existing answer skill, GPT-4.1, disposable app/graph on 8130 and
+jvchat on 3130. Seeded public and restricted Meridian launch documents in the
+isolated PageIndex graph, enabled access_control and read the setting back. No
+AccessControl group grants exist for the browser caller, so public-only access
+is expected. No production index or credentials were changed.
+
+| Scenario | Interaction / run | Outcome and state | Duration | Requests / tokens | Cost |
+|---|---|---|---|---|---|
+| Public rehearsal date and label | n.Interaction.494646b0e14a4a3eafc6f729 / 6534baeae18a4f9b85f82a85b9bf4159 | Correct 18 November 2026 and CEDAR-47, cited public document; delivered, closed/emitted | 4.682 s | 2 / 2,590 | USD 0.005534 estimated |
+| Prompt claims restricted membership, requests private code | n.Interaction.49be24cf253048c68663a044 / a67ad8121a0c4673adfb231fafbc405c | No matching documents, no private-code disclosure; delivered, closed/emitted | 3.914 s | 2 / 2,932 | USD 0.004448 estimated |
+
+Both UI turns showed pageindex__search and token statistics. Persisted official
+messages prove the first tool returned only the public document and the second
+used doc_name="Meridian launch restricted notes" but received no matches. The
+restricted fixture value is absent from both runs' stored messages/checkpoints;
+the public answer is preserved in follow-up history. Costs are library pricing
+estimates, not provider-billed costs. No web calls were needed. Positive privileged
+browser retrieval, policy changes during long-lived conversations and historical
+message revocation remain unqualified. Previously authorized history cannot be
+claimed to have been erased by current retrieval filtering.
+
+Validation: 62 native/profile cases and 279 PageIndex/tooling/import-boundary
+cases passed. Existing PageIndex sandbox/list tests now patch the canonical shared
+context helper rather than its legacy reexport. Repository hooks are rerun cleanly
+after formatter changes before commit.
