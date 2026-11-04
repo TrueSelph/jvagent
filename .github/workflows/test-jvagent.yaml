@@ -59,6 +59,28 @@ jobs:
           pip install pre-commit
           pre-commit run --all-files
 
+  native-harness:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    env:
+      PYDANTIC_AI_NO_BANNER: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native harness and test dependencies
+        # The legacy test extra pins LiteLLM's older OpenAI SDK; keep this
+        # native lane independent until the legacy transport is retired.
+        run: python -m pip install -e '.[native-harness]' pytest pytest-asyncio
+      - name: Verify dependency consistency
+        run: python -m pip check
+      - name: Native execution and graph adapter contracts
+        run: pytest tests/harness/native -q --tb=short
+
   harness-conformance:
     runs-on: ubuntu-latest
     steps:

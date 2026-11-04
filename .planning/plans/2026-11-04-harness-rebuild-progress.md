@@ -270,3 +270,39 @@ All 36 native tests pass, including cancellation during native output publicatio
 second cancellation during persistence and persistence outage. These are injected
 boundary tests, not real disconnect/network delivery or backend crash evidence.
 The single-writer/lease, deadline and manual reconciliation UI gates remain open.
+
+## Compatibility inventory and pre-measurement acceptance
+
+Added a complete named pre-rebuild inventory: 58 Action dispositions, 22 skill
+assets and 91 persisted Orchestrator settings with verified file/line references.
+All migration implementations remain explicitly false/pending; categories do not
+claim qualified compatibility. The new native Action is tracked separately from
+this baseline. Required next migrations include script/flow semantics and skill
+name normalization; no obsolete setting may silently disappear.
+
+Added qualification matrix and workload thresholds before performance measurement:
+20 scenarios x 3 repeats per implementation; all deterministic safety gates,
+>=95% scenario success, no quality regression, pilot p95 latency <=1.2x baseline
+and median tokens <=1.1x. These are project acceptance choices, not measured results
+or an SLA. Real-provider/browser baseline, exact mapping implementation and large
+soak qualification are still open. Asset paths, name uniqueness and all 91 setting
+source references were mechanically verified. Runtime source was left unchanged
+while the 056ef283 pre-push full suite ran.
+
+## Python floor and dedicated CI qualification
+
+Fresh Python 3.11.15 environment `/private/tmp/jvagent-native-py311` installs
+native-harness, passes dependency check (85 packages including tests), and passes
+all 36 native tests both in isolation and with normal repository conftest fixtures.
+The earlier Python 3.12 environment also passed those cases. Added native CI
+matrix for 3.11/3.12; remote CI has not yet run.
+
+Attempting the exact initially drafted CI install `.[test,native-harness]` failed
+resolution: native core needs OpenAI SDK >=3.31, legacy pinned LiteLLM needs <3.
+Corrected the lane to install native-harness and its minimal test dependencies.
+This is an explicit transitional incompatibility, not unified dependency proof.
+W5 must remove obsolete transport/test dependencies before release. No source
+runtime changed and no invalid-key provider request was repeated in this round.
+
+Push 056ef283 completed successfully after the full pre-push suite passed; local
+and origin SHA matched. New inventory/CI changes remain separate from that commit.

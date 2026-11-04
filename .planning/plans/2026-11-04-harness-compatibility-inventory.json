@@ -1,0 +1,1681 @@
+{
+  "baseline": "7d689e4d",
+  "status": "proposed complete name inventory; no compatibility qualification implied",
+  "actions": [
+    {
+      "path": "jvagent/action/access_control/info.yaml",
+      "name": "jvagent/access_control_action",
+      "archetype": "AccessControlAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/agent_utils/info.yaml",
+      "name": "jvagent/agent_utils",
+      "archetype": "AgentUtils",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/artifact_handler_interact_action/info.yaml",
+      "name": "jvagent/artifact_handler_interact_action",
+      "archetype": "ArtifactHandlerInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/avatar_action/info.yaml",
+      "name": "jvagent/avatar_action",
+      "archetype": "AvatarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/code_execution/info.yaml",
+      "name": "jvagent/code_execution",
+      "archetype": "CodeExecutionAction",
+      "disposition": "Preserve extension contract; qualify workspace sandbox/effect boundary before enabling",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/email_action/info.yaml",
+      "name": "jvagent/email_action",
+      "archetype": "EmailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/facebook_action/info.yaml",
+      "name": "jvagent/facebook_action",
+      "archetype": "FacebookAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/file_interface/info.yaml",
+      "name": "jvagent/file_interface",
+      "archetype": "FileInterfaceAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_calendar_action/info.yaml",
+      "name": "jvagent/google_calendar_action",
+      "archetype": "GoogleCalendarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_docs_action/info.yaml",
+      "name": "jvagent/google_docs_action",
+      "archetype": "GoogleDocsAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_drive_action/info.yaml",
+      "name": "jvagent/google_drive_action",
+      "archetype": "GoogleDriveAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_gmail_action/info.yaml",
+      "name": "jvagent/google_gmail_action",
+      "archetype": "GoogleGmailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_sheets_action/info.yaml",
+      "name": "jvagent/google_sheets_action",
+      "archetype": "GoogleSheetsAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/handoff_interact_action/info.yaml",
+      "name": "jvagent/handoff_interact_action",
+      "archetype": "HandoffInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/interview/info.yaml",
+      "name": "jvagent/interview",
+      "archetype": "InterviewAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/intro/info.yaml",
+      "name": "jvagent/intro_interact_action",
+      "archetype": "IntroInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/leadgen/info.yaml",
+      "name": "jvagent/leadgen",
+      "archetype": "LeadGenAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/mcp/info.yaml",
+      "name": "jvagent/mcp",
+      "archetype": "MCPAction",
+      "disposition": "Preserve connection/auth services; adapt to native MCP tools; qualify per-user isolation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/mcp_oauth/info.yaml",
+      "name": "jvagent/mcp_oauth",
+      "archetype": "MCPOAuthAction",
+      "disposition": "Preserve connection/auth services; adapt to native MCP tools; qualify per-user isolation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_excel_action/info.yaml",
+      "name": "jvagent/microsoft_excel_action",
+      "archetype": "MicrosoftExcelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_onedrive_action/info.yaml",
+      "name": "jvagent/microsoft_onedrive_action",
+      "archetype": "MicrosoftOneDriveAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_outlook_calendar_action/info.yaml",
+      "name": "jvagent/microsoft_outlook_calendar_action",
+      "archetype": "MicrosoftOutlookCalendarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_outlook_mail_action/info.yaml",
+      "name": "jvagent/microsoft_outlook_mail_action",
+      "archetype": "MicrosoftOutlookMailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/generic/info.yaml",
+      "name": "jvagent/generic_embedding",
+      "archetype": "GenericEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/huggingface/info.yaml",
+      "name": "jvagent/huggingface_embedding",
+      "archetype": "HuggingFaceEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/ollama/info.yaml",
+      "name": "jvagent/ollama_embedding",
+      "archetype": "OllamaEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/openai/info.yaml",
+      "name": "jvagent/openai_embedding",
+      "archetype": "OpenAIEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/openrouter/info.yaml",
+      "name": "jvagent/openrouter_embedding",
+      "archetype": "OpenRouterEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/anthropic/info.yaml",
+      "name": "jvagent/anthropic_lm",
+      "archetype": "AnthropicLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/groq/info.yaml",
+      "name": "jvagent/groq_lm",
+      "archetype": "GroqLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/litellm/info.yaml",
+      "name": "jvagent/litellm_lm",
+      "archetype": "LiteLLMLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/ollama/info.yaml",
+      "name": "jvagent/ollama_lm",
+      "archetype": "OllamaLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/openai/info.yaml",
+      "name": "jvagent/openai_lm",
+      "archetype": "OpenAILanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/openrouter/info.yaml",
+      "name": "jvagent/openrouter_lm",
+      "archetype": "OpenRouterLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/orchestrator/info.yaml",
+      "name": "jvagent/orchestrator",
+      "archetype": "OrchestratorInteractAction",
+      "disposition": "Retire execution implementation; preserve canonical-name facade only if required by migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/page_context/info.yaml",
+      "name": "jvagent/page_context",
+      "archetype": "PageContextInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/pageindex/pageindex_action/info.yaml",
+      "name": "jvagent/pageindex_action",
+      "archetype": "PageIndexAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",
+      "name": "jvagent/pageindex_google_drive_sync_action",
+      "archetype": "PageIndexGoogleDriveSyncAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/postiz_action/info.yaml",
+      "name": "jvagent/postiz_action",
+      "archetype": "PostizAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/reply/info.yaml",
+      "name": "jvagent/reply",
+      "archetype": "ReplyAction",
+      "disposition": "Preserve literal delivery/channels; retire any duplicate final-answer generation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/sentdm_broadcast/info.yaml",
+      "name": "jvagent/sentdm_broadcast_action",
+      "archetype": "SentDMBroadcastAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/skill_hub/info.yaml",
+      "name": "jvagent/skill_hub",
+      "archetype": "SkillHubAction",
+      "disposition": "Preserve skill asset installation; adapt metadata to official Skills",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/stt_action/deepgram/info.yaml",
+      "name": "jvagent/deepgram_stt",
+      "archetype": "DeepgramSTTAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/suggestions/info.yaml",
+      "name": "jvagent/suggestions",
+      "archetype": "SuggestionsInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_creation_interact_action/info.yaml",
+      "name": "jvagent/task_creation_interact_action",
+      "archetype": "TaskCreationInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_monitor/info.yaml",
+      "name": "jvagent/task_monitor",
+      "archetype": "TaskMonitor",
+      "disposition": "Preserve scheduling; route execution into the same native factory",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_trigger_interact_action/info.yaml",
+      "name": "jvagent/task_trigger_interact_action",
+      "archetype": "TaskTriggerInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/tts_action/elevenlabs/info.yaml",
+      "name": "jvagent/elevenlabs_tts",
+      "archetype": "ElevenLabsTTSAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/ui/info.yaml",
+      "name": "jvagent/ui",
+      "archetype": "UiAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/vectorstore/typesense/info.yaml",
+      "name": "jvagent/typesense_vectorstore",
+      "archetype": "TypesenseVectorStore",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/video_generation/info.yaml",
+      "name": "jvagent/heygen_video_action",
+      "archetype": "HeygenVideoAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/vision/info.yaml",
+      "name": "jvagent/vision",
+      "archetype": "VisionAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_fetch/info.yaml",
+      "name": "jvagent/web_fetch",
+      "archetype": "WebFetchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/brave/info.yaml",
+      "name": "jvagent/brave_web_search",
+      "archetype": "BraveWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/serpapi/info.yaml",
+      "name": "jvagent/serpapi_web_search",
+      "archetype": "SerpAPIWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/serper/info.yaml",
+      "name": "jvagent/serper_web_search",
+      "archetype": "SerperWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/whatsapp/info.yaml",
+      "name": "jvagent/whatsapp_action",
+      "archetype": "WhatsAppAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/whatsapp_voice/info.yaml",
+      "name": "jvagent/whatsapp_voice_action",
+      "archetype": "WhatsAppVoiceAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    }
+  ],
+  "orchestrator_settings": [
+    {
+      "name": "weight",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:454",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "description",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:458",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "model",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:468",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_action_type",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:469",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_temperature",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:470",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_max_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:471",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_max_tokens_ceiling",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:489",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_protocol",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:499",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "skill_runtime",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:513",
+      "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_skill",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:521",
+      "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_max_model_requests",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:530",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_max_tool_calls",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:536",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_max_total_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:542",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_max_output_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:548",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "pilot_max_runtime_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:554",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "enforce_json_mode",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:560",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_unavailable_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:569",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:584",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model_action_type",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:589",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model_temperature",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:594",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model_max_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:595",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_enabled",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:602",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_effort",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:607",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_budget_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:612",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_extra",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:617",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "stream_internal_progress",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:623",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "stream_reasoning_trace",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:628",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "activation_budget",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:635",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_duration_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:639",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_statement_length",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:644",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_fallbacks",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:652",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model_fallbacks",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:662",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "circuit_breaker_failures",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:666",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "circuit_breaker_cooldown_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:673",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_turn_cost_usd",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:680",
+      "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_conversation_cost_usd",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:691",
+      "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
+      "migration_implemented": false
+    },
+    {
+      "name": "budget_exhausted_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:701",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "structured_decisions",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:708",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "repeat_guard_window",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:718",
+      "disposition": "Replace generic behavior with official optional capability",
+      "migration_implemented": false
+    },
+    {
+      "name": "history_limit",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:728",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "history_statement_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:729",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "with_event",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:738",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "safeguards_reminder",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:755",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_listing_position",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:770",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "grounding_max_deflections",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:784",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_observations_in_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:792",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:799",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "stale_observation_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:804",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_full_recent",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:810",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "thought_replay_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:815",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_args_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:822",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "clarify_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:828",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "system_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:835",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "parameters",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:850",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "system_prompt_extra",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:858",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "user_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:866",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "flow_in_progress_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:874",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "finalize_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:878",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "no_skills_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:882",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "planning_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:886",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "plan_completion_max_deflections",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:891",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "lock_active_flow",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:903",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "auto_start_skills_on_new_user",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:912",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "planning",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:921",
+      "disposition": "Replace generic behavior with official optional capability",
+      "migration_implemented": false
+    },
+    {
+      "name": "planning_heavy_first_tick",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:932",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "proactive_tasks_enabled",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:942",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "default_max_attempts",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:946",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "vision",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:950",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "ingest_uploads",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:963",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "upload_data_keys",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:977",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "skills_source",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:983",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "skills",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:984",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "denied_skills",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:985",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "enable_transient_ack",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:988",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "first_emit_timeout_ms",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:993",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "ack_interval_ms",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:999",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "ack_statements",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1004",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "ack_on_first_tool_call",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1010",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "ack_spoken_channels",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1019",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "channel_overrides",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1027",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "block_raw_tool_invocation",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1042",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_tier",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1051",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_call_timeout",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1055",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_thought_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1063",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "lean_tool_threshold",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1072",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "lean_presurface_k",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1080",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "pinned_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1086",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "denied_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1095",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "skill_only_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1105",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_servers",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1120",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_concurrent_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1125",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false
+    }
+  ],
+  "skills": [
+    {
+      "path": "jvagent/action/interview/SKILL.md",
+      "metadata": {
+        "name": "interview_base",
+        "description": "Framework-standard interview tool-loop procedure. Not a discoverable skill \u2014 inherited by action-backed interview skills via extends: action:jvagent/interview.",
+        "task-lock": true,
+        "allowed-tools": [
+          "interview__set_fields",
+          "interview__skip_field",
+          "interview__field_unavailable",
+          "interview__next_field",
+          "interview__get_status",
+          "interview__review",
+          "interview__complete",
+          "interview__cancel",
+          "interview__reset"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_account_gating/example_booking_interview/SKILL.md",
+      "metadata": {
+        "name": "example_booking_interview",
+        "description": "Reference GATED service skill (ADR-0026). Books an appointment, but only once the visitor has an active session. Demonstrates declarative requires-tasks: when the `signed_in` precondition is unmet, the harness pushes a sign-in prerequisite that blocks this skill and resumes it on completion \u2014 no rail, no per-field guard, no model-mediated resume. Copy to <action>/skills/ and bind the precondition with register_precondition (see ../README.md).",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "requires-tasks": [
+          {
+            "when": "signed_in",
+            "push": "example_signin_interview",
+            "seed_from": [
+              "utterance"
+            ]
+          }
+        ],
+        "tags": [
+          "example",
+          "gating",
+          "reference"
+        ],
+        "interview": {
+          "title": "Appointment Booking",
+          "summary": "Collects the service type and a preferred date to book an appointment. Gated on an active session via requires-tasks; the booking only runs once the visitor is signed in.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "service_type",
+              "prompt": "What would you like to book?",
+              "required": true,
+              "guidance": "A service name (e.g. \"haircut\", \"consultation\"). Not filler.",
+              "validator": "text"
+            },
+            {
+              "key": "preferred_date",
+              "prompt": "What date would you like?",
+              "required": true,
+              "guidance": "A date or day. Not an acknowledgement.",
+              "validator": "text"
+            }
+          ],
+          "completion": {
+            "message": "You're booked for {service_type} on {preferred_date}. See you then!"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_account_gating/example_signin_interview/SKILL.md",
+      "metadata": {
+        "name": "example_signin_interview",
+        "description": "Reference PREREQUISITE skill (ADR-0026). Collects an email to establish a session. Pushed automatically as a blocking prerequisite when a gated skill's `signed_in` precondition is unmet (see example_booking_interview). On its own it is just an ordinary task-lock interview \u2014 the work graph is what makes it a gate.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "tags": [
+          "example",
+          "gating",
+          "reference"
+        ],
+        "interview": {
+          "title": "Sign In",
+          "summary": "Establishes a session by collecting the visitor's email. When complete, the consumer marks the visitor signed in so the gated skill that pushed this one becomes runnable and resumes.",
+          "confirm": "auto",
+          "fields": [
+            {
+              "key": "email",
+              "prompt": "What is your email address?",
+              "required": true,
+              "guidance": "A valid email address.",
+              "validator": "email"
+            }
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_for_each_interview/SKILL.md",
+      "metadata": {
+        "name": "example_for_each_interview",
+        "description": "Reference interview demonstrating for_each per-item subpart fields. Collects comma-separated item IDs, then asks title and quantity for each item.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "tags": [
+          "example",
+          "interview",
+          "for_each"
+        ],
+        "interview": {
+          "title": "Item registration",
+          "summary": "Reference for_each expansion \u2014 parent item_ids expands into per-item subparts.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "item_ids",
+              "prompt": "What item IDs would you like to register? (comma-separated)",
+              "required": true,
+              "guidance": "One or more short alphanumeric IDs separated by commas.",
+              "validator": "validate_item_ids",
+              "post_processor": "expand_item_ids",
+              "for_each_prefix": "item_id_prefix",
+              "for_each": {
+                "fields": [
+                  {
+                    "key": "title",
+                    "prompt": "What is the title for this item?",
+                    "required": true,
+                    "validator": "text",
+                    "validator_args": {
+                      "min_length": 2,
+                      "max_length": 200
+                    }
+                  },
+                  {
+                    "key": "quantity",
+                    "prompt": "How many units?",
+                    "required": true,
+                    "validator": "validate_quantity"
+                  },
+                  {
+                    "key": "notes",
+                    "prompt": "Any optional notes?",
+                    "required": false,
+                    "pre_processor": [
+                      "skip_notes_if_declined"
+                    ],
+                    "validator": "text",
+                    "validator_args": {
+                      "min_length": 2,
+                      "max_length": 500
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "handlers": {
+            "review": "for_each_review",
+            "complete": "for_each_complete"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_interview/SKILL.md",
+      "metadata": {
+        "name": "example_interview",
+        "description": "Reference product feedback interview. Collects customer name, product rating, optional comments, and follow-up email. Demonstrates all InterviewAction patterns: validators, pre_processor, post_processor, custom tools, review, and completion. Copy to <action>/skills/<your_skill_name>/ to create a live skill.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "allowed-tools": [
+          "example_interview__send_followup_reminder"
+        ],
+        "tags": [
+          "example",
+          "feedback",
+          "interview",
+          "reference"
+        ],
+        "interview": {
+          "title": "Product Feedback",
+          "summary": "Reference interview skill that collects product feedback (name, rating, optional comments, follow-up email). Demonstrates InterviewAction frontmatter: validators, pre_processor, post_processor, LLM-callable skill_tools, custom review, and completion handlers. Copy this folder to skills/<your_skill_name>/ to create a live skill under the action skills/ folder.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "customer_name",
+              "prompt": "What is your name?",
+              "required": true,
+              "guidance": "Customer's full name for the feedback record.",
+              "validator": "name"
+            },
+            {
+              "key": "product_rating",
+              "prompt": "On a scale of 1 to 5, how would you rate the product?",
+              "required": true,
+              "guidance": "Integer rating from 1 (poor) to 5 (excellent). post_processor runs check_low_rating automatically after save \u2014 read post_tools_results before advancing.",
+              "post_processor": "check_low_rating",
+              "validator": "validate_rating"
+            },
+            {
+              "key": "feedback_comments",
+              "prompt": "Would you like to share any additional comments? (You can skip this)",
+              "required": false,
+              "guidance": "Optional free-text feedback. Call interview__skip_field if the user declines.",
+              "validator": "description",
+              "validator_args": {
+                "min_length": 3,
+                "max_length": 500
+              }
+            },
+            {
+              "key": "follow_up_email",
+              "prompt": "What email address should we use for follow-up?",
+              "required": true,
+              "guidance": "Email for follow-up. pre_processor may suggest an address from conversation context \u2014 ask the user to confirm before saving.",
+              "pre_processor": "suggest_email",
+              "validator": "email"
+            }
+          ],
+          "handlers": {
+            "review": "example_review",
+            "complete": "example_complete",
+            "reset": "reset_example_interview"
+          },
+          "skill_tools": [
+            {
+              "name": "send_followup_reminder",
+              "function": "send_followup_reminder",
+              "description": "Optional LLM-callable tool after follow_up_email is saved \u2014 records that a follow-up reminder was queued (demo stub)."
+            }
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/leadgen/SKILL.md",
+      "metadata": {
+        "name": "leadgen_base",
+        "description": "Framework-standard leadgen capture procedure. Not a discoverable skill \u2014 inherited by action-backed leadgen skills via extends: action:jvagent/leadgen.",
+        "always-active": false,
+        "allowed-tools": [
+          "leadgen__capture",
+          "leadgen__retrieve",
+          "leadgen__status",
+          "leadgen__sync"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/leadgen/examples/example_leadgen/SKILL.md",
+      "metadata": {
+        "name": "example_leadgen",
+        "description": "Reference lead capture skill. Collects name, organization, contact info, and product interest. Demonstrates leadgen frontmatter, validators, hooks, and MCP sync.",
+        "extends": "action:jvagent/leadgen",
+        "requires-actions": [
+          "LeadGenAction",
+          "MCPAction"
+        ],
+        "always-active": true,
+        "allowed-tools": [],
+        "tags": [
+          "example",
+          "leadgen",
+          "reference"
+        ],
+        "leadgen": {
+          "title": "Product Inquiry Leads",
+          "summary": "Reference leadgen skill for product inquiries. Copy to agents/.../skills/<name>/ and register in agent.yaml orchestrator skills.",
+          "fields": [
+            {
+              "key": "name",
+              "required": true,
+              "guidance": "Full name of the contact",
+              "validator": "person_name",
+              "aliases": [
+                "full_name",
+                "contact_name"
+              ]
+            },
+            {
+              "key": "organization",
+              "required": false,
+              "guidance": "Company or organization name",
+              "decline_value": "Personal"
+            },
+            {
+              "key": "email",
+              "required": true,
+              "guidance": "Email address",
+              "validator": "email",
+              "decline_value": "N/A"
+            },
+            {
+              "key": "phone",
+              "required": false,
+              "guidance": "Phone number with country code if possible",
+              "validator": "phone",
+              "phone_locale": "E164"
+            },
+            {
+              "key": "interested_products",
+              "required": false,
+              "guidance": "Products or services the lead is interested in",
+              "merge": true
+            },
+            {
+              "key": "project_description",
+              "required": false,
+              "guidance": "Brief description of their project or need"
+            }
+          ],
+          "gap_fill": {
+            "batch": true,
+            "priority": [
+              "name",
+              "phone",
+              "email",
+              "organization"
+            ]
+          },
+          "sync": {
+            "mode": "on_capture",
+            "min_fields": [
+              "name"
+            ],
+            "require_any": [
+              "phone",
+              "email"
+            ],
+            "destinations": [
+              {
+                "server": "leadfile",
+                "mode": "mcp",
+                "tool": "write_file",
+                "arguments": {
+                  "path": "lead.json",
+                  "content": "Lead profile: {profile_json}"
+                }
+              }
+            ]
+          },
+          "handlers": {
+            "post_capture": "enrich_from_channel"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/answer/SKILL.md",
+      "metadata": {
+        "name": "answer",
+        "description": "Answer knowledge questions with a structured retrieval cascade: search internal sources first, then the web, then synthesize a cited answer. Signal uncertainty when relying on parametric knowledge. Say \"I don't know\" when nothing is found.",
+        "allowed-tools": [
+          "pageindex__search",
+          "web_search__search",
+          "web_fetch__fetch"
+        ],
+        "requires-actions": [
+          "PageIndexAction",
+          "SerperWebSearchAction"
+        ],
+        "version": 2,
+        "tags": [
+          "rag",
+          "retrieval",
+          "knowledge",
+          "informational"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/artifact_handler/SKILL.md",
+      "metadata": {
+        "name": "artifact_handler",
+        "description": "Ingest user-submitted documents and URLs into a private vault, list saved documents, delete expired or unwanted documents, and check ingest processing status. Handles URL-based ingest via ingest_document (media attachments are auto-detected by the action layer) and proactive ready notification via jvforge cron callback. Use for saving, listing, deleting, and status-checking user documents \u2014 not for content Q&A on saved documents (use faq with pageindex__search \u2014 provide query and doc_name when known; if unknown, faq selects via doc_description / Active document / unscoped search \u2014 do not ask which file first) or live web lookup (use web_search). Call check_ingest_status with no arguments (no doc_name, no url).",
+        "spec": "jv",
+        "requires-actions": [
+          "PageIndexAction",
+          "AccessControlAction",
+          "ArtifactHandlerInteractAction"
+        ],
+        "allowed-tools": [
+          "artifact_handler__ingest_document",
+          "artifact_handler__list_my_documents",
+          "artifact_handler__delete_document",
+          "artifact_handler__check_ingest_status",
+          "artifact_handler__check_pending_attachments",
+          "pageindex__search"
+        ],
+        "tags": [
+          "vault",
+          "ingest",
+          "documents",
+          "private",
+          "retention"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_calendar/SKILL.md",
+      "metadata": {
+        "name": "google_calendar",
+        "description": "List, create, and delete Google Calendar events. Use when the user asks about upcoming events, to schedule something, or to cancel a calendar event.",
+        "requires-actions": [
+          "GoogleCalendarAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "calendar__list_events",
+          "calendar__create_event",
+          "calendar__delete_event"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_drive/SKILL.md",
+      "metadata": {
+        "name": "google_drive",
+        "description": "Manage Google Drive files. Use when the user asks to list, upload, download, share, or delete Drive files, or inspect file metadata.",
+        "requires-actions": [
+          "GoogleDriveAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "google_drive__list_files",
+          "google_drive__upload_file",
+          "google_drive__get_file_metadata",
+          "google_drive__get_shared_drive_metadata",
+          "google_drive__get_media",
+          "google_drive__share_file",
+          "google_drive__delete_file"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_gmail/SKILL.md",
+      "metadata": {
+        "name": "google_gmail",
+        "description": "Send and read Gmail. Use when the user asks to send mail, list inbox messages, open a message, mark mail read, or check the mailbox profile.",
+        "requires-actions": [
+          "GoogleGmailAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "gmail__send_email",
+          "gmail__list_messages",
+          "gmail__get_message",
+          "gmail__mark_read",
+          "gmail__get_profile"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_sheets/SKILL.md",
+      "metadata": {
+        "name": "google_sheets",
+        "description": "Read and update Google Sheets. Use when the user asks to look up, append, format, merge, share, or change spreadsheet data.",
+        "requires-actions": [
+          "GoogleSheetsAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "google_sheets__read_spreadsheet",
+          "google_sheets__update_spreadsheet",
+          "google_sheets__append_spreadsheet",
+          "google_sheets__create_spreadsheet",
+          "google_sheets__delete_spreadsheet",
+          "google_sheets__create_worksheet",
+          "google_sheets__update_worksheet",
+          "google_sheets__delete_worksheet",
+          "google_sheets__merge_cells",
+          "google_sheets__unmerge_cells",
+          "google_sheets__format_cells",
+          "google_sheets__last_filled_row",
+          "google_sheets__batch_clear",
+          "google_sheets__share_spreadsheet"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/knowledge_ingest/SKILL.md",
+      "metadata": {
+        "name": "knowledge_ingest",
+        "description": "Capture content from one or more URLs (or pasted text), produce a structured report, and assimilate that report into the internal PageIndex knowledge base. Use when the user asks to go online / fetch a site / crawl a page, summarize or report on it, and save or ingest it into memory / knowledge / the KB.",
+        "allowed-tools": [
+          "web_fetch__fetch",
+          "web_search__search",
+          "pageindex__assimilate",
+          "pageindex__list"
+        ],
+        "requires-actions": [
+          "WebFetchAction",
+          "PageIndexAction"
+        ],
+        "version": 1,
+        "tags": [
+          "knowledge",
+          "ingest",
+          "pageindex",
+          "research",
+          "report",
+          "capture",
+          "assimilate"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/excel/SKILL.md",
+      "metadata": {
+        "name": "excel",
+        "description": "Read and update Excel workbooks on OneDrive. Use when the user asks to look up, append, share, or change spreadsheet data.",
+        "requires-actions": [
+          "MicrosoftExcelAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "excel__read_spreadsheet",
+          "excel__update_spreadsheet",
+          "excel__append_spreadsheet",
+          "excel__create_spreadsheet",
+          "excel__delete_spreadsheet",
+          "excel__create_worksheet",
+          "excel__update_worksheet",
+          "excel__delete_worksheet",
+          "excel__batch_clear",
+          "excel__share_spreadsheet"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/onedrive/SKILL.md",
+      "metadata": {
+        "name": "onedrive",
+        "description": "Manage OneDrive files. Use when the user asks to list, upload, share, or delete OneDrive files.",
+        "requires-actions": [
+          "MicrosoftOneDriveAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "onedrive__list_files",
+          "onedrive__upload_file",
+          "onedrive__share_file",
+          "onedrive__delete_file"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/outlook_calendar/SKILL.md",
+      "metadata": {
+        "name": "outlook_calendar",
+        "description": "List, create, and delete Outlook Calendar events. Use when the user asks about upcoming events, to schedule something, or to cancel a calendar event.",
+        "requires-actions": [
+          "MicrosoftOutlookCalendarAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "outlook_calendar__list_events",
+          "outlook_calendar__create_event",
+          "outlook_calendar__delete_event"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/outlook_mail/SKILL.md",
+      "metadata": {
+        "name": "outlook_mail",
+        "description": "Send and read Outlook mail. Use when the user asks to send mail, list inbox messages, open a message, mark mail read, or check the mailbox profile.",
+        "requires-actions": [
+          "MicrosoftOutlookMailAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "outlook__send_email",
+          "outlook__list_messages",
+          "outlook__list_inbox_messages",
+          "outlook__get_message",
+          "outlook__mark_read",
+          "outlook__get_profile"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/pageindex_search_with_references/SKILL.md",
+      "metadata": {
+        "name": "pageindex_search_with_references",
+        "description": "Search the internal knowledge base with PageIndex and format responses with proper citations and a Sources section containing clickable links to the original documents. Use for policies, documentation, FAQs, and general knowledge base questions - not live catalog/inventory SKU lookup or real-time database queries.",
+        "requires-actions": [
+          "PageIndexAction"
+        ],
+        "allowed-tools": [
+          "pageindex__search"
+        ],
+        "tags": [
+          "knowledge",
+          "documentation",
+          "retrieval",
+          "rag",
+          "pageindex",
+          "indexed",
+          "internal",
+          "faq",
+          "help",
+          "policies",
+          "info",
+          "references"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/pdf_generation/SKILL.md",
+      "metadata": {
+        "name": "pdf-generation",
+        "description": "Render a Markdown or plain-text document into a polished PDF. Use when the user asks to create, generate, export, or produce a PDF from text or Markdown content (reports, letters, memos, documents). Runs a bundled script in your sandbox.",
+        "spec": "claude",
+        "allowed-tools": [
+          "code_execution__bash"
+        ],
+        "requires-actions": [
+          "CodeExecutionAction"
+        ],
+        "license": "Apache-2.0",
+        "metadata": {
+          "version": "3",
+          "tags": [
+            "pdf",
+            "document",
+            "export",
+            "publishing"
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/research/SKILL.md",
+      "metadata": {
+        "name": "research",
+        "description": "Investigate a topic with evidence-first synthesis and citations.",
+        "output-contract": "evidence_required",
+        "allowed-tools": [
+          "web_search__search",
+          "web_fetch__fetch"
+        ],
+        "requires-actions": [
+          "SerperWebSearchAction",
+          "WebFetchAction"
+        ],
+        "version": 2,
+        "tags": [
+          "research",
+          "synthesis"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/triage/SKILL.md",
+      "metadata": {
+        "name": "triage",
+        "description": "Rapidly triage issues by severity, impact, and next action. Use when given a set of problems, alerts, bugs, or incidents to rank and act on. Includes a bundled script that sorts findings by severity deterministically.",
+        "spec": "claude",
+        "allowed-tools": [
+          "code_execution__bash"
+        ],
+        "requires-actions": [
+          "CodeExecutionAction"
+        ],
+        "license": "Apache-2.0",
+        "metadata": {
+          "version": "2",
+          "tags": [
+            "triage",
+            "incident"
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    }
+  ]
+}
