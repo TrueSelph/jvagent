@@ -607,6 +607,11 @@ class PageIndexAction(Action):
         # signature deriver does not emit, so we re-add it here.
         tools = collect_tools(self)
         for t in tools:
+            if t.name == "pageindex__search":
+                # Only direct graph retrieval is qualified as a read capability.
+                # Tree/walker strategies may perform additional model execution.
+                strategy = (self.config or {}).get("strategy") or self.strategy
+                t.effect_class = "read" if strategy == "direct" else None
             if t.name == "pageindex__assimilate":
                 t.parameters_schema["additionalProperties"] = False
                 # ``doc`` is runtime-optional (the body coalesces aliases like

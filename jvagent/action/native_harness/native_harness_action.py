@@ -106,7 +106,16 @@ class NativeHarnessAction(InteractAction):
             spend_store=ConversationSpendStore(conversation),
             max_run_cost_usd=self.max_run_cost_usd,
             max_conversation_cost_usd=self.max_conversation_cost_usd,
-            available_actions=[action.get_class_name() for action in actions],
+            available_actions=sorted(
+                {
+                    name
+                    for action in actions
+                    for name in (
+                        action.get_class_name(),
+                        *(base.__name__ for base in type(action).__mro__),
+                    )
+                }
+            ),
             channel=getattr(visitor, "channel", "default"),
         )
         previous = await interaction.get_previous_interaction()

@@ -5,7 +5,6 @@ import pytest
 pytest.importorskip("openai")
 pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
-pytest.importorskip("pypdf")
 
 from jvspatial.db import unregister_database
 

@@ -481,3 +481,39 @@ stack. Do not remove the prerequisite to make a smoke pass. Next integration wor
 must distinguish direct read retrieval from service-internal model execution,
 preserve caller context, classify read effects, and move any model operations to
 public Pydantic interfaces/shared policy before claiming full PageIndex support.
+
+## Existing general answer skill via direct PageIndex service profile
+
+Added a small PageIndexReadAction subclass publishing only the inherited direct
+search tool. It preserves PageIndexAction ancestry and reuses its retrieval code;
+the manifest excludes legacy model transport dependencies. The full original
+Action is unchanged as an extension entrypoint. Search is marked read only for
+explicit direct strategy, including metadata override checks; tree/walker remain
+unqualified. Native prerequisites recognize actual class ancestry so the existing
+answer SKILL.md and its PageIndexAction/Serper requirements stay unchanged.
+The read profile limits model tools, not inherited administrative APIs.
+
+Installed declared read dependencies in the isolated Python 3.11 native environment
+without LiteLLM; pip check passes (92 packages). 50 native/profile cases passed in
+the prototype worktree. Applied the tested patch to main after 12417368 pushed;
+source-synced/read back the disposable app's answer skill and PageIndexReadAction,
+with PageIndex storage explicitly under the disposable app path.
+
+Actual GPT-4.1 browser prompt requested internal-first Python information, then
+web fallback. UI showed pageindex__search, web_search__search and web_fetch__fetch
+in order, then a cited text answer. Official snapshot confirms the PageIndex return
+was 'No matching documents found.' Interaction
+n.Interaction.53375ea768eb4f4f9cb388e1 / run e1845a76b6794a6f89421923551752bb:
+delivered, 14.068 seconds, 4 model requests, 5,934 tokens, USD 0.00687 estimated.
+This qualifies the existing general skill's empty-KB fallback path, not populated
+or private KB search, indexing or model-based retrieval. Shared budget accounting
+for nested PageIndex model operations remains open. No legacy LM dependency was
+silently installed and no skill prerequisite was waived.
+
+Original dependency conflict remains for the full PageIndex manifest/test extra;
+the read service profile is one compatibility slice, not a substitute for full
+migration. Final gates passed: 50 native/profile tests, 234 existing PageIndex
+tests and all repository pre-commit hooks. Removed two stale pypdf import guards
+from PageIndex tests: these suites exercise PyPDF2 and now execute without an
+unused dependency. The browser run used parent revision 12417368 plus this
+read-profile patch; no runtime changes followed that smoke.
