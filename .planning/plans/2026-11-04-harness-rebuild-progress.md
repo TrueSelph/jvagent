@@ -334,3 +334,93 @@ repeat equivalent rejected calls until credentials change.
 
 52ee27b1 pushed successfully after its hook completed. Current field correction
 requires fresh native/memory tests and hooks before its checkpoint.
+
+## Native import isolation and shared access service
+
+Made legacy HarnessRuntime/HarnessStore/get_runtime/reset_runtime package exports
+lazy while retaining their public import identities. Native module/Action imports
+no longer initialize the custom harness runtime or old Orchestrator/pilot modules.
+Moved shared Action access checks to tooling/access.py; old access.py reexports
+the same functions and retains the existing logger/event taxonomy for compatibility.
+This removes native dependence on importing the Orchestrator package to authorize
+a tool. Host walker/embedded admission still uses transitional runtime services;
+this is not a claim that the old runtime has been fully removed.
+
+Implemented and tested in a disposable detached worktree while the prior push hook
+ran, then applied its staged patch to the main rebuild worktree after that push
+completed. 44 native/access tests passed on Python 3.11. Harness/conformance slices
+also passed in the existing environment, where optional native tests skip and are
+separately covered by the qualified environment. Added a fresh-subprocess import
+regression to detect future eager-loading regressions. Temporary worktree hooks
+passed after restaging formatter changes. Root hooks must also pass before commit.
+No provider behavior changed; both known-invalid credentials remain unsuitable
+for a positive model/browser test. No redundant provider calls were made.
+
+3df85b45 is confirmed pushed after all pre-push hooks passed.
+
+## Positive OpenAI browser qualification and earlier provider correction
+
+User updated OPENAI_API_KEY. Isolated app reloaded the key without exposing it.
+Actual GPT-4.1 browser chat loaded the casual skill and delivered "31 plus 12 equals
+43." Interaction d0b763a47efd4171802ac969 / run 2132a02355714fc2b48f179bcdf0bf63:
+5.756 seconds, 2 requests, 487 tokens, USD 0.000514 estimated. Expanded UI showed
+per-request tokens and estimated cost; per-model timing remains absent. Follow-up
+"What number did you just calculate?" returned 43 from persisted library history:
+Interaction 5df5339503d146a8b413f952, run d406179ce32a4250910c2619634e43e5,
+0.923 seconds, 312 tokens, USD 0.000315 estimated. Both closed/emitted/delivered.
+
+CORRECTION: merge-mode bootstrap had retained the stored OpenAI model when the
+prior round attempted an Ollama switch. Persisted error records for interaction
+d4e373a625cd4be089d049d2 explicitly name gpt-4.1, not GLM. Therefore that 401 is
+OpenAI evidence; the earlier claim that this round independently qualified an
+Ollama authentication failure is withdrawn. Ollama Cloud remains untested by this
+attempt. Config changes must be read back before attributing provider results.
+The same merge policy retained the casual skill; source-sync was explicitly
+confirmed on this disposable graph and persisted research path/model read back.
+
+Initial live native research (ac38982f5b92482d8afd33c1) searched/fetched successfully
+but failed output validation because supporting_source_id was optional in the
+archived pilot schema and the model omitted it. Added native-only GroundedFinding/
+GroundedBrief schemas requiring source ID and quote; historical pilot data remains
+readable. Added schema regression. This failed run also exposed missing failure-
+path usage aggregation: model spend exists in snapshots but the UI showed zero.
+That defect remains open and must be fixed, not interpreted as zero spend.
+
+Retested actual research in browser with exact single prompt. Interaction
+da678537d3dc46c884219173 / run c0777134b20341b59fbf66e70af40ba0 delivered a
+validated python.org citation; 15.710 seconds, 7 model requests, 16,765 tokens,
+USD 0.017232 estimated. UI showed five tool calls (search + four fetches) and
+stats. One quote-mismatch repair occurred. The output renderer does not display
+the supporting quote requested by the prompt, though it validates/stores it;
+quality and efficiency follow-ups remain open. No baseline performance win is
+claimed. General existing non-research skill, broader providers, repeated-workload
+quality, failure accounting, events/timing and enterprise gates remain unqualified.
+
+Abrupt-exit tests now exercise actual child-process os._exit against JsonDB:
+settled messages survive and continue_run reads them; death inside the first tool
+leaves a started unresolved effect and no default continuable snapshot. This does
+not qualify PostgreSQL, in-transaction death or automatic safe effect replay.
+
+## Failure usage and native pricing provenance
+
+Added native accounting adapter that records only matching run_id response receipts,
+deduplicates settlement and excludes prior history. Failed output validation now
+loads receipts from the official at-failure snapshot; model requests without a
+response receipt are explicitly represented as unknown spend. Native usage.cost
+is preserved as a conservative pricing estimate rather than silently using JV's
+generic fallback or claiming provider-billed actuals. Cancellation-time accounting,
+provider SDK internal retries and per-request timing remain separate open gates.
+
+44 native cases pass, including failed validation with/without prior history,
+repeat settlement, missing-receipt uncertainty and real abrupt-exit recovery.
+Actual browser regression used disposable native research with max_requests=1:
+Interaction n.Interaction.9e94a8359a75483f90217129, run
+845357548aea48a398ff6fd41eef129e, failed terminal in 4.591 seconds after one
+reported model response and search. UI displayed 558 tokens and USD 0.00129
+estimated; graph usage matched (529 input, 29 output), closed/emitted=true,
+usage_complete=false. No zero-cost claim is made from incomplete usage.
+The generic terminal error incorrectly suggests configuration for a budget stop;
+user-facing error classification remains to improve. Request limit restored to 20
+using disposable graph source sync; positive skill/research behavior remains as
+qualified in the preceding browser round. Newly observed pricing supersedes the
+generic-estimator amounts for future runs; prior smoke amounts remain historical.

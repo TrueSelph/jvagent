@@ -114,3 +114,10 @@ def test_native_research_rejects_unobserved_source() -> None:
     )
     with pytest.raises(ModelRetry):
         policy.finish(brief)
+
+
+def test_native_grounding_fields_are_required_in_model_schema() -> None:
+    from jvagent.skills.research.native import GroundedFinding
+
+    schema = GroundedFinding.model_json_schema()
+    assert {"supporting_source_id", "supporting_quote"}.issubset(schema["required"])

@@ -12,10 +12,10 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Gate | Current evidence | Remaining work |
 |---|---|---|
 | Dependency/Python | Pinned native pair installs/tests on Python 3.11 and 3.12; dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 36 native deterministic cases across tools, policies, streaming, persistence, spend and cancellation | Actual-provider positive chat, general skill and research through browser |
-| Storage | Typed official snapshots survive a fresh JSON graph context | Process death, PostgreSQL, outage and multi-worker fencing |
+| Native execution | 44 native deterministic cases; positive GPT-4.1 browser chat, follow-up, research and failed-run usage | Existing general non-research skill; repeated workloads and broader providers |
+| Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit | PostgreSQL, in-transaction death, outage and multi-worker fencing |
 | Spend | Official capability and graph batch-store regressions | Real pricing, unknown receipts, historical-total migration and concurrency |
-| Research | Existing evidence tests plus native typed output path | Live Serper/fetch, quality evaluation and publisher freshness limitations |
+| Research | Existing evidence tests, native typed output and actual Serper/fetch/citation browser flow | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory and explicit admission | Interviews/flows, scripts, MCP, writes, proactive work, subagents, channels |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 
@@ -58,9 +58,8 @@ sets for baseline and replacement. No local-model substitution is required.
 6. Record source/dependency footprint before/after deletion. Do not trade safety,
    extension compatibility or quality for source-line reduction.
 
-No workload numbers have been measured for this matrix. Invalid OpenAI credentials
-currently prevent the positive browser baseline and comparison; tests or page-load
-checks cannot fill that evidence gap. A production soak and larger performance
+No workload numbers have been measured for this matrix. The updated OpenAI key now enables positive browser smoke tests, but the 60-turn
+baseline/comparison has not run; initial smoke receipts do not fill that evidence gap. A production soak and larger performance
 sample are separate release gates following this initial comparison.
 
 ## Transitional dependency conflict

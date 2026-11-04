@@ -9,8 +9,8 @@ from typing import Any
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
-from jvagent.action.orchestrator.access import is_tool_allowed
 from jvagent.harness.native import build_native_agent, run_native_agent
+from jvagent.tooling.access import is_tool_allowed
 
 
 async def persist_cancelled_receipt(interaction: Any) -> None:
@@ -179,28 +179,11 @@ class NativeHarnessAction(InteractAction):
                 max_tokens=self.max_tokens,
                 timeout_seconds=self.timeout_seconds,
             )
-            from pydantic_ai.messages import ModelResponse
+            from jvagent.harness.accounting import record_native_usage
 
-            for message in result.new_messages():
-                if isinstance(message, ModelResponse):
-                    receipt = message.usage
-                    interaction.observability_metrics = [
-                        *interaction.observability_metrics,
-                        {
-                            "event_type": "model_call",
-                            "data": {
-                                "model": message.model_name or self.model,
-                                "provider": message.provider_name or "unknown",
-                                "usage": {
-                                    "prompt_tokens": receipt.input_tokens,
-                                    "completion_tokens": receipt.output_tokens,
-                                    "total_tokens": receipt.input_tokens
-                                    + receipt.output_tokens,
-                                },
-                            },
-                        },
-                    ]
-            interaction.compute_usage()
+            record_native_usage(
+                interaction, result.new_messages(), run_id=run_id, model=self.model
+            )
             usage = result.usage
             interaction.native_run = {
                 "run_id": run_id,
@@ -235,6 +218,9 @@ class NativeHarnessAction(InteractAction):
             raise
         except Exception as exc:
             if interaction.native_run.get("status") == "running":
+                from jvagent.harness.accounting import recover_native_usage
+
+                await recover_native_usage(interaction, run_id=run_id, model=self.model)
                 interaction.native_run = {
                     **interaction.native_run,
                     "status": "failed",
