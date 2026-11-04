@@ -424,3 +424,60 @@ user-facing error classification remains to improve. Request limit restored to 2
 using disposable graph source sync; positive skill/research behavior remains as
 qualified in the preceding browser round. Newly observed pricing supersedes the
 generic-estimator amounts for future runs; prior smoke amounts remain historical.
+
+## Selected skill materialization prototype and browser result
+
+Prepared in detached worktree /private/tmp/jvagent-skill-materialization at base
+0e8d53c6 while that commit's full push hook runs. Adds a tiny public AbstractCapability
+before_run hook calling RunContext.load_capability for the explicitly configured
+skill. No SOP interpreter, custom model loop or intent router is introduced.
+The official Skills capability still discovers/renders assets and persists loading
+in message history. Prototype tests assert SOP visibility before the first model
+response/Action call; 44 native cases and worktree hooks pass. Staged patch saved
+at /private/tmp/jvagent-selected-skill.patch, dry-run against main worktree passes;
+apply after the original push hook finishes, then rerun root checks.
+
+Actual browser used the prototype source via PYTHONPATH, the same disposable graph,
+GPT-4.1 and exact same single research prompt as the earlier successful run.
+Interaction n.Interaction.82916f8e8dcd478083cffe65 / run
+b3be49b1d956457bbe607dac27168bf6 delivered a python.org citation with 3 requests,
+4,719 tokens, USD 0.008556 estimated from native pricing, 9.131 seconds. UI showed
+search and fetch events plus tokens. Graph readback proves the research SOP text
+was present before the first model response. Earlier smoke: 7 requests, 16,765
+tokens, 15.710 seconds. This one-pair observation is promising, not a statistically
+qualified optimization; earlier cost estimates used a different fallback estimator
+and should not be used for a cost-ratio claim. Full workload comparison remains open.
+
+Current disposable backend intentionally runs the prototype worktree. Do not remove
+that worktree while the backend depends on it; switch back to main after applying
+the identical patch and verifying provider configuration readback.
+
+0e8d53c6 subsequently pushed successfully. Applied the exact prototype patch to
+the main rebuild worktree, restarted the disposable backend from main, and removed
+the generated prototype worktree after stopping its backend. Root native tests
+and hooks are the final pre-commit gates for this increment.
+
+## Visitor context service extraction
+
+Reviewing the existing answer/PageIndex integration exposed another contract:
+PageIndex search uses get_tool_visitor for caller-aware retrieval. Native invocation
+had not bound that context. Extracted ToolDispatchContext, ContextVars and binding
+helpers into tooling/context.py; legacy tool_executor reexports the same objects.
+Native execution binds the host visitor around the library run. This adds no
+second dispatcher and avoids importing the legacy ToolExecutionEngine to bind
+identity. Native tests assert context presence during the request, cleanup after
+success/failure/cancellation and isolation across concurrent tasks.
+
+45 native tests and the existing tooling/proactive-context slices pass. Real GPT-4.1
+browser smoke after binding still delivered the Python research citation with
+search/fetch UI events and statistics: Interaction
+n.Interaction.58fc9b9a7cd64296885243ea / run b6c6f787f50547de9052e2917b8561c5,
+9.079 seconds, 3 requests, 4,723 tokens, USD 0.010688 estimated. This qualifies
+regression of the research path, not PageIndex or arbitrary visitor-bound Actions.
+
+The general existing answer skill remains unqualified: its mandatory PageIndexAction
+imports retrieval services and its manifest pins the incompatible legacy LiteLLM
+stack. Do not remove the prerequisite to make a smoke pass. Next integration work
+must distinguish direct read retrieval from service-internal model execution,
+preserve caller context, classify read effects, and move any model operations to
+public Pydantic interfaces/shared policy before claiming full PageIndex support.

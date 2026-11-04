@@ -24,6 +24,10 @@ async def test_native_receipt_precedes_delivery(
     from jvagent.action.native_harness import native_harness_action as module
 
     async def stream(messages: Any, info: Any) -> AsyncIterator[str]:
+        from jvagent.tooling.context import get_dispatch_context, get_tool_visitor
+
+        assert get_tool_visitor() is visitor
+        assert get_dispatch_context().user_id == "user"
         yield "ok"
 
     runtime = Agent(
@@ -91,6 +95,10 @@ async def test_native_receipt_precedes_delivery(
         with pytest.raises(RuntimeError, match="unconfirmed"):
             await NativeHarnessAction.execute(facade, visitor)
         assert saved[-1]["status"] == "pending_delivery"
+    from jvagent.tooling.context import get_dispatch_context, get_tool_visitor
+
+    assert get_dispatch_context() is None
+    assert get_tool_visitor() is None
 
 
 @pytest.mark.asyncio
@@ -136,3 +144,23 @@ async def test_repeated_cancellation_preserves_caller_and_receipt(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert bool(saved) is not write_fails
+
+
+@pytest.mark.asyncio
+async def test_dispatch_context_is_task_local_and_legacy_compatible() -> None:
+    from jvagent.tooling.context import bind_dispatch_context, get_dispatch_context
+    from jvagent.tooling.tool_executor import get_tool_visitor
+
+    async def identity(user: str) -> str:
+        visitor = SimpleNamespace(user_id=user, session_id="session", channel="web")
+        with bind_dispatch_context(visitor):
+            await asyncio.sleep(0)
+            assert get_tool_visitor() is visitor
+            return get_dispatch_context().user_id
+
+    assert await asyncio.gather(identity("first"), identity("second")) == [
+        "first",
+        "second",
+    ]
+    assert get_dispatch_context() is None
+    assert get_tool_visitor() is None

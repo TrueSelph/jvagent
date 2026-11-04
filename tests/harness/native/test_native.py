@@ -44,10 +44,7 @@ async def test_tool_access_and_native_skill_loading(
                 "lookup",
                 "load_capability",
             }
-            return ModelResponse(
-                parts=[ToolCallPart("load_capability", {"id": "example"})]
-            )
-        if step == 2:
+            assert "Use lookup to answer." in str(messages)
             return ModelResponse(parts=[ToolCallPart("lookup", {})])
         return ModelResponse(parts=[TextPart("done")])
 

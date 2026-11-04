@@ -168,17 +168,20 @@ class NativeHarnessAction(InteractAction):
         interaction.native_run = {"run_id": run_id, "status": "running"}
         await interaction.save()
         try:
-            result = await run_native_agent(
-                agent,
-                visitor.utterance,
-                conversation_id=visitor.session_id,
-                run_id=run_id,
-                message_history=history,
-                event_stream_handler=events,
-                max_requests=self.max_requests,
-                max_tokens=self.max_tokens,
-                timeout_seconds=self.timeout_seconds,
-            )
+            from jvagent.tooling.context import bind_dispatch_context
+
+            with bind_dispatch_context(visitor):
+                result = await run_native_agent(
+                    agent,
+                    visitor.utterance,
+                    conversation_id=visitor.session_id,
+                    run_id=run_id,
+                    message_history=history,
+                    event_stream_handler=events,
+                    max_requests=self.max_requests,
+                    max_tokens=self.max_tokens,
+                    timeout_seconds=self.timeout_seconds,
+                )
             from jvagent.harness.accounting import record_native_usage
 
             record_native_usage(

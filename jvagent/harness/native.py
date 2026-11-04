@@ -34,8 +34,8 @@ def build_native_agent(
     Only reviewed read tools are admitted in this first increment. Writes, flows
     and visitor-bound tools require separate compatibility qualification.
     """
-    from pydantic_ai import Agent, Tool
-    from pydantic_ai.capabilities import LocalWorkspace
+    from pydantic_ai import Agent, RunContext, Tool
+    from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
     from pydantic_ai.exceptions import ModelRetry
     from pydantic_ai_harness import Skills
 
@@ -84,9 +84,18 @@ def build_native_agent(
             )
         admitted.append(adapt(tool))
 
+    class SelectedSkill(AbstractCapability[Any]):
+        """Materialize an explicitly configured skill using the library lifecycle."""
+
+        id = "jv_selected_skill"
+
+        async def before_run(self, ctx: RunContext[Any]) -> None:
+            ctx.load_capability(metadata["name"])
+
     capabilities = [
         LocalWorkspace(directory.parent, read_only=True),
         Skills(".", include=[directory.name]),
+        SelectedSkill(),
     ]
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
