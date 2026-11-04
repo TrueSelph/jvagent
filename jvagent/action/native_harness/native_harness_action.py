@@ -1,0 +1,211 @@
+"""JV ingress/graph/egress adapter for native Pydantic execution."""
+
+import asyncio
+import uuid
+from pathlib import Path
+from typing import Any
+
+from jvspatial.core.annotations import attribute
+
+from jvagent.action.interact.base import InteractAction
+from jvagent.action.orchestrator.access import is_tool_allowed
+from jvagent.harness.native import build_native_agent, run_native_agent
+
+
+class NativeHarnessAction(InteractAction):
+    """Explicit development replacement for the Orchestrator Action.
+
+    Configure this instead of Orchestrator, never alongside it. General flows,
+    external effects and shared dollar-budget policy are not yet qualified.
+    """
+
+    model: str = attribute(default="openai:gpt-4.1")
+    skill_directory: str = attribute(default="")
+    instructions: str = attribute(default="Help the user using the available skill.")
+    max_requests: int = attribute(default=20)
+    max_tokens: int = attribute(default=100_000)
+    timeout_seconds: float = attribute(default=180.0)
+
+    async def execute(self, visitor: Any) -> None:
+        """Run through the library and publish through the configured responder."""
+        from jvagent.harness.step_store import InteractionStepStore
+
+        host = await self.get_agent()
+        interaction = getattr(visitor, "interaction", None)
+        responder = await self.get_responder()
+        if host is None or interaction is None or responder is None:
+            raise RuntimeError("Native execution requires admitted graph and responder")
+        if not getattr(visitor, "user_id", None) or not getattr(
+            visitor, "session_id", None
+        ):
+            raise RuntimeError(
+                "Native execution requires host-established caller identity"
+            )
+        actions = await host.get_actions(enabled_only=True)
+        for action in actions:
+            if action.id != self.id and action.get_manifest().pattern_orchestrator:
+                raise RuntimeError("Configure only one harness execution Action")
+        if interaction.has_emitted():
+            return
+        if interaction.native_run:
+            raise RuntimeError("Existing native invocation requires reconciliation")
+        tools: list[Any] = []
+        for action in actions:
+            if isinstance(action, InteractAction):
+                continue
+            tools.extend(await action.get_tools() or [])
+
+        async def access(label: str) -> bool:
+            return await is_tool_allowed(
+                host,
+                label=label,
+                user_id=visitor.user_id,
+                channel=getattr(visitor, "channel", "default"),
+            )
+
+        agent = build_native_agent(
+            self.model,
+            skill_directory=Path(self.skill_directory),
+            tools=tools,
+            access_check=access,
+            instructions=self.instructions,
+            step_store=InteractionStepStore(interaction),
+        )
+        previous = await interaction.get_previous_interaction()
+        history = []
+        if previous is not None and previous.native_run:
+            if previous.native_run.get("status") != "delivered":
+                raise RuntimeError("Previous native run requires reconciliation")
+        if previous is not None and previous.native_run:
+            snapshot = await InteractionStepStore(previous).latest_snapshot(
+                run_id=previous.native_run["run_id"]
+            )
+            if snapshot is None:
+                raise RuntimeError(
+                    "Previous native run has no settled library snapshot"
+                )
+            history = snapshot.messages
+
+        async def events(ctx: Any, stream: Any) -> None:
+            from pydantic_ai.messages import (
+                FunctionToolCallEvent,
+                FunctionToolResultEvent,
+            )
+
+            async for event in stream:
+                if not isinstance(
+                    event, (FunctionToolCallEvent, FunctionToolResultEvent)
+                ):
+                    continue
+                part = event.part
+                phase = (
+                    "tool_call"
+                    if isinstance(event, FunctionToolCallEvent)
+                    else "tool_result"
+                )
+                metadata: dict[str, Any] = {"tool_name": part.tool_name}
+                if phase == "tool_call":
+                    metadata["tool_args"] = part.args_as_dict()
+                    content = part.tool_name
+                else:
+                    content = str(part.content)[:8000]
+                    metadata["tool_result"] = content
+                bus = getattr(visitor, "response_bus", None)
+                if bus is not None:
+                    await bus.publish(
+                        session_id=visitor.session_id,
+                        content=content,
+                        channel=getattr(visitor, "channel", "default"),
+                        category="thought",
+                        thought_type=phase,
+                        segment_id=part.tool_call_id,
+                        transient=True,
+                        interaction=interaction,
+                        interaction_id=interaction.id,
+                        user_id=visitor.user_id,
+                        metadata=metadata,
+                    )
+
+        run_id = uuid.uuid4().hex
+        interaction.native_run = {"run_id": run_id, "status": "running"}
+        await interaction.save()
+        try:
+            result = await run_native_agent(
+                agent,
+                visitor.utterance,
+                conversation_id=visitor.session_id,
+                run_id=run_id,
+                message_history=history,
+                event_stream_handler=events,
+                max_requests=self.max_requests,
+                max_tokens=self.max_tokens,
+                timeout_seconds=self.timeout_seconds,
+            )
+            from pydantic_ai.messages import ModelResponse
+
+            for message in result.new_messages():
+                if isinstance(message, ModelResponse):
+                    receipt = message.usage
+                    interaction.observability_metrics = [
+                        *interaction.observability_metrics,
+                        {
+                            "event_type": "model_call",
+                            "data": {
+                                "model": message.model_name or self.model,
+                                "provider": message.provider_name or "unknown",
+                                "usage": {
+                                    "prompt_tokens": receipt.input_tokens,
+                                    "completion_tokens": receipt.output_tokens,
+                                    "total_tokens": receipt.input_tokens
+                                    + receipt.output_tokens,
+                                },
+                            },
+                        },
+                    ]
+            interaction.compute_usage()
+            usage = result.usage
+            interaction.native_run = {
+                "run_id": run_id,
+                "status": "pending_delivery",
+                "usage": {
+                    "requests": usage.requests,
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                },
+                "output": result.output,
+            }
+            await interaction.save()
+            if not await responder.publish(
+                result.output, visitor=visitor, message_id=f"o.ResponseMessage.{run_id}"
+            ):
+                raise RuntimeError("Native response delivery is unconfirmed")
+            interaction.native_run = {**interaction.native_run, "status": "delivered"}
+            await interaction.save()
+        except asyncio.CancelledError:
+            interaction.native_run = {
+                **interaction.native_run,
+                "status": "cancelled",
+                "usage_complete": False,
+            }
+            await interaction.save()
+            raise
+        except Exception as exc:
+            if interaction.native_run.get("status") == "running":
+                interaction.native_run = {
+                    **interaction.native_run,
+                    "status": "failed",
+                    "usage_complete": False,
+                }
+                await interaction.save()
+                from pydantic_ai.exceptions import ModelAuthenticationError
+
+                message = (
+                    "The model provider rejected its API credentials. Please update the configured key."
+                    if isinstance(exc, ModelAuthenticationError)
+                    else "The model request could not complete. Please check the service configuration."
+                )
+                await responder.publish(
+                    message, visitor=visitor, message_id=f"o.ResponseMessage.{run_id}"
+                )
+                return
+            raise

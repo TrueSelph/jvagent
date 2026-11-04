@@ -6,6 +6,28 @@ Keep agent guidance in this file or the nearest scoped `AGENTS.md`. Do not creat
 
 ---
 
+## Harness ownership mandate
+
+Pydantic AI core and the official `pydantic-ai-harness` library must own all
+new or migrated harness execution: agent loops, skill loading, prompt/context
+lifecycle, tool execution, streaming, delegation and recovery. Use public APIs.
+JV Agent layers on its modular Action and SKILL.md compatibility, jvspatial
+storage, authenticated policy, configuration and channel adapters only.
+Do not build parallel generic execution engines or provider protocols. Prefer
+native providers; retain custom model adapters only for demonstrated extension
+needs. Keep research-specific evidence policy outside the general harness.
+
+Preserve Action lifecycle and skill authoring contracts while replacing their
+execution machinery. Legacy execution is transitional: qualify each compatibility
+class with adversarial tests and real provider-backed browser flows, then delete
+superseded code and settings. Never silently fall back to legacy execution.
+Preserve authorization, budgets and effect/delivery reconciliation. Any upstream
+gap requires a minimal public-API adapter with a documented removal condition.
+
+See [the governing transition plan](.planning/plans/2026-11-04-pydantic-harness-transition.md).
+This mandate defines the destination; the description below reflects the existing
+runtime until migration gates pass.
+
 ## 1. What jvagent is (60-second version)
 
 A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-integration.md)'s object-spatial graph framework.

@@ -169,6 +169,13 @@ class Interaction(DeferredSaveMixin, Node):
         default_factory=list,
         description="Aggregated observability events (model calls, embeddings, etc.)",
     )
+    native_steps: Dict[str, Any] = attribute(
+        default_factory=dict, description="Official Harness step-store records"
+    )
+    native_run: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Native execution receipt and typed message history",
+    )
     agent_trace: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="Chronological thought trace for agentic interactions",
