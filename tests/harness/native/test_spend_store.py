@@ -2,7 +2,9 @@
 
 import json
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -86,3 +88,36 @@ async def test_official_budget_blocks_later_run_after_graph_reload() -> None:
     )
     with pytest.raises(SpendLimitExceeded):
         await second.run("Again", run_id="second", conversation_id="session")
+
+
+@pytest.mark.asyncio
+async def test_real_conversation_spend_round_trip(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from jvspatial.core.context import (
+        GraphContext,
+        clear_default_context,
+        set_default_context,
+    )
+    from jvspatial.db.jsondb import JsonDB
+
+    from jvagent.memory.conversation import Conversation
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    path = str(tmp_path / "graph")
+    set_default_context(GraphContext(database=JsonDB(base_path=path)))
+    try:
+        conversation = Conversation(session_id="session", user_id="user")
+        assert conversation.native_spend == {}
+        await conversation.save()
+        await ConversationSpendStore(conversation).add_many(
+            [SpendEntry(key="session", usd=Decimal("0.05"), token="receipt")]
+        )
+        identity = conversation.id
+        set_default_context(GraphContext(database=JsonDB(base_path=path)))
+        restored = await Conversation.get(identity)
+        assert restored is not None
+        spent = await ConversationSpendStore(restored).get_many(["session"])
+        assert spent["session"].usd == Decimal("0.05")
+    finally:
+        clear_default_context()

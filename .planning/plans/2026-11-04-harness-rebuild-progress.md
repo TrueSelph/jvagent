@@ -306,3 +306,31 @@ runtime changed and no invalid-key provider request was repeated in this round.
 
 Push 056ef283 completed successfully after the full pre-push suite passed; local
 and origin SHA matched. New inventory/CI changes remain separate from that commit.
+
+## Ollama Cloud browser and actual Conversation field correction
+
+Tested native `ollama:glm-5.3:cloud` with official OllamaProvider targeting
+https://ollama.com/v1, using the separately configured cloud key (no local model).
+First browser request exposed a real schema defect: native_spend had mistakenly
+been inserted in Conversation's docstring, not its declared fields. Corrected the
+actual attribute declaration and added a real Conversation/JsonDB fresh-context
+spend round-trip test. Earlier SimpleNamespace budget tests could not catch this;
+this is why UI/graph testing remains mandatory.
+
+Restarted the disposable app from 52ee27b1 plus the field/test fix. Actual browser
+request "Reply briefly: what is 22 plus 23?" reached the provider and returned
+HTTP 401. Interaction n.Interaction.d4e373a625cd4be089d049d2, run
+b10b07e1971e4190a15fefdef339fb17, completed in 2.804 seconds from persisted
+start/completion stamps: failed, closed=true, emitted=true, usage_complete=false.
+Official step log contains run_started, model_request_started,
+model_request_failed and run_failed. Browser displayed the bounded credential
+error. No provider token/cost receipt was available; spend is unknown, not zero.
+
+The pre-provider schema-failure interaction was
+n.Interaction.4193fb0138c44d63bf05db96 (0.954 seconds). No authentication claim
+was made from that earlier failure. Both configured OpenAI and Ollama Cloud keys
+now have actual 401 evidence. Requested an updated key asynchronously; do not
+repeat equivalent rejected calls until credentials change.
+
+52ee27b1 pushed successfully after its hook completed. Current field correction
+requires fresh native/memory tests and hooks before its checkpoint.
