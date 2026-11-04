@@ -517,3 +517,8 @@ tests and all repository pre-commit hooks. Removed two stale pypdf import guards
 from PageIndex tests: these suites exercise PyPDF2 and now execute without an
 unused dependency. The browser run used parent revision 12417368 plus this
 read-profile patch; no runtime changes followed that smoke.
+
+The first full-suite push gate caught the new explicit PageIndexReadAction
+subclass edge in the sibling-import guard. Added only that documented service
+profile relationship to the guard; no runtime change or broader allowance.
+The initial push was rejected and is being retried after validation.
