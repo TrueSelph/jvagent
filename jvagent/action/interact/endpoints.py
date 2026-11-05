@@ -224,11 +224,17 @@ async def _issue_session_token(
         getattr(conversation, "channel", None)
     ):
         return None
+    if getattr(walker, "_native_execution", False) is True and getattr(
+        conversation, "public_identity_kind", "unbound"
+    ) not in {"bearer", "anonymous"}:
+        return None
     try:
         secret_before = getattr(conversation, "token_secret", "") or ""
         secret = conversation.ensure_token_secret()
         if not secret_before and secret:
             await conversation.save()
+        if getattr(walker, "_native_execution", False) is True:
+            await flush_deferred_entities(conversation, strict=True)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("session token secret provisioning failed: %s", exc)
         return None
@@ -326,7 +332,11 @@ async def interact_session_refresh_endpoint(
             details={"agent_id": agent_id},
         )
 
+    from jvagent.core.execution_owner import uses_native_harness
+
+    native = await uses_native_harness(agent)
     new_token, claims, err = await refresh_session_token(
+        native=native,
         request=request,
         agent=agent,
         agent_id=agent_id,
@@ -419,42 +429,79 @@ async def interact_session_open_endpoint(
             details={"agent_id": agent_id},
         )
 
-    memory = await agent.get_memory()
-    if memory is None:
-        raise ValidationError(
-            message="Agent has no Memory node",
-            details={"reason": "no_memory", "agent_id": agent_id},
-        )
+    from jvagent.core.execution_owner import uses_native_harness
 
-    try:
-        _user, conversation, resolved_user_id, resolved_session_id, _new = (
-            await memory.get_session(
-                user_id=(user_id or "").strip() or None,
-                session_id=(session_id or "").strip() or None,
-                channel="default",
+    native = await uses_native_harness(agent)
+    identity = await resolve_interact_identity(
+        request=request,
+        agent=agent,
+        agent_id=agent_id,
+        session_id=session_id,
+        user_id=user_id,
+        native=native,
+    )
+    if identity.reject:
+        raise AuthenticationError(
+            message="Session authentication is required or the supplied credentials are invalid."
+        )
+    if native:
+        walker = InteractWalker(
+            agent_id=agent_id,
+            user_id=identity.verified_user_id,
+            session_id=session_id,
+            channel="default",
+            utterance="",
+        )
+        walker._agent = agent
+        walker._public_identity = identity
+        walker._public_identity_request = request
+        code = await walker._bootstrap_interaction(agent, through="open")
+        if code in {"access_denied", "identity_rejected", "session_resolution_error"}:
+            raise AuthenticationError(
+                message="Session authentication is required or the supplied credentials are invalid."
             )
-        )
-    except ValueError as exc:
-        raise ValidationError(
-            message=str(exc),
-            details={"reason": "session_resolution_error"},
-        ) from exc
-    except Exception as exc:
-        logger.error("session/open get_session failed: %s", exc, exc_info=True)
-        raise ValidationError(
-            message="Failed to open session",
-            details={"reason": "init_error"},
-        ) from exc
+        if code != "ready":
+            raise InteractProcessingError()
+        resolved_user_id, resolved_session_id = walker.user_id, walker.session_id
+    else:
+        memory = await agent.get_memory()
+        if memory is None:
+            raise ValidationError(
+                message="Agent has no Memory node",
+                details={"reason": "no_memory", "agent_id": agent_id},
+            )
 
-    walker = type(
-        "SessionOpenWalker",
-        (),
-        {
-            "conversation": conversation,
-            "session_id": resolved_session_id,
-            "user_id": resolved_user_id,
-        },
-    )()
+        try:
+            _user, conversation, resolved_user_id, resolved_session_id, _new = (
+                await memory.get_session(
+                    user_id=identity.verified_user_id
+                    or (user_id or "").strip()
+                    or None,
+                    session_id=(session_id or "").strip() or None,
+                    channel="default",
+                )
+            )
+        except ValueError as exc:
+            raise ValidationError(
+                message=str(exc),
+                details={"reason": "session_resolution_error"},
+            ) from exc
+        except Exception as exc:
+            logger.error("session/open get_session failed: %s", exc, exc_info=True)
+            raise ValidationError(
+                message="Failed to open session",
+                details={"reason": "init_error"},
+            ) from exc
+
+        walker = type(
+            "SessionOpenWalker",
+            (),
+            {
+                "conversation": conversation,
+                "session_id": resolved_session_id,
+                "user_id": resolved_user_id,
+            },
+        )()
     token = await _issue_session_token(walker, agent_id)  # type: ignore[arg-type]
     if not token:
         raise ValidationError(
@@ -703,7 +750,11 @@ async def interact_endpoint(
             # `off` mode this is a no-op; in `log` mode denials are observed but
             # never enforced; in `required` mode a denial is a 401.
             async with profile.measure("identity_guard"):
+                from jvagent.core.execution_owner import uses_native_harness
+
+                native = await uses_native_harness(agent)
                 identity = await resolve_interact_identity(
+                    native=native,
                     request=request,
                     agent=agent,
                     agent_id=agent_id,
@@ -769,6 +820,10 @@ async def interact_endpoint(
                 stream=stream,
             )
 
+            if native:
+                walker._public_identity = identity
+                walker._public_identity_request = request
+
             if stream:
                 # Streaming mode: return SSE response
                 # Note: Profiling for streaming is handled in _stream_interaction
@@ -805,6 +860,10 @@ async def interact_endpoint(
                                 },
                             )
                     error_code = getattr(walker, "_bootstrap_error", None)
+                    if error_code == "identity_rejected":
+                        raise AuthenticationError(
+                            message="Session authentication is required or the supplied credentials are invalid."
+                        )
                     if error_code == "invalid_host_context":
                         raise ValidationError(
                             message="Host context could not be verified.",
@@ -1036,6 +1095,17 @@ async def _stream_interaction(
                     "stream": True,
                 },
             )
+            if error_code == "identity_rejected":
+                yield format_sse_chunk(
+                    {
+                        **_sse_error_event(
+                            profile.request_id,
+                            message="Session authentication is required or the supplied credentials are invalid.",
+                        ),
+                        "code": error_code,
+                    }
+                )
+                return
             if error_code == "invalid_host_context":
                 yield format_sse_chunk(
                     {

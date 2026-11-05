@@ -96,7 +96,11 @@ async def require_messenger_session(
         )
 
     conv = await _load_conversation(agent, str(claims.get("session_id") or ""))
-    bind_err = claims_match_conversation(claims, conv)
+    from jvagent.core.execution_owner import uses_native_harness
+
+    bind_err = claims_match_conversation(
+        claims, conv, require_bound_identity=await uses_native_harness(agent)
+    )
     if bind_err:
         raise AuthenticationError(
             message="Session token does not authorize this conversation.",

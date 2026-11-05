@@ -242,3 +242,12 @@ run-tree termination, settled usage and unresolved effects. It does not authoriz
 an undelivered model answer into conversation history. Sources:
 [`native.py:150`](../jvagent/harness/native.py),
 [`recovery.py:18`](../jvagent/harness/recovery.py).
+
+### Public identity binding
+Server-established provenance for a native public Conversation, persisted as
+`public_identity_kind` (`unbound`, `bearer`, or `anonymous`). Binding occurs under
+the conversation lock, rechecks caller proof and strictly commits secret rotation
+before minting capabilities or executing a turn. Historical capabilities cannot
+establish ownership. This is ingress authorization, not another harness engine.
+Sources: [`session_token.py:604`](../jvagent/action/interact/session_token.py:604),
+[`conversation.py`](../jvagent/memory/conversation.py).

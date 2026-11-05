@@ -19,6 +19,12 @@ explicit null values. Ordinary requests omit the field
 [authenticated browser qualification](../../../.planning/plans/2026-11-05-native-host-context.md)
 for signed context, rejection outcomes and the remaining deployment gates.
 
+Public native sessions always enforce identity. New anonymous callers receive a
+server-issued subject; existing sessions require an owner login or a bound
+session capability. Historical unbound sessions require owner proof or a new
+session. See [public identity migration and evidence](../../../.planning/plans/2026-11-05-public-identity-binding.md)
+and [caller binding](../interact/session_token.py:604).
+
 `skill_directory` selects one existing SKILL.md. For skill-based delegation,
 select the shipped `delegate` skill and declare named specialists:
 

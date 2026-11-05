@@ -134,7 +134,11 @@ async def stt_stream_handler(websocket: WebSocket, agent_id: str) -> None:
 
     # 3) Token must still bind to its web-owned conversation.
     conv = await _load_conversation(agent, str(claims.get("session_id") or ""))
-    if claims_match_conversation(claims, conv):
+    from jvagent.core.execution_owner import uses_native_harness
+
+    if claims_match_conversation(
+        claims, conv, require_bound_identity=await uses_native_harness(agent)
+    ):
         await websocket.close(code=_WS_UNAUTHORIZED)
         return
 

@@ -4,7 +4,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
@@ -94,6 +94,10 @@ class Conversation(DeferredSaveMixin, Node):
 
     session_id: str = attribute(default="", description="Session identifier")
     user_id: str = attribute(indexed=True, default="", description="Owning user ID")
+    public_identity_kind: Literal["unbound", "bearer", "anonymous"] = attribute(
+        default="unbound",
+        description="Server-established public ownership; legacy sessions require owner proof",
+    )
     status: str = attribute(
         indexed=True,
         default="active",

@@ -181,3 +181,19 @@ FAIL, despite cold-import and functional read success. Follow the
 [shared-host extraction sequence](2026-11-05-shared-host-extraction.md) before
 qualifying interview execution. Parent 749ccf28 has one native CI fixture timeout;
 new-head CI is required after isolating normal setup from intentional fault limits.
+
+
+## Native public identity binding — 2026-11-05
+
+The [security and migration record](2026-11-05-public-identity-binding.md) documents
+confirmed parent identity impersonation and anonymous session takeover, repaired
+native admission, owner migration, ordinary-member browser API/logout checks and
+real anonymous Messenger reload/recall. [Persisted receipts](2026-11-05-public-identity-smoke.json)
+and [sanitized browser evidence](2026-11-05-public-identity-browser.json) include
+actual GPT-4.1 calls and cost accounting. Public admission now relies on the
+server-owned jvspatial authentication service and persisted Conversation ownership;
+no execution engine or state database was added. Existing Messenger session-open
+now sends its capability. The evidence record explicitly separates member API
+coverage from authenticated UI coverage and notes popup tool-row rendering,
+voice-provider, concurrency, timing and release limits. This advances W2/W3
+security; W4 recovery, W5 migration/deletion and W6 qualification remain incomplete.

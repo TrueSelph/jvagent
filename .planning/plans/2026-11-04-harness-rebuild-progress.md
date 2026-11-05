@@ -1,12 +1,13 @@
 # Harness rebuild execution record
 
-Latest increment: [native signed host-policy validation](2026-11-05-native-host-context.md).
-Next: qualify member/embed/popup/cancellation boundaries and public-auth policy, then interview
-execution adapters under the [shared-host plan](2026-11-05-shared-host-extraction.md).
+Latest increment: [native public identity binding](2026-11-05-public-identity-binding.md).
+Next: qualify remaining embed/cancellation boundaries and interview execution adapters
+under the [shared-host plan](2026-11-05-shared-host-extraction.md). Member browser API
+and anonymous popup admission are qualified only to the scope of that increment.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `5739cf5d`; each new milestone
+are incomplete. All nine remote checks passed at `8673299c`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
 
 ## Native host-context validation
@@ -1935,3 +1936,19 @@ explicit locked-write cases keep 200ms and their original timing assertion. Both
 local native/PostgreSQL lanes pass 195 tests; interview/import 283 and legacy
 interview/loader/orchestrator 1201 pass with recorded skips/warnings. Fresh-head
 remote CI remains required. No completed migration or enterprise claim is made.
+
+
+## Native public identity binding — 2026-11-05
+
+The [security and migration record](2026-11-05-public-identity-binding.md) documents
+confirmed parent identity impersonation and anonymous session takeover, repaired
+native admission, owner migration, ordinary-member browser API/logout checks and
+real anonymous Messenger reload/recall. [Persisted receipts](2026-11-05-public-identity-smoke.json)
+and [sanitized browser evidence](2026-11-05-public-identity-browser.json) include
+actual GPT-4.1 calls and cost accounting. Public admission now relies on the
+server-owned jvspatial authentication service and persisted Conversation ownership;
+no execution engine or state database was added. Existing Messenger session-open
+now sends its capability. The evidence record explicitly separates member API
+coverage from authenticated UI coverage and notes popup tool-row rendering,
+voice-provider, concurrency, timing and release limits. This advances W2/W3
+security; W4 recovery, W5 migration/deletion and W6 qualification remain incomplete.

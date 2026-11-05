@@ -86,6 +86,8 @@ class InteractWalker(Walker):
     # Walker state
     _host_system_context: Optional[str] = PrivateAttr(default=None)
     _native_execution: bool = PrivateAttr(default=False)
+    _public_identity: Any = PrivateAttr(default=None)
+    _public_identity_request: Any = PrivateAttr(default=None)
     agent_id: str = ""
     utterance: str = ""
     channel: str = "default"
@@ -280,6 +282,7 @@ class InteractWalker(Walker):
         ``through`` selects a phase for turn-lock serialization:
         - ``full`` (default): session resolution + create
         - ``session``: resolve session and access only; returns ``ready`` on success
+        - ``open``: resolve session, check access and bind public identity only
         - ``create``: create Interaction only (requires ``self.conversation``)
 
         Preconditions: ``self._agent`` is set to ``here`` by caller.
@@ -456,13 +459,19 @@ class InteractWalker(Walker):
                 )
                 return "access_denied"
 
+        if through == "open" and not await self._bind_public_caller(here):
+            return "identity_rejected"
+
         from jvagent.core.host_context import consume_host_system_context
 
         self._host_system_context = await consume_host_system_context(self)
         if (
             self._native_execution
             and not self._host_system_context
-            and ("host_system_context" in self.data or not self.utterance.strip())
+            and (
+                "host_system_context" in self.data
+                or (not self.utterance.strip() and through != "open")
+            )
         ):
             await self.report(
                 {
@@ -472,10 +481,36 @@ class InteractWalker(Walker):
             )
             return "invalid_host_context"
 
-        if through == "session":
+        if through in {"session", "open"}:
             return "ready"
 
         return await self._bootstrap_create_interaction(here, t_start=t_start)
+
+    async def _bind_public_caller(self, here: "Agent") -> bool:
+        """Finish public proof under the admission lock, before any model run."""
+        if not self._native_execution or self._public_identity is None:
+            return True  # trusted in-process hosts own their own caller boundary
+        from jvspatial.api.exceptions import AuthenticationError
+
+        from jvagent.action.interact.session_token import bind_public_identity
+
+        try:
+            self.conversation = await bind_public_identity(
+                self.conversation,
+                decision=self._public_identity,
+                request=self._public_identity_request,
+                agent=here,
+            )
+        except AuthenticationError:
+            await self.report(
+                {
+                    "error": "Session authentication is required or the supplied credentials are invalid.",
+                    "code": "identity_rejected",
+                }
+            )
+            return False
+        self._public_identity_request = None
+        return True
 
     async def _bootstrap_create_interaction(
         self, here: "Agent", *, t_start: Optional[float] = None
@@ -483,6 +518,8 @@ class InteractWalker(Walker):
         """Create and wire the Interaction under an active conversation turn lock."""
         if t_start is None:
             t_start = time.perf_counter()
+        if not await self._bind_public_caller(here):
+            return "identity_rejected"
         conversation = self.conversation
         if not conversation:
             return "init_error"
@@ -644,6 +681,8 @@ class InteractWalker(Walker):
             return InteractionInitResult(False, "session_resolution_error")
         if code == "invalid_host_context":
             return InteractionInitResult(False, "invalid_host_context")
+        if code == "identity_rejected":
+            return InteractionInitResult(False, "identity_rejected")
         return InteractionInitResult(False, "init_error")
 
     @on_visit("Agent")

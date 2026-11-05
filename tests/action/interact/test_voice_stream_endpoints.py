@@ -6,6 +6,8 @@ app rebuilds (it wraps the factory, not the built app).
 """
 
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -38,12 +40,18 @@ def _patch_valid_session(monkeypatch, stt=_FakeSTT()):
         lambda tok, expected_agent_id: ({"session_id": "s1"}, None),
     )
     monkeypatch.setattr(vs, "_load_conversation", _async_return(object()))
-    monkeypatch.setattr(vs, "claims_match_conversation", lambda claims, conv: None)
+    monkeypatch.setattr(
+        vs, "claims_match_conversation", lambda claims, conv, **kwargs: None
+    )
     monkeypatch.setattr(vs, "resolve_agent_action", _async_return(stt))
     # get_cached_agent is imported lazily inside the handler.
     import jvagent.core.cache as cache
 
-    monkeypatch.setattr(cache, "get_cached_agent", _async_return(object()))
+    monkeypatch.setattr(
+        cache,
+        "get_cached_agent",
+        _async_return(SimpleNamespace(get_actions=AsyncMock(return_value=[]))),
+    )
 
 
 def _async_return(value):
