@@ -594,8 +594,16 @@ async def app_now_aware_utc(app: Optional[App]) -> datetime:
         else:
             now = raw
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    return now
+        # App.now() is app-local, or server-local when no zone is configured.
+        # Relabelling that wall time UTC moves real scheduling deadlines.
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        zone = getattr(app, "timezone", None)
+        try:
+            now = now.replace(tzinfo=ZoneInfo(zone)) if zone else now.astimezone()
+        except (ZoneInfoNotFoundError, TypeError, ValueError):
+            now = now.astimezone()  # Same invalid-zone fallback as App.now().
+    return now.astimezone(timezone.utc)
 
 
 async def set_app_update_mode(app: App, value: str) -> None:

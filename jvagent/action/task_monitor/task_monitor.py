@@ -279,6 +279,14 @@ class TaskMonitor(Action):
             agent = await get_cached_agent(self.agent_id)
             if not agent:
                 return {"error": "Agent not found"}
+            from jvagent.core.execution_owner import uses_native_harness
+            from jvagent.core.task_dispatch import (
+                require_native_task_callbacks_disabled,
+            )
+
+            native = await uses_native_harness(agent)
+            if native:
+                await require_native_task_callbacks_disabled(agent)
             memory = await agent.get_memory()
             if not memory:
                 return {"error": "Memory not found"}
@@ -326,7 +334,12 @@ class TaskMonitor(Action):
 
             def spec_lookup(owner: str, _ia: Any = interview_action) -> Any:
                 try:
-                    return _ia._registry.get(owner) if _ia is not None else None
+                    spec = _ia._registry.get(owner) if _ia is not None else None
+                    if native and spec is not None:
+                        from jvagent.action.interview.native import qualify_spec
+
+                        qualify_spec(spec)
+                    return spec
                 except Exception:
                     return None
 
@@ -499,11 +512,24 @@ class TaskMonitor(Action):
         store: Optional[TaskStore] = None,
         dry_run: bool = False,
     ) -> bool:
-        """Claim and run one proactive task through the Orchestrator pipeline."""
+        """Claim a domain task and invoke the agent's declared execution owner."""
+        from jvagent.core.execution_owner import uses_native_harness
+
+        native = await uses_native_harness(agent)
+        if native:
+            from jvagent.core.execution_owner import require_native_local_ownership
+            from jvagent.core.task_dispatch import (
+                require_native_task_callbacks_disabled,
+            )
+
+            require_native_local_ownership()
+            await require_native_task_callbacks_disabled(agent)
         store = store or TaskStore(conversation)
         lease_id = uuid.uuid4().hex
         if not await store.claim_proactive(handle.id, lease_id):
             return False
+        if native:
+            conversation = store._conversation
 
         try:
             spec = ProactiveTaskSpec.from_task_handle(store.get(handle.id))
@@ -536,15 +562,41 @@ class TaskMonitor(Action):
             },
         )
         walker.conversation = conversation
-
         dispatch_error: Optional[BaseException] = None
         try:
+            if native:
+                from jvspatial import flush_deferred_entities
+
+                from jvagent.core.task_dispatch import NativeTaskDispatch
+
+                await flush_deferred_entities(conversation, strict=True)
+                walker._native_task_dispatch = NativeTaskDispatch.bind(
+                    agent, conversation, store.get(handle.id)
+                )
             await walker.spawn(agent)
             interaction = walker.interaction
             if interaction is not None:
+                if native:
+                    await interaction.close_interaction()
                 interaction.add_parameter(walker.data, "TaskMonitor")
                 interaction.add_directives([spec.directive], "TaskMonitor")
                 await interaction.save()
+                if native:
+                    await flush_deferred_entities(interaction, strict=True)
+        except asyncio.CancelledError as exc:
+            if native:
+                import anyio
+
+                with anyio.CancelScope(shield=True):
+                    await finalize_proactive_task(
+                        TaskStore(walker.conversation),
+                        handle.id,
+                        interaction=getattr(walker, "interaction", None),
+                        error=exc,
+                        native_dispatch=True,
+                    )
+                    await flush_deferred_entities(walker.conversation, strict=True)
+            raise
         except Exception as exc:
             dispatch_error = exc
             interaction = getattr(walker, "interaction", None)
@@ -555,12 +607,16 @@ class TaskMonitor(Action):
                 exc_info=True,
             )
 
-        await finalize_proactive_task(
-            store,
+        outcome = await finalize_proactive_task(
+            TaskStore(walker.conversation) if native else store,
             handle.id,
             interaction=getattr(walker, "interaction", None),
             error=dispatch_error,
+            native_dispatch=native,
         )
+        if native:
+            await flush_deferred_entities(walker.conversation, strict=True)
+            return outcome == "completed"
         return dispatch_error is None
 
     async def attach_event_task(

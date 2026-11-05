@@ -254,13 +254,38 @@ class NativeHarnessAction(InteractAction):
                         metadata=metadata,
                     )
 
+        from jvagent.core.task_dispatch import (
+            native_task_spec,
+            task_prompt,
+            task_skill_directory,
+        )
         from jvagent.harness.accounting import NativeSpendRecorder
+
+        task_spec = native_task_spec(visitor)
+        skill_directory = Path(self.skill_directory)
+        prompt = getattr(visitor, "utterance", "")
+        if task_spec is not None:
+            from jvagent.harness.skill_assets import project_skill
+
+            skill_directory = task_skill_directory(skill_directory, task_spec)
+            metadata, _ = project_skill(
+                skill_directory, action_bases=action_skill_bases
+            )
+            if (
+                not isinstance(task_spec.pinned_tools, list)
+                or any(not isinstance(name, str) for name in task_spec.pinned_tools)
+                or set(task_spec.pinned_tools) - set(metadata.get("allowed-tools", []))
+            ):
+                raise ValueError(
+                    "Proactive pinned tools cannot expand the skill's tool policy"
+                )
+            prompt = task_prompt(task_spec)
 
         step_store = InteractionStepStore(interaction)
         agent = build_native_agent(
             self.model,
             model_settings=self.model_settings,
-            skill_directory=Path(self.skill_directory),
+            skill_directory=skill_directory,
             action_skill_bases=action_skill_bases,
             delegates=self.delegates,
             conversation_id=visitor.session_id,
@@ -328,6 +353,13 @@ class NativeHarnessAction(InteractAction):
             "status": "running",
             "history_source": history_source,
         }
+        task_binding = getattr(visitor, "_native_task_dispatch", None)
+        if task_spec is not None:
+            native_task_spec(visitor)
+            interaction.add_parameter(
+                {"is_proactive": True, "proactive_task_id": task_binding.task_id},
+                "TaskMonitor",
+            )
         await interaction.save()
         try:
             from jvagent.tooling.context import bind_dispatch_context
@@ -335,7 +367,7 @@ class NativeHarnessAction(InteractAction):
             with bind_dispatch_context(visitor):
                 result = await run_native_agent(
                     agent,
-                    visitor.utterance,
+                    prompt,
                     conversation_id=visitor.session_id,
                     run_id=run_id,
                     message_history=history,

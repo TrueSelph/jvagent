@@ -289,3 +289,11 @@ SDK effect ledger before dispatch and acknowledged after strict graph persistenc
 A failed run with this marker requires reconciliation; it is not rollback proof.
 See `jvagent/harness/conversation_tools.py:11` and
 [the interview acceptance record](plans/2026-11-05-native-interview.md).
+
+### Native task dispatch binding
+
+Ephemeral server-only attribution of a claimed PROACTIVE task to its agent,
+conversation, caller, lease and unchanged payload. It permits scheduled input with
+an empty user utterance through the ordinary native entrypoint. It is domain
+admission, not an execution checkpoint or a second run engine. See
+`jvagent/core/task_dispatch.py:34` and [qualification](plans/2026-11-05-native-proactive.md).

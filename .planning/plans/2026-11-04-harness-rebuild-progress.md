@@ -1,7 +1,7 @@
 # Harness rebuild execution record
 
-Latest increment: [native repeated items](2026-11-05-native-repeats.md).
-Next: qualify remaining extension classes, operator recovery and client/deployment cases,
+Latest increment: [native scheduled tasks](2026-11-05-native-proactive.md).
+Next: close background client delivery, remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
@@ -2083,3 +2083,17 @@ tests and 323 native/real-PG tests on each Python 3.11 and 3.12 pass. Hooks/cust
 validators, nested repeats, park/resume, other extension classes, migration/deletion
 and enterprise release qualification remain open. No second execution engine or
 state store was introduced.
+
+## Native scheduled tasks — 2026-11-05
+
+[Record](2026-11-05-native-proactive.md): TaskMonitor now invokes the same native
+entrypoint using a server-bound domain task claim and ordinary skill/tool/budget
+admission. The SDK owns execution; no second task engine was added. Native notices
+cannot complete a task or authorize automatic paid retries. Actual browser work
+found and repaired missing programmatic Interaction closure and local-time-as-UTC
+scheduling. Two completed tasks, duplicate ticks, forged-client rejection and a
+foreground recall have fresh SQL/browser evidence. 333 native/PG tests pass per
+Python 3.11 and 3.12; 45 affected core/monitor/host tests pass. The initial closure
+failure remains recorded. jvchat does not synchronize unsolicited background replies;
+that client/channel gate remains open, alongside other triggers/effects, distributed
+recovery, migration/deletion and full release qualification.

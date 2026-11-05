@@ -309,3 +309,14 @@ reach persisted task completion; the initial scalar-argument failure is retained
 Native generic/staged bypasses and duplicate-record regressions are covered, including
 real PostgreSQL with batching on/off. Custom hooks, nesting, park/resume, other
 extension classes, migration, legacy deletion and enterprise release remain open.
+
+## Scheduled tasks through native execution — 2026-11-05
+
+[Record](2026-11-05-native-proactive.md): existing queue/claim services bind scheduled
+domain input to the ordinary native Action. Actual GPT-4.1 browser requests prove
+sibling-skill execution, MCP result, duplicate suppression, UTC eligibility after
+restart and foreground recall. Task notices/uncertain outcomes cannot silently
+complete or requeue. Initial closure failure and repaired timezone conversion are
+recorded with adversarial regressions and fresh PostgreSQL outcomes. Background
+jvchat synchronization/live tool display remains open; other triggers, callbacks,
+channels, distributed recovery, migration, legacy deletion and release remain open.

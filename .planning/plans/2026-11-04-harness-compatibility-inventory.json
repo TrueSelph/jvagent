@@ -2026,5 +2026,33 @@
       "other extension classes and provider/deployment qualification",
       "legacy/pilot execution deletion and release qualification"
     ]
+  },
+  "native_scheduled_tasks_increment": {
+    "evidence": "2026-11-05-native-proactive.md",
+    "qualified_scope": "local scheduled domain tasks through the same NativeHarnessAction; actual browser/provider/SQL evidence bounded by record",
+    "preserved": [
+      "PROACTIVE TaskStore envelope and domain claim",
+      "Action lifecycle and existing ingress/response bus",
+      "installed sibling SKILL.md selection",
+      "native policy, SDK persistence and shared budgets"
+    ],
+    "retired": [
+      "native scheduled objectives dependent on legacy prompt assembly",
+      "nonempty native notices interpreted as successful task output",
+      "automatic native queue retry after uncertain run/effect/delivery",
+      "native programmatic dispatch omitting Interaction closure",
+      "server-local clock labelled UTC for scheduling"
+    ],
+    "compatibility_adjustments": [
+      "native callbacks require external-effect qualification",
+      "pinned tools cannot expand selected skill permissions",
+      "native failure requires reconciliation instead of legacy automatic max_attempts requeue"
+    ],
+    "remaining": [
+      "live background response/tool synchronization in jvchat",
+      "event-trigger attachment and other channel/effect classes",
+      "abandoned/distributed ownership and deployment recovery",
+      "migration and legacy/pilot execution deletion"
+    ]
   }
 }

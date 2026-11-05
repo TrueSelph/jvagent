@@ -64,7 +64,11 @@ async def test_dispatch_keeps_proactive_directive_out_of_user_utterance(monkeypa
     monkeypatch.setattr(
         "jvagent.action.interact.interact_walker.InteractWalker", Walker
     )
-    agent = SimpleNamespace(id="agent-1", get_response_bus=AsyncMock())
+    agent = SimpleNamespace(
+        id="agent-1",
+        get_response_bus=AsyncMock(),
+        get_actions=AsyncMock(return_value=[]),
+    )
     conversation = SimpleNamespace(
         session_id="session-1", user_id="user-1", channel="web"
     )

@@ -271,6 +271,34 @@ async def test_native_repeated_item_records_and_task_persist(
     assert effects and all(effect["status"] == "completed" for effect in effects)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("failure", [False, True, "cancel"])
+async def test_native_proactive_outcome_persists_without_retry(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+    failure: bool | str,
+) -> None:
+    from tests.harness.native.test_proactive import (
+        test_native_task_sdk_output_and_failure_do_not_replay,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_native_task_sdk_output_and_failure_do_not_replay(
+        tmp_path, monkeypatch, failure
+    )
+    rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
+    assert rows[0]["context"]["tasks"][0]["status"] == (
+        "failed" if failure else "completed"
+    )
+    interactions = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(interactions) == 1
+    assert interactions[0]["context"]["utterance"] == ""
+    assert interactions[0]["context"]["native_steps"]["events"]
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

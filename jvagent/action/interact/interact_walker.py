@@ -86,6 +86,7 @@ class InteractWalker(Walker):
     # Walker state
     _host_system_context: Optional[str] = PrivateAttr(default=None)
     _native_execution: bool = PrivateAttr(default=False)
+    _native_task_dispatch: Any = PrivateAttr(default=None)
     _public_identity: Any = PrivateAttr(default=None)
     _public_identity_request: Any = PrivateAttr(default=None)
     agent_id: str = ""
@@ -402,6 +403,9 @@ class InteractWalker(Walker):
                 logger.debug("harness session admit skipped: %s", exc)
 
         access_control = await here.get_access_control_action()
+        from jvagent.core.task_dispatch import native_task_spec
+
+        task_spec = native_task_spec(self) if self._native_execution else None
         if (
             access_control
             and isinstance(access_control, AccessControlAction)
@@ -470,7 +474,11 @@ class InteractWalker(Walker):
             and not self._host_system_context
             and (
                 "host_system_context" in self.data
-                or (not self.utterance.strip() and through != "open")
+                or (
+                    not self.utterance.strip()
+                    and through != "open"
+                    and task_spec is None
+                )
             )
         ):
             await self.report(
