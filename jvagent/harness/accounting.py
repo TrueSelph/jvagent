@@ -201,7 +201,12 @@ async def _recover_run_usage(interaction: Any, *, run_id: str, model: str) -> No
         {
             "event_type": "model_attempt",
             "data": {
-                "outcome": "failed",
+                "outcome": (
+                    "cancelled"
+                    if interaction.native_run.get("status")
+                    in {"cancelled", "delivery_unknown"}
+                    else "failed"
+                ),
                 "usage_status": "provider_unreported",
                 "native_unknown_run": run_id,
             },

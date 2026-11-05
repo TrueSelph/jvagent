@@ -17,9 +17,18 @@ from jvagent.action.native_harness import NativeHarnessAction
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("delivered", [True, False, None])
+@pytest.mark.parametrize(
+    "delivered,settled",
+    [
+        (True, True),
+        (False, True),
+        (None, True),
+        (None, False),
+        ("cancel_before_delivery", False),
+    ],
+)
 async def test_native_receipt_precedes_delivery(
-    monkeypatch: Any, delivered: bool | None
+    monkeypatch: Any, delivered: bool | str | None, settled: bool
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
 
@@ -28,6 +37,8 @@ async def test_native_receipt_precedes_delivery(
 
         assert get_tool_visitor() is visitor
         assert get_dispatch_context().user_id == "user"
+        if delivered == "cancel_before_delivery":
+            raise asyncio.CancelledError()
         yield "ok"
 
     runtime = Agent(
@@ -37,6 +48,10 @@ async def test_native_receipt_precedes_delivery(
         )
     )
     monkeypatch.setattr(module, "build_native_agent", lambda *args, **kwargs: runtime)
+    if not settled:
+        monkeypatch.setattr(
+            module, "persist_cancelled_receipt", AsyncMock(return_value=False)
+        )
     saved = []
     interaction = SimpleNamespace(
         native_run={},
@@ -85,12 +100,25 @@ async def test_native_receipt_precedes_delivery(
         utterance="hello",
         channel="web",
     )
-    if delivered is None:
+    if delivered == "cancel_before_delivery":
         with pytest.raises(asyncio.CancelledError):
             await NativeHarnessAction.execute(facade, visitor)
-        assert saved[-1]["status"] == "delivery_unknown"
+        assert interaction.native_run["status"] == "blocked"
+        assert interaction.native_run["reason"] == "cancellation_receipt_unconfirmed"
+        assert saved[-1]["status"] == "running"
+    elif delivered is None:
+        with pytest.raises(asyncio.CancelledError):
+            await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1]["status"] == (
+            "delivery_unknown" if settled else "pending_delivery"
+        )
         assert saved[-1]["output"] == "ok"
         assert saved[-1]["usage_complete"] is True
+        if not settled:
+            assert interaction.native_run["status"] == "delivery_unknown"
+            assert (
+                interaction.native_run["reason"] == "cancellation_receipt_unconfirmed"
+            )
     elif delivered:
         await NativeHarnessAction.execute(facade, visitor)
         assert saved[-1]["status"] == "delivered"
@@ -220,3 +248,133 @@ async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
     assert interaction.native_run["predecessor_interaction_id"] == "previous"
     assert "needs recovery" in publish.await_args.args[0]
     assert not interaction.native_steps
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ignore_cancel", [False, True])
+async def test_cancellation_settlement_has_deadline_even_when_write_stalls(
+    monkeypatch: pytest.MonkeyPatch, ignore_cancel: bool
+) -> None:
+    from jvagent.action.native_harness import native_harness_action as native
+
+    monkeypatch.setattr(native, "_CANCELLATION_SETTLEMENT_SECONDS", 0.02, raising=False)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    write_exited = asyncio.Event()
+    interaction = SimpleNamespace(
+        native_run={"run_id": "stalled", "status": "cancelled"}
+    )
+
+    async def save() -> None:
+        entered.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            if ignore_cancel:
+                await release.wait()
+            else:
+                raise
+        finally:
+            write_exited.set()
+
+    interaction.save = save
+    outcomes = []
+
+    async def run() -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            outcomes.append(await native.persist_cancelled_receipt(interaction))
+            raise
+
+    task = asyncio.create_task(run())
+    try:
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.wait_for(entered.wait(), 1)
+        task.cancel()  # repeated cancellation must not reset the deadline
+        done, _ = await asyncio.wait({task}, timeout=0.2)
+        assert done, "Cancellation cleanup is still waiting on the graph"
+        assert outcomes == [False]
+        if ignore_cancel:
+            assert not write_exited.is_set()
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.wait_for(write_exited.wait(), 1)
+        await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_stalled_cancellation_writes_are_capacity_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jvagent.action.native_harness import native_harness_action as native
+
+    monkeypatch.setattr(native, "_CANCELLATION_SETTLEMENT_SECONDS", 0.02)
+    monkeypatch.setattr(native, "_MAX_CANCELLATION_WRITES", 1)
+    release = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def save() -> None:
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            await release.wait()
+        finally:
+            exited.set()
+        raise OSError("late write failure")
+
+    interaction = SimpleNamespace(native_run={"run_id": "one"}, save=save)
+    blocked = SimpleNamespace(native_run={"run_id": "two"}, save=AsyncMock())
+    try:
+        assert await native.persist_cancelled_receipt(interaction) is False
+        assert len(native._pending_cancellation_writes) == 1
+        assert await native.persist_cancelled_receipt(blocked) is False
+        blocked.save.assert_not_awaited()
+    finally:
+        release.set()
+        await asyncio.wait_for(exited.wait(), 1)
+        await asyncio.sleep(0)
+    assert not native._pending_cancellation_writes
+
+
+@pytest.mark.asyncio
+async def test_early_cancellation_flushes_deferred_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jvagent.action.native_harness.native_harness_action import (
+        persist_cancelled_receipt,
+    )
+    from jvagent.memory.interaction import Interaction
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "true")
+    interaction = Interaction(utterance="cancel before native registration")
+    interaction.native_run = {"run_id": "early", "status": "cancelled"}
+    assert await persist_cancelled_receipt(interaction) is True
+    restored = (await Interaction.find({"id": interaction.id}))[0]
+    assert restored.native_run == interaction.native_run
+    assert not interaction.deferred_saves_enabled
+
+
+@pytest.mark.asyncio
+async def test_cancellation_persists_unknown_provider_usage_before_next_turn() -> None:
+    from pydantic_ai_harness.step_persistence import StepEvent
+
+    from jvagent.action.native_harness.native_harness_action import (
+        persist_cancelled_receipt,
+    )
+    from jvagent.harness.step_store import InteractionStepStore
+    from jvagent.memory.interaction import Interaction
+
+    interaction = Interaction(utterance="cancelled provider request")
+    interaction.native_run = {"run_id": "cancelled", "status": "cancelled"}
+    await InteractionStepStore(interaction).append_event(
+        StepEvent(run_id="cancelled", kind="model_request_started", step_index=1)
+    )
+    assert await persist_cancelled_receipt(interaction) is True
+    restored = (await Interaction.find({"id": interaction.id}))[0]
+    assert restored.usage["unknown_cost_call_count"] == 1
+    assert restored.usage["model_attempt_count"] == 1
+    assert restored.usage["cancelled_model_attempt_count"] == 1

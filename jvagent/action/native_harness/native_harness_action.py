@@ -6,34 +6,74 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from jvspatial import flush_deferred_entities
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.harness.native import build_native_agent, run_native_agent
 from jvagent.tooling.access import is_tool_allowed
 
+_CANCELLATION_SETTLEMENT_SECONDS = 5.0
+_MAX_CANCELLATION_WRITES = 16
+_pending_cancellation_writes: set[asyncio.Task[Any]] = set()
 
-async def persist_cancelled_receipt(interaction: Any) -> None:
-    """Attempt cancellation settlement without replacing caller cancellation."""
-    task = asyncio.create_task(interaction.save())
-    while not task.done():
+
+async def persist_cancelled_receipt(
+    interaction: Any, *, model: str = "unknown"
+) -> bool:
+    """Bound host cleanup without masking cancellation or claiming a failed write.
+
+    A non-cooperative adapter may finish later. Retain and observe that task,
+    but cap outstanding cleanup writes instead of accumulating unbounded work.
+    This is not a database deadline or a distributed ownership guarantee.
+    """
+    logger = logging.getLogger(__name__)
+    run_id = interaction.native_run.get("run_id")
+    if len(_pending_cancellation_writes) >= _MAX_CANCELLATION_WRITES:
+        logger.error("native_cancellation_persist_capacity", extra={"run_id": run_id})
+        return False
+
+    async def save() -> None:
+        if getattr(interaction, "native_steps", None):
+            from jvagent.harness.accounting import recover_native_usage
+
+            await recover_native_usage(interaction, run_id=run_id, model=model)
+        await interaction.save()
+        await flush_deferred_entities(interaction, strict=True)
+
+    def finished(task: asyncio.Task[Any]) -> None:
+        _pending_cancellation_writes.discard(task)
         try:
-            await asyncio.shield(task)
+            task.result()
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.error(
+                "native_cancellation_persist_failed",
+                extra={"run_id": run_id, "exception_type": type(exc).__name__},
+            )
+
+    task = asyncio.create_task(save(), name="native-cancellation-receipt")
+    _pending_cancellation_writes.add(task)
+    task.add_done_callback(finished)
+    deadline = asyncio.get_running_loop().time() + _CANCELLATION_SETTLEMENT_SECONDS
+    while not task.done():
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            task.cancel()
+            logger.error(
+                "native_cancellation_persist_timeout", extra={"run_id": run_id}
+            )
+            return False
+        try:
+            # wait() does not cancel the writer when the caller is cancelled.
+            # Unlike wait_for(), it does not await cancellation acknowledgement.
+            await asyncio.wait({task}, timeout=remaining)
         except asyncio.CancelledError:
-            # A second caller cancellation must not interrupt the graph write.
-            continue
-        except Exception:
-            break
+            continue  # another cancel must not reset the original deadline
     try:
         task.result()
-    except (Exception, asyncio.CancelledError) as exc:
-        logging.getLogger(__name__).error(
-            "native_cancellation_persist_failed",
-            extra={
-                "run_id": interaction.native_run.get("run_id"),
-                "exception_type": type(exc).__name__,
-            },
-        )
+        return True
+    except (Exception, asyncio.CancelledError):
+        return False  # finished() observes/logs the exception exactly once
 
 
 class NativeHarnessAction(InteractAction):
@@ -260,7 +300,12 @@ class NativeHarnessAction(InteractAction):
                 "status": "delivery_unknown" if delivery_started else "cancelled",
                 "usage_complete": bool(receipt.get("usage_complete")),
             }
-            await persist_cancelled_receipt(interaction)
+            if not await persist_cancelled_receipt(interaction, model=self.model):
+                interaction.native_run = {
+                    **interaction.native_run,
+                    "status": "delivery_unknown" if delivery_started else "blocked",
+                    "reason": "cancellation_receipt_unconfirmed",
+                }
             raise
         except Exception as exc:
             if interaction.native_run.get("status") == "running":

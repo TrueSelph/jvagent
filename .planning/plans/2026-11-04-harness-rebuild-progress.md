@@ -1207,3 +1207,101 @@ qualify deletion while another tab streams. Cache quota/failure and browser-cras
 behavior remain best effort; the graph is authoritative. Those browser gates,
 harness compatibility/migration/deletion, outage recovery and comparative workload
 evaluation remain open. No enterprise release claim is made.
+
+
+## Bounded host cancellation receipt cleanup
+
+Based on e60bcdee. Final source/test index before this record is
+1c63bc763b6f753002b641ced9b06e811c0eaf16; native Action blob
+6a2b97da96622c020ff6f18d81e2ab7fbec06ffa, accounting blob
+2f346e32e8922eeeed950d94741c2a2dad6db9ad. Branch remains
+feat/pydantic-harness-rebuild, author/committer eldonm.
+
+Two behavioral regressions reproduced the previous unbounded cleanup: after
+caller cancellation, a stalled graph save kept cleanup live past the test's
+bound, with or without the writer suppressing cancellation. Tests release the
+writer in finally so the red run itself cannot hang.
+
+The host receipt helper now uses one monotonic five-second deadline across
+usage normalization, save and strict deferred flush. Repeated caller cancellation
+does not restart it. On expiry the write is cancelled without awaiting an
+uncooperative cancellation acknowledgement. A strong-reference set retains and
+observes delayed writes, capped at 16 in the qualified single-event-loop host;
+capacity exhaustion does not start another cleanup write. Eventual failures are
+consumed and logged without provider payloads. It returns a settlement result;
+unconfirmed cleanup leaves the in-memory invocation blocked or delivery_unknown,
+while preserving the caller's original cancellation. Sources:
+`jvagent/action/native_harness/native_harness_action.py:16`, `:303`.
+
+Usage normalization is inside that same bounded cleanup task. An unanswered
+native request becomes provider_unreported, unknown-cost telemetry rather than
+a zero-priced response. On a cancelled root it is classified as a cancelled
+attempt (`jvagent/harness/accounting.py:204`). An early cancellation also flushes
+an entity still in deferred mode. No provider retries or execution replay were
+added, and no new database, dependency or public configuration surface was added.
+
+Deterministic cases include repeated cancellation, cooperative/uncooperative
+stalled writers, capacity exhaustion, eventual write failure observation,
+deferred early persistence, failed settlement before/after delivery, and durable
+unknown usage before another turn. Clean Python 3.11/3.12 native/profile/WebFetch
+slices each pass 140 tests. The Python interact/memory slice passes 343, with two
+real Redis multiprocess cases skipped because their service URL is not configured.
+All-files hooks pass after restaging the isort change and rerunning clean.
+
+### Real browser fault/cancellation evidence
+
+Bundled jvchat 3130 and isolated API/graph 8130 were used with GPT-4.1/OpenAI.
+An untracked temporary launcher stalled only Interaction.save for a cancellation
+receipt. It did not change committed source or make the underlying JSON adapter
+itself fail. This qualifies the host cleanup fault path, not every storage outage.
+The launcher/flag were removed from active execution, and the ordinary CLI
+backend was restarted for the final healthy-storage tests.
+
+| Scenario | Interaction / root run | Persisted/visible outcome | Timing | Provider usage/cost |
+|---|---|---|---|---|
+| Initial ordinary seed | n.Interaction.da5daa3c78f74d84b303bd32 / 973c988f59664f639a4effd03ec30948 | PINE-63; delivered, closed/emitted; 533-token badge | 2.200 s native run | 1 receipt, 533 tokens, USD 0.001102 estimated |
+| Preliminary injected cancellation, before usage-normalization addition | n.Interaction.4b98689c86ed4925857df6f0 / faad2c66b11d4170b8e2ae2755b7f775 | Stop ended UI generation; stalled final write cancelled; durable root remains running, no answer/ack | Stalled save 5.000 s | Provider stream opened; tokens/cost unknown; no terminal usage receipt persisted |
+| Repeated injected cancellation after normalization addition | n.Interaction.9b697165deb346fa91208b41 / 9bf1fc35c3b446baac32d3f637d56123 | No answer/ack; durable root running because final receipt write failed | Stalled save 4.939 s within helper's shared 5 s budget | Provider stream opened; tokens/cost unknown; no terminal usage receipt persisted |
+| Healthy-storage cancellation on final candidate | n.Interaction.5ef487a714a845af9a6c400d / 91c5623ed597415aa57fb8a6ca8e4f5f | cancelled, usage_complete=false; one cancelled attempt and one unknown-cost call persisted | Request-start event to normalized usage timestamp 5.850 s; no terminal run event | Provider stream opened; tokens/cost unknown, not free |
+| Fresh conversation after restoring standard backend | n.Interaction.485aad42c85940a881e7d205 / ae5b8331e6ae433d906a753ecb7e6524 | RESTORE-PASS-96; delivered, closed/emitted; 530-token badge | 1.453 s native run | 1 receipt, 530 tokens, USD 0.001108 estimated |
+
+For OAK the native Action blob matches the final candidate; accounting was the
+e60bcdee version before the cancelled-attempt outcome label was added. Its write
+failed before persisting usage. ELM and RESTORE used the final source/test tree
+above. The preliminary PINE fault is retained as diagnostic evidence, not final
+revision qualification.
+
+Follow-up browser requests were visibly refused with the recovery notice and
+zero new provider requests/events. PINE follow-up: n.Interaction.794383e3124e4964b8c67c67;
+OAK after a fresh normal backend restart: n.Interaction.216a94ebf43447929dd6bc79;
+ELM: n.Interaction.a4ea66204bb14771bd57647d. Each is persisted blocked, closed and
+emitted with a predecessor reference. Their persisted Interaction-start to usage
+finalization intervals were 2.233/2.516/0.916 s respectively; those are not full
+HTTP latency benchmarks. Restarts and reauthentication did not bypass admission.
+
+There were five observed logical provider requests in this round: two measured
+receipts (1,063 tokens, USD 0.002210 estimated) plus three cancelled requests with
+unknown token/cost outcomes. No total cost is claimed. The two failed final writes
+retain request-start events but empty normalized usage dictionaries; that is
+unsettled telemetry, not evidence of no charge. ELM durably marks the uncertainty.
+Provider invoices and hidden SDK attempts remain unqualified. Detailed temporary
+readback is /private/tmp/jvagent-cancel-browser-evidence.json; fault and restart
+logs are retained separately under /private/tmp/jvagent-*cancel*.log.
+
+### Remaining storage/recovery gate
+
+This fixes the host receipt wait, not every operation in a cancelled run. The
+pinned official StepPersistence on_run_error deliberately shields failure writes
+without a deadline (`pydantic_ai_harness/step_persistence/_capability.py:562`).
+Other ingress/graph operations, official failure-checkpoint writes, blocking
+adapters, uncooperative-writer process shutdown, multi-loop/worker ownership,
+provider bill reconciliation and operator recovery still require qualification.
+The cancellation smoke retains nonterminal library request records; the host does
+not invent run_failed events or automatically replay them. Operator tooling is
+still missing. It is not claimed that graph writes can be forcibly interrupted.
+
+The bounded task pool is a host storage-gap adapter, not an execution engine.
+Replace it when a public jvspatial deadline/cancellation primitive supplies the
+same bounded acknowledgement and late-outcome observation guarantees; preserve
+fail-closed admission and unknown-cost accounting. No enterprise qualification,
+complete outage recovery or performance improvement is claimed by this increment.
