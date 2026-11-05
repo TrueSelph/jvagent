@@ -2146,5 +2146,22 @@
     "status": "open: five high production entries; full build/development tree has 23 entries including two critical Vitest/tinypool entries; exposure/remediation unqualified",
     "dependency_changes_in_this_increment": false,
     "full_audit_evidence": "2026-11-05-native-ui-full-audit.json"
+  },
+  "native_scheduler_loop_increment": {
+    "evidence": "2026-11-05-native-timer.md",
+    "qualified": [
+      "single serving loop for bootstrap/stress seed/public run_async",
+      "actual two-minute timer dispatch of native GPT-4.1 and MCP task",
+      "browser tool/reply/usage visibility and graph pending/completed readback",
+      "single SIGTERM with parked reader exits in 30.672 seconds",
+      "unchanged graph results/tasks/spending after shutdown"
+    ],
+    "remaining": [
+      "active model/tool/external-effect shutdown",
+      "blocking application or driver lifespan shutdown",
+      "multi-worker scheduling and ownership recovery",
+      "dependency security remediation",
+      "migration and legacy/pilot removal"
+    ]
   }
 }

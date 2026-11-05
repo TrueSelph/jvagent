@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [idle delivery renewal](2026-11-05-native-idle.md).
+Latest increment: [scheduler loop and bounded drain](2026-11-05-native-timer.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native scheduler deployment and subscription drain
+
+Bootstrap, optional stress seed and public Server.run_async now share one loop;
+actual jvspatial timer regression fails against the parent closed-loop behavior.
+The normal two-minute TaskMonitor timer autonomously dispatched a queued actual
+GPT-4.1/MCP task, and the browser displayed its correct reply/tool/statistics.
+Fresh PostgreSQL proves pending-to-completed task state and delivered runs.
+Three requests total: 4,099 reported tokens, USD 0.006758 estimated.
+A single SIGTERM with a parked reader exited in 30.672s, including scheduler
+shutdown; post-stop state/spending was unchanged. CLI/config/scheduler suites:
+64 passed on each Python 3.11/3.12. Final hooks/full push/current-head CI are
+separate gates. Active-effect shutdown, blocking drivers, multi-worker timer
+recovery, dependency security, migration and legacy deletion remain open.
 
 ## Idle delivery renewal
 

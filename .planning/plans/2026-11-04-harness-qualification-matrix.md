@@ -25,6 +25,13 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Signed host policy | Administrator auth-required actual-provider success; nonce/server-run binding; nine UI and one nonstreaming validation rejections before execution; regression catches nonempty-policy downgrade; see [evidence](2026-11-05-native-host-context.md) | Member/foreign bearer/session, popup/actual-provider embed/cancellation, public-auth defaults/migration and distributed recovery remain open |
 | Shared host | Native local admission/publication bypass legacy runtime; server correlation binds SDK/effects/reply; real browser success/error/restart cohort and module probe; deterministic signed-context, embed cancellation and fast-reply regressions | Actual-provider signed host/embed/popup/member/cancellation matrix; native durable cursor replay, distributed ownership, interview execution and final legacy deletion remain unqualified; see [results](2026-11-05-shared-host-results.md) |
 
+Latest local scheduler/drain qualification: [timer record](2026-11-05-native-timer.md).
+The normal two-minute timer dispatched actual native SDK/MCP work and delivered
+its result through the browser. One SIGTERM with a parked reader exited in
+30.672s, with unchanged persisted results/spending. This closes the local
+single-worker closed-loop timer and idle-SSE drain cases only; active effects,
+blocking shutdown hooks and distributed deployment remain open.
+
 ## Required asset migrations
 
 Latest background-channel qualification: [2026-11-05 record](2026-11-05-native-channel.md).

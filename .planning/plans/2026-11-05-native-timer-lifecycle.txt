@@ -1,0 +1,16 @@
+19:28:14 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: system_task_monitor (every 2 minutes)
+19:28:14 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: system_task_monitor (every 2 minutes)
+19:28:14 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Unregistered scheduled task: system_task_monitor
+19:28:14 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: system_task_monitor (every 2 minutes)
+19:28:15 | [32mINFO[0m | uvicorn.error | Uvicorn running on http://127.0.0.1:8136 (Press CTRL+C to quit)
+19:30:15 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Unregistered scheduled task: system_task_monitor
+19:30:15 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: system_task_monitor (every 2 minutes)
+19:30:19 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Task system_task_monitor completed successfully
+19:30:47 | [32mINFO[0m | uvicorn.error | Shutting down
+19:30:47 | [32mINFO[0m | uvicorn.error | Waiting for connections to close. (CTRL+C to force quit)
+19:31:17 | [32mINFO[0m | uvicorn.error | Waiting for application shutdown.
+19:31:17 | [32mINFO[0m | jvspatial.api.services.lifecycle | 🛑 Shutting down jvagent API...
+19:31:17 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Stopping scheduler...
+19:31:17 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Scheduler stopped
+19:31:17 | [32mINFO[0m | uvicorn.error | Application shutdown complete.
+19:31:17 | [32mINFO[0m | uvicorn.error | Finished server process [14535]

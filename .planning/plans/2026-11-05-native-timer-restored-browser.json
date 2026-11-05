@@ -1,0 +1,5 @@
+{
+  "at": "2026-11-05T23:33:14.380Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-TIMER-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-TIMER-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 2.7s · 1.1 tok/s\n1 tool call\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.5k tokens · 3.4s · 13.2 tok/s\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "requests": []
+}
