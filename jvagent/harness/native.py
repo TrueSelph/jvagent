@@ -31,6 +31,7 @@ def build_native_agent(
     delegates: Sequence[Any] = (),
     conversation_id: str | None = None,
     event_stream_handler: Any = None,
+    spend_observer: Any = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -43,6 +44,8 @@ def build_native_agent(
     from pydantic_ai.workspaces import LocalWorkspaceBackend
     from pydantic_ai_harness import Skills
 
+    if spend_observer is not None and spend_store is None:
+        raise ValueError("A spend observer requires native spend tracking")
     directory = skill_directory.resolve(strict=True)
     metadata = admit_skill(
         directory,
@@ -97,6 +100,14 @@ def build_native_agent(
         async def before_run(self, ctx: RunContext[Any]) -> None:
             ctx.load_capability(metadata["name"])
 
+        async def wrap_model_request(
+            self, ctx: RunContext[Any], *, request_context: Any, handler: Any
+        ) -> Any:
+            if spend_observer is None:
+                return await handler(request_context)
+            with spend_observer.bind(ctx):
+                return await handler(request_context)
+
         async def before_tool_execute(
             self,
             ctx: RunContext[Any],
@@ -149,6 +160,7 @@ def build_native_agent(
                 max_conversation_cost_usd=max_conversation_cost_usd,
                 available_actions=available_actions,
                 channel=channel,
+                spend_observer=spend_observer,
             )
             child.name = entry.name
             children.append(
@@ -189,13 +201,14 @@ def build_native_agent(
             SpendLimits(
                 store=spend_store,
                 on_unpriced="raise",
+                on_spend=spend_observer.record if spend_observer is not None else None,
                 budgets=[
                     Budget(usd=run_budget, window="run"),
                     Budget(usd=conversation_budget, window="conversation"),
                 ],
             )
         )
-    return Agent(
+    agent = Agent(
         model,
         instructions=instructions,
         output_type=policy.finish if policy is not None else str,
@@ -203,6 +216,7 @@ def build_native_agent(
         capabilities=capabilities,
         name="jvagent-native",
     )
+    return agent
 
 
 async def run_native_agent(

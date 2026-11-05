@@ -1,8 +1,100 @@
 """Map native response receipts into JV's existing usage reporting."""
 
+import asyncio
+import contextlib
+import contextvars
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
+
+
+class NativeSpendRecorder:
+    """Persist public spend snapshots before settled message snapshots exist.
+
+    The official run-budget counter gives each billed response a replay-stable
+    ordinal, including rejected fallback responses. Share the step-store lock
+    when several native children write the same Interaction.
+
+    Upstream gap (pinned Harness 0.66): streamed SpendRecordedEvent listeners
+    can miss the final receipt on a limit exception. The supported but deprecated
+    on_spend callback is used until immediate failure-safe event delivery exists.
+    This adapter records telemetry only; it does not execute or price requests.
+    """
+
+    def __init__(self, interaction: Any, *, lock: asyncio.Lock | None = None) -> None:
+        self.context: contextvars.ContextVar[Any] = contextvars.ContextVar(
+            "native_receipt_context", default=None
+        )
+        self.interaction = interaction
+        self.lock = lock if lock is not None else asyncio.Lock()
+
+    @contextlib.contextmanager
+    def bind(self, ctx: Any) -> Iterator[None]:
+        token = self.context.set(ctx)
+        try:
+            yield
+        finally:
+            self.context.reset(token)
+
+    async def record(self, event: Any) -> None:
+        ctx = self.context.get()
+        statuses = [status for status in event.budgets if status.budget.window == "run"]
+        if len(statuses) != 1 or ctx is None or not ctx.run_id:
+            raise ValueError(
+                "Native receipts require exactly one run budget and run ID"
+            )
+        status = statuses[0]
+        if status.spent.requests <= 0 or (
+            event.priced and (not math.isfinite(float(event.usd)) or event.usd < 0)
+        ):
+            raise ValueError("Invalid native spend receipt")
+        key = f"spend:{status.key}:{status.spent.requests}"
+        async with self.lock:
+            metrics = list(self.interaction.observability_metrics)
+            if any(
+                item.get("data", {}).get("native_receipt_key") == key
+                for item in metrics
+            ):
+                return
+            usage = event.usage
+            priced = event.priced and not usage.unmeasured_requests
+            data = {
+                "native_receipt_key": key,
+                "native_run_id": ctx.run_id,
+                "native_step_index": ctx.run_step,
+                "native_spend_receipt": True,
+                "model": event.model or "unknown",
+                "provider": "unknown",
+                "native_receipt_origin": "spend_snapshot",
+                "usage": {
+                    "prompt_tokens": usage.input_tokens,
+                    "completion_tokens": usage.output_tokens,
+                    "total_tokens": usage.input_tokens + usage.output_tokens,
+                    "cached_prompt_tokens": usage.cache_read_tokens,
+                    "cache_write_tokens": usage.cache_write_tokens,
+                },
+                "cost_record": {
+                    "amount": float(event.usd) if priced else None,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing" if priced else "unpriced",
+                    "estimated": bool(priced),
+                    "pricing_version": None,
+                },
+            }
+            metrics.append({"event_type": "model_call", "data": data})
+            self.interaction.observability_metrics = metrics
+            self.interaction.compute_usage()
+            await self.interaction.save()
+
+
+def _spend_receipts(interaction: Any, run_id: str) -> list[dict[str, Any]]:
+    return [
+        item["data"]
+        for item in interaction.observability_metrics
+        if item.get("event_type") == "model_call"
+        and item.get("data", {}).get("native_run_id") == run_id
+        and item.get("data", {}).get("native_spend_receipt")
+    ]
 
 
 def record_native_usage(
@@ -11,6 +103,11 @@ def record_native_usage(
     """Record this run's responses once; library-derived cost remains estimated."""
     from pydantic_ai.messages import ModelResponse
 
+    live = _spend_receipts(interaction, run_id)
+    if live:
+        # The spend journal includes billed fallback responses absent from final
+        # history. Mixing it with snapshot ordinals would double-charge them.
+        return len(live)
     metrics = list(interaction.observability_metrics)
     known = {event.get("data", {}).get("native_receipt_key") for event in metrics}
     count = 0
@@ -79,7 +176,19 @@ async def _recover_run_usage(interaction: Any, *, run_id: str, model: str) -> No
     receipts = record_native_usage(interaction, messages, run_id=run_id, model=model)
     events = await store.list_events(run_id=run_id)
     attempted = sum(event.kind == "model_request_started" for event in events)
-    unknown = max(0, attempted - receipts)
+    live = _spend_receipts(interaction, run_id)
+    if live:
+        covered = {item["native_step_index"] for item in live}
+        unknown = len(
+            {
+                event.step_index
+                for event in events
+                if event.kind == "model_request_started"
+            }
+            - covered
+        )
+    else:
+        unknown = max(0, attempted - receipts)
     metrics = [
         event
         for event in interaction.observability_metrics

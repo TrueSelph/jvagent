@@ -143,6 +143,9 @@ class NativeHarnessAction(InteractAction):
                         metadata=metadata,
                     )
 
+        from jvagent.harness.accounting import NativeSpendRecorder
+
+        step_store = InteractionStepStore(interaction)
         agent = build_native_agent(
             self.model,
             skill_directory=Path(self.skill_directory),
@@ -152,7 +155,8 @@ class NativeHarnessAction(InteractAction):
             tools=tools,
             access_check=access,
             instructions=self.instructions,
-            step_store=InteractionStepStore(interaction),
+            step_store=step_store,
+            spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
             spend_store=ConversationSpendStore(conversation),
             max_run_cost_usd=self.max_run_cost_usd,
             max_conversation_cost_usd=self.max_conversation_cost_usd,
@@ -254,13 +258,18 @@ class NativeHarnessAction(InteractAction):
                     "usage_complete": False,
                 }
                 await interaction.save()
-                from pydantic_ai.exceptions import ModelAuthenticationError
-
-                message = (
-                    "The model provider rejected its API credentials. Please update the configured key."
-                    if isinstance(exc, ModelAuthenticationError)
-                    else "The model request could not complete. Please check the service configuration."
+                from pydantic_ai.exceptions import (
+                    ModelAuthenticationError,
+                    UsageLimitExceeded,
                 )
+                from pydantic_ai_harness.spend import SpendLimitExceeded
+
+                if isinstance(exc, ModelAuthenticationError):
+                    message = "The model provider rejected its API credentials. Please update the configured key."
+                elif isinstance(exc, (UsageLimitExceeded, SpendLimitExceeded)):
+                    message = "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request."
+                else:
+                    message = "The model request could not complete. Please check the service configuration."
                 await responder.publish(
                     message, visitor=visitor, message_id=f"o.ResponseMessage.{run_id}"
                 )

@@ -13,7 +13,7 @@ from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolRetu
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from jvagent.harness.accounting import recover_native_usage
+from jvagent.harness.accounting import NativeSpendRecorder, recover_native_usage
 from jvagent.harness.native import build_native_agent, run_native_agent
 from jvagent.harness.spend_store import ConversationSpendStore
 from jvagent.harness.step_store import InteractionStepStore
@@ -42,6 +42,7 @@ async def test_native_children_share_limits_and_preserve_scope(
     conversation = Conversation()
     await conversation.save()
     store = InteractionStepStore(interaction)
+    recorder = NativeSpendRecorder(interaction, lock=store.lock)
     seen = []
     calls = []
 
@@ -90,6 +91,7 @@ async def test_native_children_share_limits_and_preserve_scope(
         instructions="Follow your selected skill.",
         step_store=store,
         spend_store=ConversationSpendStore(conversation),
+        spend_observer=recorder,
         conversation_id="host-conversation",
         delegates=[
             {
@@ -122,17 +124,15 @@ async def test_native_children_share_limits_and_preserve_scope(
             )
             assert result.output == "finished"
             assert result.usage.requests == 4
+    assert recorder.context.get() is None
     await recover_native_usage(interaction, run_id="parent", model="test")
     records = await store.list_runs()
     assert len(records) == 2
     child = next(r for r in records if r.run_id != "parent")
     assert child.parent_run_id == "parent"
     assert child.conversation_id == "host-conversation"
-    assert interaction.usage["model_call_count"] == (
-        1 if max_cost == "0.0015" else (2 if limited else 4)
-    )
-    if max_cost == "0.0015":
-        assert interaction.usage["unknown_cost_call_count"] == 1
+    assert interaction.usage["model_call_count"] == (2 if limited else 4)
+    assert interaction.usage["unknown_cost_call_count"] == 0
     expected_requests = 2 if limited else 4
     assert (
         max(item["spent"]["requests"] for item in conversation.native_spend.values())

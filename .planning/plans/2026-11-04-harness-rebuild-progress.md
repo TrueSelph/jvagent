@@ -632,3 +632,54 @@ UI estimates (0.006764 + 0.009012). Per-run counters remain separate. Validation
 71 native/profile tests, 279 PageIndex/tooling/import-boundary tests and clean
 repository hooks after formatting. Runtime changes after the final smokes were
 formatting only; subsequent edits were tests and documentation.
+
+## Failure-safe native spend receipts
+
+Added NativeSpendRecorder on the existing Interaction observability field. It
+persists public SpendSnapshot values as native model_call receipts, keyed by the
+official run-budget key and cumulative billed-response ordinal. Native parent and
+children share the recorder and the InteractionStepStore write lock. Snapshot
+recovery uses this journal when present rather than counting the same responses
+again. Request-step coverage, not billed-response count, determines whether a
+later request has no receipt; two receipts in one step cannot mask an unanswered
+later step. Old snapshot-only runs retain their existing recovery path.
+
+Known estimates remain explicitly pydantic_ai_pricing, never provider-billed cost.
+Unpriced or unmeasured receipts have unknown cost instead of placeholder zero or
+silent fallback estimation. Binding requires a host RunContext and is reset on
+success/error. The library still owns execution, provider calls and pricing.
+
+Upstream-gap adapter: registering a SpendRecordedEvent listener forces streaming,
+and the cost-exhaustion tests showed that the final event may not be delivered
+when the stream raises. The supported but deprecated SpendLimits.on_spend callback
+runs before that failure. A public AbstractCapability.wrap_model_request hook
+binds the run identity for this telemetry callback and invokes its handler exactly
+once. Remove this adapter once upstream guarantees immediate event delivery on
+limit/error paths and the same regressions pass through that interface. No private
+library APIs, custom pricing/transport, engine loop or new state database were used.
+Do not suppress the deprecation or claim this is the preferred upstream interface.
+
+Actual GPT-4.1 browser smokes used parent d48824e9 plus this patch, Python 3.11,
+the same disposable app/index on 8130 and jvchat on 3130. New conversation per
+scenario; the normal USD 2 run ceiling was restored after the failure injection.
+
+| Scenario | Interaction / run | Outcome | Duration | Calls / tokens | Cost |
+|---|---|---|---|---|---|
+| Deliberate USD 0.002 run limit with delegated lookup | n.Interaction.04c9ed235bdc4cf580bef7bf / 949a2c35f4614fb2b60c9535e660436e | Failed at budget, visible budget-specific message and delegate event, closed/emitted | 4.500 s | 2 / 1,793 | USD 0.004096 estimated |
+| Restored USD 2 limit, new conversation, same lookup | n.Interaction.d6acc787d591408cac3f7be3 / 3df6c9fca99b4c5fabafb32e8d6ca109 | Correct cited public date/label, delivered, closed/emitted, parent and child tool events | 6.654 s | 4 / 3,814 | USD 0.006860 estimated |
+
+Readback confirms two live receipts on the failed run (parent USD 0.001376 and
+child USD 0.002720) and four on the successful run, zero duplicate snapshot model
+calls, and zero unknown-priced receipts in both these scenarios. Failure retains
+usage_complete=false conservatively. The budget is post-receipt: its overshooting
+request completed and its cost is retained; no hard reservation guarantee is
+implied. UI statistics remained visible on failure and success. Budget failures
+now get a budget-specific response instead of a misleading service-config error.
+
+Deterministic tests cover duplicate receipt delivery, journal/snapshot settlement,
+unknown later request despite multiple earlier receipts, unpriced/unmeasured
+usage, missing host context, cleared bindings, and delegated request/dollar limits.
+Same-conversation recovery after a failed run, callback persistence outages,
+stream cancellation settlement, SDK-internal retries, provider bill reconciliation
+and distributed writer ownership remain unqualified. The earlier general-answer
+citation-quality issue is still open. This increment does not claim those gates.
