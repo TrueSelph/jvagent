@@ -8,6 +8,7 @@ here: the official StepPersistence capability owns execution semantics.
 import asyncio
 from typing import Any
 
+from jvspatial import flush_deferred_entities
 from pydantic import TypeAdapter
 from pydantic_ai_harness.step_persistence import (
     ContinuableSnapshot,
@@ -73,6 +74,7 @@ class InteractionStepStore:
             state[key] = values
             self.interaction.native_steps = state
             await self.interaction.save()
+            await flush_deferred_entities(self.interaction, strict=True)
 
     async def register_run(self, record: RunRecord) -> None:
         await self._write("runs", record, identity="run_id")

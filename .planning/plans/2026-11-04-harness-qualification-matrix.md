@@ -12,14 +12,14 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Gate | Current evidence | Remaining work |
 |---|---|---|
 | Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 92 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 114 native/profile plus 16 WebFetch cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Native execution | 130 native/profile/WebFetch cases plus expanded admission/deferred-storage regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure followed by successful same-conversation requests after backend restart | Abandoned-worker ownership, effect/write reconciliation, operator tooling, bounded outage/cancellation settlement |
-| Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit | PostgreSQL, in-transaction death, outage and multi-worker fencing |
-| Spend | Official capability, graph batch-store regressions, immediate spend journal and actual budget-failure browser receipts | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and concurrency |
+| Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | PostgreSQL, in-transaction death, outage and multi-worker fencing |
+| Spend | Official capability, graph batch-store regressions, strict flushed journal, budget-failure receipts and two-tab serialized browser totals reconciled to six calls | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and distributed concurrency |
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory, explicit admission, direct PageIndex and bounded foreground skill delegation with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
-| Browser client | Actual GPT-4.1 delegation/follow-up; tool activity and usage survive reload; one POST on validation failure; replay/stream regressions; clean npm install and 115 UI tests | Historical receipt backfill, native timing, uncertain-outcome reconciliation, channel matrix |
+| Browser client | Actual GPT-4.1 delegation/follow-up; tool activity and usage survive reload; one POST on validation failure; replay/stream regressions; clean npm install and 115 UI tests | Cross-tab transcript convergence, historical receipt backfill, native timing, uncertain-outcome reconciliation, channel matrix |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 
 ## Required asset migrations

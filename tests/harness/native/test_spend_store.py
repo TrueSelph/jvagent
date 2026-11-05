@@ -91,8 +91,9 @@ async def test_official_budget_blocks_later_run_after_graph_reload() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
 async def test_real_conversation_spend_round_trip(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, deferred: bool
 ) -> None:
     from jvspatial.core.context import (
         GraphContext,
@@ -103,7 +104,7 @@ async def test_real_conversation_spend_round_trip(
 
     from jvagent.memory.conversation import Conversation
 
-    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
     path = str(tmp_path / "graph")
     set_default_context(GraphContext(database=JsonDB(base_path=path)))
     try:

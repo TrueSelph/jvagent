@@ -343,23 +343,19 @@ class Conversation(DeferredSaveMixin, Node):
     ) -> "Interaction":
         from jvagent.memory.interaction import Interaction
 
-        fresh = await Conversation.get(self.id)
-        if fresh is not None:
-            self.interaction_count = fresh.interaction_count
-            self.last_interaction_id = fresh.last_interaction_id
-            self.last_interaction_at = fresh.last_interaction_at
-            self.interaction_limit = fresh.interaction_limit
-
         if interaction is None and utterance is None:
             raise ValueError("Must provide either interaction or utterance")
 
-        if self.id:
-            fresh = await Conversation.get(self.id)
-            if fresh is not None:
-                self.interaction_count = fresh.interaction_count
-                self.last_interaction_id = fresh.last_interaction_id
-                self.interaction_limit = fresh.interaction_limit
-                self.last_interaction_at = fresh.last_interaction_at
+        # get() can return the object cached before this request acquired the
+        # lock. find() reads persisted state through jvspatial's public API.
+        rows = await Conversation.find({"id": self.id})
+        if len(rows) != 1:
+            raise ValueError("Conversation disappeared before interaction admission")
+        fresh = rows[0]
+        self.interaction_count = fresh.interaction_count
+        self.last_interaction_id = fresh.last_interaction_id
+        self.last_interaction_at = fresh.last_interaction_at
+        self.native_spend = fresh.native_spend
 
         from jvagent.core.app import App
 
@@ -401,6 +397,9 @@ class Conversation(DeferredSaveMixin, Node):
         # AUDIT-memory HIGH-10: a single save() covers all the field
         # changes above instead of two back-to-back writes.
         await self.save()
+        # Chain admission is committed before releasing the conversation lock.
+        # A later endpoint flush must never write this turn's stale counters.
+        await self.flush()
 
         if (
             self.interaction_limit > 0

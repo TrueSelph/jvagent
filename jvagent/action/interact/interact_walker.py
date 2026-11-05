@@ -534,7 +534,7 @@ class InteractWalker(Walker):
         return entity_name == "Agent"
 
     async def _ensure_interaction_bootstrapped(self, agent: "Agent") -> bool:
-        """Resolve session + create Interaction before the turn lock (HTTP spawn path)."""
+        """Complete bootstrap; spawn(agent) calls this while holding the turn lock."""
         if self.interaction:
             return True
         self._agent = agent
@@ -558,12 +558,24 @@ class InteractWalker(Walker):
             conversation_mutation_lock,
         )
 
-        if start_node is not None and self._looks_like_agent(start_node):
-            await self._ensure_interaction_bootstrapped(start_node)
+        explicit_agent = start_node is not None and self._looks_like_agent(start_node)
+        if explicit_agent:
+            self._agent = start_node
+            if not self.conversation and not self.interaction:
+                code = await self._bootstrap_interaction(start_node, through="session")
+                if code != "ready":
+                    self._bootstrap_error = code
+                    return self
 
         conv_id = getattr(self.conversation, "id", None) if self.conversation else None
 
         async def _run() -> "InteractWalker":
+            # Append only after the preceding turn has executed and finalized.
+            # Otherwise a later request can appear in an earlier run's history.
+            if explicit_agent and not await self._ensure_interaction_bootstrapped(
+                start_node
+            ):
+                return self
             await event_bus.register_entity(self)
 
             node = start_node
@@ -587,10 +599,9 @@ class InteractWalker(Walker):
     async def initialize_interaction(self, agent: "Agent") -> InteractionInitResult:
         """Deterministic phase 1: memory, session, access, create Interaction (no Actions traversal).
 
-        Call this before :meth:`~jvspatial.core.entities.walker.Walker.spawn` for HTTP
-        endpoints so streaming and non-streaming share the same startup semantics.
-        Programmatic callers may still use ``spawn(agent)`` alone; :meth:`on_agent` runs
-        the same bootstrap when ``interaction`` is not yet set.
+        Compatibility helper for callers that need an Interaction before traversal.
+        HTTP endpoints use ``spawn(agent)`` alone, which serializes creation and
+        execution as one turn. Calling this separately does not reserve that turn.
         """
         self._agent = agent
         if self.interaction:

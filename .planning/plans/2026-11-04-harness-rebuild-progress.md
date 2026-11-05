@@ -1020,3 +1020,114 @@ Clean Python 3.11.15 and 3.12.15 qualification slices each pass 130 cases, inclu
 23 recovery cases and the visible blocked-admission case. All-files formatting,
 lint, type and secret checks pass before the final evidence-record append and
 are rerun for the commit. Remote CI remains separate from these local gates.
+
+
+## W4 foreground turn admission and deferred-storage correction
+
+Active branch is now `feat/pydantic-harness-rebuild`, with Git author/committer
+`eldonm <103538117+eldonm@users.noreply.github.com>`. Earlier branch names above
+are historical. This increment is based on c77c0d4f; its tested source/test index
+tree before this evidence append is ec6777eca0d903d821d3a6ce7c379df0c1eb976e.
+
+Two new regressions failed against the preceding code: Interaction creation
+occurred before the whole-turn lock, and a second request appended while the
+first was executing. The HTTP explicit-Agent path now resolves the session
+first, then creates, executes and finalizes under one conversation lock
+(`jvagent/action/interact/interact_walker.py:561`). Denied/missing-memory/session
+failure cases never execute. The compatibility initialize_interaction helper
+remains separate and explicitly does not reserve an execution turn.
+
+A real identity-cache regression also reproduced stale native_spend overwriting
+prior receipts. Admission now uses public Conversation.find for persisted chain
+counters and native_spend (`jvagent/memory/conversation.py:349`). Caller-supplied
+interaction_limit behavior remains compatible; the existing Agent limit sync
+still applies. Two redundant cached get calls are removed.
+
+The first actual overlapping browser run exposed additional defects, rather than
+qualifying the initial change. In conversation n.Conversation.79717af8c71f4982b81cb456,
+the reader lookup succeeded (Interaction n.Interaction.79c4b4fb30c4469e9ebb77dc,
+4 calls, 4,017 tokens, USD 0.007242 estimated). The queued model request also
+produced BIRCH-84 (n.Interaction.dc2c4870244748eba4a0c160, 1 call, 742 tokens,
+USD 0.001526 estimated), but jvchat displayed "Interaction was not created during
+traversal." It remained unclosed, and the persisted conversation count/spend
+excluded it. This is a failed smoke, not a passing completion claim.
+
+Root causes and corrections:
+
+- The old five-second bootstrap poll awaited the walker after its deadline, then
+  unconditionally emitted a missing-interaction error. Streaming now polls while
+  the walker is live and no Interaction exists; disconnect cancels it and queued
+  waits emit 15-second heartbeats. A behavioral regression exceeds the old poll
+  count and verifies start/final, closure and no error
+  (`jvagent/action/interact/endpoints.py:978`).
+- Conversation writes and native persistence adapters were relying on save()
+  while the entity could still be in deferred batching. Admission now flushes
+  its conversation before releasing the lock. Official step records, spend
+  counters and native receipt-journal writes call public
+  flush_deferred_entities(strict=True), ending deferred mode and propagating
+  persistence failures. This prevents an earlier endpoint's late deferred flush
+  overwriting a later admitted turn. Source anchors:
+  `jvagent/harness/step_store.py:77`, `jvagent/harness/spend_store.py:99`,
+  `jvagent/harness/accounting.py:90`, `jvagent/memory/conversation.py:400`.
+
+Fresh-context step/spend tests now run with deferred batching both off and on;
+a receipt-journal test reads persisted usage before the request's final flush.
+Removing the three adapter flushes makes all three deferred-mode regressions
+fail (missing persisted entities). Sources were restored before the final gates.
+These findings qualify earlier "immediate persistence" evidence: that evidence
+used deferred saves disabled and did not prove the default deferred path.
+
+### Repeated actual-model browser evidence
+
+Isolated disposable app/graph remains on 8130 with jvchat 3130 and GPT-4.1 through
+OpenAI. Backend was restarted with the final runtime code. A new conversation
+n.Conversation.3b6900f157d84dd3819abadb was seeded with MAPLE-92. Two independent
+jvchat tabs then submitted a delegated lookup and a no-tool recall to that same
+session. Access logs show overlapping POSTs at 23:31:34 and 23:31:35 local time;
+the queued Interaction was created at 23:31:41.369686, exceeding the old five-second
+admission interval. Both requests returned visible successful replies.
+
+| Scenario | Interaction / root run | Result | Native run duration | Calls / tokens | Cost |
+|---|---|---|---|---|---|
+| Seed after restart | n.Interaction.ee79c832758e4a3891e9be32 / be352b18468d4863ac0ea6a456c898f9 | MAPLE-92 | 1.051 s | 1 / 533 | USD 0.001102 estimated |
+| Delegated internal lookup | n.Interaction.63779b95756b4cdca82b1c90 / 98e418a1a78f44cb82bdfc3825f1c02b | 18 November 2026, CEDAR-47, named source; delegate_task and pageindex__search visible | 4.645 s | 4 / 3,938 | USD 0.008680 estimated |
+| Concurrent queued recall | n.Interaction.da98ef39491b4b4f933816ea / c5959aba77784243b3d3c01b230d39ec | MAPLE-92; no error or tools | 0.813 s | 1 / 715 | USD 0.001466 estimated |
+
+Readback asserts all three delivered/closed/emitted, conversation count three,
+last ID equals queued recall, and history_source follows seed -> lookup -> recall.
+The persisted conversation budget equals the exact receipt sum: six requests,
+5,186 tokens, USD 0.011248 estimated, zero unpriced/unknown requests. Snapshots
+number 3/12/3 respectively. UI badges display 533, 3.9k and 715 tokens. Durations
+are root native run-event durations and exclude queued waiting and ingress;
+they are not end-to-end latency benchmarks. Provider-billed actual dollars and
+SDK internal attempt counts remain unqualified.
+
+Temporary detailed browser/graph evidence is retained under
+/private/tmp/jvagent-turn-admission-*. This record contains the durable conclusions.
+Clean Python 3.11/3.12 qualification slices each pass 154 tests. The broader
+interaction/memory slice passes 343, with two Redis multiprocess tests explicitly
+skipped because JVAGENT_TEST_REDIS_URL is absent. All-files hooks pass after
+formatting was rerun clean. No enterprise qualification is claimed.
+
+Remaining concurrency gates include multi-worker fencing, PostgreSQL and Redis
+fault tests, long queues/overload limits, programmatic Root traversal and separately
+initialized walkers, admission-time policy revocation, background writers,
+and bounded outage/cancellation settlement. Other Conversation fields and legacy
+writers are not claimed concurrency-safe from this native foreground test.
+Compatibility expansion, migration and legacy deletion remain required by W4/W5;
+the 60-turn comparative workload and deployment gates remain incomplete.
+
+
+A follow-up reload check exposed a separate jvchat limitation: each tab's cached
+transcript contains its own submitted turn, but does not merge the other tab's
+turn after reload/reselection. The graph retains all three Interactions and the
+native history lineage includes the delegated turn. The two-tab test qualifies
+foreground admission/accounting, not cross-tab client transcript convergence.
+That client behavior remains an explicit browser gate and must be corrected.
+
+Final repository-wide Python 3.10 compatibility run: 4,546 passed, 24 skipped
+in 167.90 seconds. Native Harness is separately tested in the clean supported
+3.11/3.12 environments above; skips in the legacy environment are not treated
+as native qualification. After adding test annotations, the affected admission,
+streaming and memory regression slice passes 21 tests. The three restored
+deferred-persistence regressions pass again after mutation checking.

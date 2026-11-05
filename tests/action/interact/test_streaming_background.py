@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from jvagent.action.interact.endpoints import (
@@ -136,3 +137,71 @@ async def test_background_actions_bind_interaction_to_context_for_observability(
         assert get_interaction() is None
     finally:
         set_interaction(None)
+
+
+async def test_queued_stream_admission_after_old_deadline_still_returns_final(
+    monkeypatch: Any,
+) -> None:
+    """Queued requests can take over five seconds to get their Interaction."""
+    from types import SimpleNamespace
+
+    from jvagent.action.interact import endpoints
+
+    interaction = SimpleNamespace(id="i-queued", close_interaction=AsyncMock())
+    walker = SimpleNamespace(
+        interaction=None,
+        conversation=None,
+        agent_id="agent",
+        user_id="user",
+        session_id="session",
+        response_bus=None,
+        background_actions=[],
+        get_report=AsyncMock(return_value=[]),
+    )
+    release = asyncio.Event()
+    real_sleep = asyncio.sleep
+    polls = 0
+
+    async def spawn(agent: Any) -> None:
+        await release.wait()
+        walker.interaction = interaction
+
+    async def sleep(delay: float) -> None:
+        nonlocal polls
+        polls += 1
+        if polls == 60:
+            release.set()
+        await real_sleep(0)
+
+    walker.spawn = spawn
+    monkeypatch.setattr(endpoints.asyncio, "sleep", sleep)
+    monkeypatch.setattr(endpoints, "_issue_session_token", AsyncMock(return_value=None))
+    monkeypatch.setattr(endpoints, "flush_deferred_entities", AsyncMock())
+    monkeypatch.setattr(endpoints, "_finalize_usage", AsyncMock())
+    monkeypatch.setattr(
+        endpoints,
+        "build_interact_response",
+        AsyncMock(return_value={"response": "ready"}),
+    )
+    monkeypatch.setattr(endpoints, "_emit_interaction_log", AsyncMock())
+    monkeypatch.setattr(
+        "jvagent.core.conversation_health.service.maybe_score_after_interaction",
+        AsyncMock(),
+    )
+    chunks = []
+    generator = endpoints._stream_interaction(walker, SimpleNamespace(id="agent"))
+
+    async def consume() -> None:
+        async for chunk in generator:
+            chunks.append(chunk)
+
+    try:
+        await asyncio.wait_for(consume(), 2)
+    finally:
+        release.set()
+        await generator.aclose()
+    assert polls >= 60
+    assert any('"type": "start"' in chunk for chunk in chunks)
+    assert any('"type": "final"' in chunk for chunk in chunks)
+    assert not any('"type": "error"' in chunk for chunk in chunks)
+    interaction.close_interaction.assert_awaited_once()

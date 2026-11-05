@@ -88,3 +88,19 @@ async def test_spend_receipt_without_host_run_scope_is_rejected() -> None:
     with pytest.raises(ValueError, match="run ID"):
         await NativeSpendRecorder(interaction).record(receipt(1))
     assert interaction.observability_metrics == []
+
+
+@pytest.mark.asyncio
+async def test_receipt_persists_before_deferred_request_flush(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "true")
+    interaction = Interaction(utterance="test")
+    await interaction.save()
+    recorder = NativeSpendRecorder(interaction)
+    with recorder.bind(SimpleNamespace(run_id="test", run_step=1)):
+        await recorder.record(receipt(1))
+    restored = (await Interaction.find({"id": interaction.id}))[0]
+    assert restored.usage["model_call_count"] == 1
+    assert restored.usage["total_cost_usd"] == pytest.approx(0.001)
+    assert not interaction.deferred_saves_enabled

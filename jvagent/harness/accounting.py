@@ -7,6 +7,8 @@ import math
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+from jvspatial import flush_deferred_entities
+
 
 class NativeSpendRecorder:
     """Persist public spend snapshots before settled message snapshots exist.
@@ -85,6 +87,7 @@ class NativeSpendRecorder:
             self.interaction.observability_metrics = metrics
             self.interaction.compute_usage()
             await self.interaction.save()
+            await flush_deferred_entities(self.interaction, strict=True)
 
 
 def _spend_receipts(interaction: Any, run_id: str) -> list[dict[str, Any]]:

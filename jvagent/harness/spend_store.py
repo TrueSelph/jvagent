@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from jvspatial import flush_deferred_entities
 from pydantic import TypeAdapter
 from pydantic_ai_harness.spend import SpendEntry, Spent
 
@@ -95,4 +96,5 @@ class ConversationSpendStore:
                 results[entry.key] = updated
             self.conversation.native_spend = state
             await self.conversation.save()
+            await flush_deferred_entities(self.conversation, strict=True)
             return results

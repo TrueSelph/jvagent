@@ -975,15 +975,17 @@ async def _stream_interaction(
             ),
         )
 
-        # Wait for interaction to be created
-        max_wait = 5.0  # Maximum seconds to wait for interaction
-        waited = 0.0
-        while not walker.interaction and waited < max_wait:
+        # Admission can wait behind another active turn. Keep checking task
+        # completion/disconnect rather than mistaking a queued turn for failure.
+        last_admission_heartbeat = time.monotonic()
+        while not walker.interaction and not walk_task.done():
             if request is not None and await request.is_disconnected():
                 walk_task.cancel()
                 return
+            if time.monotonic() - last_admission_heartbeat >= 15.0:
+                yield format_sse_chunk({"type": "heartbeat"})
+                last_admission_heartbeat = time.monotonic()
             await asyncio.sleep(0.1)
-            waited += 0.1
 
         if not walker.interaction:
             try:

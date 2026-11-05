@@ -110,8 +110,9 @@ async def test_unresolved_effects_and_interrupted_frontier() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
 async def test_step_snapshot_survives_fresh_graph_context(
-    tmp_path: Any, monkeypatch: Any
+    tmp_path: Any, monkeypatch: Any, deferred: bool
 ) -> None:
     from jvspatial.core.context import (
         GraphContext,
@@ -122,7 +123,7 @@ async def test_step_snapshot_survives_fresh_graph_context(
 
     from jvagent.memory.interaction import Interaction
 
-    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", "false")
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
     path = str(tmp_path / "graph")
     set_default_context(GraphContext(database=JsonDB(base_path=path)))
     try:
