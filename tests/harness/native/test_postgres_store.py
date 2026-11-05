@@ -185,6 +185,37 @@ async def test_native_request_timing_has_fresh_persisted_readback(
     assert usage["unknown_cost_call_count"] == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_usage_reserve_and_budget_have_fresh_pg_readback(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_reconciliation import (
+        test_reserve_unblocks_input_without_erasing_unknowns,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_reserve_unblocks_input_without_erasing_unknowns(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 1
+    state = rows[0]["context"]
+    assert state["native_run"]["usage_reserve"]["status"] == "applied"
+    assert state["usage"]["unknown_cost_call_count"] == 1
+    assert state["usage"]["estimated_cost_usd"] == 0.5
+    conversations = await postgres_scope.database.find(
+        "node", {"entity": "Conversation"}
+    )
+    funded = [r for r in conversations if r["context"].get("user_id") == "caller"]
+    assert len(funded) == 1
+    assert all(
+        float(v["spent"]["usd"]) == 0.5
+        for v in funded[0]["context"]["native_spend"].values()
+    )
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

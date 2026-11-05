@@ -116,7 +116,14 @@ async def history_for_new_turn(
 
     await recover_native_usage(previous, run_id=identity, model="unknown")
     await previous.save()
-    if previous.usage.get("unknown_cost_call_count", 0):
+    from jvspatial import flush_deferred_entities
+
+    await flush_deferred_entities(previous, strict=True)
+    from jvagent.harness.reconciliation import has_usage_reserve
+
+    if previous.usage.get("unknown_cost_call_count", 0) and not has_usage_reserve(
+        previous
+    ):
         raise NativeHistoryError("Previous provider usage requires reconciliation")
     messages = list(snapshot.messages)
     if previous.has_emitted() and previous.response:

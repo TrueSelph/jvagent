@@ -610,6 +610,16 @@ class Interaction(DeferredSaveMixin, Node):
 
         for event in self.observability_metrics or []:
             event_type = event.get("event_type")
+            if event_type == "model_usage_reserve":
+                from decimal import Decimal, InvalidOperation
+
+                try:
+                    reserve_amount = Decimal(event.get("data", {}).get("usd", ""))
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                if reserve_amount.is_finite() and reserve_amount > 0:
+                    estimated_cost_usd += float(reserve_amount)
+                continue
             if event_type == "model_attempt":
                 model_attempt_count += 1
                 attempt_data = event.get("data", {})

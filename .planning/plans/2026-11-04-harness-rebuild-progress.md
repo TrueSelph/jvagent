@@ -2048,3 +2048,13 @@ a separate interrupted request retains unknown billing and unmeasured duration.
 292 native/PG tests pass on each Python 3.11 and 3.12; memory tests pass 199 with
 two skips. Historical backfill, operator settlement, generic cancellation timestamps,
 transport-retry visibility and broader recovery/release gates remain open.
+
+## Explicit unknown-usage reserve — 2026-11-05
+
+[Record](2026-11-05-native-reserve.md): authenticated admin inspection/approval uses
+public spend entries to charge existing budgets before allowing qualified failed-input
+continuation. It retains unknown receipts and marks the additive estimate. Actual
+GPT-4.1 browser continuation, retry/no-double-charge SQL and real member denials pass.
+302 native/PG tests pass on each Python 3.11 and 3.12. Effects, delivery uncertainty,
+blocked-notice chains, provider bill correction, migration/deletion and enterprise
+release qualification remain open.

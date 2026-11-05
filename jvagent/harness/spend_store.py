@@ -11,6 +11,19 @@ from pydantic import TypeAdapter
 from pydantic_ai_harness.spend import SpendEntry, Spent
 
 
+def native_budgets(run_usd: str, conversation_usd: str) -> list[Any]:
+    """One budget declaration for execution and operator counter resolution."""
+    from pydantic_ai_harness.spend import Budget
+
+    limits = [Decimal(run_usd), Decimal(conversation_usd)]
+    if any(not value.is_finite() or value <= 0 for value in limits):
+        raise ValueError("Spend ceilings must be finite and positive")
+    return [
+        Budget(usd=limits[0], window="run"),
+        Budget(usd=limits[1], window="conversation"),
+    ]
+
+
 class ConversationSpendStore:
     """Persist counters and replay tokens on the existing Conversation.
 

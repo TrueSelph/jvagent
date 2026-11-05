@@ -281,3 +281,11 @@ Actual GPT-4.1 browser success/history and Stop have fresh PostgreSQL readback.
 These are SDK boundary timings, not transport retry counts or pure decode latency.
 Historical settlement/backfill, generic cancellation timestamps and broader
 provider/recovery/migration/deletion/enterprise gates remain open.
+
+## Admin uncertainty reserve — 2026-11-05
+
+[Evidence](2026-11-05-native-reserve.md): admin-only, fact-bound estimates debit the
+SDK run/conversation counters idempotently. Original unknown billing is retained.
+Real GPT-4.1 continuation and member/anonymous denials pass with fresh PG readback.
+This does not settle provider invoices, tool effects, uncertain delivery or abandoned
+ownership. Blocked-notice chains, migration and broader release gates remain open.

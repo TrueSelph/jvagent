@@ -1,0 +1,284 @@
+{
+  "observed_at": "2026-11-05T18:51:25.678Z",
+  "operator": {
+    "endpoint": "http://127.0.0.1:8136/api/actions/n.NativeHarnessAction.19e0d0e104c546d4a23e9aab/native-recovery/n.Interaction.b3fc1305525542e2ba9a0e8e",
+    "inspection": {
+      "interaction_id": "n.Interaction.b3fc1305525542e2ba9a0e8e",
+      "status": "cancelled",
+      "run_id": "corr-4bc88d0c0cba4bd089ec5d0ee06c7a9b",
+      "digest": "sha256:49ff02f49544e92af5cb403898e779a4c4fd24d3e6fc00ceb4a045384899d654",
+      "unknown_cost_call_count": 1,
+      "recorded_runs": 1,
+      "unresolved_effects": 0,
+      "usage_reserve": null
+    },
+    "observations": [
+      {
+        "scenario": "admin-inspection",
+        "status": 200,
+        "inspection": {
+          "interaction_id": "n.Interaction.b3fc1305525542e2ba9a0e8e",
+          "status": "cancelled",
+          "run_id": "corr-4bc88d0c0cba4bd089ec5d0ee06c7a9b",
+          "digest": "sha256:49ff02f49544e92af5cb403898e779a4c4fd24d3e6fc00ceb4a045384899d654",
+          "unknown_cost_call_count": 1,
+          "recorded_runs": 1,
+          "unresolved_effects": 0,
+          "usage_reserve": null
+        }
+      },
+      {
+        "scenario": "stale-approval",
+        "status": 422,
+        "data": {
+          "error_code": "validation_error",
+          "message": "Execution facts changed; inspect again before approval",
+          "timestamp": "2026-11-05T18:49:27.543720+00:00",
+          "path": "/api/actions/n.NativeHarnessAction.19e0d0e104c546d4a23e9aab/native-recovery/n.Interaction.b3fc1305525542e2ba9a0e8e/usage-reserve"
+        }
+      },
+      {
+        "scenario": "apply-reserve",
+        "status": 200,
+        "duration_ms": 237.59999999403954,
+        "data": {
+          "receipt": {
+            "version": "native-usage-reserve-v1",
+            "digest": "sha256:49ff02f49544e92af5cb403898e779a4c4fd24d3e6fc00ceb4a045384899d654",
+            "usd": "0.01",
+            "actor": "o.User.fbccc4f54abf43cd8815f6fc",
+            "evidence": "Synthetic conservative reserve policy for disposable app; this is an estimate",
+            "reason": "Interrupted provider request without a final billing receipt",
+            "unknown_calls": 1,
+            "status": "applied",
+            "created_at": "2026-11-05T18:49:58.156883+00:00"
+          },
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 1,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 1,
+            "model_attempt_duration_seconds": 0,
+            "unmeasured_model_attempt_count": 1,
+            "estimated_cost_usd": 0.01,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 1,
+            "total_cost_usd": 0.01,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T18:49:58.161787+00:00"
+          }
+        }
+      },
+      {
+        "scenario": "repeat-identical-reserve",
+        "status": 200,
+        "data": {
+          "receipt": {
+            "usd": "0.01",
+            "actor": "o.User.fbccc4f54abf43cd8815f6fc",
+            "digest": "sha256:49ff02f49544e92af5cb403898e779a4c4fd24d3e6fc00ceb4a045384899d654",
+            "reason": "Interrupted provider request without a final billing receipt",
+            "status": "applied",
+            "version": "native-usage-reserve-v1",
+            "evidence": "Synthetic conservative reserve policy for disposable app; this is an estimate",
+            "created_at": "2026-11-05T18:49:58.156883+00:00",
+            "unknown_calls": 1
+          },
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 1,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 1,
+            "model_attempt_duration_seconds": 0,
+            "unmeasured_model_attempt_count": 1,
+            "estimated_cost_usd": 0.01,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 1,
+            "total_cost_usd": 0.01,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T18:50:09.619630+00:00"
+          }
+        }
+      }
+    ],
+    "proposal": {
+      "digest": "sha256:49ff02f49544e92af5cb403898e779a4c4fd24d3e6fc00ceb4a045384899d654",
+      "usd": "0.01",
+      "evidence": "Synthetic conservative reserve policy for disposable app; this is an estimate",
+      "reason": "Interrupted provider request without a final billing receipt"
+    }
+  },
+  "requests": [
+    {
+      "status": 200,
+      "started_at": "2026-11-05T18:50:31.963Z",
+      "duration_ms": 3822.199999988079,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.28695f2f01344ea297370eb5",
+          "session_id": "sess_5b38f6e788964696",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-a0f2c4b2bf94458490ce7b0146a36c4a",
+            "session_id": "sess_5b38f6e788964696",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.28695f2f01344ea297370eb5",
+            "message_type": "adhoc",
+            "content": "Yes, I can continue this conversation.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:50:35.625716"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-a0f2c4b2bf94458490ce7b0146a36c4a",
+            "session_id": "sess_5b38f6e788964696",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.28695f2f01344ea297370eb5",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:50:35.658067"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_5b38f6e788964696",
+          "response": "Yes, I can continue this conversation.",
+          "interaction": {
+            "id": "n.Interaction.28695f2f01344ea297370eb5",
+            "utterance": "NATIVE-RESERVE-CHECK: Please reply with one brief sentence confirming you can continue this conversation. Do not start an intake or use tools.",
+            "response": "Yes, I can continue this conversation.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-a0f2c4b2bf94458490ce7b0146a36c4a"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-a0f2c4b2bf94458490ce7b0146a36c4a:1",
+                  "native_run_id": "corr-a0f2c4b2bf94458490ce7b0146a36c4a",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1248,
+                    "completion_tokens": 10,
+                    "total_tokens": 1258,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002576,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_attempt",
+                "data": {
+                  "native_run_id": "corr-a0f2c4b2bf94458490ce7b0146a36c4a",
+                  "native_step_index": 1,
+                  "native_attempt_origin": "step_events_v1",
+                  "outcome": "completed",
+                  "usage_status": "receipt_recorded",
+                  "started_at": "2026-11-05T18:50:33.020103+00:00",
+                  "duration": 2.429116,
+                  "duration_scope": "sdk_model_request",
+                  "completed_at": "2026-11-05T18:50:35.449219+00:00"
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 1248,
+              "completion_tokens": 10,
+              "total_tokens": 1258,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 1,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 2.429,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0.002576,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.002576,
+              "total_duration_seconds": 2.429,
+              "last_updated": "2026-11-05T18:50:35.658433+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.28695f2f01344ea297370eb5",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_5b38f6e788964696"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "visible_text": "NATIVE-TIMING-CANCEL-CHECK: Second cancellation timing probe. Write a detailed 4000-word general guide to running a community program, without starting an intake or using tools.\n\nNATIVE-RESERVE-CHECK: Please reply with one brief sentence confirming you can continue this conversation. Do not start an intake or use tools.\n\nYes, I can continue this conversation.\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.3k tokens · 2.4s · 4.1 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+}

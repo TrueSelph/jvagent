@@ -297,26 +297,16 @@ def build_native_agent(
             )
         )
     if spend_store is not None:
-        from decimal import Decimal
+        from pydantic_ai_harness.spend import SpendLimits
 
-        from pydantic_ai_harness.spend import Budget, SpendLimits
+        from jvagent.harness.spend_store import native_budgets
 
-        run_budget = Decimal(max_run_cost_usd)
-        conversation_budget = Decimal(max_conversation_cost_usd)
-        if any(
-            not amount.is_finite() or amount <= 0
-            for amount in (run_budget, conversation_budget)
-        ):
-            raise ValueError("Spend ceilings must be finite and positive")
         run_services.append(
             SpendLimits(
                 store=spend_store,
                 on_unpriced="raise",
                 on_spend=spend_observer.record if spend_observer is not None else None,
-                budgets=[
-                    Budget(usd=run_budget, window="run"),
-                    Budget(usd=conversation_budget, window="conversation"),
-                ],
+                budgets=native_budgets(max_run_cost_usd, max_conversation_cost_usd),
             )
         )
     from pydantic_ai_harness.compaction import SummarizingCompaction

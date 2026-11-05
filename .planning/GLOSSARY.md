@@ -227,6 +227,14 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 
 **Native delegate** — a host-configured SKILL.md specialist run by the official `SubAgents` capability with a separate message history, shared caller access checks and bounded parent usage. Declaration and conversation scope: `jvagent/harness/delegation.py:9`; composition: `jvagent/harness/native.py:196`. Background and remote modes remain unqualified.
 
+### Native usage reserve
+
+An explicit administrator-approved estimate for an interrupted native run's unknown
+provider cost. It retains the original unknown receipt, charges the existing SDK
+budget windows idempotently and only permits already-qualified input-history
+continuation. It is not a provider invoice or permission to replay effects.
+Source: `jvagent/harness/reconciliation.py:56`; [operator record](plans/2026-11-05-native-reserve.md).
+
 ### Native context compaction
 The official Harness capability summarizes older model messages while retaining a
 recent suffix and tool-call pairing. JV configures the capability and persists its
