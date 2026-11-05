@@ -5,6 +5,13 @@ a deployment. This remains an explicit development path, not a completed release
 migration. See the [execution contract](../../../.planning/plans/2026-11-04-harness-rebuild-execution.md)
 and [qualification record](../../../.planning/plans/2026-11-04-harness-rebuild-progress.md).
 
+Use one native execution Action and one worker. Declared Redis/Dynamo conversation
+ownership and non-single `WEB_CONCURRENCY` / `UVICORN_WORKERS` are refused until
+native distributed fencing is qualified ([guard](../../core/execution_owner.py:23)).
+Native durable delivery cursors return an explicit unsupported error
+([stream](../response/streaming.py:75)); bounded in-process queue replay remains
+available. See the [shared-host evidence and remaining gates](../../../.planning/plans/2026-11-05-shared-host-results.md).
+
 `skill_directory` selects one existing SKILL.md. For skill-based delegation,
 select the shipped `delegate` skill and declare named specialists:
 

@@ -743,7 +743,7 @@ async def interact_endpoint(
             effective_user_id = identity.verified_user_id or user_id
 
             if not utterance or not utterance.strip():
-                from jvagent.action.orchestrator.host_context import (
+                from jvagent.core.host_context import (
                     allows_empty_host_utterance,
                 )
 

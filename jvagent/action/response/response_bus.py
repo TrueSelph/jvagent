@@ -250,6 +250,7 @@ class ResponseBus:
 
         Prefer :func:`get_agent_response_bus` so the bus survives Agent cache TTL.
         """
+        self.native_execution: bool = False
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
         self._session_queue_activity: Dict[str, float] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
@@ -408,28 +409,30 @@ class ResponseBus:
     ) -> None:
         """Add message to session queue, enforce bound, notify subscribers.
         Awaits async callbacks so SSE consumer receives messages before walk_task.done() check.
-        Durable outbox append happens before in-process fan-out (HP-06).
+        Transitional agents append their legacy outbox before fan-out. Native
+        execution persists through SDK graph stores; this bus owns transport only.
         """
-        try:
-            from jvagent.action.orchestrator.turn_cache import get_turn_cache
-            from jvagent.harness.runtime import get_runtime
+        if not self.native_execution:
+            try:
+                from jvagent.action.orchestrator.turn_cache import get_turn_cache
+                from jvagent.harness.runtime import get_runtime
 
-            turn = get_turn_cache() or {}
-            snap = turn.get("snapshot")
-            get_runtime().append_event(
-                session_id=session_id,
-                kind=getattr(message, "message_type", "") or "message",
-                message_id=str(
-                    getattr(message, "id", None)
-                    or getattr(message, "message_id", None)
-                    or ""
-                ),
-                correlation_id=str(turn.get("correlation_id") or ""),
-                snapshot_id=str(getattr(snap, "snapshot_id", "") or ""),
-                payload=message.to_dict(),
-            )
-        except Exception:
-            pass
+                turn = get_turn_cache() or {}
+                snap = turn.get("snapshot")
+                get_runtime().append_event(
+                    session_id=session_id,
+                    kind=getattr(message, "message_type", "") or "message",
+                    message_id=str(
+                        getattr(message, "id", None)
+                        or getattr(message, "message_id", None)
+                        or ""
+                    ),
+                    correlation_id=str(turn.get("correlation_id") or ""),
+                    snapshot_id=str(getattr(snap, "snapshot_id", "") or ""),
+                    payload=message.to_dict(),
+                )
+            except Exception:
+                pass
         if session_id not in self._session_queues:
             self._session_queues[session_id] = []
         queue = self._session_queues[session_id]

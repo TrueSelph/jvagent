@@ -610,7 +610,9 @@ class Actions(Node):
 
         except Exception as e:
             logger.error(f"Error getting actions: {e}", exc_info=True)
-            return []
+            # An unavailable graph is not an empty configuration. In particular,
+            # execution-owner and security decisions must not silently fall back.
+            raise
 
     async def get_all_actions(
         self,

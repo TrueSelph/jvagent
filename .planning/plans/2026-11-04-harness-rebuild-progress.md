@@ -1,12 +1,35 @@
 # Harness rebuild execution record
 
-Latest increment: [interview hosting and CI repair](2026-11-05-interview-host.md).
-Next required removal: [shared host extraction](2026-11-05-shared-host-extraction.md).
+Latest increment: [native shared-host extraction](2026-11-05-shared-host-results.md).
+Next: qualify signed caller/embed/popup/cancellation boundaries, then interview
+execution adapters under the [shared-host plan](2026-11-05-shared-host-extraction.md).
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `952079a5`; the current new
-milestone requires its own push and exact-head CI.
+are incomplete. All nine remote checks passed at `d4f67b99`; each new milestone
+has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Shared-host extraction validation
+
+Native local HTTP admission, MCP execution and publication no longer initialize
+the legacy runtime. Signed host context lives in core; native SDK runs share the
+server correlation. Explicit transitional imports/configurations remain until
+migration. Native durable cursor replay is visibly unsupported. Embedded task
+cancellation ownership and fast-response replay have deterministic coverage.
+
+Four real GPT-4.1 browser turns: seven requests, 2,402 reported tokens,
+USD 0.005686 estimated, all closed/emitted/delivered; the failed lookup records a
+failed effect without invented details. The final process module probe has no
+legacy execution modules. See the linked result/evidence files for scope limits.
+
+Local final native/profile/real PostgreSQL suites: 195 passed on Python 3.11
+(40.04s) and 3.12 (35.81s), 121 warnings each. Final ingress/response/embed/HMAC
+and ownership slice: 263 passed, 14 warnings (9.23s). Full suite: 4,750 passed,
+33 skipped, 30 warnings (200.85s) before the final caller-ID guard and denied-context
+assertion; final-head coverage additionally requires the normal full push hook.
+All-files hooks were rerun after formatting. The result record retains the initial
+fixture failures and explicitly untested boundaries. Commit/push/current-head CI
+are tracked on the draft PR. This cohort does not establish release qualification.
 
 ## W0 started
 

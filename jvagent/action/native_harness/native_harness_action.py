@@ -99,8 +99,10 @@ class NativeHarnessAction(InteractAction):
 
     async def on_startup(self) -> None:
         """Reject invalid native settings before the process accepts traffic."""
+        from jvagent.core.execution_owner import require_native_local_ownership
         from jvagent.harness.model_settings import validate_model_settings
 
+        require_native_local_ownership()
         validate_model_settings(self.model_settings)
 
     async def execute(self, visitor: Any) -> None:
@@ -129,9 +131,11 @@ class NativeHarnessAction(InteractAction):
 
     async def _execute(self, visitor: Any) -> None:
         """Admit configuration, run the native agent, and reconcile its delivery."""
+        from jvagent.core.execution_owner import require_native_local_ownership
         from jvagent.harness.spend_store import ConversationSpendStore
         from jvagent.harness.step_store import InteractionStepStore
 
+        require_native_local_ownership()
         host = await self.get_agent()
         interaction = getattr(visitor, "interaction", None)
         responder = await self.get_responder()
@@ -254,7 +258,14 @@ class NativeHarnessAction(InteractAction):
             toolsets=toolsets,
             access_check=access,
             tool_access_check=tool_access,
-            instructions=self.instructions,
+            instructions="\n\n".join(
+                part
+                for part in (
+                    self.instructions,
+                    getattr(visitor, "_host_system_context", None),
+                )
+                if part
+            ),
             step_store=step_store,
             spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
             context_max_tokens=self.context_max_tokens,
@@ -296,7 +307,7 @@ class NativeHarnessAction(InteractAction):
                 visitor=visitor,
             )
             return
-        run_id = uuid.uuid4().hex
+        run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
         interaction.native_run = {
             "run_id": run_id,
             "status": "running",

@@ -1,6 +1,8 @@
 # Next dependency: shared host extraction before interview execution
 
-Status: required W3 work, not implemented by the interview hosting increment.
+Status: native local admission/transport extraction implemented; see
+[results and remaining gates](2026-11-05-shared-host-results.md).
+The original call-graph evidence below describes the pre-extraction parent.
 Governing [execution contract](2026-11-04-harness-rebuild-execution.md).
 The [live probe](2026-11-05-interview-host-smoke.json) distinguishes cold-import
 isolation from a real HTTP turn. The latter still loads legacy HarnessRuntime.

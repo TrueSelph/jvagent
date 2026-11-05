@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # In-flight embed interact walker tasks keyed by host thread_id and/or
 # jvagent session_id — enables explicit cancel from the host API.
 _interact_tasks: Dict[str, asyncio.Task[Any]] = {}
+_native_interact_tasks: set[asyncio.Task[Any]] = set()
 
 
 def _interact_task_lock() -> asyncio.Lock:
@@ -24,7 +25,9 @@ def _interact_task_lock() -> asyncio.Lock:
     return get_loop_lock("embed_interact_tasks")
 
 
-async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
+async def _register_interact_task(
+    key: str, task: asyncio.Task[Any], *, native: bool = False
+) -> None:
     if not key:
         return
     async with _interact_task_lock():
@@ -32,6 +35,8 @@ async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
         if existing is not None and not existing.done() and existing is not task:
             existing.cancel()
         _interact_tasks[key] = task
+        if native:
+            _native_interact_tasks.add(task)
 
 
 async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
@@ -40,6 +45,8 @@ async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
     async with _interact_task_lock():
         if _interact_tasks.get(key) is task:
             del _interact_tasks[key]
+        if task not in _interact_tasks.values():
+            _native_interact_tasks.discard(task)
 
 
 def cancel_interact(
@@ -49,10 +56,11 @@ def cancel_interact(
 ) -> bool:
     """Cancel an in-flight :func:`interact_stream` walker task, if any.
 
-    Task handle cancel is the delivery interrupt. TurnRun is the source of
-    truth: the matching session journal is marked ``recovery_required``.
+    Native cancellation is settled by the SDK/graph execution adapter. Only
+    transitional tasks mark the legacy session journal ``recovery_required``.
     """
     cancelled = False
+    legacy_keys: List[str] = []
     for key in (thread_id, session_id):
         if not key:
             continue
@@ -60,8 +68,10 @@ def cancel_interact(
         if task is not None and not task.done():
             task.cancel()
             cancelled = True
-    if cancelled:
-        _mark_embed_recovery(session_id=session_id, thread_id=thread_id)
+            if task not in _native_interact_tasks:
+                legacy_keys.append(key)
+    for key in legacy_keys:
+        _mark_embed_recovery(session_id=key)
     return cancelled
 
 
@@ -145,7 +155,7 @@ async def interact(
           endpoint until a streaming embed callable lands.
     """
     if not utterance or not utterance.strip():
-        from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
+        from jvagent.core.host_context import allows_empty_host_utterance
 
         if not allows_empty_host_utterance(
             data,
@@ -391,7 +401,7 @@ async def interact_stream(
             its first envelope.
     """
     if not utterance or not utterance.strip():
-        from jvagent.action.orchestrator.host_context import allows_empty_host_utterance
+        from jvagent.core.host_context import allows_empty_host_utterance
 
         if not allows_empty_host_utterance(
             data,
@@ -445,6 +455,10 @@ async def interact_stream(
         stream=True,
     )
 
+    from jvagent.core.execution_owner import uses_native_harness
+
+    native = await uses_native_harness(agent)
+
     walk_task: Optional[asyncio.Task[Any]] = None
     task_keys: List[str] = []
     try:
@@ -459,7 +473,7 @@ async def interact_stream(
         if session_id:
             task_keys.append(session_id)
         for key in task_keys:
-            await _register_interact_task(key, walk_task)
+            await _register_interact_task(key, walk_task, native=native)
 
         # Wait up to 5s for InteractWalker to instantiate the Interaction.
         max_wait = 5.0
@@ -527,15 +541,18 @@ async def interact_stream(
             sid = walker.session_id
             if sid not in task_keys:
                 task_keys.append(sid)
-                await _register_interact_task(sid, walk_task)
-            try:
-                from jvagent.harness.runtime import get_runtime
+                await _register_interact_task(sid, walk_task, native=native)
+            if not native:
+                try:
+                    from jvagent.harness.runtime import get_runtime
 
-                corr = getattr(walker, "correlation_id", "") or ""
-                if corr:
-                    get_runtime().bind_lease(sid, corr)
-            except Exception:
-                logger.debug("embed.interact_stream: lease bind skip", exc_info=True)
+                    corr = getattr(walker, "correlation_id", "") or ""
+                    if corr:
+                        get_runtime().bind_lease(sid, corr)
+                except Exception:
+                    logger.debug(
+                        "embed.interact_stream: lease bind skip", exc_info=True
+                    )
 
         # Stream messages off the response bus until the walker finishes.
         if walker.response_bus and walker.session_id:
@@ -555,7 +572,7 @@ async def interact_stream(
             # ``response/message.py``.
             seen_message_ids: set = set()
 
-            async def _on_message(message: Any) -> None:
+            def _on_message(message: Any) -> None:
                 if getattr(message, "interaction_id", None) != interaction.id:
                     return
                 mtype = getattr(message, "message_type", "")
@@ -565,10 +582,11 @@ async def interact_stream(
                         if mid in seen_message_ids:
                             return
                         seen_message_ids.add(mid)
-                await message_queue.put(message)
+                message_queue.put_nowait(message)
 
+            replay = {"replay_interaction_id": interaction.id} if native else {}
             await walker.response_bus.subscribe(
-                walker.session_id, _on_message, receive_chunks=True
+                walker.session_id, _on_message, receive_chunks=True, **replay
             )
             try:
                 while True:

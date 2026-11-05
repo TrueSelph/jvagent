@@ -306,24 +306,24 @@ class Agent(Node):
         Returns:
             ResponseBus instance for this agent
         """
-        # Honor an explicitly injected bus (test seam / deliberate override)
-        # before consulting the process registry. A rematerialized cached Agent
-        # has ``_response_bus is None`` and still resolves to the shared registry
-        # bus below, so the cache-churn fix is preserved.
-        if self._response_bus is not None:
-            return self._response_bus
-
         from jvagent.action.response.response_bus import (
             ResponseBus,
             get_agent_response_bus,
         )
+        from jvagent.core.execution_owner import uses_native_harness
 
-        agent_id = getattr(self, "id", None)
-        if agent_id:
-            bus = await get_agent_response_bus(str(agent_id))
-            self._response_bus = bus
-            return bus
-        self._response_bus = ResponseBus()
+        native = await uses_native_harness(self)
+        # Preserve deliberate injection and the process registry's cache-churn
+        # contract. Refresh ownership from the graph even for an existing bus.
+        if self._response_bus is None:
+            agent_id = getattr(self, "id", None)
+            self._response_bus = (
+                await get_agent_response_bus(str(agent_id))
+                if agent_id
+                else ResponseBus()
+            )
+        if isinstance(self._response_bus, ResponseBus):
+            self._response_bus.native_execution = native
         return self._response_bus
 
     async def send_proactive_message(

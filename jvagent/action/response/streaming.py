@@ -72,6 +72,16 @@ async def stream_messages(
     Yields:
         SSE-formatted string chunks
     """
+    if cursor and getattr(response_bus, "native_execution", False) is True:
+        yield format_sse_chunk(
+            {
+                "type": "error",
+                "code": "native_cursor_replay_unsupported",
+                "message": "Durable native delivery replay is not yet qualified.",
+            }
+        )
+        return
+
     # Idle poll interval. Turn-scoped streams keep the original tight loop so
     # end-of-walk detection stays snappy; long-lived ones poll at the keepalive.
     poll_timeout = keepalive_seconds if keepalive_seconds else 0.1

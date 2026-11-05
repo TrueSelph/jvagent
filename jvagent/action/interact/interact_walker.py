@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -84,6 +85,7 @@ class InteractWalker(Walker):
 
     # Walker state
     _host_system_context: Optional[str] = PrivateAttr(default=None)
+    _native_execution: bool = PrivateAttr(default=False)
     agent_id: str = ""
     utterance: str = ""
     channel: str = "default"
@@ -355,40 +357,46 @@ class InteractWalker(Walker):
         self.conversation = conversation
         get_session_ms = (time.perf_counter() - t_session) * 1000
 
-        try:
-            from jvagent.harness.contracts import NativeCaller
-            from jvagent.harness.runtime import SessionBusy, get_runtime
+        from jvagent.core.execution_owner import uses_native_harness
 
-            rt = get_runtime()
-            memory_id = str(getattr(memory, "id", "") or "")
-            if memory_id and resolved_user_id:
-                rt.upsert_user(memory_id, resolved_user_id)
-            if memory_id and resolved_session_id:
-                rt.upsert_conversation(memory_id, resolved_session_id)
-            if resolved_session_id:
-                rt.acquire_session_lease(resolved_session_id)
-            caller = NativeCaller(
-                str(self.agent_id or getattr(here, "id", "") or ""),
-                str(resolved_user_id or ""),
-                str(resolved_session_id or ""),
-            )
-            self.correlation_id = rt.new_correlation()
-            rt.record_span(
-                self.correlation_id, "session_admit", caller=caller.as_tuple()
-            )
-            # Host policy becomes trusted only after jvagent resolves the live
-            # caller/session, creates the server correlation ID, and durably
-            # records the signed nonce against that run on the Conversation.
-            from jvagent.action.orchestrator.host_context import (
-                consume_host_system_context,
-            )
+        self._native_execution = await uses_native_harness(here)
+        if self._native_execution:
+            from jvagent.core.execution_owner import require_native_local_ownership
 
-            self._host_system_context = await consume_host_system_context(self)
-        except SessionBusy as exc:
-            await self.report({"error": str(exc), "code": "session_busy"})
-            return "session_resolution_error"
-        except Exception as exc:
-            logger.debug("harness session admit skipped: %s", exc)
+            require_native_local_ownership()
+            if not all(
+                isinstance(value, str) and value.strip()
+                for value in (self.agent_id, self.user_id, self.session_id)
+            ):
+                raise RuntimeError("Native admission requires resolved caller identity")
+            self.correlation_id = "corr-" + uuid.uuid4().hex
+        else:
+            try:
+                from jvagent.harness.contracts import NativeCaller
+                from jvagent.harness.runtime import SessionBusy, get_runtime
+
+                rt = get_runtime()
+                memory_id = str(getattr(memory, "id", "") or "")
+                if memory_id and resolved_user_id:
+                    rt.upsert_user(memory_id, resolved_user_id)
+                if memory_id and resolved_session_id:
+                    rt.upsert_conversation(memory_id, resolved_session_id)
+                if resolved_session_id:
+                    rt.acquire_session_lease(resolved_session_id)
+                caller = NativeCaller(
+                    str(self.agent_id or getattr(here, "id", "") or ""),
+                    str(resolved_user_id or ""),
+                    str(resolved_session_id or ""),
+                )
+                self.correlation_id = rt.new_correlation()
+                rt.record_span(
+                    self.correlation_id, "session_admit", caller=caller.as_tuple()
+                )
+            except SessionBusy as exc:
+                await self.report({"error": str(exc), "code": "session_busy"})
+                return "session_resolution_error"
+            except Exception as exc:
+                logger.debug("harness session admit skipped: %s", exc)
 
         access_control = await here.get_access_control_action()
         if (
@@ -448,6 +456,22 @@ class InteractWalker(Walker):
                 )
                 return "access_denied"
 
+        from jvagent.core.host_context import consume_host_system_context
+
+        self._host_system_context = await consume_host_system_context(self)
+        if (
+            self._native_execution
+            and not self.utterance.strip()
+            and not self._host_system_context
+        ):
+            await self.report(
+                {
+                    "error": "Host context is invalid or already used",
+                    "code": "invalid_host_context",
+                }
+            )
+            return "init_error"
+
         if through == "session":
             return "ready"
 
@@ -486,12 +510,15 @@ class InteractWalker(Walker):
                     await self.interaction.save()
                 except Exception:
                     pass
-                try:
-                    from jvagent.harness.runtime import get_runtime
+                if not self._native_execution:
+                    try:
+                        from jvagent.harness.runtime import get_runtime
 
-                    get_runtime().bind_lease(self.session_id or "", self.correlation_id)
-                except Exception:
-                    pass
+                        get_runtime().bind_lease(
+                            self.session_id or "", self.correlation_id
+                        )
+                    except Exception:
+                        pass
             create_ms = (time.perf_counter() - t_create) * 1000
             await self.report(
                 {

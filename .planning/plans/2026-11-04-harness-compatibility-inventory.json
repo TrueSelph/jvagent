@@ -1806,5 +1806,26 @@
       "interview SOP activation/session/hook/continuation adapters",
       "migration/deletion/release qualification"
     ]
+  },
+  "shared_host_extraction_increment": {
+    "parent_revision": "d4f67b99",
+    "evidence": "2026-11-05-shared-host-results.md",
+    "status": "native local admission/transport extracted; release gates remain open",
+    "native_http_runtime_probe": "PASS: legacy runtime/executor/loop absent through real model/tool publication and finalization",
+    "signed_context": "core service plus temporary same-module legacy alias; nonce/caller/expiry tests retained; server correlation used for native SDK identity",
+    "embedded": "native cancellation avoids legacy recovery journal; fast-response scoped replay has deterministic coverage",
+    "unsupported": "native durable cursor replay and declared distributed topology are visibly refused",
+    "removed_from_native_path": [
+      "legacy caller identity mirrors, session leases and admission spans",
+      "legacy response outbox and cursor interpretation",
+      "embedded legacy lease binding and recovery marks"
+    ],
+    "remaining": [
+      "actual-provider signed-host/embed/popup/member/cancellation browser matrix",
+      "native distributed fencing and durable delivery recovery",
+      "interview/flow/proactive/write adapters",
+      "persisted configuration migration and legacy/pilot deletion",
+      "complete representative workload and release evaluation"
+    ]
   }
 }
