@@ -209,3 +209,15 @@ works. Fresh SQL assertions fail on the unshielded parent. In-memory tests alone
 were insufficient. Historical receipt migration, operator recovery and all other
 cancellation/effect/deployment classes remain open; no broader release or
 simplification claim follows.
+
+
+## Embedded cancellation — 2026-11-05
+
+The [focused record](2026-11-05-embedded-cancellation.md) closes the basic embedded
+host-disconnect gap through shared HTTP/embed teardown, SDK-owned terminal
+persistence and registry cleanup. Repeated explicit cancellation no longer cuts
+cleanup. The actual-provider jvchat host cohort shows MCP success, Stop with
+unknown billing, blocked follow-up and a fresh ordinary HTTP success afterward.
+Fresh PostgreSQL assertions and mutation checks cover the repaired failure.
+Operator settlement, historical receipt migration, child/effect/deployment recovery
+and the extension/migration/deletion release gates remain open.

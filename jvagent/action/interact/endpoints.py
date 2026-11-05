@@ -1374,22 +1374,14 @@ async def _stream_interaction(
         # disconnect propagated as GeneratorExit, or an unexpected error), cancel
         # the walker so it does not keep working on a dropped request.
         if walk_task is not None and not walk_task.done():
-            import anyio
+            from jvagent.action.interact.task_cleanup import (
+                cancel_and_drain_interaction,
+            )
 
-            cancelling = getattr(walk_task, "cancelling", None)
-            if cancelling is None or not cancelling():
-                walk_task.cancel()
-            # Request teardown uses AnyIO level cancellation. Forward it once,
-            # then let SDK/graph error hooks finish their durable writes.
-            with anyio.CancelScope(shield=True):
-                try:
-                    await walk_task
-                except asyncio.CancelledError:
-                    pass  # expected — we requested cancellation
-                except Exception as exc:
-                    logger.warning(
-                        "interact: walker cleanup after cancel failed: %s", exc
-                    )
+            try:
+                await cancel_and_drain_interaction(walk_task)
+            except Exception as exc:
+                logger.warning("interact: walker cleanup after cancel failed: %s", exc)
         # Clear profile context
         set_current_profile(None)
         # Request-scoped cache cleanup (probabilistic, serverless-friendly)

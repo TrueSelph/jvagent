@@ -1,13 +1,13 @@
 # Harness rebuild execution record
 
-Latest increment: [native HTTP cancellation durability and partial usage](2026-11-05-native-cancellation.md).
-Next: qualify remaining embed/cancellation boundaries and interview execution adapters
+Latest increment: [embedded cancellation and shared transport teardown](2026-11-05-embedded-cancellation.md).
+Next: qualify remaining child/effect/recovery boundaries and interview execution adapters
 under the [shared-host plan](2026-11-05-shared-host-extraction.md). Member browser API
 and anonymous popup admission are qualified only to the scope of that increment.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `9a056a1f`; each new milestone
+are incomplete. All nine remote checks passed at `3cecca98`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
 
 ## Native HTTP cancellation and partial usage
@@ -1964,3 +1964,15 @@ now sends its capability. The evidence record explicitly separates member API
 coverage from authenticated UI coverage and notes popup tool-row rendering,
 voice-provider, concurrency, timing and release limits. This advances W2/W3
 security; W4 recovery, W5 migration/deletion and W6 qualification remain incomplete.
+
+
+## Embedded cancellation — 2026-11-05
+
+The [focused record](2026-11-05-embedded-cancellation.md) closes the basic embedded
+host-disconnect gap through shared HTTP/embed teardown, SDK-owned terminal
+persistence and registry cleanup. Repeated explicit cancellation no longer cuts
+cleanup. The actual-provider jvchat host cohort shows MCP success, Stop with
+unknown billing, blocked follow-up and a fresh ordinary HTTP success afterward.
+Fresh PostgreSQL assertions and mutation checks cover the repaired failure.
+Operator settlement, historical receipt migration, child/effect/deployment recovery
+and the extension/migration/deletion release gates remain open.

@@ -105,6 +105,7 @@ async def test_http_disconnect_preserves_sdk_terminal_cleanup(
     openai: bool | str,
     mcp: bool,
     reported: bool = False,
+    embedded: bool = False,
 ) -> None:
     from jvagent.action.interact import endpoints
     from jvagent.action.response.response_bus import ResponseBus
@@ -236,10 +237,39 @@ async def test_http_disconnect_preserves_sdk_terminal_cleanup(
 
     request = SimpleNamespace(is_disconnected=disconnected)
 
+    if embedded:
+        from jvagent.action.native_harness import NativeHarnessAction
+
+        monkeypatch.setattr(
+            "jvagent.action.interact.interact_walker.InteractWalker",
+            lambda **kwargs: walker,
+        )
+        monkeypatch.setattr(
+            "jvagent.core.cache.get_cached_agent",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    id="agent",
+                    get_actions=AsyncMock(return_value=[NativeHarnessAction()]),
+                )
+            ),
+        )
+
     async def consume() -> None:
-        async for _ in endpoints._stream_interaction(
-            walker, SimpleNamespace(id="agent"), request=request
-        ):
+        if embedded:
+            from jvagent.embed import interact_stream
+
+            source = interact_stream(
+                agent_id="agent",
+                user_id="caller",
+                session_id="session",
+                utterance="disconnect test",
+                is_disconnected=disconnected,
+            )
+        else:
+            source = endpoints._stream_interaction(
+                walker, SimpleNamespace(id="agent"), request=request
+            )
+        async for _ in source:
             pass
 
     # Includes cold SDK/MCP startup; durability assertions exercise cancellation.
@@ -252,6 +282,10 @@ async def test_http_disconnect_preserves_sdk_terminal_cleanup(
                 await entered.wait()
                 group.cancel_scope.cancel()
     recorded = await store.list_events(run_id="disconnected")
+    if embedded:
+        from jvagent.embed.interact import _interact_tasks
+
+        assert "session" not in _interact_tasks
     if openai:
         await client.aclose()
     assert [e.kind for e in recorded] == [
@@ -259,6 +293,15 @@ async def test_http_disconnect_preserves_sdk_terminal_cleanup(
         "model_request_started",
         "run_failed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_embedded_disconnect_waits_for_native_terminal_cleanup(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    await test_http_disconnect_preserves_sdk_terminal_cleanup(
+        monkeypatch, tmp_path, "responses", True, reported=True, embedded=True
+    )
 
 
 @pytest.mark.asyncio

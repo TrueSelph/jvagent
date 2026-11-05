@@ -19,6 +19,42 @@ from jvagent.harness.runtime import reset_runtime
 
 
 @pytest.mark.asyncio
+async def test_native_cancel_aliases_and_repeated_requests_preserve_cleanup() -> None:
+    if not hasattr(asyncio.Task, "cancelling"):
+        pytest.skip("Native execution requires Python 3.11+")
+    started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def work() -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            started.set()
+            await release.wait()
+            finished.set()
+
+    task = asyncio.create_task(work())
+    await _register_interact_task("cancel-thread", task, native=True)
+    await _register_interact_task("cancel-session", task, native=True)
+    await asyncio.sleep(0)
+    try:
+        assert cancel_interact(thread_id="cancel-thread", session_id="cancel-session")
+        await asyncio.wait_for(started.wait(), 1)
+        assert cancel_interact(thread_id="cancel-thread", session_id="cancel-session")
+        assert task.cancelling() == 1
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished.is_set()
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await _clear_interact_task("cancel-thread", task)
+        await _clear_interact_task("cancel-session", task)
+
+
+@pytest.mark.asyncio
 async def test_invalid_host_context_has_same_embed_stream_error(
     monkeypatch: Any,
 ) -> None:

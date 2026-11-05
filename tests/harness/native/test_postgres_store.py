@@ -49,12 +49,14 @@ from jvagent.memory.interaction import Interaction
 @pytest.mark.asyncio
 @pytest.mark.parametrize("deferred", [False, True])
 @pytest.mark.parametrize("reported", [False, True])
+@pytest.mark.parametrize("embedded", [False, True])
 async def test_http_cancellation_terminal_event_survives_postgres_flush(
     postgres_scope: "PostgresScope",
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     deferred: bool,
     reported: bool,
+    embedded: bool,
 ) -> None:
     from tests.harness.native.test_cancellation import (
         test_http_disconnect_preserves_sdk_terminal_cleanup,
@@ -67,6 +69,7 @@ async def test_http_cancellation_terminal_event_survives_postgres_flush(
         "responses",
         True,
         reported=reported,
+        embedded=embedded,
     )
     rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
     assert len(rows) == 1

@@ -1875,5 +1875,29 @@
       "distributed ownership and outage behavior",
       "legacy/pilot deletion after supported workflows qualify"
     ]
+  },
+  "embedded_cancellation_increment": {
+    "parent_revision": "git-commit:3cecca98",
+    "evidence": "2026-11-05-embedded-cancellation.md",
+    "status": "basic local embedded disconnect qualified; enterprise recovery remains open",
+    "removed_responsibilities": [
+      "returning and removing live task registry entries before SDK cancellation cleanup",
+      "separate HTTP teardown implementation",
+      "repeated task cancellation through alias keys or replacement requests"
+    ],
+    "replacement": "One shared host task-cleanup helper; official SDK and graph adapters own terminal records",
+    "browser_qualified": [
+      "authenticated administrator host MCP read and visible events",
+      "Stop with durable run_failed and unknown cost",
+      "refused follow-up without paid execution",
+      "fresh ordinary HTTP conversation afterward"
+    ],
+    "remaining": [
+      "operator reconciliation and historical receipt migration",
+      "child/tool/write/publication cancellation",
+      "arbitrary host identity and distributed recovery",
+      "interview/flow/proactive adapters",
+      "legacy/pilot removal and release qualification"
+    ]
   }
 }

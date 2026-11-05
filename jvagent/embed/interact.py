@@ -11,6 +11,8 @@ from jvspatial.api.exceptions import (
     ValidationError,
 )
 
+from jvagent.action.interact.task_cleanup import request_interaction_cancellation
+
 logger = logging.getLogger(__name__)
 
 # In-flight embed interact walker tasks keyed by host thread_id and/or
@@ -33,7 +35,7 @@ async def _register_interact_task(
     async with _interact_task_lock():
         existing = _interact_tasks.get(key)
         if existing is not None and not existing.done() and existing is not task:
-            existing.cancel()
+            request_interaction_cancellation(existing)
         _interact_tasks[key] = task
         if native:
             _native_interact_tasks.add(task)
@@ -66,7 +68,7 @@ def cancel_interact(
             continue
         task = _interact_tasks.get(key)
         if task is not None and not task.done():
-            task.cancel()
+            request_interaction_cancellation(task)
             cancelled = True
             if task not in _native_interact_tasks:
                 legacy_keys.append(key)
@@ -681,8 +683,20 @@ async def interact_stream(
             pass
     finally:
         if walk_task is not None:
-            for key in task_keys:
-                await _clear_interact_task(key, walk_task)
+            import anyio
+
+            from jvagent.action.interact.task_cleanup import (
+                cancel_and_drain_interaction,
+            )
+
+            with anyio.CancelScope(shield=True):
+                try:
+                    await cancel_and_drain_interaction(walk_task)
+                except Exception:
+                    logger.exception("embed.interact_stream: walker cleanup failed")
+                finally:
+                    for key in task_keys:
+                        await _clear_interact_task(key, walk_task)
         try:
             from jvagent.core.cache import maybe_cleanup_on_request
 
