@@ -68,6 +68,19 @@ describe("MessageStats", () => {
     expect(screen.queryByText("$0.0000")).not.toBeInTheDocument();
   });
 
+  it("renders cached usage with explicit estimated cost after history reload", () => {
+    mockState.value = { message: { role: "assistant", status: { type: "complete" }, metadata: { custom: {
+      debugMessage: null,
+      observability: { usage: { total_tokens: 123, estimated_cost_usd: 0.004 }, observability_metrics: [
+        { event_type: "model_call", data: { model: "gpt-4.1" } },
+      ] },
+    } } } };
+    render(<MessageStats />);
+    expect(screen.getByRole("button")).toHaveTextContent("gpt-4.1 · 123 tokens");
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("Estimated $0.0040")).toBeInTheDocument();
+  });
+
   it("keeps a reported zero-cost successful call distinguishable from unknown cost", () => {
     setInteraction(
       { total_cost_usd: 0, unknown_cost_call_count: 0, total_tokens: 10 },

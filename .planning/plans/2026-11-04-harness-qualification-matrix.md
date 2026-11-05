@@ -18,6 +18,7 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Spend | Official capability, graph batch-store regressions, immediate spend journal and actual budget-failure browser receipts | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and concurrency |
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory, explicit admission, direct PageIndex and bounded foreground skill delegation with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
+| Browser client | Actual GPT-4.1 delegation/follow-up; tool activity and usage survive reload; one POST on validation failure; replay/stream regressions; clean npm install and 115 UI tests | Historical receipt backfill, native timing, uncertain-outcome reconciliation, channel matrix |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 
 ## Required asset migrations

@@ -1,6 +1,5 @@
 /**
- * Per-message stats footer — jvchat port of integral's MessageObservability,
- * for the assistant-ui thread surface.
+ * Per-message model usage footer for the assistant-ui thread surface.
  *
  * Expandable one-line summary (model · tokens · time · tok/s) under a completed
  * assistant message; expanding reveals a per-model_call table and a timing/cost
@@ -8,8 +7,8 @@
  * message metadata as `custom.debugMessage.debugData.interaction` (`usage` +
  * `observability_metrics`) — the same data the Debug dialog shows.
  *
- * Hidden when no debug payload is present (e.g. server in production mode, which
- * strips usage/observability_metrics from the final chunk).
+ * Local history retains a bounded numeric receipt after the debug payload is stripped.
+ * Hidden when neither a live payload nor a persisted receipt is available.
  */
 import { useState, type FC } from "react";
 import { ChevronDownIcon } from "lucide-react";
@@ -18,33 +17,7 @@ import { useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import type { JvAssistantMeta } from "@/lib/threadMessages";
 
-type Usage = {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  total_duration_seconds?: number;
-  estimated_cost_usd?: number;
-  litellm_cost_usd?: number;
-  total_cost_usd?: number;
-  model_attempt_count?: number;
-  failed_model_attempt_count?: number;
-  cancelled_model_attempt_count?: number;
-  model_attempt_duration_seconds?: number;
-  unknown_cost_call_count?: number;
-};
-
-type MetricEntry = {
-  event_type?: string;
-  data?: {
-    model?: string;
-    duration?: number;
-    outcome?: string;
-    usage?: {
-      prompt_tokens?: number;
-      completion_tokens?: number;
-    };
-  };
-};
+import { messageObservability, type Usage } from "@/lib/messageObservability";
 
 function formatTokens(n: number): string {
   return n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
@@ -66,15 +39,10 @@ export const MessageStats: FC = () => {
   const [expanded, setExpanded] = useState(false);
 
   // jvchat carries the final-chunk payload on the assistant message metadata.
-  const interaction = useAuiState((s) => {
-    const meta = s.message.metadata?.custom as unknown as
-      | JvAssistantMeta
-      | undefined;
-    return (
-      (meta?.debugMessage?.debugData as
-        | { interaction?: { usage?: Usage; observability_metrics?: MetricEntry[] } }
-        | undefined)?.interaction ?? undefined
-    );
+  const meta = useAuiState((s) => s.message.metadata?.custom as unknown as JvAssistantMeta | undefined);
+  const interaction = messageObservability({
+    debugData: meta?.debugMessage?.debugData,
+    observability: meta?.observability,
   });
   const running = useAuiState(
     (s) =>
@@ -154,6 +122,7 @@ export const MessageStats: FC = () => {
 
       {expanded && (
         <div className="mt-1.5 rounded-md bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+          {interaction.metricsTruncated && <p>Showing the first 128 model events; totals include all calls.</p>}
           {steps.length > 0 && (
             <table className="w-full text-left tabular-nums">
               <thead>
@@ -230,7 +199,7 @@ export const MessageStats: FC = () => {
             {typeof (usage.total_cost_usd ?? usage.estimated_cost_usd) === "number" &&
               (usage.total_cost_usd ?? usage.estimated_cost_usd ?? 0) > 0 && (
                 <span title="Provider-reported cost plus estimated fallback cost">
-                  ${(usage.total_cost_usd ?? usage.estimated_cost_usd ?? 0).toFixed(4)}
+                  {(usage.estimated_cost_usd ?? 0) > 0 ? "Estimated " : ""}${(usage.total_cost_usd ?? usage.estimated_cost_usd ?? 0).toFixed(4)}
                 </span>
               )}
           </div>

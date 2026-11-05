@@ -12,6 +12,8 @@
  */
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
+import { messageObservability, type MessageObservability } from "./messageObservability";
+
 import type { Message } from "../types/message";
 
 /** Custom metadata we stash on assistant messages for jvchat-specific UI. */
@@ -20,6 +22,7 @@ export interface JvAssistantMeta {
   jvRole: "assistant";
   /** The jvchat Message that carries the final-chunk debugData (if any). */
   debugMessage: Message | null;
+  observability?: MessageObservability;
   /** The jvchat id of the final answer message (for keys / actions). */
   jvMessageId: string;
   interactionId?: string;
@@ -191,6 +194,8 @@ function assistantGroupToThread(
   for (const m of group) {
     if (m.streaming) streaming = true;
     if (m.debugData) meta.debugMessage = m;
+    const receipt = messageObservability(m);
+    if (receipt) meta.observability = receipt;
     if (m.interactionId) meta.interactionId = m.interactionId;
 
     if (m.category === "thought") {

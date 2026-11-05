@@ -1,3 +1,4 @@
+import { createParser } from 'eventsource-parser'
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import {
   getJvagentUrl,
@@ -804,87 +805,65 @@ class ApiClient {
     }
   }
 
-  async interact(
+  /** Submit once, except for explicit route-not-found compatibility probes.
+   * A transport error or admitted HTTP failure can have an unknown outcome.
+   * Replaying that POST against another host can execute and bill another turn.
+   */
+  private async _postInteraction(
     agentId: string,
-    request: InteractionRequest
-  ): Promise<InteractionResponse> {
-    // Interact endpoint is anonymous - create a request without auth headers
-    // Try /api/agents/{id}/interact first, fallback to /agents/{id}/interact, with baseURL fallbacks
-    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
+    request: InteractionRequest,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     await this._ensureFreshInteractSession(agentId, request.session_id)
-    const response = await this._withFallback(async (baseURL) => {
-        // Use fetch directly to avoid axios interceptor adding auth headers
-        const url = this._joinBase(baseURL, `/api/agents/${agentId}/interact`)
-        if (import.meta.env.DEV) {
-          console.log('[jvchat] interact URL:', url)
-        }
-        const fetchResponse = await fetch(url, {
+    let missing: Response | undefined
+    for (const base of this.baseUrls) {
+      for (const prefix of ['/api', '']) {
+        const response = await fetch(this._joinBase(base, `${prefix}/agents/${agentId}/interact`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...this._interactAuthHeaders(request.session_id),
           },
           body: JSON.stringify(request),
+          signal,
         })
-
-        if (!fetchResponse.ok) {
-          if (fetchResponse.status === 401 || fetchResponse.status === 403) {
-            this.redirectToLoginAfterAuthFailure()
-            throw new Error('Unauthorized')
-          }
-          if (fetchResponse.status === 404) {
-            // Try without /api prefix
-            const fallbackUrl = this._joinBase(baseURL, `/agents/${agentId}/interact`)
-            if (import.meta.env.DEV) {
-              console.log('[jvchat] interact fallback URL:', fallbackUrl)
-            }
-            const fallbackResponse = await fetch(fallbackUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...this._interactAuthHeaders(request.session_id),
-              },
-              body: JSON.stringify(request),
-            })
-
-            if (!fallbackResponse.ok) {
-              if (fallbackResponse.status === 401 || fallbackResponse.status === 403) {
-                this.redirectToLoginAfterAuthFailure()
-                throw new Error('Unauthorized')
-              }
-              const errorText = await fallbackResponse.text()
-              let errorMessage = `HTTP error! status: ${fallbackResponse.status}`
-              try {
-                const errorJson = JSON.parse(errorText)
-                errorMessage = errorJson.detail || errorJson.message || errorMessage
-              } catch {
-                errorMessage = errorText || errorMessage
-              }
-              throw new Error(errorMessage)
-            }
-
-            return { data: await fallbackResponse.json() }
-          }
-
-          const errorText = await fetchResponse.text()
-          let errorMessage = `HTTP error! status: ${fetchResponse.status}`
-          try {
-            const errorJson = JSON.parse(errorText)
-            errorMessage = errorJson.detail || errorJson.message || errorMessage
-          } catch {
-            errorMessage = errorText || errorMessage
-          }
-          throw new Error(errorMessage)
+        if (response.status === 404) {
+          missing = response
+          continue
         }
+        if (!response.ok) throw await this._interactionError(response)
+        return response
+      }
+    }
+    if (missing) throw await this._interactionError(missing)
+    throw new Error("No interaction endpoint is configured")
+  }
 
-        return { data: await fetchResponse.json() }
-    })
-    // Handle both wrapped (success_response) and unwrapped responses
-    const result =
-      response.data.success && response.data.data
-        ? (response.data.data as InteractionResponse)
-        : (response.data as InteractionResponse)
-    // Persist the (re)minted Mode B session token for the next resume (ADR-0020).
+  private async _interactionError(response: Response): Promise<Error> {
+    if (response.status === 401 || response.status === 403) {
+      this.redirectToLoginAfterAuthFailure()
+      return new Error('Unauthorized')
+    }
+    const raw = await response.text()
+    let message = `HTTP error! status: ${response.status}`
+    try {
+      const data = JSON.parse(raw)
+      const detail = data.detail ?? data.message ?? data.error?.message ?? data.error
+      if (typeof detail === 'string') message = detail
+      else if (Array.isArray(detail)) message = detail.map((item) => item.msg ?? '').filter(Boolean).join('; ') || message
+    } catch {
+      message = raw || message
+    }
+    return new Error(message)
+  }
+
+  async interact(
+    agentId: string,
+    request: InteractionRequest,
+  ): Promise<InteractionResponse> {
+    const response = await this._postInteraction(agentId, request)
+    const data = await response.json()
+    const result = (data.success && data.data ? data.data : data) as InteractionResponse
     this._captureInteractSessionToken(result?.session_id, result?.session_token)
     return result
   }
@@ -894,147 +873,49 @@ class ApiClient {
     request: InteractionRequest,
     onChunk: (chunk: any) => void,
     onError?: (error: Error) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<void> {
-    // Interact endpoint is anonymous - do not send auth headers
-    // Try baseURL fallbacks and /api / non-/api paths
-    const bases = this.baseUrls
-    let lastError: any
-
-    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
-    await this._ensureFreshInteractSession(agentId, request.session_id)
-
-    // Persist the session token the server delivers on the SSE start chunk
-    // (ADR-0020) before handing the chunk to the caller.
-    const handleChunk = (data: any) => {
-      if (
-        data &&
-        typeof data === 'object' &&
-        data.session_token &&
-        typeof data.session_id === 'string'
-      ) {
-        this._captureInteractSessionToken(data.session_id, data.session_token)
-      }
-      onChunk(data)
-    }
-
-    for (const base of bases) {
-      for (const prefix of ['/api', '']) {
-        if (signal?.aborted) {
-          throw new DOMException('Aborted', 'AbortError')
-        }
-        const url = this._joinBase(base, `${prefix}/agents/${agentId}/interact`)
-        if (import.meta.env.DEV) {
-          console.log('[jvchat] streamInteract URL:', {
-            rawBase: base,
-            prefix,
-            url,
-          })
-        }
-        try {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              // Mode A/B (ADR-0020): attach the login JWT and/or the stored
-              // session capability token when present; the endpoint stays
-              // anonymous-capable when there is neither.
-              ...this._interactAuthHeaders(request.session_id),
-            },
-            body: JSON.stringify({ ...request, stream: true }),
-            signal,
-          })
-
-          if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-              this.redirectToLoginAfterAuthFailure()
-              throw new Error('Unauthorized')
-            }
-            if (response.status === 404 && prefix === '/api') {
-              // try next prefix in same base
-              continue
-            }
-            const errorText = await response.text()
-            let errorMessage = `HTTP error! status: ${response.status}`
-            try {
-              const errorJson = JSON.parse(errorText)
-              errorMessage = errorJson.detail || errorJson.message || errorMessage
-            } catch {
-              errorMessage = errorText || errorMessage
-            }
-            throw new Error(errorMessage)
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    try {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+      const response = await this._postInteraction(agentId, { ...request, stream: true }, signal)
+      reader = response.body?.getReader()
+      if (!reader) throw new Error('Response body is not readable')
+      const decoder = new TextDecoder()
+      let terminal = false
+      const parser = createParser({
+        maxBufferSize: 8 * 1024 * 1024,
+        onError(error) { if (error.type === 'max-buffer-size-exceeded') throw error },
+        onEvent: (event) => {
+          const data = JSON.parse(event.data)
+          if (data?.session_token && typeof data.session_id === 'string') {
+            this._captureInteractSessionToken(data.session_id, data.session_token)
           }
-
-          const reader = response.body?.getReader()
-          if (!reader) {
-            throw new Error('Response body is not readable')
-          }
-
-          const decoder = new TextDecoder()
-          let buffer = ''
-
-          // eslint-disable-next-line no-constant-condition -- SSE read until stream end
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            buffer += decoder.decode(value, { stream: true })
-            const chunks = buffer.split('\n\n')
-            buffer = chunks.pop() || ''
-
-            for (const chunk of chunks) {
-              if (chunk.trim()) {
-                const lines = chunk.split('\n')
-                let data: any = null
-
-                for (const line of lines) {
-                  if (line.startsWith('data:')) {
-                    const dataStr = line.substring(5).trim()
-                    try {
-                      data = JSON.parse(dataStr)
-                      handleChunk(data)
-                    } catch (e) {
-                      console.error('Failed to parse SSE chunk:', e)
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          // Successful stream; exit both loops
+          onChunk(data)
+          if (data?.type === "final" || data?.type === "error") terminal = true
+        },
+      })
+      // Read the one admitted stream. Neither parse nor consumer failures replay it.
+      for (;;) {
+        const { done, value } = await reader.read()
+        parser.feed(done ? decoder.decode() : decoder.decode(value, { stream: true }))
+        if (done) {
+          // EOF never dispatches an unterminated SSE event (WHATWG 9.2.6).
+          parser.reset()
+          if (!terminal) throw new Error('The response stream ended before completion. Check this conversation before retrying.')
           return
         }
-        catch (error: unknown) {
-          // User cancelled: always propagate without retry/onError. Do not rely on
-          // instanceof Error — browsers often throw DOMException for abort.
-          if (signal?.aborted) {
-            if (error instanceof Error) throw error
-            throw new DOMException('Aborted', 'AbortError')
-          }
-          if (
-            error instanceof Error &&
-            (error.message === 'Unauthorized' || this.authFailureRedirectScheduled)
-          ) {
-            // Propagate so callers clear streaming state; redirect already scheduled.
-            throw error
-          }
-          lastError = error
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : 'An unexpected error occurred while streaming'
-          // Try next prefix/base; only surface after all options exhausted
-          if (onError && prefix === '' && base === bases[bases.length - 1]) {
-            onError(new Error(errorMessage))
-          }
-        }
       }
-    }
-
-    // If we reach here, all attempts failed
-    if (lastError) {
-      throw lastError
+    } catch (error: unknown) {
+      if (signal?.aborted || (error as { name?: string })?.name === 'AbortError') throw error
+      const failure = error instanceof Error ? error : new Error('The interaction stream could not complete')
+      if (!signal?.aborted && failure.name !== 'AbortError' && failure.message !== 'Unauthorized') onError?.(failure)
+      throw failure
+    } finally {
+      if (reader) {
+        try { await reader.cancel() } catch { /* original outcome takes precedence */ }
+        reader.releaseLock()
+      }
     }
   }
 

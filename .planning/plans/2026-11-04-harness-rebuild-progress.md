@@ -836,3 +836,83 @@ attribution is not claimed as enforced citation validation. The configured model
 remains GPT-4.1. Clean Python 3.11/3.12 native/profile/WebFetch suites each pass
 106 cases. The all-files commit gate is required again after formatter changes;
 remote CI is still not implied by local tests.
+
+## Browser request safety and persistent usage receipts
+
+Tested base `0e9ef74c` plus this UI increment in the working tree, using the
+isolated 8130/3130 app/graph and GPT-4.1. No backend execution loop was added or
+changed. The native path still uses Pydantic AI/Harness. This closes two browser
+qualification gaps discovered in the preceding context round.
+
+The common interaction POST boundary now probes alternate prefix/host routes
+only after an explicit HTTP 404 (`jvchat/src/config/api.ts:812`). Application
+failures, unknown transport outcomes, JSON errors, stream read failures and
+consumer callback exceptions propagate without resending a potentially executed
+turn. HTTP validation detail is retained, including the server's nested error
+shape. Both streaming and ordinary interaction entrypoints use this boundary.
+Other generic client mutation APIs and server-side idempotency remain separate
+qualification work; this is not a claim of exactly-once execution.
+
+Replaced ad-hoc SSE splitting with pinned `eventsource-parser` 3.1.1, MIT, zero
+transitive dependencies, compatible with the CI's Node 20 floor. Its bounded
+8,388,608-character pending-event buffer fails visibly rather than growing indefinitely. Native session
+tokens are still captured before forwarding the start event. Premature EOF
+without a final/error event is reported, and an unterminated final event is
+not dispatched. This follows WHATWG SSE section 9.2.6 rather than treating EOF
+as a blank line:
+https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
+The upstream API is documented at https://github.com/rexxars/eventsource-parser.
+Npm lock comparison shows exactly one added package, no removals and no changed
+existing package versions. Both lockfiles add only that parser. An initial
+package-manager resolution attempted broad unrelated upgrades; those generated
+changes were discarded and existing locked versions preserved before clean npm ci.
+
+Usage persistence now projects a whitelist of finite nonnegative numeric totals
+and bounded model-name/call rows, independently of the private debug payload
+(`jvchat/src/lib/messageObservability.ts:31`,
+`jvchat/src/utils/storage.ts:749`). It preserves unknown-cost counts and estimate
+provenance through existing usage fields; a 128-row detail cap retains aggregate
+totals and is disclosed in the footer. Prompts, tool payloads and arbitrary debug
+fields are excluded from this receipt. Existing user-visible message/tool content
+has its previous persistence behavior. Reopened messages use the cached receipt;
+Debug stays unavailable when its full payload has been stripped. Already stripped
+old histories are not backfilled, and cached browser data is not a billing ledger.
+
+Validation evidence:
+
+- Browser overlength probe (2,017 characters against a 2,000-character app limit)
+  displayed the actual validation error. Instrumented browser fetch recorded
+  exactly one POST, HTTP 422; graph Interaction count remained 52 before/after.
+  No model call, run or cost receipt was created. Earlier Not Found masking and
+  alternate-endpoint replay did not recur.
+- Browser delegated lookup: Interaction
+  `n.Interaction.88c8de59f0084c4893623231`, root
+  `3fa79e5c3e694cb78cfa7ee9aa113250`, returned the public Meridian fixture's
+  18 November 2026 / CEDAR-47. One interaction POST, HTTP 200; delegate_task and
+  pageindex__search visible. Delivered, closed/emitted; native duration 6.781 s,
+  four model calls, 4,060 provider-measured tokens, USD 0.007826 library-estimated,
+  zero unknown-cost receipts. Browser reload/reopen retained both tool calls, all
+  four model rows and Estimated $0.0078. Full debugData was absent from localStorage.
+- Final pinned-parser bundle (`main-Dezn-PXi.js`) actual-model follow-up:
+  Interaction `n.Interaction.3a71d9d2a4504490bfb3f8e8`, root
+  `7c82104c56da4879a51f5f3b3590a6d5`, correctly recalled both facts without tools.
+  Exactly one interaction POST, HTTP 200; delivered, closed/emitted; 1.635 s,
+  one model call, 796 tokens, USD 0.001754 estimated, zero unknown-cost receipts.
+  After reload/reopen, both the earlier 4.1k badge and new 796-token badge remained.
+  The new cached receipt includes model_call_count=1 and no full debugData.
+
+Fresh npm ci succeeds; full frontend lint, TypeScript/Vite build and 115 Vitest
+cases pass on the normal Node 23.10 runtime. A second full UI test run with
+explicit Node 20.20.2 also passes all 115 cases. The Python webui slice passes
+eight cases. The bundled static client was rebuilt/staged with the repository
+script and exercised in the browser. On a detached unmodified base with the new
+regression cases, 12 of 20 targeted cases fail: duplicate transport/application
+attempts, swallowed consumer errors, incomplete stream handling, unlimited
+buffering and missing cached usage. The corrected checkout passes all of them.
+This is mutation evidence for the fixes, not a runtime concurrency benchmark.
+
+Open gates include server run ownership/reconciliation, safe retry with explicit
+idempotency, ambiguous provider billing, native timing metrics (currently absent,
+not guessed in the UI), historical receipt backfill, provider/channel/concurrency
+qualification, migration and legacy engine removal. No enterprise qualification
+or general performance improvement is claimed from this UI milestone.
