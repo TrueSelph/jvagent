@@ -1,6 +1,7 @@
 """Opt-in real PostgreSQL qualification through public graph/Harness interfaces."""
 
 import asyncio
+import json
 import os
 import time
 import uuid
@@ -82,6 +83,26 @@ class PostgresScope:
     admin: Any = field(repr=False)
     schema: str
     dsn: str = field(repr=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_interview_cleanup_retains_durable_host_replay_protection(
+    postgres_scope: PostgresScope,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from jvagent.core.host_context import HOST_CONTEXT_REPLAY_KEY
+    from tests.action.interact.test_native_host_context import (
+        test_interview_cleanup_does_not_reopen_consumed_host_nonce,
+    )
+
+    await test_interview_cleanup_does_not_reopen_consumed_host_nonce(
+        monkeypatch, deferred
+    )
+    rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
+    assert len(rows) == 1
+    assert len(rows[0]["context"]["context"][HOST_CONTEXT_REPLAY_KEY]) == 1
 
 
 @pytest.fixture
@@ -240,9 +261,19 @@ async def test_postgres_timeout_does_not_turn_retry_into_false_ack(
         started = time.monotonic()
         with pytest.raises(asyncio.TimeoutError):
             await write()
+        # A cached mutation is not a durable acknowledgement. Retrying while
+        # the lock is still held must attempt storage and fail again.
+        with pytest.raises(asyncio.TimeoutError):
+            await write()
         assert time.monotonic() - started < 2
+        raw = await postgres_scope.admin.fetchval(
+            f'SELECT data FROM "{postgres_scope.schema}".node WHERE id = $1',
+            interaction.id,
+        )
+        assert not values(json.loads(raw) if isinstance(raw, str) else raw)
     finally:
         await postgres_scope.admin.execute("ROLLBACK")
-    assert not values(await postgres_scope.database.get("node", interaction.id))
+    # A client timeout does not prove a write cannot finish after unlock.
+    # Require the explicit retry to acknowledge one durable record instead.
     await write()
     assert len(values(await postgres_scope.database.get("node", interaction.id))) == 1

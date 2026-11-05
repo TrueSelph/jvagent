@@ -26,7 +26,7 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 
 When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, validator dispatch, hook dispatch, session persistence).
 
-**Terminal cleanup:** `complete`, `cancel`, and `interview_complete` validators call `clear_interview_context()` — wipes `conversation.context` except platform keys (`new_user`) and any `retain_context_keys` returned by the completion handler or validator. Do not persist interview scratch in `conversation.context` unless opting in via `retain_context_keys`.
+**Terminal cleanup:** `complete`, `cancel`, and `interview_complete` validators call `clear_interview_context()` — wipes interview/application scratch while retaining platform keys (`new_user` and the core host replay ledger) and any explicit `retain_context_keys`. Security state must survive without a skill-specific opt-in; see [`session.py:109`](session.py:109) and [`core/host_context.py:20`](../../core/host_context.py:20). Do not persist interview scratch in `conversation.context` unless opting in via `retain_context_keys`.
 
 ---
 

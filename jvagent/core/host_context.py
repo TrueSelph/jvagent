@@ -17,7 +17,8 @@ _MAX_TTL_SECONDS = 300
 _MAX_CONTEXT_BYTES = 65536
 _MIN_SECRET_BYTES = 32
 _MAX_IDENTIFIER_LENGTH = 128
-_REPLAY_KEY = "_jvagent_host_context_nonces"
+HOST_CONTEXT_REPLAY_KEY = "_jvagent_host_context_nonces"
+_REPLAY_KEY = HOST_CONTEXT_REPLAY_KEY  # Compatibility for existing host integrations.
 _MAX_REPLAY_ENTRIES = 512
 
 

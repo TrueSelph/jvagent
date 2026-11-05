@@ -16,6 +16,44 @@ from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_interview_cleanup_does_not_reopen_consumed_host_nonce(
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from jvspatial import flush_deferred_entities
+
+    from jvagent.action.interview.session import clear_interview_context
+
+    monkeypatch.setenv("JVAGENT_HOST_CONTEXT_SECRET", "host-context-test-" * 4)
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    host = await _host()
+    await flush_deferred_entities(
+        host.get_memory.return_value.get_session.return_value[1], strict=True
+    )
+    data = sign_host_system_context(
+        "Trusted policy", agent_id="agent", user_id="caller", session_id="session"
+    )
+    first = _walker(data)
+    assert await first._bootstrap_interaction(host, through="session") == "ready"
+    first.conversation.context["interview"] = {"status": "completed"}
+    first.conversation.context["scratch"] = "discard"
+    clear_interview_context(first.conversation)
+    await first.conversation.save()
+    await flush_deferred_entities(first.conversation, strict=True)
+    replay = _walker(data)
+    assert (
+        await replay._bootstrap_interaction(host, through="session")
+        == "invalid_host_context"
+    )
+    assert replay.interaction is None
+    assert (
+        "interview" not in first.conversation.context
+        and "scratch" not in first.conversation.context
+    )
+
+
 async def _host() -> SimpleNamespace:
     conversation = Conversation(session_id="session", user_id="caller")
     await conversation.save()

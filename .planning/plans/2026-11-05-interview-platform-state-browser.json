@@ -1,0 +1,183 @@
+{
+  "observations": {
+    "preconditions": {
+      "expires_at": 1793893972,
+      "requests": [
+        {
+          "started_at": "2026-11-05T15:51:08.119Z",
+          "unexpired": true,
+          "session_matches": true,
+          "status": 200
+        },
+        {
+          "started_at": "2026-11-05T15:51:19.912Z",
+          "unexpired": true,
+          "session_matches": true,
+          "status": 200
+        }
+      ]
+    },
+    "clear": {
+      "replay_entries_before": 1,
+      "replay_entries_after": 1,
+      "interview_removed": true,
+      "scratch_removed": true,
+      "status": 200,
+      "duration_ms": 25
+    },
+    "timings": [
+      {
+        "start_ms": 50739,
+        "duration_ms": 3651
+      },
+      {
+        "start_ms": 62531,
+        "duration_ms": 85
+      }
+    ]
+  },
+  "wire": {
+    "signed_model": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.4a4a7ae5a59840369789f527",
+        "session_id": "sess_2aaa139e5db44c0e",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-68db12506efa4ee6a74f52d0105d95c1",
+          "session_id": "sess_2aaa139e5db44c0e",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.4a4a7ae5a59840369789f527",
+          "message_type": "adhoc",
+          "content": "INTERVIEW-PLATFORM-READY",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "qualification_host": "native-embed"
+          },
+          "timestamp": "2026-11-05T11:51:11.676203"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "session_id": "sess_2aaa139e5db44c0e",
+        "response": "INTERVIEW-PLATFORM-READY",
+        "interaction": {
+          "id": "n.Interaction.4a4a7ae5a59840369789f527",
+          "utterance": "INTERVIEW-PLATFORM-CHECK: Confirm the trusted platform policy for this disposable session.",
+          "response": "INTERVIEW-PLATFORM-READY",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-68db12506efa4ee6a74f52d0105d95c1"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-68db12506efa4ee6a74f52d0105d95c1:1",
+                "native_run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 293,
+                  "completion_tokens": 9,
+                  "total_tokens": 302,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000658,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 293,
+            "completion_tokens": 9,
+            "total_tokens": 302,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.000658,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.000658,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:51:11.732482+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.4a4a7ae5a59840369789f527",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "session_id": "sess_2aaa139e5db44c0e"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ],
+    "replay_after_cleanup": [
+      {
+        "type": "error",
+        "code": "invalid_host_context",
+        "message": "Host context could not be verified."
+      }
+    ]
+  },
+  "privacy": {
+    "signed_model": {
+      "reserved_envelope_present": false,
+      "signature_present": false
+    },
+    "replay_after_cleanup": {
+      "reserved_envelope_present": false,
+      "signature_present": false
+    }
+  },
+  "ui": "## Latest page snapshot\nuid=406_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0\"\n  uid=406_1 StaticText \"jvchat\"\n  uid=406_2 StaticText \"AGENT TESTING\"\n  uid=406_3 button \"New Conversation\"\n  uid=406_4 StaticText \"3\"\n  uid=406_5 StaticText \" conversation\"\n  uid=406_6 StaticText \"s\"\n  uid=407_0 StaticText \"INTERVIEW-REPLAY-CHECK: Repeat the platform check using exactly the same host envelope after scratch cleanup.\"\n  uid=407_1 button \"Delete conversation\"\n  uid=406_7 StaticText \"EMBED-HTTP-AFTER: Reply only HTTP-READY to confirm a fresh ordinary HTTP conversation after the embedded Stop.\"\n  uid=406_8 button \"Delete conversation\"\n  uid=406_9 StaticText \"EMBED-FOLLOWUP: Can the cancelled session safely issue another model call? Reply READY only if it can.\"\n  uid=406_10 button \"Delete conversation\"\n  uid=406_11 button \"Logout\"\n  uid=406_12 button \"Collapse sidebar\"\n  uid=406_13 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=406_14 button \"Native Signed Host Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=406_15 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=406_16 button \"Copy token\" description=\"Copy access token\"\n  uid=406_17 button \"Switch to light mode\"\n  uid=407_2 StaticText \"INTERVIEW-PLATFORM-CHECK: Confirm the trusted platform policy for this disposable session.\"\n  uid=407_3 StaticText \"INTERVIEW-PLATFORM-READY\"\n  uid=407_4 button \"gpt-4.1-2025-04-14 · 302 tokens\"\n  uid=408_0 StaticText \"INTERVIEW-REPLAY-CHECK: Repeat the platform check using exactly the same host envelope after scratch cleanup.\"\n  uid=408_1 button \"Edit\"\n  uid=406_20 form\n    uid=406_21 textbox \"Message input\" focusable focused multiline\n    uid=406_22 button \"Add Attachment\"\n    uid=406_23 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=408_2 button \"Send message\" disableable disabled\n  uid=408_3 StaticText \"Host context could not be verified.\"\n",
+  "scope": "Authenticated disposable host signs one caller/session-bound policy. Actual jvchat sends it; the real interview context-cleanup function then clears synthetic scratch under the conversation lock. The exact still-unexpired envelope is resent. No interview activation or write-tool integration is claimed. Signing keys, signatures and nonce values are omitted."
+}

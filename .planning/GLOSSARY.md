@@ -251,3 +251,10 @@ before minting capabilities or executing a turn. Historical capabilities cannot
 establish ownership. This is ingress authorization, not another harness engine.
 Sources: [`session_token.py:604`](../jvagent/action/interact/session_token.py:604),
 [`conversation.py`](../jvagent/memory/conversation.py).
+
+### Platform replay state
+The bounded consumed-host-nonce ledger in Conversation context, keyed by
+`HOST_CONTEXT_REPLAY_KEY`. Domain scratch cleanup retains it independently of
+skill-specific retain lists; clearing an interview must not reopen signed requests.
+Sources: [`core/host_context.py:20`](../jvagent/core/host_context.py:20),
+[`interview/session.py:109`](../jvagent/action/interview/session.py:109).

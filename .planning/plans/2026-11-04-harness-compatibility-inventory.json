@@ -1899,5 +1899,26 @@
       "interview/flow/proactive adapters",
       "legacy/pilot removal and release qualification"
     ]
+  },
+  "interview_platform_state_increment": {
+    "parent_revision": "git-commit:d664e4db",
+    "evidence": "2026-11-05-interview-platform-state.md",
+    "status": "confirmed replay-state deletion repaired; native interview execution remains unqualified",
+    "preserved": [
+      "existing authored SKILL.md assets unchanged",
+      "domain scratch cleanup and explicit retain lists",
+      "platform replay ledger independent of skill retain metadata"
+    ],
+    "removed_responsibilities": [
+      "domain teardown deleting core replay protection"
+    ],
+    "remaining": [
+      "native SOP inheritance projection and explicit activation",
+      "reviewed graph mutation effect boundaries",
+      "domain task/session separation and continuation",
+      "trusted hook/custom-tool effect qualification",
+      "legacy execution/config migration and deletion"
+    ],
+    "migration": "Historical lost nonces cannot be inferred; retire old in-flight envelopes at cutover."
   }
 }

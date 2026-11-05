@@ -1,13 +1,14 @@
 # Harness rebuild execution record
 
-Latest increment: [embedded cancellation and shared transport teardown](2026-11-05-embedded-cancellation.md).
-Next: qualify remaining child/effect/recovery boundaries and interview execution adapters
-under the [shared-host plan](2026-11-05-shared-host-extraction.md). Member browser API
+Latest increment: [interview platform-state protection](2026-11-05-interview-platform-state.md).
+Next: implement native interview SOP projection, explicit activation and reviewed
+mutation boundaries in the [interview adapter course](2026-11-05-interview-platform-state.md),
+while keeping the remaining recovery/effect/deployment gates open. Member browser API
 and anonymous popup admission are qualified only to the scope of that increment.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `3cecca98`; each new milestone
+are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
 
 ## Native HTTP cancellation and partial usage
@@ -1976,3 +1977,15 @@ unknown billing, blocked follow-up and a fresh ordinary HTTP success afterward.
 Fresh PostgreSQL assertions and mutation checks cover the repaired failure.
 Operator settlement, historical receipt migration, child/effect/deployment recovery
 and the extension/migration/deletion release gates remain open.
+
+
+## Interview platform-state prerequisite — 2026-11-05
+
+The [dependency audit and repair](2026-11-05-interview-platform-state.md) proves
+that interview scratch teardown could reopen a consumed signed host envelope.
+Replay state is now retained as platform-owned data. Actual signed GPT-4.1 output,
+real cleanup and still-unexpired replay rejection are recorded, with no replay
+Interaction/provider call. Unit and fresh-PG cases cover batching on/off.
+The linked course describes native SOP inheritance, activation, reviewed mutations
+and task/session compatibility still to implement. This closes a prerequisite,
+not full native interview execution or release qualification.

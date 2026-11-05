@@ -221,3 +221,15 @@ unknown billing, blocked follow-up and a fresh ordinary HTTP success afterward.
 Fresh PostgreSQL assertions and mutation checks cover the repaired failure.
 Operator settlement, historical receipt migration, child/effect/deployment recovery
 and the extension/migration/deletion release gates remain open.
+
+
+## Interview platform-state prerequisite — 2026-11-05
+
+The [dependency audit and repair](2026-11-05-interview-platform-state.md) proves
+that interview scratch teardown could reopen a consumed signed host envelope.
+Replay state is now retained as platform-owned data. Actual signed GPT-4.1 output,
+real cleanup and still-unexpired replay rejection are recorded, with no replay
+Interaction/provider call. Unit and fresh-PG cases cover batching on/off.
+The linked course describes native SOP inheritance, activation, reviewed mutations
+and task/session compatibility still to implement. This closes a prerequisite,
+not full native interview execution or release qualification.
