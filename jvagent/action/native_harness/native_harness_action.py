@@ -296,7 +296,11 @@ class NativeHarnessAction(InteractAction):
             ),
             channel=getattr(visitor, "channel", "default"),
         )
-        from jvagent.harness.recovery import NativeHistoryError, history_for_new_turn
+        from jvagent.harness.recovery import (
+            RECOVERY_NOTICE,
+            NativeHistoryError,
+            history_for_new_turn,
+        )
 
         previous = await interaction.get_previous_interaction()
         try:
@@ -314,7 +318,7 @@ class NativeHarnessAction(InteractAction):
             }
             await interaction.save()
             await responder.publish(
-                "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+                RECOVERY_NOTICE,
                 visitor=visitor,
             )
             return

@@ -2058,3 +2058,14 @@ GPT-4.1 browser continuation, retry/no-double-charge SQL and real member denials
 302 native/PG tests pass on each Python 3.11 and 3.12. Effects, delivery uncertainty,
 blocked-notice chains, provider bill correction, migration/deletion and enterprise
 release qualification remain open.
+
+## Continuation through blocked notices — 2026-11-05
+
+[Evidence](2026-11-05-native-notices.md): qualified host-notice chains preserve
+intervening user text after the original SDK run is reconciled. Operator inspection
+finds the original run and cannot reserve a notice. A real cancelled GPT-4.1 attempt,
+two zero-model blocked replies, admin reserve and backend restart lead to a successful
+reply recalling both codes. 319 native/PG tests pass on each Python 3.11 and 3.12.
+The startup network failure/manual retry is recorded separately, without a hidden
+provider retry. Effects, delivery, other notice classes, migration/deletion and broader
+release gates remain open.

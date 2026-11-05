@@ -289,3 +289,13 @@ SDK run/conversation counters idempotently. Original unknown billing is retained
 Real GPT-4.1 continuation and member/anonymous denials pass with fresh PG readback.
 This does not settle provider invoices, tool effects, uncertain delivery or abandoned
 ownership. Blocked-notice chains, migration and broader release gates remain open.
+
+## Qualified blocked-notice chains — 2026-11-05
+
+[Record](2026-11-05-native-notices.md): up to 32 exact nonexecuting host notices can
+supply user-role transcript history after original SDK admission succeeds. Real
+GPT-4.1 recall through two blocked messages and backend restart passes, with fresh
+snapshot/usage readback. Broken/cyclic/foreign/effectful notices fail closed. The
+startup transport failure had no Interaction or charge; manual retry is explicit.
+Other notice classes, effect/delivery/distributed recovery, migration, deletion and
+release qualification remain open.

@@ -83,6 +83,8 @@ async def reserve_unknown_usage(
         or usd <= 0
         or usd > Decimal("999999.999999")
         or usd != usd.quantize(Decimal("0.000001"))
+        or interaction.native_run.get("status") not in {"failed", "cancelled"}
+        or not interaction.native_run.get("run_id")
         or not actor
         or not evidence
         or not reason

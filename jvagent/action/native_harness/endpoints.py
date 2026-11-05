@@ -73,11 +73,24 @@ async def inspect_native_recovery(
 ) -> dict[str, Any]:
     """Inspect facts without authorizing replay or returning model/tool content."""
     from jvagent.harness.reconciliation import recovery_digest
+    from jvagent.harness.recovery import NativeHistoryError, resolve_history_predecessor
     from jvagent.harness.step_store import InteractionStepStore
 
-    _, interaction, _ = await _scope(action_id, interaction_id)
+    _, interaction, conversation = await _scope(action_id, interaction_id)
     store = InteractionStepStore(interaction)
     records = await store.list_runs()
+    try:
+        original, notices = await resolve_history_predecessor(
+            interaction,
+            conversation_id=conversation.id,
+            user_id=conversation.user_id,
+            session_id=conversation.session_id,
+        )
+        target = original.id if original is not None else None
+        notice_ids = [item.id for item in notices]
+        resolution_error = None
+    except NativeHistoryError as error:
+        target, notice_ids, resolution_error = None, [], str(error)
     return {
         "interaction_id": interaction.id,
         "status": interaction.native_run.get("status"),
@@ -92,6 +105,9 @@ async def inspect_native_recovery(
             ]
         ),
         "usage_reserve": interaction.native_run.get("usage_reserve"),
+        "recovery_interaction_id": target,
+        "blocked_interaction_ids": notice_ids,
+        "resolution_error": resolution_error,
     }
 
 

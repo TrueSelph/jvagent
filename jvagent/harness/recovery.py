@@ -2,13 +2,21 @@
 
 from typing import Any
 
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
 from pydantic_ai_harness.step_persistence import continue_run, is_provider_valid
 from pydantic_ai_harness.step_persistence.recovery import inspect_recovery
 
 from jvagent.harness.step_store import InteractionStepStore
 
 INPUT_CHECKPOINT_POLICY = "accepted-input-v1"
+RECOVERY_NOTICE = "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn."
+MAX_BLOCKED_NOTICES = 32
 
 
 class NativeHistoryError(RuntimeError):
@@ -16,6 +24,83 @@ class NativeHistoryError(RuntimeError):
 
 
 async def history_for_new_turn(
+    previous: Any, *, conversation_id: str, user_id: str, session_id: str
+) -> tuple[list[ModelMessage], dict[str, Any]]:
+    """Recover SDK history, then project only confirmed nonexecuting notices."""
+    root, notices = await resolve_history_predecessor(
+        previous,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        session_id=session_id,
+    )
+    messages, run_source = await _history_for_run(
+        root, conversation_id=conversation_id, user_id=user_id, session_id=session_id
+    )
+    source: dict[str, Any] = dict(run_source)
+    for item in notices:
+        messages.extend(
+            [
+                ModelRequest(parts=[UserPromptPart(item.utterance)]),
+                ModelResponse(parts=[TextPart(RECOVERY_NOTICE)]),
+            ]
+        )
+    if notices:
+        source = {**source, "blocked_interaction_ids": [item.id for item in notices]}
+    return messages, source
+
+
+async def resolve_history_predecessor(
+    previous: Any, *, conversation_id: str, user_id: str, session_id: str
+) -> tuple[Any, list[Any]]:
+    """Read a bounded host-notice chain; never skip execution or repair edges."""
+    notices: list[Any] = []
+    seen: set[str] = set()
+    while previous is not None:
+        if not previous.native_run:
+            raise NativeHistoryError(
+                "Previous interaction lacks qualified native history"
+            )
+        if previous.conversation_id != conversation_id or previous.user_id != user_id:
+            raise NativeHistoryError("Native history belongs to another caller")
+        run = previous.native_run
+        if run.get("status") != "blocked":
+            break
+        if len(notices) >= MAX_BLOCKED_NOTICES or previous.id in seen:
+            raise NativeHistoryError("Blocked notice chain requires operator repair")
+        if (
+            set(run) != {"status", "reason", "predecessor_interaction_id"}
+            or run.get("reason") != "predecessor_requires_reconciliation"
+            or previous.session_id != session_id
+            or previous.native_steps != {}
+            or previous.observability_metrics
+            or previous.actions != ["NativeHarnessAction"]
+            or previous.directives
+            or not previous.closed
+            or not previous.has_emitted()
+            or previous.response != RECOVERY_NOTICE
+        ):
+            raise NativeHistoryError(
+                "Blocked interaction is not a qualified host notice"
+            )
+        seen.add(previous.id)
+        predecessor = await previous.get_previous_interaction()
+        if predecessor is None or predecessor.id != run.get(
+            "predecessor_interaction_id"
+        ):
+            raise NativeHistoryError("Blocked notice chain has no matching predecessor")
+        try:
+            if predecessor.started_at > previous.started_at:
+                raise NativeHistoryError("Blocked notice chain has invalid chronology")
+        except TypeError as error:
+            raise NativeHistoryError(
+                "Blocked notice chronology is unavailable"
+            ) from error
+        notices.append(previous)
+        previous = predecessor
+    return previous, list(reversed(notices))
+
+
+async def _history_for_run(
     previous: Any, *, conversation_id: str, user_id: str, session_id: str
 ) -> tuple[list[ModelMessage], dict[str, str]]:
     """Use delivered history or a terminal failed run's accepted input.

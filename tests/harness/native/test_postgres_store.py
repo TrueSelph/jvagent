@@ -216,6 +216,33 @@ async def test_usage_reserve_and_budget_have_fresh_pg_readback(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_notice_history_keeps_durable_root_and_scope(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_blocked_history import (
+        test_reconciled_root_retains_ordered_blocked_inputs,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_reconciled_root_retains_ordered_blocked_inputs(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 3
+    root = next(
+        r["context"] for r in rows if r["context"]["native_run"]["status"] == "failed"
+    )
+    assert root["native_run"]["usage_reserve"]["status"] == "applied"
+    notices = [
+        r["context"] for r in rows if r["context"]["native_run"]["status"] == "blocked"
+    ]
+    assert len(notices) == 2
+    assert all(n["closed"] and n["emitted"] and not n["native_steps"] for n in notices)
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

@@ -235,6 +235,14 @@ budget windows idempotently and only permits already-qualified input-history
 continuation. It is not a provider invoice or permission to replay effects.
 Source: `jvagent/harness/reconciliation.py:56`; [operator record](plans/2026-11-05-native-reserve.md).
 
+### Blocked recovery notice
+
+A closed, emitted, literal host response explaining that a predecessor needs
+reconciliation. It has no SDK records, model metrics, directives or other Action
+execution. A bounded, identity-checked chain preserves its user messages only after
+the original execution passes normal SDK history admission. Source:
+`jvagent/harness/recovery.py:52`; [acceptance record](plans/2026-11-05-native-notices.md).
+
 ### Native context compaction
 The official Harness capability summarizes older model messages while retaining a
 recent suffix and tool-call pairing. JV configures the capability and persists its
