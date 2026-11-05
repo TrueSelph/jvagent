@@ -1,0 +1,458 @@
+{
+  "wire": [
+    {
+      "kind": "subscription",
+      "status": 200,
+      "started_at": "2026-11-05T22:38:42.873Z",
+      "frames": [
+        {
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.82d1826b1ebc40369fd62434",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-a6eba72a3bde44189d370bf69bb0e15c",
+          "content": "BEFORE",
+          "category": "user",
+          "timestamp": "2026-11-05T22:29:18.409450+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:29:18.488271+00:00",
+                "total_tokens": 1554,
+                "prompt_tokens": 1550,
+                "total_cost_usd": 0.003132,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 4,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003132,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.126,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.126,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.961f64ba988f482fb277e31f",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-baa958cfb5384b238138a7341fa188d4",
+          "content": "RESTORED",
+          "category": "user",
+          "timestamp": "2026-11-05T22:33:45.420142+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:33:45.533601+00:00",
+                "total_tokens": 1580,
+                "prompt_tokens": 1575,
+                "total_cost_usd": 0.001078,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 5,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001078,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 1408,
+                "total_duration_seconds": 2.317,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.317,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "id": "o.ResponseMessage.corr-baa958cfb5384b238138a7341fa188d4",
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.961f64ba988f482fb277e31f",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T22:33:45.572343+00:00"
+        }
+      ],
+      "ended": "AbortError",
+      "duration_ms": 8039.200000017881
+    },
+    {
+      "kind": "interaction",
+      "status": 200,
+      "started_at": "2026-11-05T22:38:50.853Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-986d93293c4c4c1ebaa8cf319acf2098",
+            "session_id": "sess_975acd5528244512",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+            "message_type": "adhoc",
+            "content": "STABLE",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {
+              "native_replay": false,
+              "is_proactive": false,
+              "observability": {
+                "usage": {
+                  "prompt_tokens": 1600,
+                  "completion_tokens": 4,
+                  "total_tokens": 1604,
+                  "cached_prompt_tokens": 1536,
+                  "cache_write_tokens": 0,
+                  "model_call_count": 1,
+                  "model_attempt_count": 1,
+                  "failed_model_attempt_count": 0,
+                  "cancelled_model_attempt_count": 0,
+                  "model_attempt_duration_seconds": 2.284,
+                  "unmeasured_model_attempt_count": 0,
+                  "estimated_cost_usd": 0.000928,
+                  "reported_cost_usd": 0,
+                  "litellm_cost_usd": 0,
+                  "unknown_cost_call_count": 0,
+                  "total_cost_usd": 0.000928,
+                  "total_duration_seconds": 2.284,
+                  "last_updated": "2026-11-05T22:38:54.211422+00:00"
+                },
+                "model": "gpt-4.1-2025-04-14"
+              }
+            },
+            "timestamp": "2026-11-05T22:38:54.211537+00:00"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-986d93293c4c4c1ebaa8cf319acf2098",
+            "session_id": "sess_975acd5528244512",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T22:38:54.222776+00:00"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_975acd5528244512",
+          "response": "STABLE",
+          "interaction": {
+            "id": "n.Interaction.bbfbb506ada3478783289c4d",
+            "utterance": "NATIVE-AUTH-FINAL-CHECK: Reply exactly STABLE.",
+            "response": "STABLE",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-986d93293c4c4c1ebaa8cf319acf2098"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-986d93293c4c4c1ebaa8cf319acf2098:1",
+                  "native_run_id": "corr-986d93293c4c4c1ebaa8cf319acf2098",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1600,
+                    "completion_tokens": 4,
+                    "total_tokens": 1604,
+                    "cached_prompt_tokens": 1536,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000928,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_attempt",
+                "data": {
+                  "native_run_id": "corr-986d93293c4c4c1ebaa8cf319acf2098",
+                  "native_step_index": 1,
+                  "native_attempt_origin": "step_events_v1",
+                  "outcome": "completed",
+                  "usage_status": "receipt_recorded",
+                  "started_at": "2026-11-05T22:38:51.677267+00:00",
+                  "duration": 2.283707,
+                  "duration_scope": "sdk_model_request",
+                  "completed_at": "2026-11-05T22:38:53.960974+00:00"
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 1600,
+              "completion_tokens": 4,
+              "total_tokens": 1604,
+              "cached_prompt_tokens": 1536,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 1,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 2.284,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0.000928,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000928,
+              "total_duration_seconds": 2.284,
+              "last_updated": "2026-11-05T22:38:54.223197+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_975acd5528244512"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 3486.7999999821186
+    },
+    {
+      "kind": "subscription",
+      "status": 200,
+      "started_at": "2026-11-05T22:38:54.553Z",
+      "frames": [
+        {
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.82d1826b1ebc40369fd62434",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-a6eba72a3bde44189d370bf69bb0e15c",
+          "content": "BEFORE",
+          "category": "user",
+          "timestamp": "2026-11-05T22:29:18.409450+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:29:18.488271+00:00",
+                "total_tokens": 1554,
+                "prompt_tokens": 1550,
+                "total_cost_usd": 0.003132,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 4,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003132,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.126,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.126,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.961f64ba988f482fb277e31f",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-baa958cfb5384b238138a7341fa188d4",
+          "content": "RESTORED",
+          "category": "user",
+          "timestamp": "2026-11-05T22:33:45.420142+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:33:45.533601+00:00",
+                "total_tokens": 1580,
+                "prompt_tokens": 1575,
+                "total_cost_usd": 0.001078,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 5,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001078,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 1408,
+                "total_duration_seconds": 2.317,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.317,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-986d93293c4c4c1ebaa8cf319acf2098",
+          "content": "STABLE",
+          "category": "user",
+          "timestamp": "2026-11-05T22:38:54.092739+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:38:54.203402+00:00",
+                "total_tokens": 1604,
+                "prompt_tokens": 1600,
+                "total_cost_usd": 0.000928,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 4,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.000928,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 1536,
+                "total_duration_seconds": 2.284,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.284,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "id": "o.ResponseMessage.corr-986d93293c4c4c1ebaa8cf319acf2098",
+          "session_id": "sess_975acd5528244512",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.bbfbb506ada3478783289c4d",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T22:38:54.222776+00:00"
+        }
+      ]
+    }
+  ],
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-AUTH-FINAL-CHECK: Reply exactly STABLE.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-AUTH-BASELINE: Reply exactly BEFORE.\n\nBEFORE\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 3.1s · 1.3 tok/s\n\nNATIVE-AUTH-OUTAGE: Reply exactly SHOULD_NOT_RUN.\n\nNATIVE-AUTH-RECOVERED: Reply exactly RESTORED.\n\nRESTORED\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 2.3s · 2.2 tok/s\n\nNATIVE-AUTH-FINAL-CHECK: Reply exactly STABLE.\n\nSTABLE\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 2.3s · 1.8 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "url": "http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0",
+  "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+  "bundles": [
+    {
+      "file": "ChatInterface-FcQmV4bE.js",
+      "bytes": 622478,
+      "sha256": "sha256:ed0a18cc08dc67ab2f4125e4c7881ff1b85e8c52c494c80859c5fa7cdb09b024"
+    }
+  ]
+}

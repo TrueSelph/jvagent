@@ -48,19 +48,23 @@ import type {
 } from '../types/api'
 import * as graphService from './api/graph'
 
+class RefreshFailure extends Error {
+  constructor(readonly status?: number, message?: string) {
+    super(message ?? (status === 401 || status === 403
+      ? 'Your sign-in session was rejected. Please sign in again.'
+      : 'The sign-in service is temporarily unavailable. Please try again.'))
+  }
+}
+
 class ApiClient {
   client: AxiosInstance
   private baseUrls: string[]
   /** jvforge HTTP API (``/v1/*``) — separate host/port from jvagent */
   private jvforgeBaseUrls: string[]
   private resolvedLoginPath?: string
-  private isRefreshing = false
+  private authRefresh: { access: string | null; refresh: string | null; caller: string | null; server: string; promise: Promise<string> } | null = null
   /** Avoid multiple full-page redirects when several requests fail at once */
   private authFailureRedirectScheduled = false
-  private failedQueue: Array<{
-    resolve: (value?: unknown) => void
-    reject: (error?: unknown) => void
-  }> = []
 
   constructor() {
     // Initialize with default config, will be updated when config loads
@@ -125,11 +129,11 @@ class ApiClient {
         if (token && isTokenExpired(token)) {
           console.log('Token expired or expiring soon, triggering proactive refresh for:', config.url)
           try {
-            const newToken = await this._refreshAuth()
+            const newToken = await this.refreshAuthentication()
             token = newToken
           } catch (err) {
             console.error('Proactive refresh failed:', err)
-            // Error handling is inside _refreshAuth (redirect to login if both fail)
+            // Only explicit rejection of the current login clears credentials.
             return Promise.reject(err)
           }
         }
@@ -158,54 +162,34 @@ class ApiClient {
         const reqUrl = originalRequest?.url ?? String((error as AxiosError).config?.url ?? '')
 
         const isAuthEndpoint = this._isNoSessionRecoveryPath(reqUrl)
-        const isHttpUnauthorized = status === 401 || status === 403
-        // Browsers hide 401 bodies when error responses omit CORS headers → axios reports no `response`.
-        const isLikelyCorsMaskedUnauthorized =
-          !isAuthEndpoint &&
-          !error.response &&
-          !!originalRequest &&
-          !!getToken() &&
-          this._requestHadBearerAuth(originalRequest) &&
-          this._axiosLooksLikeOpaqueNetworkFailure(error)
-
-        // 401/403 (or opaque CORS-masked equiv.) on application APIs: refresh once, then logout.
-        if (!isAuthEndpoint && (isHttpUnauthorized || isLikelyCorsMaskedUnauthorized)) {
-          if (!originalRequest) {
-            if (isHttpUnauthorized) {
-              console.warn(`${status} with missing request config; redirecting to login`)
-              this.redirectToLoginAfterAuthFailure()
-            }
-            return Promise.reject(error)
-          }
-
-          if (isLikelyCorsMaskedUnauthorized) {
-            console.warn(
-              'Opaque network failure on authenticated request (often CORS-blocked 401 from validate_token); attempting refresh once then logout',
-              { url: error.config?.url, baseURL: error.config?.baseURL },
-            )
-          }
+        const isHttpUnauthorized = status === 401
+        // Only an explicit pre-execution authentication refusal permits refresh/retry.
+        // Network failures have unknown outcomes; 403 is a permission decision.
+        if (!isAuthEndpoint && isHttpUnauthorized) {
+          if (!originalRequest) return Promise.reject(error)
+          const sentBearer = originalRequest.headers.get('Authorization')
+          if (sentBearer && sentBearer !== `Bearer ${getToken()}`) return Promise.reject(error)
+          if (originalRequest.baseURL && !this.baseUrls.includes(originalRequest.baseURL)) return Promise.reject(error)
 
           if (!originalRequest._retry) {
             originalRequest._retry = true
 
             try {
-              console.log(`Received ${isHttpUnauthorized ? status : 'opaque-auth failure'}, entering retry refresh flow...`)
-              const token = await this._refreshAuth()
+              console.log(`Received ${status}, entering retry refresh flow...`)
+              const token = await this.refreshAuthentication()
               if (token) {
                 originalRequest.headers.set('Authorization', `Bearer ${token}`)
               }
               console.log('Retry refresh successful, retrying original request')
               return this.client(originalRequest)
             } catch (refreshErr) {
-              // _refreshAuth already calls redirectToLoginAfterAuthFailure() before throwing.
-              // Belt-and-suspenders: ensure logout even if that path is somehow bypassed.
-              this.redirectToLoginAfterAuthFailure()
+              // Refresh clears credentials only for an explicit credential rejection.
               return Promise.reject(refreshErr)
             }
           }
 
           console.warn(
-            `${isHttpUnauthorized ? `${status}` : 'Opaque auth'} after token refresh (or unrecoverable auth); redirecting to login`,
+            `${status} after token refresh (or unrecoverable auth); redirecting to login`,
           )
           this.redirectToLoginAfterAuthFailure()
           return Promise.reject(error)
@@ -254,58 +238,35 @@ class ApiClient {
     window.location.replace('/login')
   }
 
-  /**
-   * Internal flow to refresh auth tokens either via refresh token or auto-login.
-   * Consolidates logic to avoid duplication in interceptors.
-   * Returns a promise that resolves to the new access token.
-   */
-  private async _refreshAuth(): Promise<string> {
-    // If already refreshing, wait for it to complete
-    if (this.isRefreshing) {
-      return new Promise((resolve, reject) => {
-        this.failedQueue.push({
-          resolve: () => resolve(getToken()!),
-          reject
-        })
-      })
+  /** Share refresh only within the captured login; late results cannot replace another caller. */
+  async refreshAuthentication(): Promise<string> {
+    const access = getToken(), refresh = getRefreshToken(), caller = getEffectiveUserId()
+    const server = this.baseUrls[0]
+    const current = () => getToken() === access && getRefreshToken() === refresh && getEffectiveUserId() === caller && this.baseUrls[0] === server
+    const active = this.authRefresh
+    if (active && active.access === access && active.refresh === refresh && active.caller === caller && active.server === server) return active.promise
+    if (!refresh) {
+      if (current()) this.redirectToLoginAfterAuthFailure()
+      throw new RefreshFailure(401)
     }
-
-    this.isRefreshing = true
-
-    const cleanUpAndRedirect = (error: any) => {
-      this.failedQueue.forEach(({ reject }) => reject(error))
-      this.failedQueue = []
-      this.isRefreshing = false
-      this.redirectToLoginAfterAuthFailure()
-      throw error
-    }
-
-    try {
-      const refreshToken = getRefreshToken()
-      if (refreshToken) {
-        try {
-          console.log('Attempting token refresh...')
-          const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
-          setStorageToken(refreshResponse.access_token)
-          if (refreshResponse.refresh_token) {
-            setRefreshToken(refreshResponse.refresh_token)
-          }
-          console.log('Token refresh successful')
-
-          this.failedQueue.forEach(({ resolve }) => resolve())
-          this.failedQueue = []
-          this.isRefreshing = false
-          return refreshResponse.access_token
-        } catch (refreshErr) {
-          console.warn('Refresh token failed')
-        }
+    let pending: Promise<string>
+    pending = (async () => {
+      let response: TokenRefreshResponse
+      try {
+        response = await this.refreshToken({ refresh_token: refresh })
+      } catch (error) {
+        if (current() && error instanceof RefreshFailure && (error.status === 401 || error.status === 403)) this.redirectToLoginAfterAuthFailure()
+        throw error
       }
-
-      console.warn('No refresh token available for recovery')
-      return cleanUpAndRedirect(new Error('Authentication expired and no recovery credentials found'))
-    } catch (err) {
-      return cleanUpAndRedirect(err)
-    }
+      if (!current()) throw new RefreshFailure(undefined, 'The signed-in account changed during refresh. Please retry.')
+      setStorageToken(response.access_token)
+      if (response.refresh_token) setRefreshToken(response.refresh_token)
+      return response.access_token
+    })().finally(() => {
+      if (this.authRefresh?.promise === pending) this.authRefresh = null
+    })
+    this.authRefresh = { access, refresh, caller, server, promise: pending }
+    return pending
   }
 
   /**
@@ -427,17 +388,19 @@ class ApiClient {
    * (e.g. localhost vs 127.0.0.1), which would hide invalid/expired sessions and 401 from validate_token.
    */
   private _isSessionAuthFailureStopFallback(error: unknown): boolean {
-    if (this.authFailureRedirectScheduled) return true
+    if (this.authFailureRedirectScheduled || error instanceof RefreshFailure) return true
     const ax = error as AxiosError
+    const cfg = ax.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
+    // A write may have committed before a lost response or server error.
+    // Only explicit route-not-found permits compatibility fallback.
+    if (cfg?.method && !['get', 'head', 'options'].includes(cfg.method.toLowerCase()) && ax.response?.status !== 404) return true
     const url = this._requestUrlFromAxiosError(error)
     if (this._isNoSessionRecoveryPath(url)) return false
     const status = ax.response?.status
     if (status === 401 || status === 403) return true
-    const cfg = ax.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
     if (
       ax &&
       !ax.response &&
-      getToken() &&
       cfg &&
       this._requestHadBearerAuth(cfg) &&
       this._axiosLooksLikeOpaqueNetworkFailure(ax)
@@ -555,55 +518,28 @@ class ApiClient {
   }
 
   async refreshToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
     try {
-      // Try /api/auth/refresh first, fallback to /auth/refresh
-      const refreshPaths = ['/api/auth/refresh', '/auth/refresh']
-      let lastError: any
-
       for (const baseURL of this.baseUrls) {
-        for (const path of refreshPaths) {
-          try {
-            // Don't use axios client here to avoid interceptor loops
-            const response = await fetch(`${baseURL}${path}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(request),
-            })
-
-            if (!response.ok) {
-              if (response.status === 404) {
-                continue // Try next path
-              }
-              const errorText = await response.text()
-              let errorMessage = `HTTP error! status: ${response.status}`
-              try {
-                const errorJson = JSON.parse(errorText)
-                errorMessage = errorJson.detail || errorJson.message || errorMessage
-              } catch {
-                errorMessage = errorText || errorMessage
-              }
-              throw new Error(errorMessage)
-            }
-
-            const data = await response.json()
-            return this._extractLoginResponse({ data })
-          } catch (err: any) {
-            lastError = err
-            if (err.message?.includes('404') || err.message?.includes('HTTP error! status: 404')) {
-              continue // Try next path
-            }
-            // Non-404 error, stop trying
-            throw err
-          }
+        for (const path of ['/api/auth/refresh', '/auth/refresh']) {
+          const response = await fetch(`${baseURL}${path}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request), signal: controller.signal,
+          })
+          if (response.status === 404) continue
+          if (!response.ok) throw new RefreshFailure(response.status)
+          const result = this._extractLoginResponse({ data: await response.json() })
+          if (typeof result.access_token !== 'string' || !result.access_token.trim() || result.token_type?.toLowerCase() !== 'bearer') throw new RefreshFailure()
+          if (result.refresh_token != null && typeof result.refresh_token !== 'string') throw new RefreshFailure()
+          return result
         }
       }
-
-      throw lastError || new Error('Token refresh failed')
-    } catch (error: any) {
-      console.error('Token refresh error:', error)
-      throw error
+      throw new RefreshFailure(404)
+    } catch (error) {
+      throw error instanceof RefreshFailure ? error : new RefreshFailure()
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -806,6 +742,21 @@ class ApiClient {
     }
   }
 
+  private async _ensureFreshLogin(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const token = getToken()
+    if (token && isTokenExpired(token)) {
+      const refresh = this.refreshAuthentication()
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+        signal?.addEventListener('abort', abort, { once: true })
+        refresh.then(() => { signal?.removeEventListener('abort', abort); resolve() }, error => { signal?.removeEventListener('abort', abort); reject(error) })
+        if (signal?.aborted) abort()
+      })
+    }
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  }
+
   /** Submit once, except for explicit route-not-found compatibility probes.
    * A transport error or admitted HTTP failure can have an unknown outcome.
    * Replaying that POST against another host can execute and bill another turn.
@@ -815,7 +766,13 @@ class ApiClient {
     request: InteractionRequest,
     signal?: AbortSignal,
   ): Promise<Response> {
+    const caller = getEffectiveUserId()
+    const server = this.baseUrls[0]
+    await this._ensureFreshLogin(signal)
     await this._ensureFreshInteractSession(agentId, request.session_id)
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (getEffectiveUserId() !== caller || this.baseUrls[0] !== server) throw new RefreshFailure(undefined, 'The sign-in context changed. Please retry.')
+    const access = getToken()
     let missing: Response | undefined
     for (const base of this.baseUrls) {
       for (const prefix of ['/api', '']) {
@@ -832,19 +789,20 @@ class ApiClient {
           missing = response
           continue
         }
-        if (!response.ok) throw await this._interactionError(response)
+        if (!response.ok) throw await this._interactionError(response, access)
         return response
       }
     }
-    if (missing) throw await this._interactionError(missing)
+    if (missing) throw await this._interactionError(missing, access)
     throw new Error("No interaction endpoint is configured")
   }
 
-  private async _interactionError(response: Response): Promise<Error> {
-    if (response.status === 401 || response.status === 403) {
-      this.redirectToLoginAfterAuthFailure()
+  private async _interactionError(response: Response, access: string | null): Promise<Error> {
+    if (response.status === 401) {
+      if (getToken() === access) this.redirectToLoginAfterAuthFailure()
       return new Error('Unauthorized')
     }
+    if (response.status === 403) return new Error('This account does not have permission for that request.')
     const raw = await response.text()
     let message = `HTTP error! status: ${response.status}`
     try {
@@ -923,9 +881,8 @@ class ApiClient {
 
   /** Read-only session delivery. Reconnecting never invokes the model. */
   async streamReplies(agentId: string, sessionId: string, onMessage: (message: ResponseMessageData) => void, signal: AbortSignal): Promise<void> {
+    await this._ensureFreshLogin(signal)
     await this._ensureFreshInteractSession(agentId, sessionId)
-    const token = getToken()
-    if (token && isTokenExpired(token)) await this._refreshAuth()
     for (const base of this.baseUrls) {
       for (const prefix of ['/api', '']) {
         if (signal.aborted) return

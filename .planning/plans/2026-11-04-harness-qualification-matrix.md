@@ -339,3 +339,13 @@ Native/host/real-PG tests pass 356 on each Python 3.11/3.12; UI 140 and build pa
 This closes completed local native reply readback only. Arbitrary cursors, old
 receipt migration, client acknowledgement, uncertain delivery, abandoned/distributed
 runs, graceful shutdown, outage authentication and other deployments remain open.
+
+## Browser outage authentication — 2026-11-05
+
+[Actual expired-token/browser/provider/SQL record](2026-11-05-native-auth.md)
+qualifies the local source reference-client profile: retain credentials on a
+backend outage, fail before model admission, refresh after startup and continue
+under the same caller/session. Frontend 159 tests/build and eight Python web-client
+tests pass; all nine parent 37820122 CI checks passed. This closes only that local
+outage-auth profile. Cross-tab rotation, outage load/Retry-After, clock skew,
+per-message failures, packaged-wheel client and bounded shutdown remain open.

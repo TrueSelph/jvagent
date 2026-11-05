@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-11-05T22:39:59.907Z",
+  "bundles": [
+    {
+      "file": "main-Y93LwZP3.js",
+      "bytes": 142231,
+      "sha256": "sha256:cc962b3b8ad1be6c364eeeb3805b97829f3541322d82caad66051300fb9123bb"
+    },
+    {
+      "file": "ChatInterface-FcQmV4bE.js",
+      "bytes": 622478,
+      "sha256": "sha256:ed0a18cc08dc67ab2f4125e4c7881ff1b85e8c52c494c80859c5fa7cdb09b024"
+    },
+    {
+      "file": "useAuth-DBpuL7NG.js",
+      "bytes": 1960,
+      "sha256": "sha256:6d6ed15e2aef6ef9d0157103dce31bde452f24e0ae706166125782ae933540e9"
+    },
+    {
+      "file": "ChatInterface-FcQmV4bE.js",
+      "bytes": 622478,
+      "sha256": "sha256:ed0a18cc08dc67ab2f4125e4c7881ff1b85e8c52c494c80859c5fa7cdb09b024"
+    }
+  ]
+}

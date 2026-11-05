@@ -2097,5 +2097,29 @@
       "bounded graceful shutdown and outage credential recovery",
       "other providers/channels and final migration/legacy engine deletion"
     ]
+  },
+  "native_browser_outage_auth_increment": {
+    "evidence": "2026-11-05-native-auth.md",
+    "qualified_scope": "local reference-client expired-login/backend-outage preservation and real-model recovery under unchanged caller/session",
+    "preserved": [
+      "jvspatial server identity and refresh protocol",
+      "existing caller-scoped client storage and explicit 404 compatibility",
+      "Pydantic-owned execution and graph usage/receipts"
+    ],
+    "retired": [
+      "blanket logout after transient refresh failure",
+      "opaque network error treated as authentication denial",
+      "expired login omitted from paid interaction headers",
+      "duplicate proactive token writes and refresh callback queue",
+      "late refresh replacing or clearing another login/server",
+      "unknown write outcome retried across host aliases"
+    ],
+    "remaining": [
+      "bounded SSE shutdown and scheduler loop recovery",
+      "cross-tab rotation, Retry-After and outage load behavior",
+      "clock skew and historical credential migration",
+      "per-message transport failure presentation and packaged client",
+      "other provider/channel profiles and full migration/legacy engine deletion"
+    ]
   }
 }

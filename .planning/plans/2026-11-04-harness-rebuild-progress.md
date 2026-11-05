@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native completed reply readback](2026-11-05-native-replay.md).
+Latest increment: [browser outage authentication](2026-11-05-native-auth.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Browser outage authentication
+
+Actual expired-JWT/backend-outage browser proof preserves access/refresh/caller
+state, makes no model POST for the failed send, then refreshes and delivers a real
+GPT-4.1 reply under the same identity/session after startup. Global SQL finds zero
+outage Interactions and unchanged outage spending. A final rebuilt-client reload
+and actual-model continuation pass. Full round: three model calls, 4,738 reported
+tokens, USD 0.005138 estimated; auth retries are recorded separately.
+Frontend 159 tests/build and eight Python web-client tests pass. All nine parent
+37820122 CI checks passed; final all-files/full-push/new-head CI remain separate
+gates. The source-only client profile does not qualify packaged-wheel delivery,
+cross-tab rotation, load/Retry-After behavior, graceful shutdown or scheduler
+recovery. See the linked record for the env-precedence setup mistake and evidence.
 
 ## Native completed reply readback
 
