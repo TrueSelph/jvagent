@@ -1753,3 +1753,52 @@ scanner false positives on revision/profile hashes were resolved by explicit
 `git-commit:`, `git-blob:`, `sha256:` and `run:` identifiers in the evidence file;
 no scanner rule was disabled. Push-time full tests and remote checks still need
 separate results for the containing commit.
+
+
+## Push-gate investigation and pricing correction — 2026-11-05
+
+Do not treat the preceding 518.70-second full result as a reproducible gate: it
+completed after interrupt input. The first push of 91ba0911 independently stalled;
+the owned test process was diagnostically aborted with a stack dump (no core file,
+no bypass), and the push did not occur. A location-only diagnostic run passed
+4,714 / 28 in 112.69 seconds, demonstrating intermittent behavior rather than a
+proved fix. The isolated lease tests passed 11 cases in 1.90 seconds.
+
+A temporary socket guard then identified an actual unwanted network dependency:
+`test_ollama_cloud_cost_uses_published_model_rates_but_local_stays_free` invoked
+LiteLLM's synchronous runtime model metadata POST through the cost helper
+(`jvagent/action/model/cost_estimator.py:206`). The guard failed the test rather
+than silently substituting a provider response. The recorded call stack contains
+frame locations only, not credentials or request content.
+
+Added an adversarial regression with an unavailable metadata provider: local
+GLM pricing incorrectly returned USD 5.80 per million input-plus-output tokens
+from the cloud fallback, rather than zero. `pricing_for` now returns the existing
+local-cost policy without any metadata probe; cloud IDs retain their explicitly
+published table (`jvagent/action/model/cost_estimator.py:272`). This is a critical
+transitional service correction, not an extension of the old execution engine.
+The whole legacy estimator remains subject to the migration/deletion inventory.
+The change does not enable or select local models.
+
+A final real native browser recall after backend restart returned the correct
+required fields, email missing and 50% score, with no tools. Interaction
+40175b4283ff48e3a0f3de94 / run c61714636a504274bf5602e64e962af0 is delivered,
+closed/emitted and usage_complete=true: one GPT-4.1 request, 740 tokens, USD
+0.001624 estimated, 3.683 seconds interaction / 2.020 native. Its persisted
+history points to the previous delivered root. See
+[final recall evidence](2026-11-05-pricing-probe-smoke.json). This native smoke
+checks unaffected execution/history/UI; the regression and socket-guarded suite
+prove the legacy pricing behavior. Neither proves general network isolation.
+
+The socket diagnostic and location tracer are disposable helpers outside the
+repository; no production scheduler, test timeout bypass or dependency was added.
+Final guarded/default gate results and the new push must be read separately.
+
+The final socket-guarded full suite passed: 4,716 passed, 28 skipped, 30 warnings
+in 113.92 seconds. No connection to Ollama's model port was attempted in that
+run; the guard records and fails any attempt even if application code catches
+the network exception. This is evidence for that endpoint/run, not a claim that
+all external networking is blocked. Native sources are unchanged from their
+169-case dual-version suites and the subsequent actual-model recall is above.
+All-files hooks passed clean for the pricing correction. A normal push-hook run
+without the diagnostic plugin remains required; remote release gates stay open.

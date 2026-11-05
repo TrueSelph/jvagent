@@ -1,0 +1,48 @@
+{
+  "baseline_revision": "git-commit:91ba0911158523edf2d1de48903249034d0edccb",
+  "candidate_estimator_blob": "git-blob:95037800686d06d63ecc83ae178add7500a9609f",
+  "environment": "Disposable PostgreSQL app 8131 + jvchat 3131, Python 3.11, native core 2.66.0 / Harness 0.66.0, actual OpenAI GPT-4.1",
+  "interaction_id": "n.Interaction.40175b4283ff48e3a0f3de94",
+  "native_run": {
+    "usage": {
+      "requests": 1,
+      "input_tokens": 716,
+      "output_tokens": 24
+    },
+    "output": "- Required fields: email, full name  \n- Missing fields: email  \n- Completion score: 50%",
+    "run_id": "c61714636a504274bf5602e64e962af0",
+    "status": "delivered",
+    "history_source": {
+      "frontier": "delivered",
+      "source_run_id": "96bb0e80c82548018f24008ec9f1aba8"
+    },
+    "usage_complete": true
+  },
+  "closed": true,
+  "emitted": true,
+  "interaction_seconds": 3.683381,
+  "native_seconds": 2.019604,
+  "usage": {
+    "last_updated": "2026-11-05T08:09:18.401111+00:00",
+    "total_tokens": 740,
+    "prompt_tokens": 716,
+    "total_cost_usd": 0.001624,
+    "litellm_cost_usd": 0.0,
+    "model_call_count": 1,
+    "completion_tokens": 24,
+    "reported_cost_usd": 0.0,
+    "cache_write_tokens": 0,
+    "estimated_cost_usd": 0.001624,
+    "model_attempt_count": 0,
+    "cached_prompt_tokens": 0,
+    "total_duration_seconds": 0.0,
+    "unknown_cost_call_count": 0,
+    "failed_model_attempt_count": 0,
+    "cancelled_model_attempt_count": 0,
+    "model_attempt_duration_seconds": 0.0
+  },
+  "snapshot_count": 3,
+  "tool_events": [],
+  "ui": "Correct email/full name requirements, missing email, 50 percent score; no tool calls; 740-token badge after backend restart",
+  "scope": "Confirms native persisted history and UI remain functional after legacy pricing correction. Cost-helper behavior is proved by the dedicated regression, not this native turn."
+}

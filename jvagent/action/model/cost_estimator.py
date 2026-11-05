@@ -269,8 +269,14 @@ def pricing_for(provider: str, model: str) -> Optional["Pricing"]:
     """Effective pricing for ``model`` on ``provider``: LiteLLM metadata when
     available (maintained upstream for hundreds of models), else the bundled
     table, else ``None`` (the caller decides on a conservative default)."""
-    if (provider or "").strip().lower() == "ollama" and model.endswith(":cloud"):
-        return _bundled_pricing(provider, model)
+    if (provider or "").strip().lower() == "ollama":
+        if model.endswith(":cloud"):
+            return _bundled_pricing(provider, model)
+        from jvagent.action.model.contract import Pricing
+
+        # Local monetary cost is defined here, not discovered by a synchronous
+        # provider metadata request. Offline fallback must not apply cloud rates.
+        return Pricing(input_per_million=0.0, output_per_million=0.0, source="local")
     return _litellm_pricing(provider, model) or _bundled_pricing(provider, model)
 
 

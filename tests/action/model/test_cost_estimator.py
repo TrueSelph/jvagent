@@ -197,3 +197,25 @@ def test_split_tolerates_junk_values():
         0,
         0,
     )
+
+
+@pytest.mark.parametrize("cloud", [False, True])
+def test_ollama_pricing_never_probes_a_live_model_endpoint(
+    cloud: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from jvagent.action.model import cost_estimator
+
+    probe = Mock(side_effect=AssertionError("pricing must not contact a provider"))
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(get_model_info=probe))
+    monkeypatch.setattr(cost_estimator, "_litellm_pricing_cache", {})
+    cost = estimate_cost(
+        "glm-5.3:cloud" if cloud else "glm-5.3",
+        "ollama",
+        {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000},
+    )
+    assert cost == pytest.approx(5.8 if cloud else 0.0)
+    probe.assert_not_called()
