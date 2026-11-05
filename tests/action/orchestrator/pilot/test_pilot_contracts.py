@@ -184,6 +184,7 @@ def test_user_facing_brief_cites_only_validated_evidence_sources() -> None:
     )
 
     assert rendered == (
+        "> Structured results are validated.\n"
         "- Structured results are validated. [Source 1, observed "
         f"{reference.observed_at.strftime('%Y-%m-%d %H:%M UTC')}](<https://example.test/docs?a=1&b=2>)"
     )
