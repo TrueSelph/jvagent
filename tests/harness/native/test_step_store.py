@@ -149,3 +149,40 @@ async def test_step_snapshot_survives_fresh_graph_context(
         )
     finally:
         clear_default_context()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["registration", "event"])
+async def test_retry_after_failed_write_persists_cached_record(kind: str) -> None:
+    from pydantic_ai_harness.step_persistence import RunRecord, StepEvent
+
+    disk: dict[str, Any] = {}
+    failures = 1
+    interaction = SimpleNamespace(native_steps={})
+
+    async def save() -> None:
+        nonlocal failures
+        if failures:
+            failures -= 1
+            raise OSError("unavailable store")
+        disk.update(json.loads(json.dumps(interaction.native_steps)))
+
+    interaction.save = save
+    store = InteractionStepStore(interaction)
+    if kind == "registration":
+        record = RunRecord(run_id="run", conversation_id="session")
+        key, method = "runs", "register_run"
+    else:
+        record = StepEvent(
+            run_id="run", kind="run_started", step_index=0, idempotency_key="start"
+        )
+        key, method = "events", "append_event"
+    with pytest.raises(OSError):
+        await getattr(store, method)(record)
+    assert not disk
+    # A new wrapper around the same cached entity must not assume a committed write.
+    restored_wrapper = InteractionStepStore(interaction)
+    await getattr(restored_wrapper, method)(record)
+    assert len(disk[key]) == 1
+    await getattr(restored_wrapper, method)(record)
+    assert len(disk[key]) == 1

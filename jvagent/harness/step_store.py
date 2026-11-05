@@ -29,6 +29,10 @@ class InteractionStepStore:
         values = self.interaction.native_steps.get(key, [])
         return [TypeAdapter(record_type).validate_python(value) for value in values]
 
+    async def _persist(self) -> None:
+        await self.interaction.save()
+        await flush_deferred_entities(self.interaction, strict=True)
+
     async def _write(
         self, key: str, record: Any, *, identity: str | None = None
     ) -> None:
@@ -52,6 +56,8 @@ class InteractionStepStore:
                         )
                     )
                     if prior == encoded or same_registration:
+                        # A prior save may have failed after mutating the cache.
+                        await self._persist()
                         return
                     raise ValueError("Native run identity is already registered")
             if identity is not None:
@@ -69,12 +75,12 @@ class InteractionStepStore:
                     and value.get("idempotency_key") == encoded["idempotency_key"]
                     for value in values
                 ):
+                    await self._persist()
                     return
             values.append(encoded)
             state[key] = values
             self.interaction.native_steps = state
-            await self.interaction.save()
-            await flush_deferred_entities(self.interaction, strict=True)
+            await self._persist()
 
     async def register_run(self, record: RunRecord) -> None:
         await self._write("runs", record, identity="run_id")

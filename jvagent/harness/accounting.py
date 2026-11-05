@@ -57,16 +57,20 @@ class NativeSpendRecorder:
                 item.get("data", {}).get("native_receipt_key") == key
                 for item in metrics
             ):
+                # Duplicate in memory does not prove the earlier write committed.
+                await self.interaction.save()
+                await flush_deferred_entities(self.interaction, strict=True)
                 return
             usage = event.usage
             priced = event.priced and not usage.unmeasured_requests
+            provider = getattr(getattr(ctx, "model", None), "system", None)
             data = {
                 "native_receipt_key": key,
                 "native_run_id": ctx.run_id,
                 "native_step_index": ctx.run_step,
                 "native_spend_receipt": True,
                 "model": event.model or "unknown",
-                "provider": "unknown",
+                "provider": provider if isinstance(provider, str) else "unknown",
                 "native_receipt_origin": "spend_snapshot",
                 "usage": {
                     "prompt_tokens": usage.input_tokens,
@@ -132,6 +136,7 @@ def record_native_usage(
                 "completion_tokens": usage.output_tokens,
                 "total_tokens": usage.input_tokens + usage.output_tokens,
                 "cached_prompt_tokens": usage.cache_read_tokens,
+                "cache_write_tokens": usage.cache_write_tokens,
             },
         }
         cost = usage.cost

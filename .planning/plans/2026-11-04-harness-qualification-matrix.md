@@ -77,3 +77,17 @@ The native CI lane uses `.[native-harness]` plus pytest/pytest-asyncio on Python
 3.11 and 3.12. It does not qualify old model transports. Final cutover must remove
 or isolate the obsolete transport/testing requirements and prove a clean unified
 installation. Silently upgrading LiteLLM is not the intended engineering path.
+
+
+## PostgreSQL profile increment — 2026-11-05
+
+The [progress evidence](2026-11-04-harness-rebuild-progress.md) records six real
+PostgreSQL tests, fresh Python 3.11/3.12 native lanes and a disposable actual-model
+browser profile. Checkpoints/spend survive context reload; failed writes cannot
+be acknowledged from cached duplicates (`jvagent/harness/step_store.py:58`,
+`jvagent/harness/accounting.py:54`). Delegation, persisted history after backend
+restart and native cache usage normalization have positive browser evidence.
+One incorrect model answer and a cross-agent fixture collection miss are retained.
+This does not qualify pool saturation, real outage browser recovery, multiworker
+ownership, remote CI, legacy cutover or workload optimization. PostgreSQL service
+configuration is added to the native CI lane; a configured job is not a passed job.

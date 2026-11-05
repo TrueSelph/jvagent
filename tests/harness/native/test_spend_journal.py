@@ -104,3 +104,79 @@ async def test_receipt_persists_before_deferred_request_flush(
     assert restored.usage["model_call_count"] == 1
     assert restored.usage["total_cost_usd"] == pytest.approx(0.001)
     assert not interaction.deferred_saves_enabled
+
+
+@pytest.mark.asyncio
+async def test_replayed_receipt_persists_after_failed_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    interaction = await Interaction.create(utterance="receipt write retry")
+    original_save = Interaction.save
+    failures = 1
+
+    async def save(self: Interaction, *args: object, **kwargs: object) -> object:
+        nonlocal failures
+        if self.id == interaction.id and failures:
+            failures -= 1
+            raise OSError("unavailable store")
+        return await original_save(self, *args, **kwargs)
+
+    monkeypatch.setattr(Interaction, "save", save)
+    recorder = NativeSpendRecorder(interaction)
+    with recorder.bind(SimpleNamespace(run_id="run", run_step=1)):
+        with pytest.raises(OSError):
+            await recorder.record(receipt(1))
+    persisted = (await Interaction.find({"id": interaction.id}))[0]
+    assert not persisted.observability_metrics
+    restored_wrapper = NativeSpendRecorder(interaction)
+    with restored_wrapper.bind(SimpleNamespace(run_id="run", run_step=1)):
+        await restored_wrapper.record(receipt(1))
+    persisted = (await Interaction.find({"id": interaction.id}))[0]
+    assert len(persisted.observability_metrics) == 1
+    assert persisted.usage["model_call_count"] == 1
+    assert persisted.usage["total_cost_usd"] == pytest.approx(0.001)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["journal", "snapshot"])
+async def test_native_cache_counters_reach_existing_usage_aggregation(
+    source: str,
+) -> None:
+    from dataclasses import replace
+
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    from jvagent.harness.accounting import record_native_usage
+
+    interaction = Interaction(utterance="cached request")
+    usage = RequestUsage(
+        input_tokens=10, output_tokens=5, cache_read_tokens=4, cache_write_tokens=2
+    )
+    if source == "journal":
+        recorder = NativeSpendRecorder(interaction)
+        with recorder.bind(
+            SimpleNamespace(
+                run_id="cached", run_step=1, model=SimpleNamespace(system="openai")
+            )
+        ):
+            await recorder.record(replace(receipt(1), usage=usage))
+    else:
+        record_native_usage(
+            interaction,
+            [
+                ModelResponse(
+                    parts=[TextPart("ok")],
+                    usage=usage,
+                    model_name="gpt-4.1",
+                    provider_name="openai",
+                    run_id="cached",
+                )
+            ],
+            run_id="cached",
+            model="gpt-4.1",
+        )
+    assert interaction.usage["prompt_tokens"] == 10
+    assert interaction.usage["total_tokens"] == 15
+    assert interaction.usage["cached_prompt_tokens"] == 4
+    assert interaction.usage["cache_write_tokens"] == 2
+    assert interaction.observability_metrics[0]["data"]["provider"] == "openai"

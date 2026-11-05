@@ -167,12 +167,21 @@ def test_cache_counters_are_clamped_to_prompt_tokens():
     )
 
 
-def test_normalized_cache_counters_are_split_and_priced():
+@pytest.mark.parametrize(
+    "read_key,write_key",
+    [
+        ("cached_read_tokens", "cached_write_tokens"),
+        ("cached_prompt_tokens", "cache_write_tokens"),
+    ],
+)
+def test_normalized_cache_counters_are_split_and_priced(
+    read_key: str, write_key: str
+) -> None:
     usage = {
         "prompt_tokens": 100,
         "completion_tokens": 10,
-        "cached_read_tokens": 40,
-        "cached_write_tokens": 20,
+        read_key: 40,
+        write_key: 20,
     }
     assert split_cached_prompt_tokens(usage) == (40, 40, 20)
 

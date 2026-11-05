@@ -169,13 +169,16 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
             nested = 0
     read = min(
         _int("cached_read_tokens")
+        or _int("cached_prompt_tokens")
         or _int("cached_tokens")
         or _int("cache_read_input_tokens")
         or nested,
         prompt_tokens,
     )
     write = min(
-        _int("cached_write_tokens") or _int("cache_creation_input_tokens"),
+        _int("cached_write_tokens")
+        or _int("cache_write_tokens")
+        or _int("cache_creation_input_tokens"),
         prompt_tokens - read,
     )
     return prompt_tokens - read - write, read, write

@@ -1305,3 +1305,108 @@ Replace it when a public jvspatial deadline/cancellation primitive supplies the
 same bounded acknowledgement and late-outcome observation guarantees; preserve
 fail-closed admission and unknown-cost accounting. No enterprise qualification,
 complete outage recovery or performance improvement is claimed by this increment.
+
+
+## PostgreSQL qualification and cache usage normalization — 2026-11-05
+
+This increment qualifies a single-worker disposable PostgreSQL profile; it does
+not close deployment, outage recovery, migration or simplification gates. Base
+revision d1d47e96; final browser candidate source blobs: step_store
+615b4df8834f50da55c7313a0cf9d0a144f3d603, accounting
+dac8c8628cc989f5bef096a6235c0b8536b0317f and cost_estimator
+a40f5d09203412e2713dc3e209e045df7c5800a0. The containing milestone commit
+identifies the complete source and test tree.
+
+### Confirmed defects and narrow fixes
+
+A real table lock caused a PostgreSQL statement timeout after the Interaction's
+cached native state had changed. Retrying registration/checkpoint storage could
+acknowledge that cached duplicate without persisting it. Spend receipts had the
+same defect. Duplicate registration/event acknowledgement now saves and strictly
+flushes before returning (`jvagent/harness/step_store.py:32`, `:58`, `:72`;
+`jvagent/harness/accounting.py:54`). These are storage retries, not automatic
+model or effect re-execution. Added I/O on duplicate acknowledgement is deliberate;
+no performance improvement is claimed.
+
+The browser's first successful delegated lookup reported 1,152 cache-read tokens
+in native snapshots but zero in normalized usage. The generic aggregation helper
+now accepts the native receipt's cached_prompt_tokens/cache_write_tokens aliases
+(`jvagent/action/model/cost_estimator.py:170`), and snapshot fallback includes
+cache writes (`jvagent/harness/accounting.py:134`). Receipt provider labels use
+the public RunContext.model.system property when available (`accounting.py:66`),
+with unknown retained when unavailable. SDK spend amounts remain explicitly
+estimated. This adds no pricing or execution engine. Existing persisted receipts
+can be normalized on recomputation; this round performs no historical backfill.
+
+### Deterministic qualification
+
+- Python 3.11.15 and 3.12.15 fresh native environments, Pydantic AI core 2.66.0,
+  official Harness 0.66.0, jvspatial 0.1.1, asyncpg 0.32.0; dependency checks pass.
+- Each environment passed 151 native/declared-read-profile/WebFetch tests,
+  including six real PostgreSQL tests. The six cover checkpoint/spend readback
+  after pool/context reload and timed-out registration/event/keyed-snapshot/
+  effect/receipt writes followed by a durable, single-record retry
+  (`tests/harness/native/test_postgres_store.py:84`, `:131`). Each test creates
+  and drops its own unique schema. Synthetic spend fixture prices are not bills.
+- Fast regressions reproduce failed-save cache acknowledgement, then verify
+  durability. The cache aggregation regression failed with cached count zero
+  before the mapping fix; journal and snapshot paths now pass independently.
+- Existing cost-estimator and usage tests: 38 passed. All-files hooks pass clean
+  after formatter rerun. Full Python 3.10 legacy suite: 4,547 passed, 25 skipped,
+  31 warnings in 156.64 s; the native SDK tests intentionally run in the separate
+  supported Python 3.11/3.12 environments, not that legacy lane.
+- Native CI now declares PostgreSQL 16 and the published driver's extra
+  (`.github/workflows/test-jvagent.yaml:64`). Remote execution is not yet claimed.
+
+### Actual-provider browser evidence
+
+Isolated API 8131, bundled jvchat 3131, disposable PostgreSQL 16.14 container on
+15452, no host database mount. Main graph uses PostgreSQL; logs and PageIndex use
+separate disposable JSON stores. Agent n.Agent.cda3d608255a40fe984fd201,
+conversation sess_5cb1105c0d24491d, GPT-4.1/OpenAI. All rows below durably read back
+as delivered, closed/emitted and usage_complete=true. Successful transport does
+not mean task-quality success. Durations are persisted Interaction start-to-close,
+not browser wall-clock benchmarks. Native run durations are listed separately.
+
+| Scenario / Interaction suffix | Visible result / quality | Interaction / native seconds | Logical model calls / tokens / estimated USD |
+|---|---|---|---|
+| Initial code memory, 23b174023f444e25a0086039 | **Failed semantic outcome:** SQL CHECK expression instead of HAZEL-38; 551-token badge | 2.828 / 1.766 | 1 / 551 / 0.001234 |
+| Explicit clarification, ba5d6885bdbf4941b7902d54 | HAZEL-38; 596-token badge | 2.451 / 2.111 | 1 / 596 / 0.001234 |
+| First delegated lookup, c17cd4a2bf1c4377aa4b9d92 | No documents found; delegation/search visible. Fixture documents belonged to the other agent collection | 6.230 / 5.427 | 4 / 3,988 / 0.008804 |
+| Lookup after fixture registration, d093102a26e84a8783135dec | 18 November 2026, CEDAR-47, named source; two visible tool calls | 7.496 / 5.124 | 4 / 4,400 / 0.007978 |
+| Recall after backend restart, 823a5d5a9ec64fd295271702 | HAZEL-38, 18 November 2026, CEDAR-47; no tools | 3.285 / 1.574 | 1 / 950 / 0.002020 |
+| Final candidate after another restart, 9b1ad82427af4c45b3495ab6 | Correct date/label/source, delegate_task and pageindex__search visible; 4.8k-token badge | 8.793 / 6.940 | 4 / 4,836 / 0.008886 |
+
+The first five rows preceded the final cache mapping/provider label addition;
+the sixth used the final source blobs above. That final Interaction normalized
+1,152 cached input tokens and all four receipts identify openai. Prior rows keep
+their original stored usage/provider labels, including the original zero-cache
+reporting defect. Overall observed receipts: 15 logical calls, 15,321 tokens,
+USD 0.030156 estimated, matching the persisted conversation spend counter
+(15 requests, 15,321 tokens); this is not invoice reconciliation or a success-rate
+benchmark. Hidden SDK attempts and provider bills remain unqualified.
+
+The collection miss is retained, not erased. The copied document roots referenced
+the earlier JSON agent. The fixture was registered through public persist_structure
+under the new agent's collection, root n.DocumentRootNode.a33c4edfc60d448494352b87,
+with public access. Access filters were not weakened. The initial incorrect SQL
+answer also remains a failed evaluation example; no intent classifier or server
+extractor was introduced to conceal it.
+
+Temporary readback: /private/tmp/jvagent-pg-browser-evidence.json. PostgreSQL test
+logs: /private/tmp/jvagent-pg-full311.log and -full312.log. The final root run is
+342661eca05b46e6aa6744d1793b8609; its reader child is
+01a1aa30-ff5e-73ac-9968-2c97aa5e9d7c. Restart recall follows the preceding delivered
+root through history_source, rather than resupplying expected values.
+
+### Remaining limits
+
+jvspatial's public command_timeout bounds individual statements, not pool.acquire,
+connection reset or the full ingress/library failure-checkpoint path. Browser
+requests during an injected real database outage have not been qualified by this
+round; locked-store tests exercise the public adapter directly. Multiworker
+ownership, pool saturation, abandoned-run recovery, external-effect replay,
+operator tooling, upstream-main reconciliation, remote CI execution and the
+60-turn baseline remain open. The native profile is still opt-in; legacy/pilot
+execution and dependency conflicts remain until compatibility and migration gates
+allow deletion. No enterprise-ready or faster-than-baseline claim is made.
