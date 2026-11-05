@@ -71,6 +71,8 @@ async def test_native_receipt_precedes_delivery(
         skill_directory=".",
         delegates=[],
         instructions="",
+        context_max_tokens=32000,
+        context_keep_tokens=16000,
         max_requests=2,
         max_tokens=2000,
         timeout_seconds=10,

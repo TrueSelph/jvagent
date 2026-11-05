@@ -147,6 +147,6 @@ before commits, and push validated milestones as already requested.
 
 W0 followed by W1. Freeze feature additions to the legacy and pilot engines except
 critical fixes. Use the existing branch until its state is reconciled; create a
-`codex/` rebuild branch for implementation if isolation is useful. Do not change
+`feat/` rebuild branch for implementation if isolation is useful. Do not change
 running user deployments or migrate their data during planning. No separate agent
 framework, orchestration abstraction or secondary state store is needed.

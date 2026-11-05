@@ -26,10 +26,10 @@ Supply the child skill's required Action packages too. Paths must resolve in the
 host deployment. Delegate declarations reject unknown fields, including model or
 caller overrides ([schema](../../harness/delegation.py:9)). The configured model is
 shared. The official `SubAgents` capability owns foreground delegation, isolated
-child histories and bounded depth ([composition](../../harness/native.py:140)).
+child histories and bounded depth ([composition](../../harness/native.py:188)).
 Each child loads its own approved skill library and exposes only its declared,
 qualified read tools. Both `delegate_task` and child Action calls pass host access
-checks ([admission](../../harness/native.py:117)). No inherited parent tools or
+checks ([admission](../../harness/native.py:116)). No inherited parent tools or
 model-created agents are enabled.
 
 The host-bound public WrapperAgent keeps child spend in the caller's conversation
@@ -55,7 +55,7 @@ Budget failures are visibly distinguished from provider-configuration failures.
 
 
 Research output state is scoped by the public native run lifecycle
-([binding](../../harness/native.py:100), [policy](../../skills/research/native.py:54)).
+([binding](../../harness/native.py:107), [policy](../../skills/research/native.py:54)).
 Reusing or concurrently running one specialist cannot borrow another run's
 observations. Research receives a structured view with the host source ID and
 bounded `evidence.excerpt`; supporting quotes must match that field. WebFetch adds
@@ -65,3 +65,27 @@ The research renderer includes the validated quote and host-resolved source link
 ([rendering](../../skills/research/contracts.py:214)). Raw-text receipts retain
 strict formatting comparison. No fuzzy quote matching or source-free factual
 fallback was added. Quote matching proves observation, not claim entailment.
+
+
+Native context compaction uses the official `SummarizingCompaction` capability
+([composition](../../harness/native.py:179)). The Action exposes
+`context_max_tokens` (default 32,000 estimated tokens) and `context_keep_tokens`
+(default 16,000 tokens of recent messages). Both must be positive; retention must
+be smaller than the trigger. The same limits apply to configured specialists
+([configuration](native_harness_action.py:52)). These limits control working
+context, separately from the total per-run token/spend budgets.
+
+Older messages become a library-written summary and compaction receipt; tool
+pairs and loaded skills are preserved by the library. No first-message pinning,
+custom summarization prompt, text slicing or silent legacy fallback is added.
+Summary model requests use the configured model, share native usage limits and
+conversation spending, and persist as named child runs on the same Interaction.
+Accounting includes them even when no delegates are configured
+([settlement](native_harness_action.py:220)). A summary failure fails the turn.
+
+The retained suffix is a minimum of whole messages, not a hard upper bound. A
+single oversized current message or an indivisible tool dependency can exceed
+the trigger; current input is never silently truncated. Summary quality,
+provider-window headroom, graph snapshot retention, distributed ownership and
+crash-resumed evidence rehydration remain qualification gates. A model-generated
+summary is context, never a new authorization or a verified research receipt.

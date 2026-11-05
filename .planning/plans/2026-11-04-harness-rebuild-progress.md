@@ -752,3 +752,87 @@ research rehydration, long-session context bounds, full skill/Action compatibili
 distributed ownership and migration/removal remain open. Research state is fresh
 for each new Agent.run; durable continuation needs its own qualified evidence
 rehydration policy. No enterprise qualification is claimed from these results.
+
+## Library-owned working context and accounted summaries
+
+Tested base `3a682a51` with the native context increment in the working tree.
+`build_native_agent` now composes public `SummarizingCompaction` with defaults
+32,000 estimated trigger tokens / 16,000 retained recent tokens
+(`jvagent/harness/native.py:179`). These are distinct from the run's 100,000-token
+usage budget. The Action persists both settings; children inherit them
+(`jvagent/action/native_harness/native_harness_action.py:52`,
+`jvagent/harness/native.py:218`). Configuration rejects nonpositive/noninteger
+limits and a retention floor at or above the trigger.
+
+JV does not implement compaction, a tokenizer, a summary prompt or a second
+message store. The library preserves tool pairing, loaded capabilities, incremental
+summary context and compaction receipts. The original first user message is not
+pinned indefinitely. The same public graph persistence, spend capability and
+request-scoped receipt binding are attached to the toolless library summarizer
+(`jvagent/harness/native.py:130`). It uses the configured model, conversation and
+shared UsageLimits. Unconditional descendant settlement includes summary receipts
+even without configured delegates
+(`jvagent/action/native_harness/native_harness_action.py:220`). Summary failures
+propagate; there is no silent full-history fallback.
+
+Deterministic regressions verify preserved facts/current input/host instructions,
+summary child linkage and graph snapshots, shared conversation spend, recorded
+summary cost, request-limit reservation, exhausted conversation budget, failed
+summarization and no truncation of an oversized current message. The library
+reserves one request for the answer: a request limit of one prevents the summary
+request before it is sent. A deliberately tiny conversation budget records the
+summary's spend and prevents the answer request. These tests use synthetic
+FunctionModel responses; provider bill reconciliation is not inferred.
+
+Actual GPT-4.1 browser test used the isolated app/graph on 8130/3130, with temporary
+context limits 1,000/100 to trigger compaction within short UI-sized inputs.
+Each input remained below the app's 2,000-character admission limit. The important
+facts were code ORCHID-83 and rehearsal date 17 December 2026, alongside disposable
+archive filler. Native events supply run duration below; usage is provider-token
+measurement with library-estimated USD, not actual billed dollars.
+
+| Browser scenario | Interaction / root run | Outcome and persisted state | Native run duration | Calls / tokens | Cost |
+|---|---|---|---|---|---|
+| Record two facts amid archive filler | n.Interaction.c7ff22e769284e0bb018762b / 5ac7383b74774db081daa7af1fa980ca | Both facts acknowledged; delivered, closed/emitted; no compaction | 1.187 s | 1 / 828 | USD 0.001806 estimated |
+| Add filler, recall earlier facts | n.Interaction.7a340cecf6b6497389053f5a / f0693ca8ff664c8e87e14f46705604fa | Both facts correct; delivered, closed/emitted; one persisted CompactionPart and source filler absent | 2.907 s | 2 / 1,737 | USD 0.004326 estimated |
+| Restart backend, reopen history, recall | n.Interaction.b325db6389f6476c9f570fb8 / eef7835962a04d50ab9604522a762d77 | Both facts correct after new backend process; delivered, closed/emitted; persisted summary retained | 1.241 s | 1 / 1,129 | USD 0.002402 estimated |
+
+The second run links summarizer `01a1a972-a081-72b4-b4cd-83071f25582b` to the
+root and caller conversation; both spend receipts are present. UI showed final
+responses and live 828/1.7k/1.1k usage badges. No tool invocation was requested or
+needed; no tool-activity qualification is claimed from this test. All three have
+zero unknown-cost receipts. Reopening history restored responses, but historical
+usage badges were absent: this remains a UI qualification gap.
+
+Test-driver limitations were observed and corrected before that controlled test.
+Typing a multiline fixture submitted overlapping requests: 19 matching graph
+Interactions settled as delivered, while the UI also reported traversal errors.
+They are not counted as a successful compaction benchmark or concurrency proof.
+The fill helper then failed to update React's composer state and submitted a
+leftover short input. A single-line 7,216-character fixture was rejected by the
+app's configured 2,000-character limit before native execution. The client retried
+alternate endpoint paths and displayed Not Found instead of the validation error
+(`jvchat/src/config/api.ts:812`). That error-presentation/fallback behavior and
+concurrent admission remain open findings. Controlled subsequent input used
+single-line typing, explicit completion waits and graph readback.
+
+The trigger is an estimate, and recent-token retention is a floor of whole
+messages. Oversized current messages or indivisible tool pairs can exceed it;
+there is no hard context-size guarantee. A summary is untrusted conversational
+context, not fresh research provenance or authority. Summary semantic evaluations,
+60-turn/provider-window tests, durable interrupted research rehydration, snapshot
+retention, distributed fencing and engine migration/removal remain open. This
+increment makes no performance or enterprise-readiness claim.
+
+Final normal-default check restored graph/YAML context settings to 32,000/16,000
+and restarted the disposable backend. Browser Interaction
+`n.Interaction.572a30bc61f043ffbe72dc4b`, root
+`c99a99a40d214bc681e54305db621b64`, delegated to reader and searched the internal
+public Meridian document. It returned the fixture's 18 November 2026 / CEDAR-47,
+showed delegate_task and pageindex__search activity plus a 3.9k token badge, and
+settled delivered/closed/emitted: 7.342 s native duration, four model requests,
+3,937 tokens, USD 0.007112 estimated, zero unknown-cost receipts. Its document-name
+attribution is not claimed as enforced citation validation. The configured model
+remains GPT-4.1. Clean Python 3.11/3.12 native/profile/WebFetch suites each pass
+106 cases. The all-files commit gate is required again after formatter changes;
+remote CI is still not implied by local tests.

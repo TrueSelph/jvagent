@@ -32,6 +32,8 @@ def build_native_agent(
     conversation_id: str | None = None,
     event_stream_handler: Any = None,
     spend_observer: Any = None,
+    context_max_tokens: int = 32_000,
+    context_keep_tokens: int = 16_000,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -46,6 +48,11 @@ def build_native_agent(
 
     if spend_observer is not None and spend_store is None:
         raise ValueError("A spend observer requires native spend tracking")
+    for limit in (context_max_tokens, context_keep_tokens):
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("Context limits must be positive integers")
+    if context_keep_tokens >= context_max_tokens:
+        raise ValueError("Context retention must be smaller than its trigger")
     directory = skill_directory.resolve(strict=True)
     metadata = admit_skill(
         directory,
@@ -106,14 +113,6 @@ def build_native_agent(
         async def before_run(self, ctx: RunContext[Any]) -> None:
             ctx.load_capability(metadata["name"])
 
-        async def wrap_model_request(
-            self, ctx: RunContext[Any], *, request_context: Any, handler: Any
-        ) -> Any:
-            if spend_observer is None:
-                return await handler(request_context)
-            with spend_observer.bind(ctx):
-                return await handler(request_context)
-
         async def before_tool_execute(
             self,
             ctx: RunContext[Any],
@@ -128,6 +127,47 @@ def build_native_agent(
                 raise ModelRetry("Delegation access denied")
             return args
 
+    class ReceiptContext(AbstractCapability[Any]):
+        """Bind telemetry for ordinary, delegated and library-summary requests."""
+
+        async def wrap_model_request(
+            self, ctx: RunContext[Any], *, request_context: Any, handler: Any
+        ) -> Any:
+            if spend_observer is None:
+                return await handler(request_context)
+            with spend_observer.bind(ctx):
+                return await handler(request_context)
+
+    run_services: list[Any] = [ReceiptContext()]
+    if step_store is not None:
+        from pydantic_ai_harness import StepPersistence
+
+        run_services.append(StepPersistence(store=step_store))
+    if spend_store is not None:
+        from decimal import Decimal
+
+        from pydantic_ai_harness.spend import Budget, SpendLimits
+
+        run_budget = Decimal(max_run_cost_usd)
+        conversation_budget = Decimal(max_conversation_cost_usd)
+        if any(
+            not amount.is_finite() or amount <= 0
+            for amount in (run_budget, conversation_budget)
+        ):
+            raise ValueError("Spend ceilings must be finite and positive")
+        run_services.append(
+            SpendLimits(
+                store=spend_store,
+                on_unpriced="raise",
+                on_spend=spend_observer.record if spend_observer is not None else None,
+                budgets=[
+                    Budget(usd=run_budget, window="run"),
+                    Budget(usd=conversation_budget, window="conversation"),
+                ],
+            )
+        )
+    from pydantic_ai_harness.compaction import SummarizingCompaction
+
     capabilities = [
         LocalWorkspace(directory.parent, read_only=True),
         Skills(
@@ -136,6 +176,14 @@ def build_native_agent(
             workspace=LocalWorkspaceBackend(directory.parent),
         ),
         SelectedSkill(),
+        SummarizingCompaction(
+            max_tokens=context_max_tokens,
+            keep_tokens=context_keep_tokens,
+            preserve_first_user_message=False,
+            receipts=True,
+            summarization_capabilities=run_services,
+        ),
+        *run_services,
     ]
     if delegates:
         if len(delegates) > 16:
@@ -167,6 +215,8 @@ def build_native_agent(
                 available_actions=available_actions,
                 channel=channel,
                 spend_observer=spend_observer,
+                context_max_tokens=context_max_tokens,
+                context_keep_tokens=context_keep_tokens,
             )
             child.name = entry.name
             children.append(
@@ -185,33 +235,6 @@ def build_native_agent(
                 max_depth=2,
                 forward_usage=True,
                 event_stream_handler=event_stream_handler,
-            )
-        )
-    if step_store is not None:
-        from pydantic_ai_harness import StepPersistence
-
-        capabilities.append(StepPersistence(store=step_store))
-    if spend_store is not None:
-        from decimal import Decimal
-
-        from pydantic_ai_harness.spend import Budget, SpendLimits
-
-        run_budget = Decimal(max_run_cost_usd)
-        conversation_budget = Decimal(max_conversation_cost_usd)
-        if any(
-            not amount.is_finite() or amount <= 0
-            for amount in (run_budget, conversation_budget)
-        ):
-            raise ValueError("Spend ceilings must be finite and positive")
-        capabilities.append(
-            SpendLimits(
-                store=spend_store,
-                on_unpriced="raise",
-                on_spend=spend_observer.record if spend_observer is not None else None,
-                budgets=[
-                    Budget(usd=run_budget, window="run"),
-                    Budget(usd=conversation_budget, window="conversation"),
-                ],
             )
         )
     agent = Agent(

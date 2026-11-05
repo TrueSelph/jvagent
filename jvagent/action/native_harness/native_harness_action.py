@@ -49,6 +49,8 @@ class NativeHarnessAction(InteractAction):
     instructions: str = attribute(default="Help the user using the available skill.")
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
+    context_max_tokens: int = attribute(default=32_000)
+    context_keep_tokens: int = attribute(default=16_000)
     max_requests: int = attribute(default=20)
     max_tokens: int = attribute(default=100_000)
     timeout_seconds: float = attribute(default=180.0)
@@ -157,6 +159,8 @@ class NativeHarnessAction(InteractAction):
             instructions=self.instructions,
             step_store=step_store,
             spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
+            context_max_tokens=self.context_max_tokens,
+            context_keep_tokens=self.context_keep_tokens,
             spend_store=ConversationSpendStore(conversation),
             max_run_cost_usd=self.max_run_cost_usd,
             max_conversation_cost_usd=self.max_conversation_cost_usd,
@@ -211,10 +215,9 @@ class NativeHarnessAction(InteractAction):
             record_native_usage(
                 interaction, result.new_messages(), run_id=run_id, model=self.model
             )
-            if self.delegates:
-                from jvagent.harness.accounting import recover_native_usage
+            from jvagent.harness.accounting import recover_native_usage
 
-                await recover_native_usage(interaction, run_id=run_id, model=self.model)
+            await recover_native_usage(interaction, run_id=run_id, model=self.model)
             usage = result.usage
             interaction.native_run = {
                 "run_id": run_id,

@@ -12,7 +12,8 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Gate | Current evidence | Remaining work |
 |---|---|---|
 | Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 92 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 80 native/profile plus 16 WebFetch cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Native execution | 90 native/profile plus 16 WebFetch cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit | PostgreSQL, in-transaction death, outage and multi-worker fencing |
 | Spend | Official capability, graph batch-store regressions, immediate spend journal and actual budget-failure browser receipts | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and concurrency |
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
