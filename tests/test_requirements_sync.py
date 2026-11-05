@@ -17,11 +17,13 @@ shows up as an ImportError deep in a run.
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 from typing import Dict, List
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -149,6 +151,31 @@ def test_core_dependency_specs_match() -> None:
             if expected is not None and spec != expected:
                 mismatched.append(f"{filename}: {spec!r} != pyproject {expected!r}")
     assert not mismatched, "version specs out of sync:\n  " + "\n  ".join(mismatched)
+
+
+def test_execution_extras_select_one_pydantic_core() -> None:
+    """A retained compatibility extra must not select an older execution SDK."""
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    extras = project["optional-dependencies"]
+    versions = {
+        str(requirement.specifier)
+        for dependencies in extras.values()
+        for raw in dependencies
+        if (requirement := Requirement(raw)).name == "pydantic-ai-slim"
+    }
+    assert len(versions) == 1, f"Conflicting Pydantic core SDKs: {versions}"
+    assert all(
+        any(Requirement(raw).name == "pydantic-ai-slim" for raw in extras[name])
+        for name in ("native-harness", "native-mcp", "pydantic-pilot")
+    )
+
+
+def test_general_test_extra_does_not_install_legacy_transport() -> None:
+    """General tests must install alongside the supported native provider SDK."""
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    extras = project["optional-dependencies"]
+    assert "litellm" not in {Requirement(raw).name for raw in extras["test"]}
+    assert any(Requirement(raw).name == "litellm" for raw in extras["litellm"])
 
 
 # --- litellm pin policy ------------------------------------------------------

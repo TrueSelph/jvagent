@@ -168,6 +168,10 @@ def make_case(
     transport: str = "httpx",
 ) -> Optional[AdapterCase]:
     """Build the adapter for one (provider, scenario[, transport]), or None to skip."""
+    if provider == "litellm" or transport == "litellm":
+        pytest.importorskip(
+            "litellm", reason="LiteLLM transport requires the explicit litellm extra"
+        )
     action = _build_action(provider, monkeypatch)
     recording = recording_enabled()
     monkeypatch.delenv("JVAGENT_MODEL_TRANSPORT", raising=False)

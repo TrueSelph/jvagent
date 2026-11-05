@@ -1,0 +1,115 @@
+Initial combined-profile attempt, before optional LiteLLM fixture admission repair.
+
+=================================== FAILURES ===================================
+__________________ test_adapter_conforms[openai-litellm-text] __________________
+tests/action/model/conformance/test_conformance.py:94: in test_adapter_conforms
+    response = await _run(case, scenario)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/action/model/conformance/test_conformance.py:65: in _run
+    return await case.action.complete(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jvagent/action/model/language/base.py:1243: in complete
+    result = await self.query_messages(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jvagent/action/model/language/base.py:923: in query_messages
+    result = await self._execute_with_retry(
+jvagent/action/model/base.py:327: in _execute_with_retry
+    result = await coro
+             ^^^^^^^^^^
+jvagent/action/model/language/base.py:1204: in _litellm_query
+    result = await delegate._query(messages, tools, **call_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jvagent/action/model/language/litellm/litellm_lm.py:340: in _query
+    response = await self._acompletion(**call)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/action/model/conformance/conftest.py:96: in __call__
+    import litellm
+E   ModuleNotFoundError: No module named 'litellm'
+----------------------------- Captured stdout call -----------------------------
+19:41:12 | [31mERROR[0m | jvagent.action.model.base | lm_query failed (non-retryable): No module named 'litellm'
+Traceback (most recent call last):
+  File "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/model/base.py", line 327, in _execute_with_retry
+    result = await coro
+             ^^^^^^^^^^
+  File "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/model/language/base.py", line 1204, in _litellm_query
+    result = await delegate._query(messages, tools, **call_kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/model/language/litellm/litellm_lm.py", line 340, in _query
+    response = await self._acompletion(**call)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/action/model/conformance/conftest.py", line 96, in __call__
+    import litellm
+ModuleNotFoundError: No module named 'litellm'
+------------------------------ Captured log call -------------------------------
+ERROR    jvagent.action.model.base:_logging_compat.py:46 lm_query failed (non-retryable): No module named 'litellm'
+Traceback (most recent call last):
+  File "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/action/model/base.py", line 327, in _execute_with_retry
+    result = await coro
+
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openai-litellm-error_500]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[anthropic-litellm-error_500]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[ollama-litellm-error_500]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[groq-litellm-error_500]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[openrouter-litellm-error_500]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-parallel_tool_calls]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-tool_result_roundtrip]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-stream_text]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-stream_tool_call]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-truncation]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-cached_usage]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-thinking]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-retry_429]
+FAILED tests/action/model/conformance/test_conformance.py::test_adapter_conforms[litellm-httpx-error_500]
+66 failed, 4912 passed, 51 skipped, 252 warnings in 159.84s (0:02:39)

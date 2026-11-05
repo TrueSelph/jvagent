@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [scheduler loop and bounded drain](2026-11-05-native-timer.md).
+Latest increment: [dependency qualification](2026-11-05-native-dependencies.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,27 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## One core SDK and combined native test dependencies
+
+All Pydantic core extras now select 2.66.0; official Harness stays 0.66.0.
+General tests no longer select LiteLLM, whose incompatible OpenAI dependency
+remains explicit in its existing extra. Fresh combined install and locked install
+pass dependency checks. Native CI expands to all applicable tests. Full local
+Python 3.11 with PostgreSQL: 4,942 passed, 87 skipped; locked Python 3.12:
+4,906 passed, 123 skipped, plus the separate 358-case real-PG suite passing on
+both versions. The repaired optional LiteLLM conformance fixture skips only that
+uninstalled backend; explicit transitional conformance passes 139 cases.
+Initial 66 failures are retained, not presented as native passes.
+Actual fresh-environment browser chat and automatic MCP task deliver; three
+requests total 4,102 reported tokens, USD 0.008492 estimated. Runtime-only wheel
+installation outside checkout proves assets and absence of LiteLLM. A real
+browser follow-up against that installed wheel returns WHEEL-READY with persisted
+usage/results. Entire round: four requests, 6,830 reported tokens, USD 0.011872
+estimated. All nine
+parent 4a0e6e6c checks passed. Final publication gates are separate.
+Full legacy Action dependencies, default native cutover and old engine deletion
+remain open; the explicit LiteLLM conflict is removed with its obsolete adapters.
 
 ## Native scheduler deployment and subscription drain
 

@@ -91,17 +91,20 @@ A production soak is a separate release gate.
 
 ## Transitional dependency conflict
 
-A fresh resolver check proves `.[test,native-harness]` is unsatisfiable:
-Pydantic AI core 2.66.0's OpenAI extra requires openai>=3.31.0, while the pinned
-litellm>=1.101.0,<1.102 in the legacy test extra requires openai<3.0.0.
-The pilot extra independently pins the older Pydantic core. Do not combine those
-legacy extras with native-harness or claim a single qualified dependency graph.
+The original combined `test,native-harness` profile was unsatisfiable because
+test selected LiteLLM/OpenAI <3 and native selected OpenAI >=3.31; the pilot
+also pinned an older Pydantic core. That original finding is preserved in the
+older evidence. [Dependency qualification](2026-11-05-native-dependencies.md)
+now aligns all Pydantic core extras to 2.66, removes LiteLLM from general tests,
+and installs test/native/MCP/pilot compatibility together. Native CI runs the
+full applicable suite on Python 3.11/3.12. LiteLLM remains an explicitly
+incompatible extra and is qualified in the transitional CI profile.
 
-The native CI lane uses `.[native-harness]` plus pytest/pytest-asyncio on Python
-3.11 and 3.12. It does not qualify old model transports. Final cutover must remove
-or isolate the obsolete transport/testing requirements and prove a clean unified
-installation. Silently upgrading LiteLLM is not the intended engineering path.
-
+Fresh editable and locked installs, full applicable suites and a runtime-only
+wheel pass bounded checks. This does not yet unify the full legacy Action
+manifest/requirements-all dependency set: LiteLLM retirement and native default
+cutover still require migration/deletion. No forced overrides or opportunistic
+LiteLLM upgrade are used.
 
 ## PostgreSQL profile increment — 2026-11-05
 

@@ -30,10 +30,10 @@ jobs:
           python -m pip install --upgrade pip
 
       - name: Install jvagent package with test dependencies
-        # Retained pilot tests import their optional SDK at collection time.
-        # Keep that pinned profile separate from the new native dependency lane;
-        # remove this extra when the pilot and its tests are retired at cutover.
-        run: python -m pip install -e '.[test,pydantic-pilot]'
+        # Explicitly qualify transports awaiting retirement. The general test
+        # extra must also install with the native provider SDK, so LiteLLM is
+        # selected only here. Both profiles use the same Pydantic core version.
+        run: python -m pip install -e '.[test,pydantic-pilot,litellm]'
 
       - name: Verify transitional dependency consistency
         run: python -m pip check
@@ -94,9 +94,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install native harness and test dependencies
-        # The legacy test extra pins LiteLLM's older OpenAI SDK; keep this
-        # native lane independent until the legacy transport is retired.
-        run: python -m pip install -e '.[native-harness,native-mcp]' 'jvspatial[postgres]==0.1.1' pytest pytest-asyncio
+        # Prove the general test and native dependency profiles resolve together.
+        run: python -m pip install -e '.[test,native-harness,native-mcp,pydantic-pilot]' 'jvspatial[postgres]==0.1.1'
       - name: Install declared read-tool profile dependencies
         # Exercise this Action without adding its dependencies to harness core
         # or installing the full PageIndex manifest's legacy model transport.
@@ -113,8 +112,10 @@ jobs:
           PYTHON
       - name: Verify dependency consistency
         run: python -m pip check
-      - name: Native execution and graph adapter contracts
-        run: pytest tests/harness/native tests/action/pageindex/test_native_read_profile.py tests/action/web_fetch tests/action/mcp -q --tb=short
+      - name: Full suite with native execution and graph adapters
+        # Optional LiteLLM transports are qualified in the explicit legacy job;
+        # all remaining tests now run against the supported native SDK pair.
+        run: pytest tests/ -q --tb=short
 
   harness-conformance:
     runs-on: ubuntu-latest
@@ -124,7 +125,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[test,pydantic-pilot]'
+      - run: python -m pip install -e '.[test,pydantic-pilot,litellm]'
       - name: Conformance lane
         run: pytest tests/conformance tests/harness -m harness_conformance -q --tb=short
 
@@ -136,7 +137,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[test,pydantic-pilot]'
+      - run: python -m pip install -e '.[test,pydantic-pilot,litellm]'
       - name: Two-worker / crash-recovery lane
         run: pytest tests/conformance/test_leases.py tests/conformance/test_invocation_recovery.py -q --tb=short
 
@@ -148,7 +149,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[test,pydantic-pilot]'
+      - run: python -m pip install -e '.[test,pydantic-pilot,litellm]'
       - name: Skill isolation lane
         run: pytest tests/ -m harness_isolation -q --tb=short
 
@@ -160,7 +161,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[test,pydantic-pilot]'
+      - run: python -m pip install -e '.[test,pydantic-pilot,litellm]'
       - name: Load lane
         run: pytest tests/ -m harness_load -q --tb=short
 

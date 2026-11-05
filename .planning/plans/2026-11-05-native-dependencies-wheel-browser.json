@@ -1,0 +1,21 @@
+{
+  "at": "2026-11-05T23:49:10.345Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-DEPENDENCY-CHECK: After the wheel restart, reply exactly WHEEL-READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-DEPENDENCY-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 7.4s · 0.4 tok/s\n1 tool call\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.5k tokens · 3.4s · 13.2 tok/s\n\nNATIVE-DEPENDENCY-CHECK: After the wheel restart, reply exactly WHEEL-READY.\n\nWHEEL-READY\n\ngpt-4.1-2025-04-14 · 1 attempt · 2.7k tokens · 1.0s · 5.7 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "requests": [
+    {
+      "url": "http://127.0.0.1:8136/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact",
+      "duration_ms": 9034.09999999404
+    },
+    {
+      "url": "http://127.0.0.1:8136/api/qualification/proactive/setup",
+      "duration_ms": 65.89999997615814
+    },
+    {
+      "url": "http://127.0.0.1:8136/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact",
+      "duration_ms": 5262.800000011921
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

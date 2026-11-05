@@ -1,0 +1,24 @@
+{
+  "at": "2026-11-05T23:44:29.914Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-DEPENDENCY-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-DEPENDENCY-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 7.4s · 0.4 tok/s\n1 tool call\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.5k tokens · 3.4s · 13.2 tok/s\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "probe": {
+    "started": "2026-11-05T23:43:23.832Z",
+    "status": 200,
+    "session_id": "sess_2427e88844634874",
+    "task_id": "task_d956c3048c0b",
+    "conversation_id": "n.Conversation.e2d721b814dd4fbd96ff76f3"
+  },
+  "requests": [
+    {
+      "url": "http://127.0.0.1:8136/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact",
+      "duration_ms": 9034.09999999404
+    },
+    {
+      "url": "http://127.0.0.1:8136/api/qualification/proactive/setup",
+      "duration_ms": 65.89999997615814
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

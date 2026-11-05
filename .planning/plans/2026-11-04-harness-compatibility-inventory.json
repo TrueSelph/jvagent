@@ -2163,5 +2163,26 @@
       "dependency security remediation",
       "migration and legacy/pilot removal"
     ]
+  },
+  "native_dependency_increment": {
+    "evidence": "2026-11-05-native-dependencies.md",
+    "qualified": [
+      "one Pydantic core version across native/MCP/pilot-compatibility extras",
+      "fresh combined test/native/MCP/pilot install and dependency check",
+      "locked combined profile on Python 3.12",
+      "full applicable native suites on Python 3.11/3.12",
+      "real PostgreSQL native suites on both versions",
+      "explicit LiteLLM profile still exercises its conformance cases",
+      "fresh runtime-only wheel imports outside checkout with native assets and no LiteLLM"
+    ],
+    "transitional_boundary": "LiteLLM extra conflicts with native-harness; remove boundary with retired transport adapters; full legacy manifests and requirements-all are not unified.",
+    "remaining": [
+      "default native execution cutover",
+      "full legacy dependency and engine retirement",
+      "configuration/state migration",
+      "provider and extension matrix",
+      "packaged client delivery",
+      "security/remediation and release qualification"
+    ]
   }
 }
