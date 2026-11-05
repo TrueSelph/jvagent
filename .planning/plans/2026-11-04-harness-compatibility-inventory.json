@@ -1977,5 +1977,27 @@
       "fresh packaged client qualification",
       "broader migration and release gates"
     ]
+  },
+  "client_inflight_ownership_increment": {
+    "evidence": "2026-11-05-jvchat-ownership.md",
+    "status": "live model-attempt reset/new-session success/refusal qualified to recorded scope",
+    "retired": [
+      "unowned request callback/finally updates",
+      "abandoned completion session rebinding",
+      "duplicated sidebar record construction"
+    ],
+    "preserved": [
+      "first live transcript",
+      "partial interrupted history",
+      "sidebar session identity",
+      "native SDK cancellation/billing boundaries"
+    ],
+    "remaining": [
+      "other live transition and deployment profiles",
+      "generic cancellation lifecycle/timing normalization",
+      "operator reconciliation",
+      "complex extension compatibility",
+      "migration and single runtime release"
+    ]
   }
 }

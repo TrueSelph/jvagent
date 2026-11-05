@@ -50,6 +50,7 @@ export function ChatInterface() {
     messages,
     sendMessage,
     stopStreaming,
+    clearMessages,
     loadMessages,
     isStreaming,
     error,
@@ -269,6 +270,27 @@ export function ChatInterface() {
     setSessionId(undefined);
   }, [agentId]);
 
+  const rememberConversation = useCallback((boundSessionId: string, preview: string) => {
+    const userId = getEffectiveUserId();
+    if (!agent || !userId) return;
+    const existing = getConversations(userId).find(
+      conversation => conversation.session_id === boundSessionId && conversation.agent_id === agent.id,
+    );
+    if (!existing) {
+      const conversation: Conversation = {
+        session_id: boundSessionId,
+        agent_id: agent.id,
+        agent_name: agent.alias || agent.name || "Agent",
+        created_at: new Date().toISOString(),
+        last_message: preview,
+        last_message_at: new Date().toISOString(),
+      };
+      add(conversation);
+    } else if (existing.last_message !== preview) {
+      update(boundSessionId, { last_message: preview, last_message_at: new Date().toISOString() });
+    }
+  }, [agent, add, update]);
+
   const prevStreamSessionIdRef = useRef<string | undefined>(streamSessionId);
   /** True only when choosing a row in the sidebar list (not stream/send binding). */
   const conversationListSelectRef = useRef(false);
@@ -280,13 +302,15 @@ export function ChatInterface() {
     ) {
       // The server assigned a session_id during streaming (initial binding).
       // Tell useStreaming to preserve in-flight messages instead of clearing them.
+      const userMessage = [...messages].reverse().find(message => message.role === "user");
+      if (userMessage) rememberConversation(streamSessionId, userMessage.content);
       preserveNextTransition(streamSessionId);
       prevStreamSessionIdRef.current = streamSessionId;
       setSessionId(streamSessionId);
     } else if (streamSessionId) {
       prevStreamSessionIdRef.current = streamSessionId;
     }
-  }, [streamSessionId, sessionId, preserveNextTransition]);
+  }, [streamSessionId, sessionId, preserveNextTransition, rememberConversation, messages]);
 
   const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
@@ -368,10 +392,6 @@ export function ChatInterface() {
       (options?.files?.length ? ATTACHMENT_ONLY_USER_PROMPT : content);
     const receivedSessionId = await sendMessage(content, options);
     if (receivedSessionId) {
-      const allConversations = getConversations(userId);
-      const existingConv = allConversations.find(
-        (c) => c.session_id === receivedSessionId && c.agent_id === agent.id,
-      );
       // If the streamSessionId effect hasn't already set sessionId, this is the
       // first time we know the session_id. Signal useStreaming to preserve in-flight
       // messages rather than clearing them (this is the initial binding).
@@ -379,47 +399,17 @@ export function ChatInterface() {
         preserveNextTransition(receivedSessionId);
         setSessionId(receivedSessionId);
       }
-      if (!existingConv) {
-        const newConv: Conversation = {
-          session_id: receivedSessionId,
-          agent_id: agent.id,
-          agent_name: agent.alias || agent.name || "Agent",
-          created_at: new Date().toISOString(),
-          last_message: lastPreview,
-          last_message_at: new Date().toISOString(),
-        };
-        add(newConv);
-        console.log(
-          `Created new conversation: ${receivedSessionId} for agent ${agent.id}`,
-        );
-      } else {
-        if (existingConv.last_message !== lastPreview) {
-          update(receivedSessionId, {
-            last_message: lastPreview,
-            last_message_at: new Date().toISOString(),
-          });
-        }
-      }
-    } else if (sessionId) {
-      const allConversations = getConversations(userId);
-      const currentConv = allConversations.find(
-        (c) => c.session_id === sessionId && c.agent_id === agent.id,
-      );
-      if (currentConv && currentConv.last_message !== lastPreview) {
-        update(sessionId, {
-          last_message: lastPreview,
-          last_message_at: new Date().toISOString(),
-        });
-      }
+      rememberConversation(receivedSessionId, lastPreview);
     }
   };
 
   const handleNewConversation = useCallback(() => {
     if (!agent) return;
     console.log("Starting new conversation");
+    clearMessages();
     setSessionId(undefined);
     refresh();
-  }, [agent, refresh]);
+  }, [agent, refresh, clearMessages]);
 
   const handleSelectConversation = useCallback(
     (selectedSessionId: string) => {

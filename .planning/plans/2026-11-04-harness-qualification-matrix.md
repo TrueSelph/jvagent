@@ -256,3 +256,11 @@ client reset remain unqualified; no release/migration/deletion gate closes.
 binding, completed-stream New Conversation, sidebar restoration and reload/selection
 for the native fixture. In-flight transitions, late callback ownership and a fresh
 packaged-wheel client remain unqualified. No harness migration/release gate closes.
+
+## Client in-flight request ownership — 2026-11-05
+
+[Record](2026-11-05-jvchat-ownership.md): actual-model New Conversation retires the
+old request, keeps its sidebar entry and permits isolated new-session success.
+Old uncertain usage refuses a paid continuation. Late callbacks/final cleanup,
+Stop/sidebar overlap and attachment preparation have deterministic regressions.
+Other live transition, lifecycle/telemetry, reconciliation and deployment gates remain open.

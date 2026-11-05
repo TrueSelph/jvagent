@@ -1,7 +1,7 @@
 # Harness rebuild execution record
 
-Latest increment: [jvchat completed-stream reset](2026-11-05-jvchat-reset.md).
-Next: qualify in-flight client transitions and complex interview extensions/recovery,
+Latest increment: [jvchat in-flight ownership](2026-11-05-jvchat-ownership.md).
+Next: qualify complex interview extensions, operator recovery and remaining client/deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
@@ -2017,3 +2017,14 @@ Conversation clears it; sidebar/reload restoration retains only the selected thr
 Two actual-model sessions pass six browser assertions and fresh SQL isolation checks.
 All 124 jvchat tests, production build and eight Python static-server tests pass.
 In-flight transitions and the broader release gates remain open.
+
+## jvchat in-flight ownership — 2026-11-05
+
+[Evidence](2026-11-05-jvchat-ownership.md) demonstrates retirement before abort,
+request-owned callbacks/finalization, start-frame sidebar registration and discarded
+abandoned completion IDs. A real model request is cancelled by New Conversation;
+the new session succeeds, and an old-session continuation refuses further billing.
+Deterministic regressions cover Stop/sidebar overlap and abandoned attachment reads.
+All 129 frontend tests, production build and eight Python static-server tests pass.
+Unknown interrupted billing, generic cancellation timestamps, operator settlement,
+other live transition/deployment cases and broader release gates remain open.

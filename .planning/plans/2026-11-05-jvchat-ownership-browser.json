@@ -1,0 +1,428 @@
+{
+  "page": 22,
+  "checks": {
+    "reset_while_running": true,
+    "early_sidebar_index": true,
+    "empty_after_reset": true,
+    "stopped_old_control": true,
+    "new_send_ready": true,
+    "old_stream_aborted": true,
+    "new_session_isolated": true,
+    "blocked_notice": true,
+    "restored_new_session": true
+  },
+  "actions": {
+    "before": {
+      "thread": "CHAT-OWNER-FINAL-A: Start a contact interview and ask for my email. Do not fill fields yet.\n\n●\nAdd Attachment",
+      "was_running": true,
+      "indexed_first_session": true
+    },
+    "after_reset": {
+      "thread": "Hello there!\n\nHow can I help you today?\n\nAdd Attachment\nSend message",
+      "was_running": false
+    },
+    "new_send_ready": true
+  },
+  "new_thread": "CHAT-OWNER-FINAL-B: Start a fresh contact interview and ask for my email. Do not fill fields yet.\n\n1 tool call\nUsed tool: interview__start\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "blocked_thread": "CHAT-OWNER-FINAL-A: Start a contact interview and ask for my email. Do not fill fields yet.\n\nCHAT-OWNER-FINAL-A: Continue this interrupted conversation.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "restored_new_thread": "CHAT-OWNER-FINAL-B: Start a fresh contact interview and ask for my email. Do not fill fields yet.\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "requests": [
+    {
+      "started_at": "2026-11-05T17:41:34.863Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.c2264030955c4d89b7ee96e5",
+          "session_id": "sess_652790580f814fc0",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        }
+      ],
+      "status": 200,
+      "body_outcome": "AbortError",
+      "duration_ms": 559.5
+    },
+    {
+      "started_at": "2026-11-05T17:41:35.578Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+          "session_id": "sess_8c33bc57ba414a0f",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.b1b1caed538f41c388e9aee6",
+            "session_id": "sess_8c33bc57ba414a0f",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+            "message_type": "adhoc",
+            "content": "interview__start",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_pwCuijr60WGBEeISjz2BO1ew",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-ca28d782bf274a289f770bd9184138b1",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "interview_type": "conversation"
+              }
+            },
+            "timestamp": "2026-11-05T13:41:37.484938"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.11f8e3f280814db58b0ad128",
+            "session_id": "sess_8c33bc57ba414a0f",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_pwCuijr60WGBEeISjz2BO1ew",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-ca28d782bf274a289f770bd9184138b1",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+            },
+            "timestamp": "2026-11-05T13:41:37.545967"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-ca28d782bf274a289f770bd9184138b1",
+            "session_id": "sess_8c33bc57ba414a0f",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+            "message_type": "adhoc",
+            "content": "What email address should I record?",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:41:39.040406"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-ca28d782bf274a289f770bd9184138b1",
+            "session_id": "sess_8c33bc57ba414a0f",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:41:39.051877"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_8c33bc57ba414a0f",
+          "response": "What email address should I record?",
+          "interaction": {
+            "id": "n.Interaction.7756cf3268684a5c9629df6c",
+            "utterance": "CHAT-OWNER-FINAL-B: Start a fresh contact interview and ask for my email. Do not fill fields yet.",
+            "response": "What email address should I record?",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_eeba8d1dd24b",
+                "title": "Contact interview",
+                "description": "Collect and confirm a contact email without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T17:41:37.520796+00:00",
+                "updated_at": "2026-11-05T17:41:37.525953+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-ca28d782bf274a289f770bd9184138b1"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-ca28d782bf274a289f770bd9184138b1:1",
+                  "native_run_id": "corr-ca28d782bf274a289f770bd9184138b1",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1068,
+                    "completion_tokens": 19,
+                    "total_tokens": 1087,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002288,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-ca28d782bf274a289f770bd9184138b1:2",
+                  "native_run_id": "corr-ca28d782bf274a289f770bd9184138b1",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1214,
+                    "completion_tokens": 9,
+                    "total_tokens": 1223,
+                    "cached_prompt_tokens": 1024,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000964,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2282,
+              "completion_tokens": 28,
+              "total_tokens": 2310,
+              "cached_prompt_tokens": 1024,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.003252,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003252,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T17:41:39.052172+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.7756cf3268684a5c9629df6c",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_8c33bc57ba414a0f"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "status": 200,
+      "body_outcome": "complete",
+      "duration_ms": 3507
+    },
+    {
+      "started_at": "2026-11-05T17:43:40.077Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.b046ee947f3a43f7b8903db3",
+          "session_id": "sess_652790580f814fc0",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.6bc1acf7fa47426f8a09f36d",
+            "session_id": "sess_652790580f814fc0",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.b046ee947f3a43f7b8903db3",
+            "message_type": "adhoc",
+            "content": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:43:40.510900"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.6bc1acf7fa47426f8a09f36d",
+            "session_id": "sess_652790580f814fc0",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.b046ee947f3a43f7b8903db3",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:43:40.515323"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_652790580f814fc0",
+          "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "interaction": {
+            "id": "n.Interaction.b046ee947f3a43f7b8903db3",
+            "utterance": "CHAT-OWNER-FINAL-A: Continue this interrupted conversation.",
+            "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-2f5d6fc7055241a39337759d8a29dff2"
+              }
+            ],
+            "observability_metrics": [],
+            "usage": {
+              "prompt_tokens": 0,
+              "completion_tokens": 0,
+              "total_tokens": 0,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 0,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T17:43:40.516332+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.b046ee947f3a43f7b8903db3",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_652790580f814fc0"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "status": 200,
+      "body_outcome": "complete",
+      "duration_ms": 464.59999999403954
+    }
+  ],
+  "privacy": {
+    "headers_omitted": true,
+    "session_capabilities_removed": true
+  },
+  "scope": "Live New Conversation reset; deterministic tests cover Stop/sidebar late callbacks and attachment preparation. No general deployment qualification."
+}
