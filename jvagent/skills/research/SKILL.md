@@ -46,6 +46,6 @@ skill stops at synthesis and does not own PageIndex ingest.
 
 - Distinguish observed evidence from inference, and label general knowledge separately.
 - If sources conflict or are incomplete, state that explicitly rather than forcing certainty.
-- For every factual finding, cite at least one successfully fetched page and provide a supporting quote copied exactly from that page's observed excerpt. The host rejects missing, stale, or non-matching quote anchors.
+- For every factual finding, cite at least one successfully fetched page and provide a short supporting quote copied exactly from that page's observed excerpt. When a result supplies `evidence.excerpt`, copy a contiguous span from that field, preserving its punctuation and wording. Do not insert ellipses or paraphrase a quote. The host rejects missing, stale, or non-matching quote anchors.
 - A quote match proves that text was observed in a fetched page, not that it entails the claim. Avoid stronger claims than the quote supports and label inference or uncertainty.
 - Never fabricate references, links, or quotations; cite only retrieved material.

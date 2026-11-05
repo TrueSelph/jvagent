@@ -26,10 +26,10 @@ Supply the child skill's required Action packages too. Paths must resolve in the
 host deployment. Delegate declarations reject unknown fields, including model or
 caller overrides ([schema](../../harness/delegation.py:9)). The configured model is
 shared. The official `SubAgents` capability owns foreground delegation, isolated
-child histories and bounded depth ([composition](../../harness/native.py:134)).
+child histories and bounded depth ([composition](../../harness/native.py:140)).
 Each child loads its own approved skill library and exposes only its declared,
 qualified read tools. Both `delegate_task` and child Action calls pass host access
-checks ([admission](../../harness/native.py:111)). No inherited parent tools or
+checks ([admission](../../harness/native.py:117)). No inherited parent tools or
 model-created agents are enabled.
 
 The host-bound public WrapperAgent keeps child spend in the caller's conversation
@@ -52,3 +52,16 @@ delivery, verified by the cost-exhaustion regressions. No model/provider executi
 or pricing is implemented by this adapter. A request with no spend or message
 receipt still remains unknown; unpriced/unmeasured receipts are never called free.
 Budget failures are visibly distinguished from provider-configuration failures.
+
+
+Research output state is scoped by the public native run lifecycle
+([binding](../../harness/native.py:100), [policy](../../skills/research/native.py:54)).
+Reusing or concurrently running one specialist cannot borrow another run's
+observations. Research receives a structured view with the host source ID and
+bounded `evidence.excerpt`; supporting quotes must match that field. WebFetch adds
+a readable text excerpt extracted from the same cleaned HTML while preserving its
+ordinary Markdown response ([extraction](../web_fetch/web_fetch_action.py:306)).
+The research renderer includes the validated quote and host-resolved source link
+([rendering](../../skills/research/contracts.py:214)). Raw-text receipts retain
+strict formatting comparison. No fuzzy quote matching or source-free factual
+fallback was added. Quote matching proves observation, not claim entailment.

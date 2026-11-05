@@ -683,3 +683,72 @@ Same-conversation recovery after a failed run, callback persistence outages,
 stream cancellation settlement, SDK-internal retries, provider bill reconciliation
 and distributed writer ownership remain unqualified. The earlier general-answer
 citation-quality issue is still open. This increment does not claim those gates.
+
+## Reusable research state and consistent quote receipts
+
+Confirmed a native research Agent could accept a previous run's source without
+retrieving it again; concurrent runs could also share their observed-source pool.
+ResearchOutputPolicy now owns a task-local evidence scope, entered and reset by
+public AbstractCapability.wrap_run. Model execution and tools remain library
+owned; the scope contains only the JV research evidence service. Outside a native
+run the policy rejects access. Existing research assets and archived collector
+compatibility remain; the registry requires output policies to provide run_scope.
+
+Adversarial tests cover agent reuse with and without prior history, fresh retrieval
+after failure, and two overlapping runs attempting to cite each other's sources.
+All three isolation cases fail on parent d4797998 for the intended reasons
+(previous-source acceptance and cross-citation), and pass with this patch. The
+mutation check used an isolated detached worktree, removed after verification.
+
+The first two real two-task smokes exposed an additional issue: the Pydantic AI
+page was fetched successfully, but strict quote validation rejected model quotes
+that omitted Markdown emphasis/link syntax. The initial coordinator incorrectly
+called that a retrieval error. Its skill now reports absence of a verified result
+without inventing a cause. Research gets a structured host-observed source view
+with its exact bounded evidence.excerpt; this alone did not cure the Markdown
+copy mismatch. Do not count either partial attempt as successful research.
+
+WebFetch now attaches bounded readable text extracted from the same cleaned HTML,
+with block boundaries preserved and inline punctuation kept intact. Its ordinary
+Markdown string response, DNS/redirect/byte guards and public tool arguments stay
+compatible. The research collector prefers that host text receipt, retaining raw
+formatting checks when no text receipt exists. Exact comparison was not weakened.
+Native structured source views expose the source ID and citable excerpt, strip
+credential-bearing source headers, and the renderer includes the validated quote
+in quoted voice. An arbitrary changed quote still fails validation.
+
+Browser runs: parent d4797998 plus this patch; isolated app/index on 8130, jvchat
+on 3130, GPT-4.1. The final run used a freshly installed Python 3.11 environment
+with OpenAI SDK 3.45.0, Pydantic 2.14.2, core 2.66.0, Harness 0.66.0 and jvspatial
+0.1.1. Both existing reader and researcher skills are configured as native
+specialists; the test explicitly reused researcher for two independent tasks.
+
+| Attempt | Interaction / root run | Outcome | Duration | Calls / tokens | Cost |
+|---|---|---|---|---|---|
+| Scope fix, original Markdown quote view | n.Interaction.9ad642296cc340cb9dd2adb2 / e1a1f7bed21f4e028e18051a8bac9929 | Partial: Python succeeded, second child failed output validation; coordinator wrongly attributed retrieval failure | 29.284 s | 9 / 16,344 | USD 0.037938 estimated |
+| Explicit citable excerpt, still raw Markdown | n.Interaction.642485b8afc547a4bab2df67 / 18646b8c31874540bef649717737e7cb | Partial: Python succeeded, second child still failed; coordinator honestly reported no verified result | 19.490 s | 10 / 29,001 | USD 0.047220 estimated |
+| Readable HTML receipt, same two-task prompt | n.Interaction.843329856dca48b0a1075ce7 / 81fb885d05f04b32916de2c8b22da492 | Both tasks returned findings, quotes and links; delivered, closed/emitted | 30.704 s | 9 / 18,631 | USD 0.036320 estimated |
+
+Final readback proves two researcher child runs, both completed, each quote matching
+its own fetch receipts, and disjoint observed source IDs across tasks. UI shows
+two delegate calls, search/fetch activity, both quoted findings and aggregated
+statistics. All nine priced responses were retained; unknown cost count is zero.
+The successful sources were Python's official essay and Pydantic AI's redirected
+overview page. This is one successful repeated-specialist smoke, not a workload
+quality/latency qualification or proof of claim entailment.
+
+Fresh-install check caught a CI collection failure: native tests importing the
+optional PageIndex service lacked PyPDF2. The CI lane now installs the tested
+PageIndex-read and WebFetch dependencies directly from their Action manifests,
+without growing the native core extra or importing the old LiteLLM test stack.
+Clean Python 3.11.15 and 3.12.15 environments each pass 96 native/profile/WebFetch
+cases and pip consistency checks (92 packages with the optional profiles). The
+legacy evidence/fetch slice passes 51 cases. Remote CI remains pending; the
+workflow runs on PRs/main, not this feature branch's push. No provider credentials
+were needed for deterministic tests or copied into the acceptance record.
+
+General answer/coordinator citation enforcement, semantic evaluations, interrupted
+research rehydration, long-session context bounds, full skill/Action compatibility,
+distributed ownership and migration/removal remain open. Research state is fresh
+for each new Agent.run; durable continuation needs its own qualified evidence
+rehydration policy. No enterprise qualification is claimed from these results.

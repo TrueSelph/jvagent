@@ -6,7 +6,7 @@ SUPPORTED_OUTPUT_CONTRACTS = ("evidence_required",)
 
 
 def output_policy(name: str) -> Any:
-    """Create isolated per-run policy state; unknown contracts fail admission."""
+    """Create a policy whose run_scope isolates state; unknown contracts fail admission."""
     if not name:
         return None
     if name == "evidence_required":

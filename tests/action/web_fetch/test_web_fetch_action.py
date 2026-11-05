@@ -129,6 +129,7 @@ async def test_html_extracted_to_markdown(monkeypatch):
         "final_url": "https://example.com/post",
         "content_type": "text/html",
         "http_status": 200,
+        "text_excerpt": "Heading Hello world.",
     }
     assert "# Source: https://example.com/post" in out
     assert "Title: My Page" in out

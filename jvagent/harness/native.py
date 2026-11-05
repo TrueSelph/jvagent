@@ -97,6 +97,12 @@ def build_native_agent(
 
         id = "jv_selected_skill"
 
+        async def wrap_run(self, ctx: RunContext[Any], *, handler: Any) -> Any:
+            if policy is None:
+                return await handler()
+            with policy.run_scope():
+                return await handler()
+
         async def before_run(self, ctx: RunContext[Any]) -> None:
             ctx.load_capability(metadata["name"])
 

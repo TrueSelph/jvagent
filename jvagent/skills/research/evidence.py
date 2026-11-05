@@ -70,15 +70,14 @@ class ResearchEvidenceCollector:
         tool_name: str,
         args: dict[str, Any],
         content: str,
-    ) -> None:
-        """Record URLs and bounded excerpts from successful search/fetch results."""
+    ) -> EvidenceReference | None:
+        """Record successful sources; return the current retained fetch receipt."""
 
         is_search = tool_name.endswith("__search")
         is_fetch = tool_name.endswith(("__fetch", "__get"))
         if not is_search and not is_fetch:
-            return
+            return None
 
-        excerpt = content[: self.max_excerpt_chars]
         try:
             if len(content) > self.max_structured_result_chars:
                 raise ValueError("structured result exceeds observation limit")
@@ -173,7 +172,12 @@ class ResearchEvidenceCollector:
                     source_id=self._source_id("", final_url),
                     url=final_url,
                     title=title_line.removeprefix("# Title: ")[:512],
-                    excerpt=excerpt[: self.max_excerpt_chars],
+                    excerpt=(
+                        fetch_result["text_excerpt"]
+                        if isinstance(fetch_result.get("text_excerpt"), str)
+                        and fetch_result["text_excerpt"]
+                        else self._sanitize_fetch_source_marker(content)
+                    )[: self.max_excerpt_chars],
                     provenance="fetched_page",
                     observed_at=datetime.now(timezone.utc),
                 )
@@ -183,9 +187,11 @@ class ResearchEvidenceCollector:
                 ):
                     self._references[ref.source_id] = ref
                     self._fetch_aliases[requested_url] = ref.source_id
+                    return ref
                 else:
                     self._overflow_urls.add(final_url)
                     self._overflow_fetch_requests.add(requested_url)
+        return None
 
     def snapshot(self) -> tuple[EvidenceReference, ...]:
         """Return bounded references in deterministic order."""

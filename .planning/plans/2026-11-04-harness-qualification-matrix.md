@@ -11,11 +11,11 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 | Gate | Current evidence | Remaining work |
 |---|---|---|
-| Dependency/Python | Pinned native pair installs/tests on Python 3.11 and 3.12; dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 75 native/profile cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 92 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
+| Native execution | 80 native/profile plus 16 WebFetch cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit | PostgreSQL, in-transaction death, outage and multi-worker fencing |
 | Spend | Official capability, graph batch-store regressions, immediate spend journal and actual budget-failure browser receipts | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and concurrency |
-| Research | Existing evidence tests, native typed output and actual Serper/fetch/citation browser flow | Quality evaluation, publisher freshness and research efficiency |
+| Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory, explicit admission, direct PageIndex and bounded foreground skill delegation with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 

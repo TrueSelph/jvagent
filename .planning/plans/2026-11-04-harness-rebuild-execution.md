@@ -1,6 +1,7 @@
 # JV Agent harness rebuild: execution contract
 
-Status: planned, authorized direction; implementation gates not yet satisfied.
+Status: implementation active; release qualification gates remain open.
+See [the evidence record](2026-11-04-harness-rebuild-progress.md).
 This refines [the reassessment](2026-11-04-pydantic-harness-transition.md).
 
 ## Decision

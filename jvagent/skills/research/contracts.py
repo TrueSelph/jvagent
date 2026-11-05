@@ -252,6 +252,9 @@ def render_research(
             url = quote(reference.url, safe=":/?&=#%.-_~")
             observed = reference.observed_at.strftime("%Y-%m-%d %H:%M UTC")
             citations.append(f"[Source {number}, observed {observed}](<{url}>)")
+        # Keep every line in quoted voice; source text never becomes a host
+        # instruction or an independently validated citation.
+        rendered.extend("> " + line for line in finding.supporting_quote.splitlines())
         rendered.append(f"- {finding.claim} {' '.join(citations)}")
     if output.limitations:
         rendered.append("Model-reported limitations (not independently verified):")

@@ -1,5 +1,9 @@
 """Research-only output policy for native Pydantic execution."""
 
+import contextlib
+import contextvars
+import json
+from collections.abc import Iterator
 from typing import Any
 
 from pydantic import Field
@@ -28,7 +32,7 @@ class GroundedFinding(ResearchFinding):
     supporting_quote: str = Field(
         min_length=1,
         max_length=1000,
-        description="An exact quote from that source's observed excerpt supporting the claim.",
+        description="Copy a short contiguous substring from the evidence.excerpt field, preserving its punctuation. Do not insert ellipses or paraphrase.",
     )
 
 
@@ -42,7 +46,25 @@ class ResearchOutputPolicy:
     """Observe host tool receipts and finish through a typed output function."""
 
     def __init__(self) -> None:
-        self.evidence = ResearchEvidenceCollector()
+        self._evidence: contextvars.ContextVar[ResearchEvidenceCollector | None] = (
+            contextvars.ContextVar("native_research_evidence", default=None)
+        )
+
+    @contextlib.contextmanager
+    def run_scope(self) -> Iterator[None]:
+        """Give each native run its own evidence, including reused child agents."""
+        token = self._evidence.set(ResearchEvidenceCollector())
+        try:
+            yield
+        finally:
+            self._evidence.reset(token)
+
+    @property
+    def evidence(self) -> ResearchEvidenceCollector:
+        evidence = self._evidence.get()
+        if evidence is None:
+            raise RuntimeError("Research evidence requires an active native run")
+        return evidence
 
     async def observe(
         self, name: str, arguments: dict[str, Any], result: ToolResult
@@ -51,8 +73,14 @@ class ResearchOutputPolicy:
         if result.is_error:
             return str(result.content)
         content = ToolResultText(str(result.content), result.metadata)
-        await self.evidence.observe(None, name, arguments, content)
-        return self.evidence.annotate_result(name, arguments, content)
+        reference = await self.evidence.observe(None, name, arguments, content)
+        annotated = self.evidence.annotate_result(name, arguments, content)
+        if reference is not None:
+            return json.dumps(
+                {"evidence": reference.model_dump(mode="json"), "content": annotated},
+                ensure_ascii=False,
+            )
+        return annotated
 
     def finish(self, brief: GroundedBrief) -> str:
         """Validate a structured research answer and render host-resolved citations."""
