@@ -1802,3 +1802,35 @@ all external networking is blocked. Native sources are unchanged from their
 169-case dual-version suites and the subsequent actual-model recall is above.
 All-files hooks passed clean for the pricing correction. A normal push-hook run
 without the diagnostic plugin remains required; remote release gates stay open.
+
+## Native settings, complete-output boundary and workload calibration — 2026-11-05
+
+The [detailed record](2026-11-05-native-settings-workload.md) is authoritative for
+this increment's configuration, actual browser outcomes, source/dependency
+controls, failed cases and limitations. It links a frozen 20-scenario protocol,
+30-turn conversation sample, correlated UI/state receipts, reproducible fixture
+setup/offline report tools and separate configuration/limit/recovery smokes.
+
+Runtime additions are thin SDK adapters: attribute-backed common ModelSettings,
+public-schema validation at startup/factory and propagation to children/summaries;
+public before_output_process rejection of normalized length-limited final output;
+compaction before request-start journaling to avoid charging a nonexistent parent
+attempt after a failed summary. No custom continuation or execution loop is added.
+The real clipped-output defect is retained before and after repair. Raising the
+limit restores same-conversation accepted-input recovery, while an extra-period
+format failure remains visible. Raw string output is not a typed format contract.
+
+Final affected native/profile/PostgreSQL suites: 179 passed each on Python 3.11
+and 3.12. The full legacy suite completed 4,725 passed / 29 skipped in 353.18 s
+before the final completion guard; final native tests cover that guard. Reporter
+semantic-scoring and unknown-cost hardening adds three tests; rerun the affected reporter slice and
+all-files hooks before commit, and require the normal full push hook at the
+containing revision. New remote checks must be read at that exact head.
+
+The initial five-scenario sample remains 15/60 measured per implementation,
+with 45 missing each. Mechanical checks: legacy 9 pass / 3 fail / 3 pending;
+native 11 pass / 1 fail / 3 pending. All independent semantic review is pending.
+Observed native token footprint is smaller for this slice; backend medians are
+similar. This is not the workload acceptance or optimization gate. Source is
+still larger during transition; legacy/pilot deletion, migration, other extension
+classes, distributed recovery and release qualification remain mandatory.

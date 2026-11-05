@@ -12,6 +12,11 @@ from typing import Any, Mapping, Optional, Protocol, Tuple
 
 CONTRACT_VERSION = "1.0.0"
 
+
+class OutputTokenLimitReached(RuntimeError):
+    """The provider stopped a final output at its token ceiling."""
+
+
 FORBIDDEN_HOST_DOMAIN_KEYS = frozenset(
     {
         "workspace_id",

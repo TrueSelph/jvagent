@@ -62,6 +62,8 @@ async def test_summary_is_persisted_charged_and_bound_by_request_limit(
         raise AssertionError("No Action is needed")
 
     def respond(messages: Any, info: Any) -> ModelResponse:
+        assert info.model_settings["temperature"] == 0.0
+        assert info.model_settings["max_tokens"] == 8192
         summary = not info.function_tools
         seen.append("summary" if summary else "answer")
         if summary:
@@ -92,6 +94,7 @@ async def test_summary_is_persisted_charged_and_bound_by_request_limit(
         spend_observer=NativeSpendRecorder(interaction, lock=store.lock),
         context_max_tokens=800,
         context_keep_tokens=100,
+        model_settings={"temperature": 0.0, "max_tokens": 8192},
     )
     arguments = dict(
         conversation_id="session",

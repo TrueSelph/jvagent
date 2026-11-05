@@ -56,6 +56,8 @@ async def test_native_children_share_limits_and_preserve_scope(
         return label == "delegate_task" or permitted
 
     def respond(messages: Any, info: Any) -> ModelResponse:
+        assert info.model_settings["temperature"] == 0.0
+        assert info.model_settings["max_tokens"] == 8192
         tools = {t.name for t in info.function_tools}
         parent = "delegate_task" in tools
         if parent:
@@ -85,6 +87,7 @@ async def test_native_children_share_limits_and_preserve_scope(
 
     agent = build_native_agent(
         FunctionModel(respond, model_name="gpt-4.1"),
+        model_settings={"temperature": 0.0, "max_tokens": 8192},
         skill_directory=Path("jvagent/skills/delegate"),
         tools=[Tool("lookup", "Read records", execute=lookup, effect_class="read")],
         access_check=access,

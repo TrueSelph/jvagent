@@ -11,8 +11,8 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 | Gate | Current evidence | Remaining work |
 |---|---|---|
-| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | All nine remote checks passed at 986ddbe0; current increment requires its own remote checks; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 169 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | All nine remote checks passed at 6de0ff72; current increment requires its own remote checks; artifact build; retire conflicting LiteLLM test dependency |
+| Native execution | 179 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure/restart follow-ups; bounded host cancellation cleanup; actual cancelled-stream unknown usage and blocked follow-ups | Broader storage-I/O deadlines, abandoned-worker ownership, effect/write reconciliation, operator tooling, blocking-adapter and outage settlement |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | Single-worker PostgreSQL/checkpoint retry and restart readback now recorded; in-transaction death, outage and multi-worker fencing remain open |
@@ -62,9 +62,14 @@ sets for baseline and replacement. No local-model substitution is required.
 6. Record source/dependency footprint before/after deletion. Do not trade safety,
    extension compatibility or quality for source-line reduction.
 
-No workload numbers have been measured for this matrix. The updated OpenAI key now enables positive browser smoke tests, but the 60-turn
-baseline/comparison has not run; initial smoke receipts do not fill that evidence gap. A production soak and larger performance
-sample are separate release gates following this initial comparison.
+The [initial workload record](2026-11-05-native-settings-workload.md) now has 30
+actual-provider browser turns: five conversation scenarios repeated three times
+per implementation. It preserves three legacy exact-text failures, one native
+JSON-format failure, pending semantic review and all request/token/cost totals.
+It is a development sample with transport/source differences, not the full
+60-turn-per-implementation gate or a qualified optimization comparison. The other
+45 measurements per implementation and independent quality review remain open.
+A production soak is a separate release gate.
 
 ## Transitional dependency conflict
 
@@ -134,3 +139,21 @@ flow continuations, LeadGen retrieve/capture/sync, ordinary-member browser acces
 MCP or external effects. Native core/Harness still owns scheduling and execution;
 JV supplies only the existing Action context and access boundary. Migration,
 legacy deletion and the wider acceptance matrix remain incomplete.
+
+
+## Model settings and completion boundary — 2026-11-05
+
+The native Action persists common SDK ModelSettings, rejects invalid keys/types
+on startup and applies them to roots, children and summaries. A real 16-token
+Responses API test exposed clipped output being delivered as complete. A public
+before_output_process capability now prevents that delivery, preserves its usage
+and classifies output_token_limit. A same-conversation restart uses accepted input
+without the clipped model text. Deterministic regressions cover text, summary and
+output-function boundaries, including a false unknown parent attempt corrected
+by placing compaction before request-start journaling. See the
+[settings/workload record](2026-11-05-native-settings-workload.md).
+
+Raw-string format failures remain. Typed output contracts, fresh-client-build
+reproduction of observed 422/new-conversation issues, native request timings and
+replacement of the deprecated on_spend shim remain open. None of these results
+complete the provider, recovery, migration, deletion or enterprise release gates.

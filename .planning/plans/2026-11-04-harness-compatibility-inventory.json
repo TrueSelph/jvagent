@@ -1739,5 +1739,24 @@
     ],
     "skill_admission": "Official Skills.load catalog checked for root and all configured children before model requests",
     "evidence": "2026-11-05-native-visitor-smoke.json"
+  },
+  "native_configuration_delta": {
+    "model_settings": {
+      "owner": "Public Pydantic AI ModelSettings schema and Agent/compaction interfaces",
+      "validation": "Strict common SDK keys/types at startup and factory; provider ranges remain provider-specific",
+      "scope": [
+        "root",
+        "delegated child",
+        "compaction summary"
+      ],
+      "legacy_migration": "Explicit native declaration; old Orchestrator fields are not silently renamed",
+      "limits": {
+        "model_settings.max_tokens": "Per-request generated output ceiling",
+        "max_tokens": "Aggregate run usage ceiling"
+      }
+    },
+    "completion": "Reject normalized length-limited final candidates through public output lifecycle; preserve receipts",
+    "workload_protocol": "../fixtures/harness-workload-v1.yaml",
+    "qualification": "179 native/profile cases each on Python 3.11/3.12; measured conversation slice incomplete; other compatibility pending"
   }
 }

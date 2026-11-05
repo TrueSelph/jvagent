@@ -1,0 +1,402 @@
+{
+  "recovery_excludes_clipped_provider_output": true,
+  "schema": "jvagent.native-model-settings-smoke/v1",
+  "source_parent": "git-commit:6de0ff7224a4da5a64fb798fdec8367531b10327",
+  "final_runtime_blobs": {
+    "jvagent/harness/native.py": "git-blob:01b053b03c2bcbd7e631fe1d96b07e8f79a3663c",
+    "jvagent/harness/model_settings.py": "git-blob:ebf07fa31f039f8ea069aabe070dca8685c6682c",
+    "jvagent/harness/contracts.py": "git-blob:394b0a5c0ba3b17908cc3c81b37757bd51c02b71",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:d2841689269fb9ca6008820e33e8d77e08916d5e"
+  },
+  "startup_invalid_setting": {
+    "setting": "temprature",
+    "exit_code": 1,
+    "listener_started": false,
+    "interactions_before_and_after": 15,
+    "model_calls_before_and_after": 15,
+    "ui": "Failed to fetch; no persisted turn or provider request"
+  },
+  "startup_submission_race": {
+    "phase": "first 16-token attempt before listener readiness",
+    "persisted_turns_created": 0,
+    "provider_requests": 0,
+    "ui": "Failed to fetch",
+    "resolution": "Verified listener readiness and unchanged interaction count before submitting once"
+  },
+  "extra_smoke_records": {
+    "legacy": [
+      {
+        "interaction_id": "n.Interaction.f01162d563f1421180556519",
+        "prompt": "Without using tools, repeat the coordination label and rehearsal date I supplied earlier.",
+        "reply": "The coordination label you supplied is CEDAR-47 and the rehearsal date is 18 November 2026.",
+        "native_run": null,
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 11.864283,
+        "usage": {
+          "last_updated": "2026-11-05T09:16:39.932171+00:00",
+          "total_tokens": 4618,
+          "prompt_tokens": 4569,
+          "model_call_count": 2,
+          "completion_tokens": 49,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.00953,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 2.285
+        },
+        "request_events": []
+      }
+    ],
+    "native": [
+      {
+        "interaction_id": "n.Interaction.7e97f63692ea4a4f82a28803",
+        "prompt": "Without using tools, repeat the coordination label and rehearsal date I supplied earlier.",
+        "reply": "CEDAR-47, 18 November 2026",
+        "native_run": {
+          "usage": {
+            "requests": 1,
+            "input_tokens": 470,
+            "output_tokens": 13
+          },
+          "output": "CEDAR-47, 18 November 2026",
+          "run_id": "00d3b3abf4174579bf43645227c3c1b4",
+          "status": "delivered",
+          "history_source": {
+            "frontier": "delivered",
+            "source_run_id": "2ac2dce47c1b498a94ab5a549b659eed"
+          },
+          "usage_complete": true
+        },
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 6.455236,
+        "usage": {
+          "last_updated": "2026-11-05T09:16:35.456730+00:00",
+          "total_tokens": 483,
+          "prompt_tokens": 470,
+          "total_cost_usd": 0.001044,
+          "litellm_cost_usd": 0.0,
+          "model_call_count": 1,
+          "completion_tokens": 13,
+          "reported_cost_usd": 0.0,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.001044,
+          "model_attempt_count": 0,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 0.0,
+          "unknown_cost_call_count": 0,
+          "failed_model_attempt_count": 0,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0.0
+        },
+        "request_events": [
+          {
+            "kind": "model_request_started",
+            "error": null,
+            "run_id": "00d3b3abf4174579bf43645227c3c1b4"
+          },
+          {
+            "kind": "model_request_completed",
+            "error": null,
+            "run_id": "00d3b3abf4174579bf43645227c3c1b4"
+          },
+          {
+            "kind": "run_completed",
+            "error": null,
+            "run_id": "00d3b3abf4174579bf43645227c3c1b4"
+          }
+        ]
+      },
+      {
+        "interaction_id": "n.Interaction.2aca69fa7fa342ef83a3fa4a",
+        "prompt": "Write a detailed paragraph of at least fifty words explaining how to prepare a rehearsal schedule.",
+        "reply": "The model request could not complete. Please check the service configuration.",
+        "native_run": {
+          "run_id": "af77063cbf864cb4b0355497c66e419a",
+          "status": "failed",
+          "history_source": {},
+          "usage_complete": false
+        },
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 3.45865,
+        "usage": {
+          "last_updated": "2026-11-05T09:22:27.867277+00:00",
+          "total_tokens": 0,
+          "prompt_tokens": 0,
+          "total_cost_usd": 0.0,
+          "litellm_cost_usd": 0.0,
+          "model_call_count": 0,
+          "completion_tokens": 0,
+          "reported_cost_usd": 0.0,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.0,
+          "model_attempt_count": 1,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 0.0,
+          "unknown_cost_call_count": 1,
+          "failed_model_attempt_count": 1,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0.0
+        },
+        "request_events": [
+          {
+            "kind": "model_request_started",
+            "error": null,
+            "run_id": "af77063cbf864cb4b0355497c66e419a"
+          },
+          {
+            "kind": "run_failed",
+            "error": "ModelRequestRejectedError('status_code: 400, model_name: gpt-4.1, body: {\\'message\\': \"Invalid \\'max_output_tokens\\': integer below minimum value. Expected a value >= 16, but got 1 instead.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'max_output_tokens\\', \\'code\\': \\'integer_below_min_value\\'}')",
+            "run_id": "af77063cbf864cb4b0355497c66e419a"
+          }
+        ]
+      },
+      {
+        "interaction_id": "n.Interaction.cc2ba26b4cf64b23b6290c81",
+        "prompt": "Write a detailed paragraph of at least fifty words explaining how to prepare a rehearsal schedule.",
+        "reply": "To prepare a rehearsal schedule, begin by identifying all scenes, musical numbers,",
+        "native_run": {
+          "usage": {
+            "requests": 1,
+            "input_tokens": 255,
+            "output_tokens": 16
+          },
+          "output": "To prepare a rehearsal schedule, begin by identifying all scenes, musical numbers,",
+          "run_id": "c13ed7eac1b941e0bd8024bf86012223",
+          "status": "delivered",
+          "history_source": {},
+          "usage_complete": true
+        },
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 3.491382,
+        "usage": {
+          "last_updated": "2026-11-05T09:27:18.643703+00:00",
+          "total_tokens": 271,
+          "prompt_tokens": 255,
+          "total_cost_usd": 0.000638,
+          "litellm_cost_usd": 0.0,
+          "model_call_count": 1,
+          "completion_tokens": 16,
+          "reported_cost_usd": 0.0,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.000638,
+          "model_attempt_count": 0,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 0.0,
+          "unknown_cost_call_count": 0,
+          "failed_model_attempt_count": 0,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0.0
+        },
+        "request_events": [
+          {
+            "kind": "model_request_started",
+            "error": null,
+            "run_id": "c13ed7eac1b941e0bd8024bf86012223"
+          },
+          {
+            "kind": "model_request_completed",
+            "error": null,
+            "run_id": "c13ed7eac1b941e0bd8024bf86012223"
+          },
+          {
+            "kind": "run_completed",
+            "error": null,
+            "run_id": "c13ed7eac1b941e0bd8024bf86012223"
+          }
+        ]
+      },
+      {
+        "interaction_id": "n.Interaction.8f9ec25ce57540bb86bcc999",
+        "prompt": "Write a detailed paragraph of at least fifty words explaining how to prepare a rehearsal schedule.",
+        "reply": "The model reached its reply token limit before finishing. Increase the per-request output limit in agent settings or ask for a shorter answer.",
+        "native_run": {
+          "reason": "output_token_limit",
+          "run_id": "832492927d024065acdda8f806a63b8c",
+          "status": "failed",
+          "history_source": {},
+          "usage_complete": false
+        },
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 2.956985,
+        "usage": {
+          "last_updated": "2026-11-05T09:44:58.096425+00:00",
+          "total_tokens": 271,
+          "prompt_tokens": 255,
+          "total_cost_usd": 0.000638,
+          "litellm_cost_usd": 0.0,
+          "model_call_count": 1,
+          "completion_tokens": 16,
+          "reported_cost_usd": 0.0,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.000638,
+          "model_attempt_count": 0,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 0.0,
+          "unknown_cost_call_count": 0,
+          "failed_model_attempt_count": 0,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0.0
+        },
+        "request_events": [
+          {
+            "kind": "model_request_started",
+            "error": null,
+            "run_id": "832492927d024065acdda8f806a63b8c"
+          },
+          {
+            "kind": "model_request_completed",
+            "error": null,
+            "run_id": "832492927d024065acdda8f806a63b8c"
+          },
+          {
+            "kind": "run_failed",
+            "error": "OutputTokenLimitReached('Provider returned length-limited output')",
+            "run_id": "832492927d024065acdda8f806a63b8c"
+          }
+        ]
+      },
+      {
+        "interaction_id": "n.Interaction.aacad4271c82465ba313aa3b",
+        "prompt": "Reply with exactly READY.",
+        "reply": "READY.",
+        "native_run": {
+          "usage": {
+            "requests": 1,
+            "input_tokens": 294,
+            "output_tokens": 4
+          },
+          "output": "READY.",
+          "run_id": "8c863faaa51943c780f5fa53c747deb3",
+          "status": "delivered",
+          "history_source": {
+            "frontier": "accepted_input",
+            "source_run_id": "832492927d024065acdda8f806a63b8c"
+          },
+          "usage_complete": true
+        },
+        "closed": true,
+        "emitted": true,
+        "backend_seconds": 2.758815,
+        "usage": {
+          "last_updated": "2026-11-05T09:46:36.553191+00:00",
+          "total_tokens": 298,
+          "prompt_tokens": 294,
+          "total_cost_usd": 0.00062,
+          "litellm_cost_usd": 0.0,
+          "model_call_count": 1,
+          "completion_tokens": 4,
+          "reported_cost_usd": 0.0,
+          "cache_write_tokens": 0,
+          "estimated_cost_usd": 0.00062,
+          "model_attempt_count": 0,
+          "cached_prompt_tokens": 0,
+          "total_duration_seconds": 0.0,
+          "unknown_cost_call_count": 0,
+          "failed_model_attempt_count": 0,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0.0
+        },
+        "request_events": [
+          {
+            "kind": "model_request_started",
+            "error": null,
+            "run_id": "8c863faaa51943c780f5fa53c747deb3"
+          },
+          {
+            "kind": "model_request_completed",
+            "error": null,
+            "run_id": "8c863faaa51943c780f5fa53c747deb3"
+          },
+          {
+            "kind": "run_completed",
+            "error": null,
+            "run_id": "8c863faaa51943c780f5fa53c747deb3"
+          }
+        ]
+      }
+    ]
+  },
+  "all_graph_request_inventory": {
+    "legacy": {
+      "all_interactions": 16,
+      "sample_interactions": 15,
+      "extra_smoke_interactions": 1,
+      "known_model_calls": 25,
+      "known_tokens": 54073,
+      "known_estimated_usd": 0.11163799999999999,
+      "reported_unknown_cost_events": null,
+      "turns_missing_unknown_cost_reporting": 16
+    },
+    "native": {
+      "all_interactions": 20,
+      "sample_interactions": 15,
+      "extra_smoke_interactions": 5,
+      "known_model_calls": 19,
+      "known_tokens": 6626,
+      "known_estimated_usd": 0.015106000000000001,
+      "reported_unknown_cost_events": 1,
+      "turns_missing_unknown_cost_reporting": 0
+    }
+  },
+  "all_costs": "Price-table estimates and explicitly unknown events; no provider invoices available",
+  "restored_settings": {
+    "temperature": 0.0,
+    "max_tokens": 8192,
+    "max_retries": 0
+  },
+  "scope_notes": [
+    "Extra restart/limit smoke turns are separate from the 30 measured conversation turns.",
+    "The legacy and native restart smoke submissions overlapped; their durations are not paired benchmark measurements.",
+    "A 1-token request was rejected by the Responses API; its cost remains conservatively unknown.",
+    "A 16-token request was delivered clipped before repair, then failed visibly with known usage after repair.",
+    "The restored same-conversation reply recovered safely but returned READY. rather than exact READY; keep this additional format failure visible.",
+    "Clipped summaries and output functions have separate deterministic regressions; live length failure tested ordinary native text."
+  ],
+  "rejected_provider_text": [
+    "To prepare a rehearsal schedule, begin by identifying all scenes, musical numbers,"
+  ],
+  "observed_client_gaps": {
+    "invalid_login": "Rejected .test fixture email caused HTTP 422 and a blank UI; browser console reported React error 31 for validation-detail objects. No model request occurred.",
+    "new_conversation": "Served bundle retained old messages visually; provider-backed fresh-session graph checks showed distinct session IDs and empty native history_source. Reproduce against a fresh UI build before attributing this to current source."
+  },
+  "served_chat_bundle": {
+    "path": "jvagent/webui/dist/assets/ChatInterface-DnCr_WDX.js",
+    "sha256": "sha256:ad4d3fe3323d1c7415c2077ad30a61a63d409a0ab6c4eb7c87fd7d4f01c31a34"
+  },
+  "ui_observations": "2026-11-05-native-settings-ui.json",
+  "native_environment": {
+    "python": "3.11.15",
+    "packages": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "openai": "3.45.0",
+      "jvspatial": "0.1.1",
+      "pydantic": "2.14.2",
+      "asyncpg": "0.32.0"
+    },
+    "unique_distributions": 93
+  },
+  "legacy_environment": {
+    "python": "3.11.15",
+    "installed_packages": {
+      "pydantic-ai-slim": "2.54.0",
+      "openai": "2.54.0",
+      "jvspatial": "0.1.1",
+      "pydantic": "2.14.2",
+      "asyncpg": "0.32.0",
+      "litellm": "1.101.6"
+    },
+    "unique_distributions": 126,
+    "execution": "Legacy Orchestrator and HTTPX OpenAI Action; installed pilot SDK is not the driver"
+  },
+  "sample_limitations": [
+    "Five of twenty scenarios only; 45 measurements missing per implementation.",
+    "Native first observation preceded privacy-error formatting refinement; final completion/startup guards were added after the measured cohort.",
+    "Same provider/model family and sampling/output settings, but different APIs and no single final committed candidate revision.",
+    "Browser end-to-end latency and independent quality adjudication were not measured."
+  ]
+}

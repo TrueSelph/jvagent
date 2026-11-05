@@ -1,0 +1,139 @@
+schema: jvagent.harness-workload/v1
+status: frozen-scenarios-fixture-adapters-incomplete
+baseline_revision: git-commit:43cbc885e9276cccc56ee1351f8ca7c64b1d9aa7
+provider_model: openai:gpt-4.1
+replicates: 3
+measured_turns_per_implementation: 60
+qualification_contract: ../plans/2026-11-04-harness-qualification-matrix.md
+protocol:
+  - Use isolated app graphs and browser contexts on the same PostgreSQL service.
+  - Use the same UI build, authenticated caller role, skill bodies and synthetic data.
+  - Match temperature 0 and per-request output ceiling 8192 where supported.
+  - Record resolved provider model, limits and transport differences, not just aliases.
+  - Run sequentially; alternate which implementation runs first per replicate.
+  - Use a fresh conversation per group and replicate. Preserve dependent turn order.
+  - Record all setup requests and faults separately; never drop them from total spend.
+  - Unsupported, failed, blocked and missing scenarios remain visible in the fixed denominator.
+  - Record actual UI response/events, durable state, duration, requests, tokens and cost provenance.
+  - Automatic checks are observations; quality needs independent review and adjudication.
+  - Never infer the full 60-turn gate or optimization from an available-workflow subset.
+common_instructions: >-
+  Answer concisely. Follow the requested format. Recall supplied conversation facts
+  accurately. Say when a requested fact is unavailable; never invent completed work.
+cases:
+  - id: chat-exact
+    group: conversation
+    prompt: Reply with exactly READY.
+    expected: {exact_text: READY}
+  - id: remember-facts
+    group: conversation
+    prompt: >-
+      Remember these rehearsal facts for this conversation: the coordination label
+      is CEDAR-47 and the rehearsal date is 18 November 2026. Acknowledge in one short sentence.
+    expected: {persisted_history: true}
+  - id: recall-facts
+    group: conversation
+    depends_on: remember-facts
+    prompt: What coordination label and rehearsal date did I give you? Reply in one sentence.
+    expected: {contains: [CEDAR-47, 18 November 2026]}
+  - id: missing-fact
+    group: conversation
+    depends_on: remember-facts
+    prompt: >-
+      What is the approved budget for that rehearsal? If I have not supplied it,
+      say that it has not been provided.
+    expected: {no_invented_budget: true, expresses_missing_information: true}
+  - id: json-format
+    group: conversation
+    depends_on: remember-facts
+    prompt: >-
+      Return only a JSON object with keys label and date, using the rehearsal facts
+      I supplied. Use ISO date format.
+    expected: {json: {label: CEDAR-47, date: '2026-11-18'}}
+  - id: internal-retrieval
+    group: retrieval
+    fixture: meridian-public-note
+    prompt: Find the rehearsal date and coordination label in Meridian launch public notes. Name the document.
+    expected: {contains: [CEDAR-47, 18 November 2026, Meridian launch public notes], retrieval_receipt: true}
+  - id: internal-comparison
+    group: retrieval
+    fixture: tank-specifications
+    prompt: Compare the stated capacities of Model A and Model B in the internal tank specifications. Cite the document.
+    expected: {contains: ['42', '55'], retrieval_receipt: true, no_unsupported_inference: true}
+  - id: research-extraction
+    group: research
+    fixture: fixed-service-note
+    prompt: Check the equipment service note and report its maximum inspection interval with a supporting quote and source link.
+    expected: {contains: ['240', operating hours], verified_fetch_receipt: true}
+  - id: research-conflict
+    group: research
+    fixture: fixed-bridge-archives
+    prompt: Compare the two bridge-opening archive sources. Give each year, identify any conflict and cite both sources.
+    expected: {contains: ['1984', '1986'], discloses_conflict: true, verified_fetch_receipt: true}
+  - id: research-unknown
+    group: research
+    fixture: fixed-committee-minutes
+    prompt: Check the committee minutes. What vote count was recorded? Cite the source and do not infer a number.
+    expected: {no_invented_vote_count: true, verified_fetch_receipt: true}
+  - id: artifact
+    group: artifact
+    prompt: Create a downloadable plain-text file named rehearsal.txt containing only the line CEDAR-47.
+    expected: {download_readback: CEDAR-47, committed_effect_count: 1}
+  - id: interview-start
+    group: interview
+    fixture: two-field-synthetic-interview
+    prompt: Start the rehearsal registration interview.
+    expected: {active_interview: true, asks_first_field_only: true}
+  - id: interview-continue
+    group: interview
+    depends_on: interview-start
+    prompt: My full name is Casey Morgan.
+    expected: {persisted_field: {full_name: Casey Morgan}, asks_next_field: email}
+  - id: visitor-status
+    group: visitor
+    fixture: own-partial-and-foreign-complete-profiles
+    prompt: Check my lead profile. Report required fields, missing fields and completion score without changing data.
+    expected: {contains: [email, '50'], unchanged_raw_profiles: true, no_foreign_profile_fields: true}
+  - id: mcp-read
+    group: mcp
+    fixture: isolated-read-only-mcp-server
+    prompt: Read the rehearsal coordination label from the authorized MCP fixture file and report it.
+    expected: {contains: [CEDAR-47], scoped_mcp_receipt: true, writes: 0}
+  - id: delegation
+    group: delegation
+    fixture: authorized-reader-child
+    prompt: Delegate to reader to find the rehearsal date and coordination label from Meridian launch public notes. Name the document.
+    expected: {contains: [CEDAR-47, 18 November 2026], child_run_linked: true, inherited_scope_and_limits: true}
+  - id: proactive
+    group: proactive
+    fixture: local-only-disposable-recipient
+    prompt: Schedule a reminder in one minute saying Rehearsal CEDAR-47.
+    expected: {persisted_task: true, subsequent_delivery_count: 1, external_recipient: false}
+  - id: restart-recall
+    group: conversation
+    depends_on: remember-facts
+    setup: restart-owned-backend-before-submission
+    prompt: Without using tools, repeat the coordination label and rehearsal date I supplied earlier.
+    expected: {contains: [CEDAR-47, 18 November 2026], persisted_history_source: true}
+  - id: long-context
+    group: long-context
+    fixture: shared-synthetic-history-above-compaction-threshold
+    prompt: What is the coordination label from the beginning of this conversation? Answer briefly.
+    expected: {contains: [CEDAR-47], no_silent_input_loss: true, summary_usage_included: true}
+  - id: failure-recovery
+    group: failure-recovery
+    setup: inject-one-provider-timeout-and-restart-owned-backend
+    prompt: Please try that question again and tell me the supplied coordination label.
+    expected: {contains: [CEDAR-47], defined_predecessor_state: true, no_duplicate_effect: true, unknown_usage_explicit: true}
+fixtures:
+  meridian-public-note: The rehearsal is scheduled for 18 November 2026. Its coordination label is CEDAR-47.
+  tank-specifications: Model A has a 42-litre tank. Model B has a 55-litre tank.
+  fixed-service-note: The manufacturer's service note recommends inspection every 240 operating hours.
+  fixed-bridge-archives:
+    - The municipal archive lists the bridge opening as 1984.
+    - The engineering summary lists the bridge opening as 1986.
+  fixed-committee-minutes: The minutes say the committee approved the proposal. No vote count is recorded.
+limitations:
+  - Research fixtures are synthetic fixed tool payloads, not live Serper/fetch qualification.
+  - Fixture adapters for non-conversation cases must be completed before their measurements.
+  - Zero-temperature sampling is not a determinism guarantee.

@@ -7,7 +7,10 @@ checker. This module does not import the legacy Orchestrator or pilot engine.
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
-from jvagent.harness.contracts import reject_model_authority_fields
+from jvagent.harness.contracts import (
+    OutputTokenLimitReached,
+    reject_model_authority_fields,
+)
 from jvagent.harness.skill_admission import admit_skill
 from jvagent.skills.output_policies import SUPPORTED_OUTPUT_CONTRACTS, output_policy
 from jvagent.tooling.tool import Tool as JVTool
@@ -35,6 +38,7 @@ def build_native_agent(
     spend_observer: Any = None,
     context_max_tokens: int = 32_000,
     context_keep_tokens: int = 16_000,
+    model_settings: dict[str, Any] | None = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -46,6 +50,10 @@ def build_native_agent(
     from pydantic_ai.exceptions import ModelRetry
     from pydantic_ai.workspaces import LocalWorkspaceBackend
     from pydantic_ai_harness import Skills
+
+    from jvagent.harness.model_settings import validate_model_settings
+
+    settings = validate_model_settings(model_settings)
 
     if spend_observer is not None and spend_store is None:
         raise ValueError("A spend observer requires native spend tracking")
@@ -178,7 +186,26 @@ def build_native_agent(
             with spend_observer.bind(ctx):
                 return await handler(request_context)
 
-    run_services: list[Any] = [ReceiptContext()]
+    class CompleteOutput(AbstractCapability[Any]):
+        """Reject a clipped final candidate after native request accounting."""
+
+        async def before_output_process(
+            self, ctx: RunContext[Any], *, output_context: Any, output: Any
+        ) -> Any:
+            from pydantic_ai.messages import ModelResponse
+
+            if not ctx.partial_output:
+                response = next(
+                    (m for m in reversed(ctx.messages) if isinstance(m, ModelResponse)),
+                    None,
+                )
+                if response is not None and response.finish_reason == "length":
+                    raise OutputTokenLimitReached(
+                        "Provider returned length-limited output"
+                    )
+            return output
+
+    run_services: list[Any] = [ReceiptContext(), CompleteOutput()]
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
 
@@ -220,14 +247,17 @@ def build_native_agent(
         LocalWorkspace(directory.parent, read_only=True),
         selected_library,
         SelectedSkill(),
-        *run_services,
+        # A failed summary is not an attempted parent request. Run compaction
+        # before StepPersistence journals the parent's model-request start.
         SummarizingCompaction(
+            model_settings=settings,
             max_tokens=context_max_tokens,
             keep_tokens=context_keep_tokens,
             preserve_first_user_message=False,
             receipts=True,
             summarization_capabilities=run_services,
         ),
+        *run_services,
     ]
     if delegates:
         if len(delegates) > 16:
@@ -265,6 +295,7 @@ def build_native_agent(
                 spend_observer=spend_observer,
                 context_max_tokens=context_max_tokens,
                 context_keep_tokens=context_keep_tokens,
+                model_settings=settings,
             )
             child.name = entry.name
             children.append(
@@ -288,6 +319,7 @@ def build_native_agent(
     agent = Agent(
         model,
         instructions=instructions,
+        model_settings=settings,
         output_type=policy.finish if policy is not None else str,
         tools=admitted,
         capabilities=capabilities,

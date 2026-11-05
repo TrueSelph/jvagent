@@ -1,0 +1,1293 @@
+{
+  "schema": "jvagent.harness-workload-report/v1",
+  "independent_quality_review": "pending",
+  "optimization_gate_evaluable": false,
+  "latency_scope": "Persisted backend Interaction duration, not browser end-to-end latency",
+  "implementations": {
+    "legacy": {
+      "required_measured_turns": 60,
+      "measured_turns": 15,
+      "missing_turns": 45,
+      "unmeasured_scenarios": [
+        "artifact",
+        "delegation",
+        "failure-recovery",
+        "internal-comparison",
+        "internal-retrieval",
+        "interview-continue",
+        "interview-start",
+        "long-context",
+        "mcp-read",
+        "proactive",
+        "research-conflict",
+        "research-extraction",
+        "research-unknown",
+        "restart-recall",
+        "visitor-status"
+      ],
+      "case_checks_passed": 9,
+      "case_checks_failed": 3,
+      "case_checks_pending": 3,
+      "full_gate_complete": false,
+      "backend_seconds_all_observed": {
+        "n": 15,
+        "median": 1.602005,
+        "p95_nearest_rank": 4.569018,
+        "total": 27.931884999999998
+      },
+      "tokens_all_observed": {
+        "n": 15,
+        "median": 4133,
+        "p95_nearest_rank": 4343,
+        "total": 49455
+      },
+      "known_recorded_model_calls": 23,
+      "missing_call_count_turns": 0,
+      "known_estimated_usd": 0.10210799999999999,
+      "missing_estimated_cost_turns": 0,
+      "missing_unknown_cost_reporting_turns": 15,
+      "reported_unknown_cost_events": null,
+      "cost_provenance": "Estimates, not provider invoices; missing usage remains missing in each record",
+      "records": [
+        {
+          "case_id": "chat-exact",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.5d53bffe926b4952aa3f26e1",
+          "session_id": "sess_45c2d961da974964",
+          "response": "READY.",
+          "closed": true,
+          "emitted": true,
+          "case_check": false,
+          "backend_seconds": 4.569018,
+          "usage": {
+            "last_updated": "2026-11-05T08:44:14.505650+00:00",
+            "total_tokens": 2085,
+            "prompt_tokens": 2071,
+            "model_call_count": 1,
+            "completion_tokens": 14,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004254,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 2.503
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 2.1k tokens \u00b7 2.5s \u00b7 5.6 tok/s\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.152222674e654a43a31ab18d",
+          "session_id": "sess_45c2d961da974964",
+          "response": "Noted: CEDAR-47 is the coordination label and the rehearsal is on 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 3.696844,
+          "usage": {
+            "last_updated": "2026-11-05T08:50:54.399077+00:00",
+            "total_tokens": 4249,
+            "prompt_tokens": 4199,
+            "model_call_count": 2,
+            "completion_tokens": 50,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008798,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 3.587
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"Noted: CEDAR-47 is the coordinati\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 3.6s \u00b7 13.9 tok/s\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.cfdac9b5f4be44b3961d5920",
+          "session_id": "sess_45c2d961da974964",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 2.526145,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:01.234898+00:00",
+            "total_tokens": 4343,
+            "prompt_tokens": 4295,
+            "model_call_count": 2,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008974,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 2.416
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"You gave me the coordination label\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 2.4s \u00b7 19.9 tok/s\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.4921a6c6b5764991baada442",
+          "session_id": "sess_45c2d961da974964",
+          "response": "The approved budget for the CEDAR-47 rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 0.993297,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:05.412370+00:00",
+            "total_tokens": 2202,
+            "prompt_tokens": 2174,
+            "model_call_count": 1,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004572,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.927
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"The approved budget for the CE\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 927ms \u00b7 30.2 tok/s\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+          "session_id": "sess_45c2d961da974964",
+          "response": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.369583,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:10.179316+00:00",
+            "total_tokens": 2254,
+            "prompt_tokens": 2221,
+            "model_call_count": 1,
+            "completion_tokens": 33,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004706,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.287
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1 \u00b7 2.3k tokens \u00b7 1.3s \u00b7 25.6 tok/s\""
+        },
+        {
+          "case_id": "chat-exact",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.d99e43e8223c46919012a527",
+          "session_id": "sess_809524662d0047b9",
+          "response": "READY.",
+          "closed": true,
+          "emitted": true,
+          "case_check": false,
+          "backend_seconds": 2.09901,
+          "usage": {
+            "last_updated": "2026-11-05T08:52:58.566918+00:00",
+            "total_tokens": 4133,
+            "prompt_tokens": 4105,
+            "model_call_count": 2,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008434,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.996
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 4.1k tokens \u00b7 2.0s \u00b7 14.0 tok/s\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.70c8f2a3bcc74da4bccd3f41",
+          "session_id": "sess_809524662d0047b9",
+          "response": "Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.602005,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:04.162906+00:00",
+            "total_tokens": 4247,
+            "prompt_tokens": 4199,
+            "model_call_count": 2,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008782,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.505
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 1.5s \u00b7 31.9 tok/s\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.c6982b5a4e274ec8ac61d0c8",
+          "session_id": "sess_809524662d0047b9",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 2.489926,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:09.739883+00:00",
+            "total_tokens": 4339,
+            "prompt_tokens": 4291,
+            "model_call_count": 2,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008966,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 2.384
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"You gave me the coordination label CEDAR-\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 2.4s \u00b7 20.1 tok/s\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.0b5d4e0075734d7eb6ac0212",
+          "session_id": "sess_809524662d0047b9",
+          "response": "The approved budget for that rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 0.926795,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:13.505104+00:00",
+            "total_tokens": 2195,
+            "prompt_tokens": 2172,
+            "model_call_count": 1,
+            "completion_tokens": 23,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004528,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.861
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"The approved budget for that rehearsa\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 861ms \u00b7 26.7 tok/s\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.b2e58223cf28442989d22224",
+          "session_id": "sess_809524662d0047b9",
+          "response": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 0.915572,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:17.276778+00:00",
+            "total_tokens": 2247,
+            "prompt_tokens": 2214,
+            "model_call_count": 1,
+            "completion_tokens": 33,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004692,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.841
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 841ms \u00b7 39.2 tok/s\""
+        },
+        {
+          "case_id": "chat-exact",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.090fe82c9f4f409c95ad5726",
+          "session_id": "sess_78c6a0e5d5c64233",
+          "response": "READY.",
+          "closed": true,
+          "emitted": true,
+          "case_check": false,
+          "backend_seconds": 1.534092,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:19.923548+00:00",
+            "total_tokens": 4133,
+            "prompt_tokens": 4105,
+            "model_call_count": 2,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008434,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.432
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 4.1k tokens \u00b7 1.4s \u00b7 19.6 tok/s\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.36c25e74bb504befa67105e1",
+          "session_id": "sess_78c6a0e5d5c64233",
+          "response": "Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.788883,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:24.437092+00:00",
+            "total_tokens": 4247,
+            "prompt_tokens": 4199,
+            "model_call_count": 2,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008782,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.676
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 1.7s \u00b7 28.6 tok/s\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.935fc2d6399341c598ab3222",
+          "session_id": "sess_78c6a0e5d5c64233",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.64042,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:29.268060+00:00",
+            "total_tokens": 4339,
+            "prompt_tokens": 4291,
+            "model_call_count": 2,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.008966,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 1.541
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 2,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 1.5s \u00b7 31.1 tok/s\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.7512d280a6c540c48b562f04",
+          "session_id": "sess_78c6a0e5d5c64233",
+          "response": "The approved budget for the rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 0.916973,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:33.958242+00:00",
+            "total_tokens": 2195,
+            "prompt_tokens": 2172,
+            "model_call_count": 1,
+            "completion_tokens": 23,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004528,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.832
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"The approved budget for the rehearsal h\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 832ms \u00b7 27.6 tok/s\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.b8666e1237e8424aaa0690cc",
+          "session_id": "sess_78c6a0e5d5c64233",
+          "response": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 0.863322,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:37.982538+00:00",
+            "total_tokens": 2247,
+            "prompt_tokens": 2214,
+            "model_call_count": 1,
+            "completion_tokens": 33,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.004692,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.773
+          },
+          "models_recorded": [
+            "gpt-4.1"
+          ],
+          "model_receipt_count": 1,
+          "native_run": null,
+          "native_snapshots": 0,
+          "ui_observation": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 773ms \u00b7 42.7 tok/s\""
+        }
+      ]
+    },
+    "native": {
+      "required_measured_turns": 60,
+      "measured_turns": 15,
+      "missing_turns": 45,
+      "unmeasured_scenarios": [
+        "artifact",
+        "delegation",
+        "failure-recovery",
+        "internal-comparison",
+        "internal-retrieval",
+        "interview-continue",
+        "interview-start",
+        "long-context",
+        "mcp-read",
+        "proactive",
+        "research-conflict",
+        "research-extraction",
+        "research-unknown",
+        "restart-recall",
+        "visitor-status"
+      ],
+      "case_checks_passed": 11,
+      "case_checks_failed": 1,
+      "case_checks_pending": 3,
+      "full_gate_complete": false,
+      "backend_seconds_all_observed": {
+        "n": 15,
+        "median": 1.566974,
+        "p95_nearest_rank": 2.698692,
+        "total": 24.628113999999997
+      },
+      "tokens_all_observed": {
+        "n": 15,
+        "median": 355,
+        "p95_nearest_rank": 463,
+        "total": 5303
+      },
+      "known_recorded_model_calls": 15,
+      "missing_call_count_turns": 0,
+      "known_estimated_usd": 0.012166000000000001,
+      "missing_estimated_cost_turns": 0,
+      "missing_unknown_cost_reporting_turns": 0,
+      "reported_unknown_cost_events": 0,
+      "cost_provenance": "Estimates, not provider invoices; missing usage remains missing in each record",
+      "records": [
+        {
+          "case_id": "chat-exact",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.8ea89fbf806a432080a1b799",
+          "session_id": "sess_57856dd1cca64057",
+          "response": "READY",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 2.698692,
+          "usage": {
+            "last_updated": "2026-11-05T08:47:40.989569+00:00",
+            "total_tokens": 246,
+            "prompt_tokens": 243,
+            "total_cost_usd": 0.00051,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 3,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.00051,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 243,
+              "output_tokens": 3
+            },
+            "output": "READY",
+            "run_id": "5bddfdde451247a7b6839432388b9ad0",
+            "status": "delivered",
+            "history_source": {},
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.dbc7de9674e14852b9c40cf9",
+          "session_id": "sess_57856dd1cca64057",
+          "response": "Noted: CEDAR-47, rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 2.609798,
+          "usage": {
+            "last_updated": "2026-11-05T08:50:57.791653+00:00",
+            "total_tokens": 309,
+            "prompt_tokens": 289,
+            "total_cost_usd": 0.000738,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 20,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000738,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 289,
+              "output_tokens": 20
+            },
+            "output": "Noted: CEDAR-47, rehearsal date 18 November 2026.",
+            "run_id": "0e6180db9e514211bb4e1520f4474834",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "5bddfdde451247a7b6839432388b9ad0"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"Noted: CEDAR-47, rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 309 tokens\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.7c84c3c2fa9a47f699fe60f8",
+          "session_id": "sess_57856dd1cca64057",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.772282,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:03.586811+00:00",
+            "total_tokens": 355,
+            "prompt_tokens": 331,
+            "total_cost_usd": 0.000854,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 24,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000854,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 331,
+              "output_tokens": 24
+            },
+            "output": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+            "run_id": "f47e63bcadc24168be9866867365ab0d",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "0e6180db9e514211bb4e1520f4474834"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"You gave me the coordination label CEDAR-47 and the rehearsal date 18 Novemb\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 355 tokens\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.fdc23f67b39f4f46a4e9eabf",
+          "session_id": "sess_57856dd1cca64057",
+          "response": "The approved budget for that rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 1.701585,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:07.771904+00:00",
+            "total_tokens": 398,
+            "prompt_tokens": 385,
+            "total_cost_usd": 0.000874,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 13,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000874,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 385,
+              "output_tokens": 13
+            },
+            "output": "The approved budget for that rehearsal has not been provided.",
+            "run_id": "a3faf26568c0413eb8ff4b5634efbbf5",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "f47e63bcadc24168be9866867365ab0d"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"The approved budget for that rehearsal has not been provided.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 398 tokens\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 1,
+          "interaction_id": "n.Interaction.fe751b4edc5a4952ade6f412",
+          "session_id": "sess_57856dd1cca64057",
+          "response": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.566974,
+          "usage": {
+            "last_updated": "2026-11-05T08:51:12.533558+00:00",
+            "total_tokens": 449,
+            "prompt_tokens": 427,
+            "total_cost_usd": 0.00103,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 22,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.00103,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 427,
+              "output_tokens": 22
+            },
+            "output": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+            "run_id": "fefbb8e821384a60b281f12bc1185184",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "a3faf26568c0413eb8ff4b5634efbbf5"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 449 tokens\""
+        },
+        {
+          "case_id": "chat-exact",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.3e6f2b60cbdf4182a0437844",
+          "session_id": "sess_bea9aa78f6cb433d",
+          "response": "READY",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.259113,
+          "usage": {
+            "last_updated": "2026-11-05T08:52:55.967531+00:00",
+            "total_tokens": 246,
+            "prompt_tokens": 243,
+            "total_cost_usd": 0.00051,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 3,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.00051,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 243,
+              "output_tokens": 3
+            },
+            "output": "READY",
+            "run_id": "b76e74d7a1314d6cb13d4a804aedbdd9",
+            "status": "delivered",
+            "history_source": {},
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.af5162b52cb942db9d134dd3",
+          "session_id": "sess_bea9aa78f6cb433d",
+          "response": "Noted: CEDAR-47 is the coordination label and the rehearsal date is 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.630042,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:01.398804+00:00",
+            "total_tokens": 315,
+            "prompt_tokens": 289,
+            "total_cost_usd": 0.000786,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 26,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000786,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 289,
+              "output_tokens": 26
+            },
+            "output": "Noted: CEDAR-47 is the coordination label and the rehearsal date is 18 November 2026.",
+            "run_id": "4cc6f5cebf38473e82e964e9c9b2aa8f",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "b76e74d7a1314d6cb13d4a804aedbdd9"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"Noted: CEDAR-47 is the coordination label and the rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 315 tokens\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.d2f9de0fd89b42a1acfa4718",
+          "session_id": "sess_bea9aa78f6cb433d",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.486514,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:06.620422+00:00",
+            "total_tokens": 361,
+            "prompt_tokens": 337,
+            "total_cost_usd": 0.000866,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 24,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000866,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 337,
+              "output_tokens": 24
+            },
+            "output": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+            "run_id": "97d01979bd1b49be81173adcdd9bbfc2",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "4cc6f5cebf38473e82e964e9c9b2aa8f"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"You gave me the coordination label CEDA\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 361 tokens\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.177bf2ab1f2f4e9bb821f51f",
+          "session_id": "sess_bea9aa78f6cb433d",
+          "response": "The approved budget for that rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 1.419527,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:11.897949+00:00",
+            "total_tokens": 404,
+            "prompt_tokens": 391,
+            "total_cost_usd": 0.000886,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 13,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000886,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 391,
+              "output_tokens": 13
+            },
+            "output": "The approved budget for that rehearsal has not been provided.",
+            "run_id": "fff945330b6c4b2081ae24ac649421b8",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "97d01979bd1b49be81173adcdd9bbfc2"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"The approved budget for that rehears\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 404 tokens\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 2,
+          "interaction_id": "n.Interaction.184e38a67cd247d0b8c580c4",
+          "session_id": "sess_bea9aa78f6cb433d",
+          "response": "```json\n{\n  \"label\": \"CEDAR-47\",\n  \"date\": \"2026-11-18\"\n}\n```",
+          "closed": true,
+          "emitted": true,
+          "case_check": false,
+          "backend_seconds": 1.206014,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:15.440424+00:00",
+            "total_tokens": 463,
+            "prompt_tokens": 433,
+            "total_cost_usd": 0.001106,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 30,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.001106,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 433,
+              "output_tokens": 30
+            },
+            "output": "```json\n{\n  \"label\": \"CEDAR-47\",\n  \"date\": \"2026-11-18\"\n}\n```",
+            "run_id": "497018543d89443b8b6fec36f00932a4",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "fff945330b6c4b2081ae24ac649421b8"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"json\"\nStaticText \"{\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 463 tokens\""
+        },
+        {
+          "case_id": "chat-exact",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.5c17d372d2d54b07b1a47d83",
+          "session_id": "sess_eb50b7a1edbd40cd",
+          "response": "READY",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 0.957702,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:21.862830+00:00",
+            "total_tokens": 246,
+            "prompt_tokens": 243,
+            "total_cost_usd": 0.00051,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 3,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.00051,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 243,
+              "output_tokens": 3
+            },
+            "output": "READY",
+            "run_id": "3813a163011e49a39f71fd12f577816b",
+            "status": "delivered",
+            "history_source": {},
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\""
+        },
+        {
+          "case_id": "remember-facts",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.6a317237523a414ea78710bc",
+          "session_id": "sess_eb50b7a1edbd40cd",
+          "response": "Noted: CEDAR-47, rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.236594,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:26.772777+00:00",
+            "total_tokens": 309,
+            "prompt_tokens": 289,
+            "total_cost_usd": 0.000738,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 20,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000738,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 289,
+              "output_tokens": 20
+            },
+            "output": "Noted: CEDAR-47, rehearsal date 18 November 2026.",
+            "run_id": "e398d266156b442393faf164cddfe61e",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "3813a163011e49a39f71fd12f577816b"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"Noted: CEDAR-47, rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 309 tokens\""
+        },
+        {
+          "case_id": "recall-facts",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.8375907e0d7e4cd582edf8a1",
+          "session_id": "sess_eb50b7a1edbd40cd",
+          "response": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 2.03776,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:32.292927+00:00",
+            "total_tokens": 355,
+            "prompt_tokens": 331,
+            "total_cost_usd": 0.000854,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 24,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000854,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 331,
+              "output_tokens": 24
+            },
+            "output": "You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.",
+            "run_id": "f448d799d18a485a8a6332ba786d8dce",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "e398d266156b442393faf164cddfe61e"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"You gave me the coordination label CEDAR-47\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 355 tokens\""
+        },
+        {
+          "case_id": "missing-fact",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.c7dd16b81222433d893c2c9f",
+          "session_id": "sess_eb50b7a1edbd40cd",
+          "response": "The approved budget for that rehearsal has not been provided.",
+          "closed": true,
+          "emitted": true,
+          "case_check": null,
+          "backend_seconds": 1.404038,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:36.200560+00:00",
+            "total_tokens": 398,
+            "prompt_tokens": 385,
+            "total_cost_usd": 0.000874,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 13,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.000874,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 385,
+              "output_tokens": 13
+            },
+            "output": "The approved budget for that rehearsal has not been provided.",
+            "run_id": "745738015e1b46a5a18af6447ffdbfc2",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "f448d799d18a485a8a6332ba786d8dce"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"The approved budget for that rehearsal has not been provided.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 398 tokens\""
+        },
+        {
+          "case_id": "json-format",
+          "replicate": 3,
+          "interaction_id": "n.Interaction.ef10c8d82bbf4406a22ecf51",
+          "session_id": "sess_eb50b7a1edbd40cd",
+          "response": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+          "closed": true,
+          "emitted": true,
+          "case_check": true,
+          "backend_seconds": 1.641479,
+          "usage": {
+            "last_updated": "2026-11-05T08:53:40.438626+00:00",
+            "total_tokens": 449,
+            "prompt_tokens": 427,
+            "total_cost_usd": 0.00103,
+            "litellm_cost_usd": 0.0,
+            "model_call_count": 1,
+            "completion_tokens": 22,
+            "reported_cost_usd": 0.0,
+            "cache_write_tokens": 0,
+            "estimated_cost_usd": 0.00103,
+            "model_attempt_count": 0,
+            "cached_prompt_tokens": 0,
+            "total_duration_seconds": 0.0,
+            "unknown_cost_call_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0.0
+          },
+          "models_recorded": [
+            "gpt-4.1-2025-04-14"
+          ],
+          "model_receipt_count": 1,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 427,
+              "output_tokens": 22
+            },
+            "output": "{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}",
+            "run_id": "2ac2dce47c1b498a94ab5a549b659eed",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "745738015e1b46a5a18af6447ffdbfc2"
+            },
+            "usage_complete": true
+          },
+          "native_snapshots": 3,
+          "ui_observation": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 449 tokens\""
+        }
+      ]
+    }
+  }
+}

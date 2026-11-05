@@ -85,6 +85,7 @@ class NativeHarnessAction(InteractAction):
     """
 
     model: str = attribute(default="openai:gpt-4.1")
+    model_settings: dict[str, Any] = attribute(default_factory=dict)
     skill_directory: str = attribute(default="")
     delegates: list[dict[str, Any]] = attribute(default_factory=list)
     instructions: str = attribute(default="Help the user using the available skill.")
@@ -95,6 +96,12 @@ class NativeHarnessAction(InteractAction):
     max_requests: int = attribute(default=20)
     max_tokens: int = attribute(default=100_000)
     timeout_seconds: float = attribute(default=180.0)
+
+    async def on_startup(self) -> None:
+        """Reject invalid native settings before the process accepts traffic."""
+        from jvagent.harness.model_settings import validate_model_settings
+
+        validate_model_settings(self.model_settings)
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
@@ -209,6 +216,7 @@ class NativeHarnessAction(InteractAction):
         step_store = InteractionStepStore(interaction)
         agent = build_native_agent(
             self.model,
+            model_settings=self.model_settings,
             skill_directory=Path(self.skill_directory),
             delegates=self.delegates,
             conversation_id=visitor.session_id,
@@ -330,6 +338,7 @@ class NativeHarnessAction(InteractAction):
         except Exception as exc:
             if interaction.native_run.get("status") == "running":
                 from jvagent.harness.accounting import recover_native_usage
+                from jvagent.harness.contracts import OutputTokenLimitReached
 
                 await recover_native_usage(interaction, run_id=run_id, model=self.model)
                 interaction.native_run = {
@@ -337,6 +346,8 @@ class NativeHarnessAction(InteractAction):
                     "status": "failed",
                     "usage_complete": False,
                 }
+                if isinstance(exc, OutputTokenLimitReached):
+                    interaction.native_run["reason"] = "output_token_limit"
                 await interaction.save()
                 from pydantic_ai.exceptions import (
                     ModelAuthenticationError,
@@ -346,6 +357,8 @@ class NativeHarnessAction(InteractAction):
 
                 if isinstance(exc, ModelAuthenticationError):
                     message = "The model provider rejected its API credentials. Please update the configured key."
+                elif isinstance(exc, OutputTokenLimitReached):
+                    message = "The model reached its reply token limit before finishing. Increase the per-request output limit in agent settings or ask for a shorter answer."
                 elif isinstance(exc, (UsageLimitExceeded, SpendLimitExceeded)):
                     message = "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request."
                 else:

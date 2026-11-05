@@ -52,6 +52,7 @@ async def test_native_receipt_precedes_delivery(
     original_tool = Tool("visitor_status", "Scoped status", effect_class="read")
 
     def factory(*args: Any, **kwargs: Any) -> Any:
+        assert kwargs["model_settings"] == {"temperature": 0.0, "max_tokens": 8192}
         assert kwargs["tools"][0].binds_visitor is True
         assert original_tool.binds_visitor is None
         return runtime
@@ -100,6 +101,7 @@ async def test_native_receipt_precedes_delivery(
         max_run_cost_usd="2",
         max_conversation_cost_usd="20",
         model="test",
+        model_settings={"temperature": 0.0, "max_tokens": 8192},
         skill_directory=".",
         delegates=[],
         instructions="",
@@ -245,6 +247,7 @@ async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
         ),
         get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
         model="test",
+        model_settings={},
         skill_directory=".",
         delegates=[],
         instructions="",
