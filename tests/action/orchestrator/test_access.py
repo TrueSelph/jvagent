@@ -83,3 +83,79 @@ async def test_access_policy_denials_and_policy_evaluation_errors_deny():
     assert not await is_tool_allowed(
         agent, label="tool:delegate:search", user_id="user", channel="web"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action_allowed,named_allowed", [(True, True), (True, False), (False, True)]
+)
+@pytest.mark.parametrize("explicit", [True, False])
+async def test_native_named_tool_permission_preserves_both_gates(
+    action_allowed: bool, named_allowed: bool, explicit: bool
+) -> None:
+    from types import SimpleNamespace
+
+    policy = SimpleNamespace(
+        policy_applies=lambda: True,
+        tool_permission_names=lambda channel: {"lookup"},
+        has_tool_access=AsyncMock(return_value=named_allowed),
+        has_action_access=AsyncMock(return_value=action_allowed),
+    )
+    agent = SimpleNamespace(get_access_control_action=AsyncMock(return_value=policy))
+    assert await is_tool_allowed(
+        agent,
+        label="SearchAction",
+        tool_name="lookup",
+        requires_tool_permission=explicit,
+        user_id="caller",
+        channel="web",
+    ) is (action_allowed and named_allowed)
+    policy.has_tool_access.assert_awaited_once_with("caller", "lookup", "web")
+
+
+@pytest.mark.asyncio
+async def test_native_explicit_named_permission_without_policy_denies() -> None:
+    from types import SimpleNamespace
+
+    agent = SimpleNamespace(get_access_control_action=AsyncMock(return_value=None))
+    assert not await is_tool_allowed(
+        agent,
+        label="SearchAction",
+        tool_name="lookup",
+        requires_tool_permission=True,
+        user_id="caller",
+        channel="web",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["resolve", "names", "check"])
+async def test_named_tool_policy_errors_never_grant_access(
+    failure: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    from types import SimpleNamespace
+
+    from jvagent.tooling.access import is_named_tool_allowed, named_tool_rule_applies
+
+    policy = SimpleNamespace(
+        policy_applies=lambda: True,
+        tool_permission_names=Mock(return_value={"lookup"}),
+        has_tool_access=AsyncMock(return_value=True),
+        has_action_access=AsyncMock(return_value=True),
+    )
+    agent = SimpleNamespace(get_access_control_action=AsyncMock(return_value=policy))
+    error = RuntimeError("private policy credential")
+    if failure == "resolve":
+        agent.get_access_control_action.side_effect = error
+    elif failure == "names":
+        policy.tool_permission_names.side_effect = error
+    else:
+        policy.has_tool_access.side_effect = error
+    assert not await is_tool_allowed(
+        agent, label="SearchAction", tool_name="lookup", user_id="caller", channel="web"
+    )
+    assert not await is_named_tool_allowed(
+        agent, tool_name="lookup", user_id="caller", channel="web"
+    )
+    assert await named_tool_rule_applies(agent, tool_name="lookup", channel="web")
+    assert "private policy credential" not in caplog.text

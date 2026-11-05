@@ -30,6 +30,9 @@ def admit_skill(
         "requires_tasks",
         "requires-tasks",
         "extends",
+        "access-action",
+        "allowed-groups",
+        "denied-groups",
     ):
         if metadata.get(field):
             raise ValueError(

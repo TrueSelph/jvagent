@@ -8,17 +8,66 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Fixed
+
+- **Handoff mode prompts corrected.** The consult/transfer trigger is now gated
+  on the owning skill/tool having run ("after the owning skill or tool ran, the
+  answer is not in this turn's tool results"), so it cannot fire before the first
+  tool call. The consult rule routes to "the fallback skill" instead of naming a
+  specific agent skill, keeping the action agent-agnostic. The consult completion
+  event no longer reopens the request it just closed. Observe mode is silent as
+  documented: the tool returns a no-reply marker, the rule stores reusable facts
+  only and forbids a group reply or a customer skill, the denied-call line is
+  fact-specific, and the completion event records that no message was sent.
+  Transfer gains the fallback-first step, a corrected contact sentence, a
+  defined refusal exit on web/default, a staff-turn rule that treats staff as
+  staff, an error path that forbids a false confirmation, and a no-repeat guard
+  for a closed request. Observe stores one fact per call, skips a fact already
+  stored in the conversation, and its `fact` argument requires the subject and
+  conditions rather than a bare value.
+- **Handoff staff answers saved as customer replies.** The staff-turn rule now
+  defines answer scope instead of requiring a per-question match: a fact, price,
+  policy, timing, or next step that settles an open question is the answer, a
+  next step or policy settles every question of that kind, and the agent must
+  never write the customer-facing text itself. The reply path is limited to a
+  question back, a no-content message, or an empty queue, so a general staff
+  line ("you need to contact us to make any purchase") is saved against the asks
+  it settles rather than echoed to the customer. `handoff__save_answer` and its
+  `question_ids` description state the same scope and that the tool performs
+  delivery.
+- **Handoff consult staff answers.** Staff detection now normalizes phone/JID
+  forms and checks the WhatsApp group author, so group replies receive the
+  pending-question rule and the save tools. The staff rule explicitly overrides
+  customer skills and accepts a substantial (not necessarily perfect) answer.
+  `handoff__save_answer` now reports whether the customer was notified: a
+  pending row with no contact or `declined` is removed but no longer reported
+  as a successful delivery, and `_reply_to_customer` returns
+  `delivered` / `skipped` / `failed`.
+
+### Added
+
+- **Skill identity gating via AccessControl groups.** Skills may declare
+  `access-action` plus `allowed-groups` / `denied-groups` so the orchestrator
+  shows or hides them from the skill catalog based on
+  `AccessControlAction.user_groups` for that action label. Fail closed when
+  AccessControl is missing or not enforcing. Handoff uses this for the
+  customer (`handoff`, denied `staff`) and staff (`handoff_staff`, allowed
+  `staff`) split; Silvie configures `user_groups.HandoffAction.staff`.
+
 ## [0.1.8rc20] - 2026-10-03
 
 ### Changed
 
 - Pin the published `jvspatial==0.1.1` release across package metadata and requirements, incorporating PostgreSQL index naming and schema bootstrap fixes.
+- **Handoff consult/transfer rule sharpened.** The escalation trigger is now a short clause ("the answer is not in this turn's tool results, or the request needs something the tools cannot provide") instead of a 41-word condition. The consult rule leads with the call, forbids writing the holding line ("checking with the team", "will follow up") before `handoff__consult` returns, and keeps the quote / stock / bulk-B2B / upset-customer / wants-a-person triggers as one compact sentence. Transfer gains the same holding-line prohibition.
 
 ## [0.1.8rc19] - 2026-09-27
 
 ### Added
 
 - **Unified capability discovery (`find_capability`, ADR-0055).** Primary lean discovery meta-tool ranks matching **skills** then **tools** in one observation, with `use_skill` / `load_tool` next-step cues. `find_tool` / `find_skill` remain aliases. Loop protocol, lean partial-list hint, and unknown-tool bounce steer to `find_capability` first so domain SOPs activate instead of find_tool thrash.
+
+- **Skill-gated handoff action (`jvagent/handoff_action`, `HandoffAction`, 1.0.0).** Human-support capability tools — `handoff__direct_contact()` (contact block), `handoff__notify(mode, message, channel, phone_numbers?, emails?)` (`agent_escalation` | `scheduled_callback` | `staff_lookup`, channel `whatsapp` | `email`; `staff_lookup` records a pending question), `handoff__staff_inbox()` and `handoff__resolve(question_id, answer)` (staff-only; append the Q&A to `<files_root>/handoff.md` and re-ingest it into PageIndex as `doc_name="handoff.md"`, `metadata={"access":"public"}`). Staff identity is the dispatch sender; only `HANDOFF_STAFF_NUMBERS` / `HANDOFF_STAFF_EMAILS` may resolve and write PageIndex, and one target is chosen at random per notification. Gated by the new library skill `jvagent/skills/handoff` (`skill_only_tools: ["handoff__*"]`), which carries the when/how SOP. The action also contributes an orchestration-scoped routing parameter (`key: handoff_routing`). Email channel requires `jvagent/email_action` + MCP Gmail/OAuth (or SendGrid/Outlook). New pending-question store (`HandoffQuestion`). The pre-existing `jvagent/handoff_interact_action` IA is unchanged.
 
 - **Harness excellence runtime (HP-02 … HP-12).** `jvagent.harness.runtime` is the store-backed source of truth for NativeCaller admission, snapshot-keyed caches, TurnRun journals, invocation ledger, durable outbox, session leases, host providers, skill manifests/isolation, traces, and the HP-12 deployment matrix. Process-local bus/caches remain fan-out; JSON/SQLite active-active is unsupported. Docs: `docs/HARNESS_DEPLOYMENT.md`, `docs/skill-isolation.md`. TurnRun checkpoints persist on `Interaction.observability_metrics`; loop resume skips completed IDEMPOTENT invocations; Claude skill staging is snapshot/digest-keyed and refuses untrusted isolation; mutating send/delete/bash tools declare `NON_RETRYABLE`; embed cancel marks TurnRun recovery. HostCapabilityProvider.invoke dispatches a registered host runner; IsolatedExecutor wraps approved backends with no subprocess fallback; dump_store/load_store persist the harness store; file/redis/dynamo lease adapters require an explicit client; skill signatures use HMAC compare_digest; CUCS harness evals live under `tests/conformance/cucs/`; CI adds conformance/two-worker/isolation/load lanes.
 

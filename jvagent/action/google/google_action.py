@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from google.auth.transport.requests import Request
@@ -14,6 +15,35 @@ from jvagent.action.oauth.audit import _audit_log_oauth_event
 logger = logging.getLogger(__name__)
 
 _OIDC_SCOPES = frozenset({"openid", "profile", "email"})
+
+
+def _normalize_expiry(value: Any) -> Optional[str]:
+    """Coerce a stored expiry into the naive-UTC ISO form google-auth parses.
+
+    ``Credentials.from_authorized_user_info`` parses expiry with::
+
+        datetime.strptime(expiry.rstrip("Z").split(".")[0], "%Y-%m-%dT%H:%M:%S")
+
+    so a trailing ``+00:00`` offset raises ``ValueError`` and fractional
+    seconds are dropped. We store ``datetime.now(timezone.utc).isoformat()``
+    (which has both), so normalise here to keep the parse lossless and safe.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 class GoogleAction(Action):
@@ -191,7 +221,7 @@ class GoogleAction(Action):
             "client_secret": env_secret or token_data.get("client_secret") or "",
             "scopes": scopes,
         }
-        expiry = token_data.get("expiry")
+        expiry = _normalize_expiry(token_data.get("expiry"))
         if expiry:
             token_info["expiry"] = expiry
         return Credentials.from_authorized_user_info(token_info, scopes)

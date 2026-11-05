@@ -11,7 +11,7 @@ leadgen:
   title: My Lead Capture
   summary: Optional description
   fields:
-    - key: name
+    - key: full_name
       required: true
       guidance: Full name
       validator: person_name
@@ -23,14 +23,14 @@ leadgen:
       required: false
       validator: phone
       phone_locale: E164   # or GY
-    - key: interested_products
+    - key: quote_items
       merge: true
   gap_fill:
     batch: true
-    priority: [name, phone, email, organization]
+    priority: [full_name, phone, email, organization]
   sync:
     mode: on_capture       # on_capture | on_complete | manual
-    min_fields: [name]
+    min_fields: [full_name]
     require_any: [phone, email]
     # Destination-agnostic: any MCP server + tool. Below is a flat file; a
     # spreadsheet, email, CRM, or DB is the same shape (only server/tool/args
@@ -82,7 +82,7 @@ deployment/infra, so the skill defines *what* to capture and the agent defines
   context:
     enabled: true
     sync_mode: on_capture           # on_capture | on_complete | manual
-    sync_min_fields: [name]
+    sync_min_fields: [full_name]
     sync_require_any: [phone, email]
     sync_destinations:
       - server: leadfile            # any configured MCP server

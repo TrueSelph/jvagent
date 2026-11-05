@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union
 
+from jvspatial import create_task
 from jvspatial.api.auth.api_key_service import APIKeyService
 from jvspatial.core.annotations import attribute
 from jvspatial.core.context import GraphContext
@@ -227,8 +228,50 @@ class WhatsAppAction(Action):
         ),
     )
 
+    save_group_users: bool = attribute(
+        default=False,
+        description=(
+            "When true, upsert group chats into group_users "
+            "(conversation user_id → sender display name) on each inbound group turn."
+        ),
+    )
+
+    group_users: Dict[str, str] = attribute(
+        default_factory=dict,
+        description=(
+            "Map of group conversation user_id (the id access control checks) "
+            "to the latest sender display name (notifyName)."
+        ),
+    )
+
     # Internal state tracking (not persisted)
     _session_registered: bool = False
+
+    async def record_group_user_from_inbound(self, ctx: Any) -> None:
+        """Persist conversation user_id → sender_name when save_group_users is enabled.
+
+        On group turns, access control checks ``visitor.user_id``, which is the
+        group chat id (``ctx.group_id``), not the participant phone.
+        """
+        if not self.save_group_users:
+            return
+        user_id = str(getattr(ctx, "group_id", "") or "").strip()
+        name = str(getattr(ctx, "sender_name", "") or "").strip()
+        if not user_id:
+            return
+        current = dict(self.group_users or {})
+        if current.get(user_id) == name:
+            return
+        is_new = user_id not in current
+        current[user_id] = name
+        self.group_users = current
+        await self.save()
+        if is_new:
+            logger.info(
+                "WhatsApp group_users: added user_id=%s sender_name=%s",
+                user_id,
+                name,
+            )
 
     def is_meta_provider(self) -> bool:
         return (self.provider or "").strip() == "meta"
@@ -717,11 +760,12 @@ class WhatsAppAction(Action):
                 timeout,
             )
 
-    def _fire_meta_webhook_register_task(self) -> None:
+    async def _fire_meta_webhook_register_task(self) -> None:
         """Fire-and-forget register on long-running hosts (strongly referenced)."""
-        task = asyncio.create_task(
+        task = await create_task(
             self._run_deferred_meta_webhook_register_after_startup(),
             name="meta_whatsapp_webhook_register",
+            concurrent=True,
         )
         _BACKGROUND_TASKS.add(task)
         task.add_done_callback(_BACKGROUND_TASKS.discard)
@@ -731,13 +775,13 @@ class WhatsAppAction(Action):
         if WhatsAppAction._is_serverless_runtime():
             await self._run_deferred_meta_webhook_register_after_startup()
             return
-        self._fire_meta_webhook_register_task()
+        await self._fire_meta_webhook_register_task()
 
     async def _schedule_deferred_meta_webhook_register(self) -> None:
         """Register Meta webhook override after the HTTP server is listening.
 
         ``on_startup`` runs inside ``asyncio.run(pre_startup_bootstrap)``; a bare
-        ``asyncio.create_task`` there is cancelled when that loop closes. Hook
+        ``jvspatial.create_task`` there is cancelled when that loop closes. Hook
         into the jvspatial server lifecycle instead (same pattern as startup
         summary). On serverless the lifecycle hook **awaits** register so
         Lambda does not freeze before ``jvconnect_webhook_secret`` is saved.

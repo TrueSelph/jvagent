@@ -11,11 +11,11 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 | Gate | Current evidence | Remaining work |
 |---|---|---|
-| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 92 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 140 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
+| Native execution | 157 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure/restart follow-ups; bounded host cancellation cleanup; actual cancelled-stream unknown usage and blocked follow-ups | Broader storage-I/O deadlines, abandoned-worker ownership, effect/write reconciliation, operator tooling, blocking-adapter and outage settlement |
-| Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | PostgreSQL, in-transaction death, outage and multi-worker fencing |
+| Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | Single-worker PostgreSQL/checkpoint retry and restart readback now recorded; in-transaction death, outage and multi-worker fencing remain open |
 | Spend | Official capability, graph batch-store regressions, strict flushed journal, budget-failure receipts and two-tab serialized browser totals reconciled to six calls | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and distributed concurrency |
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory, explicit admission, direct PageIndex and bounded foreground skill delegation with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
@@ -91,3 +91,17 @@ One incorrect model answer and a cross-agent fixture collection miss are retaine
 This does not qualify pool saturation, real outage browser recovery, multiworker
 ownership, remote CI, legacy cutover or workload optimization. PostgreSQL service
 configuration is added to the native CI lane; a configured job is not a passed job.
+
+
+## Upstream and named-tool compatibility increment — 2026-11-05
+
+Reconcile main 43cbc885 with rebuild e34abedc. Preserve upstream Action/domain
+changes, lifecycle/OAuth fixes and explicit named-tool permission metadata;
+exclude product-specific Integral auth in accordance with the user's prior
+boundary. The inventory retains its original baseline and adds an upstream delta.
+Native dispatch now applies Action and named-tool authorization through shared
+host policy (`jvagent/tooling/access.py:53`), including delegated children
+(`jvagent/harness/native.py:225`). Browser deny/allow/restart evidence is in the
+progress record. New skill group declarations are explicitly rejected pending a
+qualified adapter (`jvagent/harness/skill_admission.py:39`); this is a visible
+compatibility limit, not completed handoff/native group-policy qualification.

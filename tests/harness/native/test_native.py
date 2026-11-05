@@ -138,3 +138,56 @@ async def test_native_runner_rejects_invalid_limits(limit: Any) -> None:
             run_id="run",
             max_requests=limit,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host_permission", [None, False, True])
+async def test_native_explicit_named_permission_requires_host_tool_check(
+    tmp_path: Path, host_permission: bool | None
+) -> None:
+    directory = tmp_path / "named"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: named\ndescription: Named permission\nallowed-tools: [lookup]\n---\nUse lookup.\n"
+    )
+    called: list[bool] = []
+    checked: list[str] = []
+    step = 0
+
+    async def access(label: str) -> bool:
+        return True
+
+    async def tool_access(tool: Tool) -> bool:
+        checked.append(tool.name)
+        return bool(host_permission)
+
+    async def lookup() -> str:
+        called.append(True)
+        return "permitted"
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal step
+        step += 1
+        return ModelResponse(
+            parts=[ToolCallPart("lookup", {})] if step == 1 else [TextPart("done")]
+        )
+
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=directory,
+        tools=[
+            Tool(
+                "lookup",
+                "Lookup",
+                execute=lookup,
+                effect_class="read",
+                requires_tool_permission=True,
+            )
+        ],
+        access_check=access,
+        tool_access_check=tool_access if host_permission is not None else None,
+        instructions="Use the skill.",
+    )
+    await agent.run("Lookup")
+    assert called == ([True] if host_permission else [])
+    assert checked == ([] if host_permission is None else ["lookup"])

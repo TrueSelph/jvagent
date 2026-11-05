@@ -1050,9 +1050,11 @@ async def test_pilot_turn_ceiling_stops_before_second_model_request(monkeypatch)
     monkeypatch.setattr(
         OrchestratorInteractAction,
         "_tool_surface_policy",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            is_mcp_action=lambda _action: False,
-            is_denied=lambda _name: False,
+        AsyncMock(
+            return_value=SimpleNamespace(
+                is_mcp_action=lambda _action: False,
+                is_denied=lambda _name: False,
+            )
         ),
     )
     monkeypatch.setattr(
@@ -1274,9 +1276,11 @@ async def test_pilot_executes_skill_and_reuses_evidence_on_followup(
     monkeypatch.setattr(
         OrchestratorInteractAction,
         "_tool_surface_policy",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            is_mcp_action=lambda _action: False,
-            is_denied=lambda _name: False,
+        AsyncMock(
+            return_value=SimpleNamespace(
+                is_mcp_action=lambda _action: False,
+                is_denied=lambda _name: False,
+            )
         ),
     )
     monkeypatch.setattr(

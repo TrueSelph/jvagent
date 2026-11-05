@@ -64,6 +64,8 @@ class ToolSpec:
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[IdempotencyClass] = None
     effect_class: Optional[Literal["read", "write", "external"]] = None
+    requires_tool_permission: bool = False
+    permission_denied_message: Optional[str] = None
 
 
 def tool(
@@ -76,6 +78,8 @@ def tool(
     binds_visitor: Optional[bool] = None,
     idempotency_class: Optional[IdempotencyClass] = None,
     effect_class: Optional[Literal["read", "write", "external"]] = None,
+    requires_tool_permission: bool = False,
+    permission_denied_message: Optional[str] = None,
 ) -> Callable[..., Any]:
     """Mark a method as an agent tool. Usable as ``@tool`` or ``@tool(name=...)``."""
 
@@ -87,6 +91,8 @@ def tool(
         binds_visitor=binds_visitor,
         idempotency_class=idempotency_class,
         effect_class=effect_class,
+        requires_tool_permission=requires_tool_permission,
+        permission_denied_message=permission_denied_message,
     )
 
     def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -220,6 +226,9 @@ def collect_tools(instance: Any) -> List[Tool]:
             built.idempotency_class = spec.idempotency_class
         if spec.effect_class is not None:
             built.effect_class = spec.effect_class
+        built.requires_tool_permission = bool(spec.requires_tool_permission)
+        if spec.permission_denied_message:
+            built.permission_denied_message = spec.permission_denied_message
         tools.append(built)
 
     tools.sort(key=lambda t: t.name)

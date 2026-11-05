@@ -424,6 +424,11 @@ class MCPAction(Action):
                 )
                 args = a
             else:
+                if raw.get("auth"):
+                    raise ValueError(
+                        "Vendor MCP auth profiles are unsupported; configure "
+                        "authentication through an external MCP integration"
+                    )
                 client = MCPClientWrapper(
                     transport,
                     command=command,
@@ -461,6 +466,17 @@ class MCPAction(Action):
                 base_url=url,
                 show_tools=show_tools,
             )
+
+    async def ensure_servers(self) -> None:
+        """(Re)build the server registry if this instance has none.
+
+        ``self._servers_by_name`` is runtime-only PrivateAttr state. An action
+        instance loaded from storage (e.g. resolved via ``Action.get``) starts
+        with an empty registry even though the persisted ``self.servers`` config
+        is present, so callers must be able to rebuild it on demand.
+        """
+        if not self._servers_by_name:
+            await self._build_server_entries()
 
     async def _provision_sandboxes(self) -> None:
         from jvagent.core.app import App

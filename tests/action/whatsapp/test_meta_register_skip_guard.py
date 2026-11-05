@@ -218,7 +218,9 @@ async def test_fallback_create_task_without_lifecycle_manager_long_running():
         create_task.call_args.args[0].close()
     create_task.assert_called_once()
     assert task in whatsapp_module._BACKGROUND_TASKS
-    task.add_done_callback.assert_called_once()
+    # jvspatial's create_task also registers its own done-callback, so assert
+    # *our* discard callback was registered rather than an exact call count.
+    task.add_done_callback.assert_any_call(whatsapp_module._BACKGROUND_TASKS.discard)
 
 
 async def test_second_schedule_for_same_action_does_not_re_register():

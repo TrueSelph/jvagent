@@ -22,6 +22,7 @@ def build_native_agent(
     tools: Sequence[JVTool],
     access_check: AccessCheck,
     instructions: str,
+    tool_access_check: Callable[[JVTool], Awaitable[bool]] | None = None,
     step_store: Any = None,
     spend_store: Any = None,
     max_run_cost_usd: str = "2.00",
@@ -75,7 +76,13 @@ def build_native_agent(
         async def invoke(**arguments: Any) -> str:
             reject_model_authority_fields(arguments)
             # Bind the checked name in the closure, never in model arguments.
-            if not await access_check(original.access_label or original.name):
+            permitted = (
+                await tool_access_check(original)
+                if tool_access_check is not None
+                else not original.requires_tool_permission
+                and await access_check(original.access_label or original.name)
+            )
+            if not permitted:
                 raise ModelRetry("Action access denied")
             result = await original.call(**arguments)
             if policy is not None:
@@ -215,6 +222,7 @@ def build_native_agent(
                 skill_directory=Path(entry.skill_directory),
                 tools=tools,
                 access_check=access_check,
+                tool_access_check=tool_access_check,
                 instructions=instructions,
                 step_store=step_store,
                 spend_store=spend_store,

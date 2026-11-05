@@ -696,6 +696,10 @@ async def _exchange_google_code(
     )
     scopes = granted_scopes_from_token_response(tokens, fallback_scopes)
 
+    # Preserve the upstream access-token expiry fix without a vendor provider.
+    expires_in = int(tokens.get("expires_in") or 3600)
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in - 60))
+
     payload = {
         "type": "authorized_user",
         "client_id": creds["client_id"],
@@ -705,6 +709,7 @@ async def _exchange_google_code(
         "token_uri": "https://oauth2.googleapis.com/token",
         "scopes": scopes,
         "account_alias": account_name,
+        "expiry": expiry.isoformat(),
     }
     if service:
         payload["mcp_services"] = [service]

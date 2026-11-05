@@ -116,6 +116,11 @@ async def sync_to_destinations(
     except Exception as exc:
         logger.debug("leadgen sync: MCPAction lookup failed: %s", exc)
         mcp_action = None
+    if mcp_action is not None and hasattr(mcp_action, "ensure_servers"):
+        try:
+            await mcp_action.ensure_servers()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("leadgen sync: ensure_servers failed: %s", exc)
     configured = set(mcp_action.get_server_names()) if mcp_action else set()
 
     results: Dict[str, str] = {}
@@ -130,6 +135,11 @@ async def sync_to_destinations(
             results[server_name] = f"Unknown mode '{mode}'"
             continue
         if server_name not in configured:
+            logger.debug(
+                "leadgen sync: server=%s not configured (configured=%s); skipping",
+                server_name,
+                sorted(configured),
+            )
             results[server_name] = "skipped: connector not configured"
             continue
         ok, msg = await _sync_mcp(mcp_action, entry, profile_data, user_id)
@@ -157,6 +167,12 @@ async def _sync_mcp(
         return False, f"Missing 'tool' for MCP entry '{server_name}'."
 
     resolved_args = substitute(raw_args, profile_data, uid)
+
+    if hasattr(mcp_action, "ensure_servers"):
+        try:
+            await mcp_action.ensure_servers()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("leadgen sync_mcp: ensure_servers failed: %s", exc)
 
     try:
         client = await mcp_action.get_client_for_user(server_name, uid)

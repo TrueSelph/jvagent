@@ -8,6 +8,8 @@ import logging
 from contextlib import AsyncExitStack
 from typing import Any, Dict, List, Optional
 
+from jvspatial import create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,10 +28,13 @@ class MCPClientWrapper:
     Session lifecycle: one long-lived session per wrapper. Use connect() to
     establish, disconnect() to tear down.
 
-    For stdio transport, the subprocess and task group lifecycle are managed by
-    running the stdio_client context manager as a background task. This avoids
-    the ExceptionGroup/BrokenResourceError that occurs when using AsyncExitStack
-    to manage the stdio_client's task group.
+    Both transports run their context managers inside a **dedicated background
+    task** that owns them (stdio and streamable_http alike). The MCP SDK's
+    transports wrap ``anyio`` task groups, whose cancel scope must be exited in
+    the same asyncio task that entered it; entering on an ``AsyncExitStack`` and
+    closing it from another task raises ``RuntimeError: Attempted to exit cancel
+    scope in a different task than it was entered in``. A dedicated task also
+    avoids the stdio ExceptionGroup/BrokenResourceError race.
     """
 
     def __init__(
@@ -42,6 +47,7 @@ class MCPClientWrapper:
         url: str = "",
         connect_timeout: float = 10.0,
         call_timeout: float = 30.0,
+        http_client: Optional[Any] = None,
     ) -> None:
         """Initialize wrapper config.
 
@@ -53,6 +59,9 @@ class MCPClientWrapper:
             url: For streamable_http, endpoint URL.
             connect_timeout: Timeout in seconds for connect + initialize + list_tools.
             call_timeout: Timeout in seconds for call_tool.
+            http_client: Optional pre-configured httpx.AsyncClient for the
+                streamable_http transport (e.g. carrying auth headers). Owned by
+                this wrapper and closed on disconnect.
         """
         self._transport = transport
         self._command = command
@@ -61,14 +70,22 @@ class MCPClientWrapper:
         self._url = url
         self._connect_timeout = connect_timeout
         self._call_timeout = call_timeout
+        self._http_client = http_client
         self._stack: Optional[AsyncExitStack] = None
         self._session: Any = None
         self._read_stream: Any = None
         self._write_stream: Any = None
-        # For stdio: background task managing the subprocess lifecycle
+        # Background task managing the subprocess lifecycle (stdio) or the
+        # streamable_http transport + ClientSession. Both are owned by a
+        # dedicated task so the SDK's anyio task group is entered and exited in
+        # the same asyncio task (see the class docstring).
         self._stdio_task: Optional[asyncio.Task] = None
         self._stdio_ready: Optional[asyncio.Event] = None
         self._stdio_error: Optional[Exception] = None
+        self._http_task: Optional[asyncio.Task] = None
+        self._http_ready: Optional[asyncio.Event] = None
+        self._http_error: Optional[Exception] = None
+        self._disconnect_event: Optional[asyncio.Event] = None
         self._connect_lock = asyncio.Lock()
 
     def _ensure_imports(self) -> Any:
@@ -126,7 +143,9 @@ class MCPClientWrapper:
                 self._stdio_ready.set()
 
         self._disconnect_event = asyncio.Event()
-        self._stdio_task = asyncio.create_task(_run_stdio_session())
+        self._stdio_task = await create_task(
+            _run_stdio_session(), name="mcp_stdio_session", concurrent=True
+        )
 
         # Wait for the session to be ready (or error)
         try:
@@ -145,32 +164,69 @@ class MCPClientWrapper:
             raise err
 
     async def _connect_streamable_http(self) -> None:
-        """Connect via streamable_http transport using AsyncExitStack."""
-        _, _, _, streamable_http_client = self._ensure_imports()
-        ClientSession = self._ensure_imports()[0]
+        """Connect via streamable_http, owning the transport in a background task.
 
-        stack = AsyncExitStack()
+        ``streamable_http_client`` runs an ``anyio`` task group whose cancel scope
+        must be exited in the same asyncio task that entered it. Entering on an
+        ``AsyncExitStack`` in the caller and closing it from another task raises
+        ``RuntimeError: Attempted to exit cancel scope in a different task than it
+        was entered in``. Mirror the stdio path: one dedicated task owns the
+        transport + ClientSession and is signalled/awaited by ``disconnect()``.
+        """
+        ClientSession, _, _, streamable_http_client = self._ensure_imports()
+
+        self._http_ready = asyncio.Event()
+        self._http_error = None
+
+        async def _run_http_session() -> None:
+            """Run the transport + ClientSession lifecycle as a long-lived task."""
+            try:
+                transport_ctx = (
+                    streamable_http_client(self._url, http_client=self._http_client)
+                    if self._http_client is not None
+                    else streamable_http_client(self._url)
+                )
+                async with transport_ctx as (read_stream, write_stream, _session_id):
+                    self._read_stream = read_stream
+                    self._write_stream = write_stream
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        self._session = session
+                        self._http_ready.set()
+                        # Keep the context alive until disconnect() is called.
+                        if self._disconnect_event:
+                            await self._disconnect_event.wait()
+            except Exception as e:  # noqa: BLE001
+                self._http_error = e
+                self._http_ready.set()
+
+        self._disconnect_event = asyncio.Event()
+        self._http_task = await create_task(
+            _run_http_session(), name="mcp_http_session", concurrent=True
+        )
+
+        # Wait for the session to be ready (or error).
         try:
-            transport_ctx = streamable_http_client(self._url)
-            read_stream, write_stream, _session_id = await stack.enter_async_context(
-                transport_ctx
+            await asyncio.wait_for(
+                self._http_ready.wait(), timeout=self._connect_timeout
             )
-            self._read_stream = read_stream
-            self._write_stream = write_stream
-            session = await stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
+        except asyncio.TimeoutError:
+            await self.disconnect()
+            raise TimeoutError(
+                f"MCP streamable_http connection timed out after "
+                f"{self._connect_timeout}s"
             )
-            await asyncio.wait_for(session.initialize(), timeout=self._connect_timeout)
-            self._session = session
-            self._stack = stack
-        except Exception:
-            await stack.aclose()
-            raise
+
+        if self._http_error is not None:
+            err = self._http_error
+            await self.disconnect()
+            raise err
 
     async def disconnect(self) -> None:
         """Close session and transport."""
         if self._transport == "stdio" and self._stdio_task is not None:
-            # Signal the background task to exit
+            # Signal the background task to exit, then cancel + await it so the
+            # SDK task group is torn down in its own task.
             if self._disconnect_event:
                 self._disconnect_event.set()
             self._stdio_task.cancel()
@@ -179,9 +235,24 @@ class MCPClientWrapper:
             except (asyncio.CancelledError, Exception):
                 pass
             self._stdio_task = None
+        elif self._transport == "streamable_http" and self._http_task is not None:
+            # Same dedicated-task teardown for the HTTP transport.
+            if self._disconnect_event:
+                self._disconnect_event.set()
+            self._http_task.cancel()
+            try:
+                await self._http_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._http_task = None
         elif self._stack is not None:
             await self._stack.aclose()
             self._stack = None
+        if self._http_client is not None:
+            try:
+                await self._http_client.aclose()
+            except Exception:
+                pass
         self._session = None
         self._read_stream = None
         self._write_stream = None

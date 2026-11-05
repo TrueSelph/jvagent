@@ -19,6 +19,9 @@ from jvagent.harness.skill_admission import admit_skill
         "task-lock: true",
         "requires-tasks: [flow]",
         "extends: another_skill",
+        "access-action: HandoffAction",
+        "allowed-groups: [staff]",
+        "denied-groups: [customer]",
         'allowed-tools: ["lookup*"]',
     ],
 )

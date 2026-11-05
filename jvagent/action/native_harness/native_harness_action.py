@@ -80,7 +80,7 @@ class NativeHarnessAction(InteractAction):
     """Explicit development replacement for the Orchestrator Action.
 
     Configure this instead of Orchestrator, never alongside it. General flows,
-    external effects and shared dollar-budget policy are not yet qualified.
+    external effects and distributed dollar-budget policy are not yet qualified.
     """
 
     model: str = attribute(default="openai:gpt-4.1")
@@ -135,6 +135,16 @@ class NativeHarnessAction(InteractAction):
             return await is_tool_allowed(
                 host,
                 label=label,
+                user_id=visitor.user_id,
+                channel=getattr(visitor, "channel", "default"),
+            )
+
+        async def tool_access(tool: Any) -> bool:
+            return await is_tool_allowed(
+                host,
+                label=tool.access_label or tool.name,
+                tool_name=tool.name,
+                requires_tool_permission=tool.requires_tool_permission,
                 user_id=visitor.user_id,
                 channel=getattr(visitor, "channel", "default"),
             )
@@ -196,6 +206,7 @@ class NativeHarnessAction(InteractAction):
             event_stream_handler=events,
             tools=tools,
             access_check=access,
+            tool_access_check=tool_access,
             instructions=self.instructions,
             step_store=step_store,
             spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),

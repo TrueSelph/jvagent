@@ -1697,5 +1697,29 @@
       "name": "delegate",
       "qualification": "partial: bounded foreground native child skills; shared limits, graph linkage and browser events; citation quality, background and recovery pending"
     }
-  ]
+  ],
+  "upstream_reconciliation": {
+    "revision": "43cbc885",
+    "status": "merged with native host policy adapters; compatibility gates remain open",
+    "action_additions": [
+      {
+        "path": "jvagent/action/handoff_action/info.yaml",
+        "name": "jvagent/handoff_action",
+        "archetype": "HandoffAction",
+        "disposition": "Preserve domain Action; qualify visitor, external-message and staff-write boundaries before native admission",
+        "qualification": "pending"
+      }
+    ],
+    "tool_metadata": [
+      "requires_tool_permission",
+      "permission_denied_message"
+    ],
+    "native_tool_policy": "Action and configured named-tool authorization are both required; explicit named permission without a rule denies",
+    "skill_metadata": {
+      "access-action": "native admission rejects pending group-policy adapter",
+      "allowed-groups": "native admission rejects pending group-policy adapter",
+      "denied-groups": "native admission rejects pending group-policy adapter"
+    },
+    "excluded_vendor_auth": "Integral-specific OAuth/service-key modules and wiring are not part of the domain-neutral rebuild"
+  }
 }

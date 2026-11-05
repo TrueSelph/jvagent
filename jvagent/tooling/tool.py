@@ -30,6 +30,8 @@ class Tool:
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[Any] = None
     effect_class: Optional[Literal["read", "write", "external"]] = None
+    requires_tool_permission: bool = False
+    permission_denied_message: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.parameters_schema:

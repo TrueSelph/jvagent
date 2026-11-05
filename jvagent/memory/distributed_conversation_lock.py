@@ -26,7 +26,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Holder = (conversation_id, holding-task-identity). The task identity MUST be
-# part of the guard: ``asyncio.create_task`` copies the current contextvar
+# part of the guard: ``jvspatial.create_task`` copies the current contextvar
 # context into the child task, so a background task spawned while the turn holds
 # the lock would otherwise inherit ``_lock_holder`` and the reentrancy check
 # would report the lock as held — letting that background task (e.g. a

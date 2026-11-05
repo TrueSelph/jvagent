@@ -51,6 +51,10 @@ _ALLOWED_SIBLING_EDGES = frozenset(
         # duplicating retrieval. See action/pageindex_read/README.md.
         ("pageindex_read", "pageindex"),
         ("artifact_handler_interact_action", "pageindex"),
+        ("handoff_action", "email_action"),
+        ("handoff_action", "pageindex"),
+        # Group consult/transfer reuses WhatsApp JID parsing (chat_ids).
+        ("handoff_action", "whatsapp"),
     }
 )
 

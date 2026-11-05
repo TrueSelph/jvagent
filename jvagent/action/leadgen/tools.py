@@ -94,9 +94,14 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
                 "(e.g. email='N/A'). Auto-syncs to configured destinations when thresholds "
                 "are met — do not call leadgen__sync in on_capture mode. "
                 "STANDING GOAL: collecting the visitor's name and a way to reach them "
-                "(email or phone) is a staple of every conversation — the response returns "
-                "missing_fields + gap_fill_priority + a next_ask hint; use it to close each "
-                "reply with a value-tied ask for the next missing contact field."
+                "(email or phone) comes first, then the qualification fields the skill "
+                "declares for every request. The response returns missing_fields + "
+                "gap_fill_priority + a next_ask hint for the next required contact field; "
+                "once required fields are complete, next_ask is null but next_optional "
+                "names the qualification field to ask next. Null next_ask is not a "
+                "finished request — ask next_optional before closing. When the customer "
+                "described a project, next_project_optional names the next project field "
+                "to ask after the always-relevant set is answered."
             ),
             parameters_schema={
                 "type": "object",
@@ -109,11 +114,13 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
             name="leadgen__retrieve",
             description=(
                 "Load the current lead profile, missing_fields, field_reference, and a "
-                "next_ask hint. Call at the start of a turn when the visitor did not provide "
-                "new lead data, to plan the standing gap-fill ask — collecting the visitor's "
-                "name and email/phone is a staple, so keep moving toward the next missing "
-                "contact field on every turn (tie it to value; stop asking a field only once "
-                "it is captured or explicitly declined)."
+                "next_ask hint. Use mid-conversation, once a request cycle is already "
+                "underway, when you need profile context and the visitor supplied no new "
+                "lead data. NEVER the first call on a post-sync turn: when the visitor "
+                'returns after a sync — including a bare greeting like "hey" with no '
+                "product named — leadgen__prepare_request runs first. Do not use retrieve to "
+                "restore the profile after a sync or to open a turn; it reads the cleared "
+                "record and re-asks for details the visitor already gave."
             ),
             parameters_schema=optional_skill,
             execute=_retrieve,

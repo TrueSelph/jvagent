@@ -1410,3 +1410,107 @@ operator tooling, upstream-main reconciliation, remote CI execution and the
 60-turn baseline remain open. The native profile is still opt-in; legacy/pilot
 execution and dependency conflicts remain until compatibility and migration gates
 allow deletion. No enterprise-ready or faster-than-baseline claim is made.
+
+
+## Reconcile current upstream and named-tool authorization — 2026-11-05
+
+Merge parents: rebuild e34abedc and main 43cbc885 (seven previously missing main
+commits). The six textual conflict files were resolved by preserving both Tool
+metadata families, moving upstream named-tool helpers into shared host policy,
+retaining hardened lease owner cancellation/deadlines, and keeping release notes.
+Generic MCP transport lifecycle, OAuth token selection/expiry/cache invalidation,
+handoff, WhatsApp and embed profile changes are retained. The containing merge
+commit identifies the complete result. This is not a merge into main or a release.
+
+Per the earlier user instruction that JV Agent must not know about Integral,
+upstream's Integral OAuth/service-key modules, routes, defaults and corresponding
+vendor tests are excluded. Generic injectable HTTP-client support remains. MCP
+HTTP server auth profiles now reject explicitly instead of silently omitting auth
+(`jvagent/action/mcp/mcp_action.py:428`). External providers belong outside this
+library; native MCP remains an open compatibility gate.
+
+### Host authorization and migration limits
+
+Tool and decorator objects retain both effect_class and requires_tool_permission /
+permission_denied_message (`jvagent/tooling/tool.py:32`,
+`jvagent/tooling/tool_decorator.py:227`). Native dispatch checks the actual Tool
+object through a host callback (`jvagent/harness/native.py:80`), passed unchanged
+to children. The shared helper evaluates configured named-tool rules and the
+Action gate; opted-in tools without enforcing policy/rule deny. Resolution errors
+remain fail-closed with redacted structured events (`jvagent/tooling/access.py:53`).
+Without a host Tool callback, the standalone factory denies explicit named-tool
+permissions even if the legacy Action-label callback allows them. No new tool
+scheduler or execution loop was introduced.
+
+The new access-action / allowed-groups / denied-groups skill declarations are
+rejected pending an adapter, rather than loaded without enforcing their meaning
+(`jvagent/harness/skill_admission.py:39`). Handoff visitor bindings, external
+messages and staff writes remain unqualified; preserving their modules does not
+admit them to native execution. The machine-readable inventory adds an explicit
+upstream delta while preserving the original 58-Action baseline.
+
+### Tests and integration defects
+
+Both Python 3.11/3.12 native + declared read profile + real PostgreSQL lanes pass
+157 tests. Named policy tests cover Action/named grant and denial, absent explicit
+policy, resolution/name/check failures and redacted logs. Native FunctionModel
+tests prove actual callable suppression, including missing host callback. Decorator
+collection retains both metadata families. Newly unsupported group declarations
+have rejection regressions.
+
+The first merge full run failed (154 failures, 4,537 passed): 153 traced to the
+missing private compatibility export, plus an upstream test using asyncio.Barrier
+on transitional Python 3.10. Re-export fixed, async policy call awaited, corresponding
+pilot test doubles updated to AsyncMock, and the test's rendezvous now uses Event
+without changing its two-worker-overlap assertion. Focused remaining suite passed
+118 tests. The clean full rerun passed 4,692 tests, 25 skipped, 31 warnings in
+162.55 s. Three subsequently added skill-admission cases pass in the 157-test
+native lanes; a 56-test MCP/host-policy/admission slice also passes, including two
+new HTTP auth-profile rejection cases. The push gate checks the final full tree. Clean all-files hooks are
+required again after staging this evidence.
+
+One concurrently loaded focused lease test missed its 0.6 s wall-clock threshold
+at 0.608 s while still cancelling the owner. No production lease semantics or test
+threshold was weakened. A subsequent 42-test policy/lease/decorator slice and the
+full rerun passed. This records scheduling sensitivity, not a timing guarantee.
+
+### Actual-model browser results
+
+Disposable PostgreSQL app/graph 8131 + jvchat 3131, GPT-4.1/OpenAI; same isolated
+fixture as prior round. All five requests below are retained, not selected only
+for success. Each persisted delivered, closed/emitted, usage_complete=true.
+Times are Interaction / native-run durations in seconds, not UI wall-clock SLAs.
+
+| Interaction suffix / scenario | UI and persisted outcome | Seconds | Logical calls / tokens / estimated USD |
+|---|---|---|---|
+| 4f7e24b963f54094bd96c874 / misnamed policy fixture | Retrieved correct date/label; **not denial evidence**: loader skipped noncanonical jvagent/access_control | 7.049 / 5.366 | 4 / 3,964 / 0.007190 |
+| 4330882dd4c64158b105dad6 / canonical stored deny | Permission denied, no facts disclosed; child snapshot returns Action access denied; two visible tool calls | 6.788 / 5.170 | 4 / 3,853 / 0.006914 |
+| de7bfcb9e1fa4559b8f82545 / merge-mode allow attempt | Remained denied correctly: YAML merge retained stored deny; not positive-allow evidence | 7.383 / 5.003 | 4 / 3,882 / 0.007188 |
+| 1dcfdd8bdabe4a209d8b9935 / explicit persisted allow | 18 November 2026, CEDAR-47, named/quoted Meridian launch public notes; delegate_task/pageindex__search visible | 7.877 / 6.239 | 4 / 4,020 / 0.007602 |
+| bbe05778ce604e68a302eee4 / final-source restart recall | Correct date/label/document without tools; 789-token badge; prior delivered frontier loaded | 2.866 / 1.078 | 1 / 789 / 0.001800 |
+
+Canonical AccessControlAction node a7cb1a3f9f404126a1fa6825 was verified in the
+graph before the valid denial test. The allow transition replaced its policy
+through the public entity save API, then restarted the backend; no access
+filter was removed. This distinction matters: merge-mode YAML does not erase a
+persisted deny list. The initial alias fixture and that merge attempt remain
+recorded as setup failures, not harness security successes.
+
+Final source blobs: native.py 51fe71b12cc07274474cc2049755232edf6d898a;
+NativeHarnessAction 1d2b8edd4090e7996ba66728486cb16ed371489c;
+shared access cb68a69b555ae1ebe47f593234ff066b2b76e05d;
+skill_admission 592b0fbdc98868242846cc708e37fd635d5abb84. The first four requests
+preceded the three explicit group-declaration admission guards; final recall ran
+after reloading all final runtime sources. Temporary evidence is
+/private/tmp/jvagent-upstream-browser-evidence.json. Receipts include all 17
+logical calls, 16,508 tokens and USD 0.030694 estimated (four lookup runs each
+report 1,152 cached input tokens). Costs are SDK price-table estimates, not bills;
+transport retries/invoices remain open. Repeated snapshot copies are not counted
+as extra model requests.
+
+The permissive missing-policy behavior is an existing explicit deployment mode.
+The skipped alias exposed a separate startup/migration limitation: missing declared
+Actions currently warn and skip. A strict configured-policy admission gate remains
+necessary before enterprise qualification; this fixture is not evidence that a
+misspelled security Action fails closed at bootstrap. Other remaining W0/W3/W4/W5
+and release gates are unchanged; main reconciliation does not qualify those.

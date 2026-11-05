@@ -179,3 +179,23 @@ async def test_web_fetch_uses_base_default():
     assert isinstance(tools[0], Tool)
     assert tools[0].effect_class == "read"
     assert tools[0].parameters_schema["required"] == ["url"]
+
+
+def test_effect_class_and_named_permission_metadata_survive_collection() -> None:
+    class NamedAction:
+        metadata = {"name": "named"}
+        label = "NamedAction"
+
+        @tool(
+            effect_class="read",
+            requires_tool_permission=True,
+            permission_denied_message="Restricted",
+        )
+        async def lookup(self) -> str:
+            """Read a protected value."""
+            return "value"
+
+    built = collect_tools(NamedAction())[0]
+    assert built.effect_class == "read"
+    assert built.requires_tool_permission is True
+    assert built.permission_denied_message == "Restricted"
