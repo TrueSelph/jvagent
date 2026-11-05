@@ -243,6 +243,34 @@ async def test_notice_history_keeps_durable_root_and_scope(
     assert all(n["closed"] and n["emitted"] and not n["native_steps"] for n in notices)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_native_repeated_item_records_and_task_persist(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_interview_repeats import (
+        test_native_repeated_item_reorder_validation_and_confirmation,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_native_repeated_item_reorder_validation_and_confirmation(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
+    assert len(rows) == 1
+    assert rows[0]["context"]["tasks"][0]["status"] == "completed"
+    assert "interview" not in rows[0]["context"].get("context", {})
+    interactions = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(interactions) == 3
+    effects = [
+        effect
+        for row in interactions
+        for effect in row["context"]["native_steps"]["effects"]
+    ]
+    assert effects and all(effect["status"] == "completed" for effect in effects)
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

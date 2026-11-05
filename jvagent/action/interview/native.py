@@ -10,6 +10,7 @@ from jvagent.harness.conversation_tools import ConversationMutationTool
 from jvagent.tooling.tool import Tool
 
 from .flow import evaluate_operator
+from .hooks import interview_tool_response
 from .session import load_session
 from .spec import InterviewSpec
 from .tools import _build_core_tools
@@ -44,15 +45,39 @@ def qualify_spec(
         or any((spec.nudge_after, spec.abandon_after, spec.parked_expire_after))
     ):
         raise ValueError("Native interview hooks/tasks require separate qualification")
+    child_names: set[str] = set()
     for field in spec.fields:
         if (
             field.pre_processor
             or field.post_processor
-            or field.for_each
             or field.for_each_prefix
             or (field.validator and field.validator not in BUILTIN_VALIDATORS)
         ):
             raise ValueError("Native interview field extensions require qualification")
+        if field.for_each:
+            if field.validator not in {"", "text"} or not field.for_each.fields:
+                raise ValueError(
+                    "Native repeated parents require text and child declarations"
+                )
+            for child in field.for_each.fields:
+                if (
+                    not child.key
+                    or not child.key.strip()
+                    or child.key == "_skip"
+                    or child.key in child_names
+                    or child.key in spec.field_keys()
+                    or child.pre_processor
+                    or child.post_processor
+                    or child.for_each
+                    or child.for_each_prefix
+                    or child.branches
+                    or child.else_field
+                    or (child.validator and child.validator not in BUILTIN_VALIDATORS)
+                ):
+                    raise ValueError(
+                        "Native repeated child declarations require unique keys and built-in validators"
+                    )
+                child_names.add(child.key)
     qualify_branches(spec)
 
 
@@ -165,6 +190,8 @@ def build_native_tools(action: Any) -> list[Tool]:
         "interview__complete": "Complete after review and the required user confirmation.",
         "interview__cancel": "Cancel the current interview and clear its scratch state.",
         "interview__reset": "Reset the current interview through its domain lifecycle.",
+        "interview__set_items": "Declare or replace the ordered repeated item IDs and labels.",
+        "interview__set_item_fields": "Validate answers or optional skips for exactly one declared item ID.",
     }
 
     def wrap(original: Tool) -> Tool:
@@ -193,6 +220,30 @@ def build_native_tools(action: Any) -> list[Tool]:
                 if spec is None:
                     raise ValueError("Active interview has no admitted contract")
                 qualify_spec(spec, channel=visitor.channel, tool_name=original.name)
+                if original.name == "interview__set_fields":
+                    repeated_keys = spec.all_for_each_child_keys() | {
+                        f.key for f in spec.fields if f.for_each
+                    }
+                    if arguments.get("for_each_staged") or repeated_keys.intersection(
+                        arguments.get("fields") or {}
+                    ):
+                        return interview_tool_response(
+                            ok=False,
+                            status="active",
+                            error="Use interview__set_items for item IDs and interview__set_item_fields for item answers; native repeated values require an item ID.",
+                        )
+                if original.name == "interview__skip_field":
+                    from .for_each import get_active_for_each
+
+                    key = arguments.get("field_key") or arguments.get("field")
+                    if key in spec.all_for_each_child_keys() or (
+                        not key and get_active_for_each(existing, spec)
+                    ):
+                        return interview_tool_response(
+                            ok=False,
+                            status="active",
+                            error="Use interview__set_item_fields with the item ID and skip_fields for repeated optional fields.",
+                        )
             result = await original.call(visitor=visitor, **arguments)
             payload = json.loads(result.content)
             owner = (
@@ -223,4 +274,14 @@ def build_native_tools(action: Any) -> list[Tool]:
         )
         return ConversationMutationTool(**values)
 
-    return [wrap(activation), *(wrap(tool) for tool in _build_core_tools(action))]
+    extra = []
+    if any(
+        field.for_each for name in names for field in action._registry.get(name).fields
+    ):
+        from .native_repeats import repeated_tools
+
+        extra = repeated_tools(action)
+    return [
+        wrap(activation),
+        *(wrap(tool) for tool in [*_build_core_tools(action), *extra]),
+    ]

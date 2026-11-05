@@ -14,6 +14,8 @@ allowed-tools:
   - interview__complete
   - interview__cancel
   - interview__reset
+  - interview__set_items
+  - interview__set_item_fields
 ---
 # Native interview procedure v1
 
@@ -48,3 +50,18 @@ for the reachable fields. A correction may prune an old branch while shared answ
 remain stored. Inspect the actual tool outcomes; never restore pruned answers from
 chat history. Review the revised values and wait for a new confirmation before
 completion. Do not ask again for shared values the domain session still retains.
+
+For repeated fields, declare the ordered collection through interview__set_items,
+using stable unique item IDs and optional labels. This replaces collection membership
+and preserves matching completed answers. Submit each item's answers through
+interview__set_item_fields with parent_key, item_id and fields; use skip_fields for
+declined optional child fields. Answers for later items may be stored immediately;
+the domain advances when the current item is complete. Do not submit repeated keys
+or for_each_staged through interview__set_fields. Inspect get_status/next_field for
+the current item, catalog and remaining questions. Corrections target the specific
+item ID. Removing an ID removes its answers; changing order keeps each ID's answers.
+Finish the active collection before declaring another. Review all records and wait
+for a fresh confirmation after any correction. Never treat loading a skill as
+permission to run its legacy Python hooks.
+Use returned domain state for existing IDs when changing membership; do not require
+the user to repeat stored items or reconstruct removed answers from chat.

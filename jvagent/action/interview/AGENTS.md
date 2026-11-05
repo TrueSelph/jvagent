@@ -72,7 +72,15 @@ unknown operators, malformed targets, duplicate names and cycles before executio
 (`native.py:59`); branch hooks remain unqualified. Manual completion requires a
 review fingerprint matching current values, including after a branch correction
 (`engine.py:1998`). No utterance-regex extraction steering runs in `set_fields`.
-Custom hooks/validators, complex fields and external task callbacks remain gated
+Native repeated items use `interview__set_items` for stable ordered IDs and
+`interview__set_item_fields` for validated answers/optional skips by ID
+(`native_repeats.py:55`). Matching completed records survive membership changes;
+review fingerprints include child records (`engine.py:1823`). Generic `set_fields`
+cannot write repeated parents/children or staged answers (`native.py:224`).
+Child keys must be globally unique within the spec; nested repeats and child
+branches/hooks remain gated (`native.py:20`). Finish one active collection before
+declaring another. See the [repeat qualification record](../../../.planning/plans/2026-11-05-native-repeats.md).
+Custom hooks/validators, other complex fields and external task callbacks remain gated
 until their effect classes and recovery behavior have evidence. Qualification and
 migration limits: [native interview record](../../../.planning/plans/2026-11-05-native-interview.md).
 Branch qualification: [browser and persistence record](../../../.planning/plans/2026-11-05-native-branches.md).

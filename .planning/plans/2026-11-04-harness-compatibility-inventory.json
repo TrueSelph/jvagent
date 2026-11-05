@@ -1999,5 +1999,32 @@
       "complex extension compatibility",
       "migration and single runtime release"
     ]
+  },
+  "native_repeated_items_increment": {
+    "evidence": "2026-11-05-native-repeats.md",
+    "qualified_scope": "ID-scoped built-in repeated children; browser/provider and persistence evidence bounded by linked record",
+    "preserved": [
+      "existing for_each declarations and records",
+      "built-in field validators",
+      "manual review and domain tasks",
+      "official SDK scheduling/effect receipts"
+    ],
+    "retired": [
+      "completed-record restaging that duplicated or reordered records",
+      "native generic/staged bypass for repeated values",
+      "review fingerprints omitting repeated child values"
+    ],
+    "compatibility_adjustments": [
+      "use interview__set_items and interview__set_item_fields for native repeated values",
+      "unique child names across the spec; no nested repeats or child branches/hooks",
+      "finish one active collection before declaring another",
+      "missing historical review fingerprint requires a fresh review"
+    ],
+    "remaining": [
+      "custom validators/processors/hooks and external callbacks",
+      "historical state migration and recovery of interrupted writes",
+      "other extension classes and provider/deployment qualification",
+      "legacy/pilot execution deletion and release qualification"
+    ]
   }
 }

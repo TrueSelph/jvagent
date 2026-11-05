@@ -299,3 +299,13 @@ snapshot/usage readback. Broken/cyclic/foreign/effectful notices fail closed. Th
 startup transport failure had no Interaction or charge; manual retry is explicit.
 Other notice classes, effect/delivery/distributed recovery, migration, deletion and
 release qualification remain open.
+
+## Repeated item records — 2026-11-05
+
+[Record](2026-11-05-native-repeats.md): explicit ID-scoped tools qualify built-in
+repeated children, optional skips, validated future answers, insertion and corrections.
+Fresh review binds child records. Four GPT-4.1 browser turns and a backend restart
+reach persisted task completion; the initial scalar-argument failure is retained.
+Native generic/staged bypasses and duplicate-record regressions are covered, including
+real PostgreSQL with batching on/off. Custom hooks, nesting, park/resume, other
+extension classes, migration, legacy deletion and enterprise release remain open.

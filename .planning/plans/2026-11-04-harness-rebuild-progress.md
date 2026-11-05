@@ -1,7 +1,7 @@
 # Harness rebuild execution record
 
-Latest increment: [jvchat in-flight ownership](2026-11-05-jvchat-ownership.md).
-Next: qualify complex interview extensions, operator recovery and remaining client/deployment cases,
+Latest increment: [native repeated items](2026-11-05-native-repeats.md).
+Next: qualify remaining extension classes, operator recovery and client/deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
@@ -2069,3 +2069,17 @@ reply recalling both codes. 319 native/PG tests pass on each Python 3.11 and 3.1
 The startup network failure/manual retry is recorded separately, without a hidden
 provider retry. Effects, delivery, other notice classes, migration/deletion and broader
 release gates remain open.
+
+## Native repeated interview items — 2026-11-05
+
+[Record](2026-11-05-native-repeats.md): explicit ID tools reuse existing declarations,
+validation and records through SDK-owned dispatch/effects. Insertion preserves order
+without duplicates; child corrections invalidate review; native generic staging
+bypasses are rejected. The first real-model attempt exposed a string-only argument
+contract; its failure/cost is retained, and integer arguments now pass domain
+validation. Four subsequent GPT-4.1 browser turns collect, insert, correct and confirm
+after restart. Fresh SQL proves task completion and session cleanup. 301 interview
+tests and 323 native/real-PG tests on each Python 3.11 and 3.12 pass. Hooks/custom
+validators, nested repeats, park/resume, other extension classes, migration/deletion
+and enterprise release qualification remain open. No second execution engine or
+state store was introduced.

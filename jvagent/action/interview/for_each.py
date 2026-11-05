@@ -253,6 +253,22 @@ def get_for_each_state(
     return state if isinstance(state, dict) else None
 
 
+def repeated_status(session: InterviewSession) -> Dict[str, Any]:
+    """Authoritative item identities/answers for model-facing domain status."""
+    return {
+        parent: {
+            "status": state.get("status"),
+            "items": state.get("items", []),
+            "records": state.get("records", []),
+            "current_item": (
+                current_item(state) if state.get("status") == STATUS_ACTIVE else None
+            ),
+        }
+        for parent, state in get_for_each_store(session).items()
+        if isinstance(state, dict)
+    }
+
+
 def is_for_each_child_key(
     session: InterviewSession, spec: InterviewSpec, key: str
 ) -> bool:
@@ -268,6 +284,11 @@ def resolve_field_def(
     top = spec.get_field(key)
     if top:
         return top
+    active = get_active_for_each(session, spec)
+    if active and active.parent_fdef.for_each:
+        for child in active.parent_fdef.for_each.fields:
+            if child.key == key:
+                return child
     parent_key = find_child_field_parent(spec, key)
     if parent_key:
         parent = spec.get_field(parent_key)
@@ -331,7 +352,7 @@ def init_expansion(
     for idx, item in enumerate(normalized):
         rec = old_records_by_id.get(item["id"])
         if rec is not None:
-            preserved_records.append(rec)
+            preserved_records.append({**rec, "label": item["label"]})
         else:
             first_incomplete_idx = min(first_incomplete_idx, idx)
 
@@ -344,36 +365,10 @@ def init_expansion(
         "records": preserved_records,
     }
 
-    if not all_complete and preserved_records:
-        if not isinstance(session.context, dict):
-            session.context = {}
-        stage_store = session.context.setdefault("_for_each_staged", {})
-        for rec in preserved_records:
-            item_id = rec.get("item_id", "")
-            if not item_id:
-                continue
-            fields_data = rec.get("fields")
-            if not isinstance(fields_data, dict):
-                continue
-            item_staged = stage_store.setdefault(item_id, {})
-            for ck in child_keys:
-                if ck in fields_data and ck not in item_staged:
-                    item_staged[ck] = str(fields_data[ck])
-            skipped_fields = rec.get("skipped_fields") or []
-            if isinstance(skipped_fields, list):
-                skip_key = "_skip"
-                existing_skip = item_staged.get(skip_key)
-                if existing_skip and isinstance(existing_skip, list):
-                    for sk in skipped_fields:
-                        if sk not in existing_skip and sk in child_keys:
-                            existing_skip.append(sk)
-                else:
-                    item_staged[skip_key] = list(skipped_fields)
-
     if isinstance(session.context, dict):
         stage_store = session.context.get("_for_each_staged")
         if isinstance(stage_store, dict):
-            current_ids = {it["id"] for it in normalized}
+            current_ids = {it["id"] for it in normalized} - set(old_records_by_id)
             for orphan_id in list(stage_store.keys()):
                 if orphan_id not in current_ids:
                     stage_store.pop(orphan_id)
@@ -446,19 +441,24 @@ def complete_current_item(session: InterviewSession, spec: InterviewSpec) -> boo
         if not isinstance(records, list):
             records = []
             state["records"] = records
-        records.append(
-            {
-                "item_id": item.get("id", ""),
-                "label": item.get("label", ""),
-                "fields": fields_data,
-                "skipped_fields": skipped,
-            }
-        )
+        by_id = {rec["item_id"]: rec for rec in records}
+        by_id[item["id"]] = {
+            "item_id": item.get("id", ""),
+            "label": item.get("label", ""),
+            "fields": fields_data,
+            "skipped_fields": skipped,
+        }
+        state["records"] = [
+            by_id[it["id"]] for it in state["items"] if it["id"] in by_id
+        ]
 
     clear_child_scratch(session, child_keys)
 
     idx = int(state.get("current_index") or 0) + 1
     items = state.get("items") or []
+    finished = {rec["item_id"] for rec in state.get("records", [])}
+    while idx < len(items) and items[idx]["id"] in finished:
+        idx += 1
     if idx >= len(items):
         state["status"] = STATUS_COMPLETE
         state["current_index"] = idx

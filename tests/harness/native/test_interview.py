@@ -611,6 +611,7 @@ async def test_manual_review_cannot_authorize_corrected_values(tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_missing_review_snapshot_requires_fresh_review(tmp_path: Path) -> None:
+    from jvagent.action.interview.engine import REVIEW_PRESENTED_MARKER_KEY
     from jvagent.action.interview.session import InterviewStatus, save_session
 
     directory = declaration(tmp_path, {})
@@ -631,6 +632,7 @@ async def test_missing_review_snapshot_requires_fresh_review(tmp_path: Path) -> 
     )
     session = load_session(visitor.conversation)
     session.status = InterviewStatus.REVIEW
+    session.context[REVIEW_PRESENTED_MARKER_KEY] = visitor.interaction.id
     await save_session(visitor.conversation, session)
     result, _ = await turn(
         directory, visitor, tools, [("interview__complete", {})], bases
@@ -644,3 +646,8 @@ async def test_missing_review_snapshot_requires_fresh_review(tmp_path: Path) -> 
     assert output["ok"] is False
     assert output["next_tool"] == "interview__review"
     assert load_session(visitor.conversation) is not None
+    # A fresh review must actually establish the stamp, not keep returning
+    # "already presented" and sending the model back to a refusing completion.
+    await turn(directory, visitor, tools, [("interview__review", {})], bases)
+    await turn(directory, visitor, tools, [("interview__complete", {})], bases)
+    assert load_session(visitor.conversation) is None
