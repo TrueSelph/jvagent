@@ -1964,5 +1964,18 @@
       "unused prompt-parameter injection",
       "migration and legacy execution deletion"
     ]
+  },
+  "client_reset_increment": {
+    "evidence": "2026-11-05-jvchat-reset.md",
+    "status": "completed-stream reset/sidebar/reload isolation qualified in disposable native fixture",
+    "retired": [
+      "untargeted boolean transcript preservation hint",
+      "stale completion-closure comparison"
+    ],
+    "remaining": [
+      "in-flight transition ownership/cancellation",
+      "fresh packaged client qualification",
+      "broader migration and release gates"
+    ]
   }
 }

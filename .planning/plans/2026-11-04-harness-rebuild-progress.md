@@ -1,8 +1,8 @@
 # Harness rebuild execution record
 
-Latest increment: [native interview domain execution](2026-11-05-native-interview.md).
-Next: qualify complex interview extensions and recovery, repair client conversation
-reset, then continue the supported compatibility/migration/deletion gates. The
+Latest increment: [jvchat completed-stream reset](2026-11-05-jvchat-reset.md).
+Next: qualify in-flight client transitions and complex interview extensions/recovery,
+then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
@@ -2008,3 +2008,12 @@ Python 3.11 and 3.12; 282 existing interview tests pass. Seven actual-model brow
 turns are delivered. Complex extensions, operator recovery, client reset, migration,
 legacy deletion and enterprise release gates remain open. Parent 226c705f has all
 nine exact-head CI checks green.
+
+## jvchat completed-stream reset — 2026-11-05
+
+[Evidence](2026-11-05-jvchat-reset.md) closes the transcript-retention defect observed
+during interview qualification. Initial binding preserves its live transcript; New
+Conversation clears it; sidebar/reload restoration retains only the selected thread.
+Two actual-model sessions pass six browser assertions and fresh SQL isolation checks.
+All 124 jvchat tests, production build and eight Python static-server tests pass.
+In-flight transitions and the broader release gates remain open.

@@ -280,7 +280,7 @@ export function ChatInterface() {
     ) {
       // The server assigned a session_id during streaming (initial binding).
       // Tell useStreaming to preserve in-flight messages instead of clearing them.
-      preserveNextTransition();
+      preserveNextTransition(streamSessionId);
       prevStreamSessionIdRef.current = streamSessionId;
       setSessionId(streamSessionId);
     } else if (streamSessionId) {
@@ -375,8 +375,8 @@ export function ChatInterface() {
       // If the streamSessionId effect hasn't already set sessionId, this is the
       // first time we know the session_id. Signal useStreaming to preserve in-flight
       // messages rather than clearing them (this is the initial binding).
-      if (receivedSessionId !== sessionId) {
-        preserveNextTransition();
+      if (receivedSessionId !== prevSessionIdRef.current) {
+        preserveNextTransition(receivedSessionId);
         setSessionId(receivedSessionId);
       }
       if (!existingConv) {

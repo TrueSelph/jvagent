@@ -1,0 +1,547 @@
+{
+  "page": 20,
+  "isolated_context": "native-chat-reset",
+  "checks": {
+    "first_binding_preserved": true,
+    "reset_cleared": true,
+    "second_isolated": true,
+    "restored_a": true,
+    "restored_b": true,
+    "reload_restored_b": true
+  },
+  "initial_thread": "CHAT-RESET-A: Please start the contact interview. Ask me for the email. Do not fill fields yet.\n\n1 tool call\nUsed tool: interview__start\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "empty_thread": "Hello there!\n\nHow can I help you today?\n\nAdd Attachment\nSend message",
+  "second_thread": "CHAT-RESET-B: Start a fresh contact interview. Ask me for the email; do not fill fields yet.\n\n1 tool call\nUsed tool: interview__start\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "restored_a": "CHAT-RESET-A: Please start the contact interview. Ask me for the email. Do not fill fields yet.\n\n1 tool call\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "restored_b": "CHAT-RESET-B: Start a fresh contact interview. Ask me for the email; do not fill fields yet.\n\n1 tool call\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "reloaded_b": "CHAT-RESET-B: Start a fresh contact interview. Ask me for the email; do not fill fields yet.\n\n1 tool call\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "requests": [
+    {
+      "started_at": "2026-11-05T17:13:29.302Z",
+      "status": 200,
+      "duration_ms": 4027.300000011921,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+          "session_id": "sess_7c110d3fb9224bd3",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.f34222991dde4269925aca50",
+            "session_id": "sess_7c110d3fb9224bd3",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+            "message_type": "adhoc",
+            "content": "interview__start",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_6FQvXJfFcEkqsaQrOry00YgD",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "interview_type": "conversation"
+              }
+            },
+            "timestamp": "2026-11-05T13:13:31.982898"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.30f977b3ae004b4796d0455a",
+            "session_id": "sess_7c110d3fb9224bd3",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_6FQvXJfFcEkqsaQrOry00YgD",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+            },
+            "timestamp": "2026-11-05T13:13:32.040554"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+            "session_id": "sess_7c110d3fb9224bd3",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+            "message_type": "adhoc",
+            "content": "What email address should I record?",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:13:33.284103"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+            "session_id": "sess_7c110d3fb9224bd3",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:13:33.296295"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_7c110d3fb9224bd3",
+          "response": "What email address should I record?",
+          "interaction": {
+            "id": "n.Interaction.6513afd49e734c5f90de1557",
+            "utterance": "CHAT-RESET-A: Please start the contact interview. Ask me for the email. Do not fill fields yet.",
+            "response": "What email address should I record?",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_0ce623c5f80c",
+                "title": "Contact interview",
+                "description": "Collect and confirm a contact email without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T17:13:32.012367+00:00",
+                "updated_at": "2026-11-05T17:13:32.015436+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-8e541b869c3b4a9baaf0af1f1b9a25ed"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-8e541b869c3b4a9baaf0af1f1b9a25ed:1",
+                  "native_run_id": "corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1067,
+                    "completion_tokens": 19,
+                    "total_tokens": 1086,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002286,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-8e541b869c3b4a9baaf0af1f1b9a25ed:2",
+                  "native_run_id": "corr-8e541b869c3b4a9baaf0af1f1b9a25ed",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1213,
+                    "completion_tokens": 9,
+                    "total_tokens": 1222,
+                    "cached_prompt_tokens": 1024,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000962,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2280,
+              "completion_tokens": 28,
+              "total_tokens": 2308,
+              "cached_prompt_tokens": 1024,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.003248,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003248,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T17:13:33.296583+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.6513afd49e734c5f90de1557",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_7c110d3fb9224bd3"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started_at": "2026-11-05T17:14:28.648Z",
+      "status": 200,
+      "duration_ms": 3132.2999999821186,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+          "session_id": "sess_af205aff86414d9d",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.7f2a6d9e488d4c77919fdd07",
+            "session_id": "sess_af205aff86414d9d",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+            "message_type": "adhoc",
+            "content": "interview__start",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_XyKCONICGvpuPJQAa82YWm7U",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-c286c415c65245a5b39d1ee35453d5ee",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "interview_type": "conversation"
+              }
+            },
+            "timestamp": "2026-11-05T13:14:30.317894"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.fa5906fcf57747968d603300",
+            "session_id": "sess_af205aff86414d9d",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_XyKCONICGvpuPJQAa82YWm7U",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-c286c415c65245a5b39d1ee35453d5ee",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+            },
+            "timestamp": "2026-11-05T13:14:30.369446"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-c286c415c65245a5b39d1ee35453d5ee",
+            "session_id": "sess_af205aff86414d9d",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+            "message_type": "adhoc",
+            "content": "What email address should I record?",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:14:31.738602"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-c286c415c65245a5b39d1ee35453d5ee",
+            "session_id": "sess_af205aff86414d9d",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:14:31.749376"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_af205aff86414d9d",
+          "response": "What email address should I record?",
+          "interaction": {
+            "id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+            "utterance": "CHAT-RESET-B: Start a fresh contact interview. Ask me for the email; do not fill fields yet.",
+            "response": "What email address should I record?",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_e2c1e53ef78b",
+                "title": "Contact interview",
+                "description": "Collect and confirm a contact email without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T17:14:30.346949+00:00",
+                "updated_at": "2026-11-05T17:14:30.350819+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-c286c415c65245a5b39d1ee35453d5ee"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-c286c415c65245a5b39d1ee35453d5ee:1",
+                  "native_run_id": "corr-c286c415c65245a5b39d1ee35453d5ee",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1067,
+                    "completion_tokens": 19,
+                    "total_tokens": 1086,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002286,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-c286c415c65245a5b39d1ee35453d5ee:2",
+                  "native_run_id": "corr-c286c415c65245a5b39d1ee35453d5ee",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1213,
+                    "completion_tokens": 9,
+                    "total_tokens": 1222,
+                    "cached_prompt_tokens": 1024,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000962,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2280,
+              "completion_tokens": 28,
+              "total_tokens": 2308,
+              "cached_prompt_tokens": 1024,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.003248,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003248,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T17:14:31.749621+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.714574c4a43b4b9fb0d1cfaa",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_af205aff86414d9d"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "privacy": {
+    "session_capabilities_removed": true,
+    "headers_omitted": true
+  },
+  "scope": "Completed-stream reset and sidebar/reload restoration; in-flight transitions not qualified."
+}

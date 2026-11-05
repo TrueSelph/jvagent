@@ -249,3 +249,10 @@ Reset/cancel, write fault/cancellation and policy boundaries have deterministic
 regressions. Native mutation intent uses official effect annotations. Complex hooks,
 branching/for-each, external callbacks, delegated writes, operator recovery and
 client reset remain unqualified; no release/migration/deletion gate closes.
+
+## Client completed-stream transitions — 2026-11-05
+
+[Actual browser/SQL evidence](2026-11-05-jvchat-reset.md) qualifies first-session
+binding, completed-stream New Conversation, sidebar restoration and reload/selection
+for the native fixture. In-flight transitions, late callback ownership and a fresh
+packaged-wheel client remain unqualified. No harness migration/release gate closes.

@@ -160,13 +160,13 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const prevSessionIdRef = useRef<string | undefined>(sessionId)
   const isSavingRef = useRef(false)
   /**
-   * When true, the next sessionId transition will preserve in-memory messages
+   * The server-assigned ID whose initial binding may preserve in-memory messages
    * instead of clearing them. Set by the parent (ChatInterface) before triggering
    * a session change that should keep the live transcript (e.g. server assigns
    * a session_id during the first message stream on "new chat").
-   * Auto-resets to false after the transition is processed.
+   * Cleared after a transition; reset and sidebar selection always clear messages.
    */
-  const preserveNextTransitionRef = useRef(false)
+  const preserveNextTransitionRef = useRef<string | undefined>(undefined)
   /**
    * Set to true during a session transition so the autosave effect skips saving
    * in the same commit phase (prevents writing A's stale messages to B's
@@ -210,8 +210,9 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // (e.g. the server assigns a session_id during the first message stream).
       // For all other transitions (sidebar selection, new chat), messages are cleared
       // and the parent is responsible for calling loadMessages() to restore from storage.
-      const shouldPreserve = preserveNextTransitionRef.current
-      preserveNextTransitionRef.current = false
+      const shouldPreserve = oldSessionId === undefined && sessionId !== undefined
+        && preserveNextTransitionRef.current === sessionId
+      preserveNextTransitionRef.current = undefined
 
       if (shouldPreserve) {
         // Keep in-flight messages — just persist them under the new session key
@@ -1066,7 +1067,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     streamingMessageRef.current = ''
     interactionIdRef.current = null
     prevMessagesRef.current = []
-    preserveNextTransitionRef.current = false
+    preserveNextTransitionRef.current = undefined
   }, [])
 
   const loadMessages = useCallback((loadedMessages: Message[]) => {
@@ -1184,8 +1185,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
     }
   }, [messages, sessionId, historyWriter])
 
-  const preserveNextTransition = useCallback(() => {
-    preserveNextTransitionRef.current = true
+  const preserveNextTransition = useCallback((assignedSessionId: string) => {
+    preserveNextTransitionRef.current = assignedSessionId
   }, [])
 
   return {

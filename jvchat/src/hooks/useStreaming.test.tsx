@@ -449,3 +449,51 @@ describe("useStreaming thought handling", () => {
     expect(assistants[0]?.content).toBe("Ships Tuesday.");
   });
 });
+
+describe("session transcript transitions", () => {
+  it("clears a new conversation despite a late first-stream preserve hint", () => {
+    const { result, rerender } = renderHook(
+      ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+      { initialProps: { session: "session-a" as string | undefined } },
+    );
+    act(() => result.current.loadMessages([
+      { id: "old", role: "user", content: "old private transcript", timestamp: new Date().toISOString() },
+    ]));
+    expect(result.current.messages).toHaveLength(1);
+    act(() => result.current.preserveNextTransition("session-a"));
+    rerender({ session: undefined });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.sessionId).toBeUndefined();
+  });
+
+  it("never carries another conversation's transcript across sidebar selection", () => {
+    const { result, rerender } = renderHook(
+      ({ session }) => useStreaming("agent-1", session),
+      { initialProps: { session: "session-a" } },
+    );
+    act(() => result.current.loadMessages([
+      { id: "old", role: "user", content: "old private transcript", timestamp: new Date().toISOString() },
+    ]));
+    act(() => result.current.preserveNextTransition("session-b"));
+    rerender({ session: "session-b" });
+    expect(result.current.messages).toEqual([]);
+  });
+});
+
+it("preserves the live first-turn transcript when the server assigns its session", async () => {
+  mockStreamInteract.mockImplementation(async (_agent, _request, onChunk) => {
+    onChunk({ type: "start", interaction_id: "live-turn", session_id: "live-session" });
+    onChunk({ type: "final", interaction: {
+      id: "live-turn", utterance: "first message", actions: [], directives: [],
+      parameters: [], model_log: [], messages: [], streamed: true,
+    } });
+  });
+  const { result, rerender } = renderHook(
+    ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+    { initialProps: { session: undefined as string | undefined } },
+  );
+  await act(async () => { await result.current.sendMessage("first message"); });
+  act(() => result.current.preserveNextTransition("live-session"));
+  rerender({ session: "live-session" });
+  expect(result.current.messages.some(message => message.content === "first message")).toBe(true);
+});
