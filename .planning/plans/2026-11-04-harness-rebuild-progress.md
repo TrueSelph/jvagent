@@ -1,7 +1,7 @@
 # Harness rebuild execution record
 
-Latest increment: [interview platform-state protection](2026-11-05-interview-platform-state.md).
-Next: implement native interview SOP projection, explicit activation and reviewed
+Latest increment: [native SOP inheritance](2026-11-05-native-sop-projection.md).
+Next: implement the native interview base SOP, explicit activation and reviewed
 mutation boundaries in the [interview adapter course](2026-11-05-interview-platform-state.md),
 while keeping the remaining recovery/effect/deployment gates open. Member browser API
 and anonymous popup admission are qualified only to the scope of that increment.
@@ -1989,3 +1989,11 @@ Interaction/provider call. Unit and fresh-PG cases cover batching on/off.
 The linked course describes native SOP inheritance, activation, reviewed mutations
 and task/session compatibility still to implement. This closes a prerequisite,
 not full native interview execution or release qualification.
+
+## Native SOP inheritance — 2026-11-05
+
+The [native asset adapter](2026-11-05-native-sop-projection.md) preserves inherited
+procedure text and cumulative prerequisite/tool policy through the public Skills
+workspace boundary. Actual GPT-4.1 jvchat/MCP execution and fresh PG readback pass.
+Missing/cyclic bases and inherited policy relaxation fail closed. Explicit native
+interview activation, mutation effects, task compatibility and migration remain open.

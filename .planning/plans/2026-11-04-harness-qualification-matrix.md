@@ -233,3 +233,10 @@ Interaction/provider call. Unit and fresh-PG cases cover batching on/off.
 The linked course describes native SOP inheritance, activation, reviewed mutations
 and task/session compatibility still to implement. This closes a prerequisite,
 not full native interview execution or release qualification.
+
+## Native SOP inheritance — 2026-11-05
+
+[Evidence](2026-11-05-native-sop-projection.md): inherited read procedure through
+official Skills passes actual GPT-4.1 jvchat/MCP and fresh PostgreSQL readback.
+Action bases require an explicit host map; the interview base, activation, mutations,
+custom hooks and continuation remain unqualified. No migration/deletion gate closes.

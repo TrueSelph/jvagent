@@ -258,3 +258,10 @@ The bounded consumed-host-nonce ledger in Conversation context, keyed by
 skill-specific retain lists; clearing an interview must not reopen signed requests.
 Sources: [`core/host_context.py:20`](../jvagent/core/host_context.py:20),
 [`interview/session.py:109`](../jvagent/action/interview/session.py:109).
+
+### SOP projection
+
+A read-only view of composed JV skill procedure text and inherited declarations,
+supplied to official Skills through its public workspace boundary without rewriting
+authored files or adding an execution engine. See `jvagent/harness/skill_assets.py:34`
+and [the qualification record](plans/2026-11-05-native-sop-projection.md).

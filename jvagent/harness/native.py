@@ -5,7 +5,7 @@ checker. This module does not import the legacy Orchestrator or pilot engine.
 """
 
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from jvagent.harness.contracts import (
     OutputTokenLimitReached,
@@ -24,6 +24,7 @@ def build_native_agent(
     skill_directory: Path,
     tools: Sequence[JVTool],
     toolsets: Sequence[Any] = (),
+    action_skill_bases: Mapping[str, Path] | None = None,
     access_check: AccessCheck,
     instructions: str,
     tool_access_check: Callable[[JVTool], Awaitable[bool]] | None = None,
@@ -49,10 +50,10 @@ def build_native_agent(
     from pydantic_ai import Agent, RunContext, Tool
     from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
     from pydantic_ai.exceptions import ModelRetry
-    from pydantic_ai.workspaces import LocalWorkspaceBackend
     from pydantic_ai_harness import Skills
 
     from jvagent.harness.model_settings import validate_model_settings
+    from jvagent.harness.skill_assets import project_skill, projected_workspace
 
     settings = validate_model_settings(model_settings)
 
@@ -64,8 +65,12 @@ def build_native_agent(
     if context_keep_tokens >= context_max_tokens:
         raise ValueError("Context retention must be smaller than its trigger")
     directory = skill_directory.resolve(strict=True)
+    projected_metadata, document = project_skill(
+        directory, action_bases=action_skill_bases
+    )
     metadata = admit_skill(
         directory,
+        metadata=projected_metadata,
         available_actions=available_actions,
         available_tools=[tool.name for tool in tools]
         + [name for toolset in toolsets for name in toolset.declared_names]
@@ -148,11 +153,16 @@ def build_native_agent(
         admitted.append(adapt(tool))
 
     def skill_library(path: Path) -> Any:
+        _, asset = project_skill(path, action_bases=action_skill_bases)
         return Skills(
-            ".", include=[path.name], workspace=LocalWorkspaceBackend(path.parent)
+            ".", include=[path.name], workspace=projected_workspace(path, asset)
         )
 
-    selected_library = skill_library(directory)
+    selected_library = Skills(
+        ".",
+        include=[directory.name],
+        workspace=projected_workspace(directory, document),
+    )
     skill_libraries = [selected_library]
 
     class SelectedSkill(AbstractCapability[Any]):
@@ -310,6 +320,7 @@ def build_native_agent(
             child = build_native_agent(
                 model,
                 skill_directory=Path(entry.skill_directory),
+                action_skill_bases=action_skill_bases,
                 tools=tools,
                 toolsets=toolsets,
                 access_check=access_check,

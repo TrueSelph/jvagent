@@ -13,13 +13,15 @@ def admit_skill(
     available_tools: Sequence[str],
     channel: str,
     supported_output_contracts: Sequence[str] = (),
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate JV-owned prerequisites without interpreting the skill procedure."""
-    text = (directory / "SKILL.md").read_text()
-    sections = text.split("---", 2)
-    if not text.startswith("---\n") or len(sections) != 3:
-        raise ValueError("Skill requires YAML frontmatter")
-    metadata = yaml.safe_load(sections[1])
+    if metadata is None:
+        text = (directory / "SKILL.md").read_text()
+        sections = text.split("---", 2)
+        if not text.startswith("---\n") or len(sections) != 3:
+            raise ValueError("Skill requires YAML frontmatter")
+        metadata = yaml.safe_load(sections[1])
     if not isinstance(metadata, dict) or not isinstance(metadata.get("name"), str):
         raise ValueError("Skill requires a name")
     if metadata.get("spec", "jv") != "jv":

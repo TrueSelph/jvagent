@@ -1,0 +1,310 @@
+{
+  "parent_revision": "git-commit:a63373d1ac327167905d8aff02cf6c6160865321",
+  "source_blobs": {
+    "jvagent/harness/native.py": "git-blob:b943a1f201900ad1ff94a9592eecd5b10233ff9d",
+    "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+    "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+    "tests/harness/native/test_skill_assets.py": "git-blob:3f323afc08f961c3c0d8d18b9fd4dedcc3698a4f"
+  },
+  "observed_at": "2026-11-05T16:21:20.754335+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "model": "openai:gpt-4.1 (Responses API)",
+    "temporary_route": null,
+    "auth": "platform login, administrator role, caller identity from server-owned authentication service",
+    "shipped_product_route": false,
+    "auth_entrypoint": "public HTTP interact; caller from server-owned authentication service",
+    "skill_assets": {
+      "conversation": "---\nname: conversation\ndescription: Native inherited SOP verification\nextends: skill:record-base\n---\nFollow the inherited procedure for rehearsal lookups. Be concise. Do not start an interview.\n",
+      "record-base": "---\nname: record-base\ndescription: Read a rehearsal record using the inherited native tool permission\nrequires-actions: [MCPAction, InterviewAction]\nrequires-tools: [mcp_records__lookup_record]\nallowed-tools: [mcp_records__lookup_record]\n---\nFor a rehearsal lookup call mcp_records__lookup_record with reference REHEARSAL-47. The inherited verification marker is SOP-INHERITED-29. Report the marker, room and start time from the actual tool result. Never invent a tool result.\n"
+    }
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.bed0f0326b294a4193e3246f",
+      "session_id": "sess_f8a37e134b1741bb",
+      "interview_present": false,
+      "scratch_present": false,
+      "nonce_count": 0
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.def613d221cc4a20b1a183f9",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_f8a37e134b1741bb",
+      "utterance": "SOP-PROJECTION-CHECK: Please look up the rehearsal record using your inherited procedure and report its verification marker, room and start time.",
+      "response": "Verification marker: SOP-INHERITED-29  \nRoom: Cedar  \nStart time: 14:30",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 728,
+          "output_tokens": 47
+        },
+        "output": "Verification marker: SOP-INHERITED-29  \nRoom: Cedar  \nStart time: 14:30",
+        "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T16:20:35.099007+00:00",
+        "total_tokens": 775,
+        "prompt_tokens": 728,
+        "total_cost_usd": 0.001832,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 47,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001832,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T12:20:29.224443",
+      "completed_at": "2026-11-05T12:20:35.098964",
+      "closed": true,
+      "emitted": true,
+      "observability_metrics": [
+        {
+          "data": {
+            "model": "gpt-4.1-2025-04-14",
+            "usage": {
+              "total_tokens": 361,
+              "prompt_tokens": 337,
+              "completion_tokens": 24,
+              "cache_write_tokens": 0,
+              "cached_prompt_tokens": 0
+            },
+            "provider": "openai",
+            "cost_record": {
+              "amount": 0.000866,
+              "source": "pydantic_ai_pricing",
+              "currency": "USD",
+              "estimated": true,
+              "pricing_version": null
+            },
+            "usage_status": "provider_reported",
+            "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+            "native_step_index": 1,
+            "native_receipt_key": "spend:default|run|*|corr-7bf92f7104f04b899c1d49bd783c7f47:1",
+            "native_spend_receipt": true,
+            "native_receipt_origin": "spend_snapshot"
+          },
+          "event_type": "model_call"
+        },
+        {
+          "data": {
+            "model": "gpt-4.1-2025-04-14",
+            "usage": {
+              "total_tokens": 414,
+              "prompt_tokens": 391,
+              "completion_tokens": 23,
+              "cache_write_tokens": 0,
+              "cached_prompt_tokens": 0
+            },
+            "provider": "openai",
+            "cost_record": {
+              "amount": 0.000966,
+              "source": "pydantic_ai_pricing",
+              "currency": "USD",
+              "estimated": true,
+              "pricing_version": null
+            },
+            "usage_status": "provider_reported",
+            "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+            "native_step_index": 2,
+            "native_receipt_key": "spend:default|run|*|corr-7bf92f7104f04b899c1d49bd783c7f47:2",
+            "native_spend_receipt": true,
+            "native_receipt_origin": "spend_snapshot"
+          },
+          "event_type": "model_call"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:30.374561Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:30.823608Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:33.019060Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:33.118162Z",
+          "tool_name": "mcp_records__lookup_record",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_XXkGMTggIb4JRPuMpKgrN5wQ",
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "3:1:tool_call_started:call_XXkGMTggIb4JRPuMpKgrN5wQ"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:33.164310Z",
+          "tool_name": "mcp_records__lookup_record",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_XXkGMTggIb4JRPuMpKgrN5wQ",
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "4:1:tool_call_completed:call_XXkGMTggIb4JRPuMpKgrN5wQ"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:33.236041Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:34.759558Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T16:20:34.866056Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_f8a37e134b1741bb",
+          "idempotency_key": "7:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "status": "completed",
+          "ended_at": "2026-11-05T16:20:33.158439Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T16:20:33.114451Z",
+          "tool_call_id": "call_XXkGMTggIb4JRPuMpKgrN5wQ",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 5.874521
+    }
+  ],
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:0fa8f6455c2e30178617b54308f04a8ce3b700d8",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/harness/native.py": "git-blob:b943a1f201900ad1ff94a9592eecd5b10233ff9d",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826"
+    },
+    "process_id": 58840,
+    "observed_at": "2026-11-05T16:20:10.769454+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T16:21:20.564957+00:00"
+  },
+  "validation": {
+    "native_postgres_python311": "256 passed, 156 warnings, 31.64 seconds; final source and all eighteen asset cases",
+    "native_postgres_python312": "253 passed, 156 warnings, 36.28 seconds; final eighteen asset cases additionally passed, 0.81 seconds",
+    "affected": "18 asset cases passed, 1 warning, 0.64 seconds (Python 3.11) and 0.81 seconds (Python 3.12)",
+    "all_file_hooks": "passed with staged source, tests and evidence included",
+    "full_suite_on_push": "pending",
+    "mutation": "Removing inherited procedure text fails the official model-wire assertion; one expected failure in 0.68 seconds"
+  },
+  "limits": [
+    "Inherited SOP text and read-tool prerequisites only; native interview activation, mutating tools, hooks, continuation and full workflow remain unqualified.",
+    "Actual OpenAI model called through public HTTP interact from jvchat in isolated browser context. No execution functions patched."
+  ]
+}

@@ -1920,5 +1920,25 @@
       "legacy execution/config migration and deletion"
     ],
     "migration": "Historical lost nonces cannot be inferred; retire old in-flight envelopes at cutover."
+  },
+  "native_sop_projection_increment": {
+    "evidence": "2026-11-05-native-sop-projection.md",
+    "status": "inherited SOP/read prerequisites qualified; full interview execution pending",
+    "preserved": [
+      "authored SKILL.md files",
+      "additive declared tools",
+      "disabled tools",
+      "inherited prerequisites/channel restrictions",
+      "official Skills catalog/loading"
+    ],
+    "remaining": [
+      "native action base SOP",
+      "explicit domain activation",
+      "reviewed tool effects",
+      "domain task continuation",
+      "hooks",
+      "resource/script compatibility",
+      "migration and legacy deletion"
+    ]
   }
 }
