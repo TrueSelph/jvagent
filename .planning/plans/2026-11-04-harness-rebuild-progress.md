@@ -1514,3 +1514,39 @@ Actions currently warn and skip. A strict configured-policy admission gate remai
 necessary before enterprise qualification; this fixture is not evidence that a
 misspelled security Action fails closed at bootstrap. Other remaining W0/W3/W4/W5
 and release gates are unchanged; main reconciliation does not qualify those.
+
+
+## Remote qualification and transitional CI dependency repair — 2026-11-05
+
+Draft [PR #260](https://github.com/TrueSelph/jvagent/pull/260) was opened at
+8a99af19, mergeable against main 43cbc885. The
+[first remote run](https://github.com/TrueSelph/jvagent/actions/runs/41977427036)
+passed both native-harness Python 3.11/3.12 PostgreSQL lanes, jvchat, conformance
+and the transitional two-worker lane. The separate pre-commit workflow passed.
+Native 3.11's log has 157 passing dots, no skipped cases, and the configured
+PostgreSQL service/DSN; these are real adapter tests, not page-load checks.
+The two-worker result tests retained contracts, not native distributed ownership.
+
+The full test/isolation/load jobs failed at collection because their `.[test]`
+installation did not include pydantic_ai, imported directly by retained pilot
+regressions and a stream-emission test. Those failures did not run model workflows.
+The affected workflow installations now request `.[test,pydantic-pilot]` explicitly
+(`.github/workflows/test-jvagent.yaml:35`), preserving the separately pinned native
+lane. No production dependency was added, no tests were skipped to hide the error,
+and the pilot extra is still due for removal with the old execution path at W5.
+The full transitional job also runs pip check.
+
+A new clean Python 3.11.15 environment installed that exact extra combination:
+126 packages, jvspatial 0.1.1, pydantic-ai-slim 2.54.0, OpenAI 2.54.0 and
+LiteLLM 1.101.6. Dependency check passed. Its full suite passed **4,697 tests,
+25 skipped, 30 warnings in 134.36 s**, including all five cases added after the
+prior full run. The native 2.66.0/Harness 0.66.0 environment stays independent;
+these differing qualification profiles are not a final unified installation or
+an equivalent-feature footprint/performance comparison.
+
+Temporary install/full-test logs: /private/tmp/jvagent-legacy-ci-install.log and
+/private/tmp/jvagent-legacy-ci-full.log. Remote failed collection output is retained
+in /private/tmp/jvagent-native-ci-failed.log. This repair changes only workflow and
+evidence files; the tested runtime sources and actual-model browser evidence from
+8a99af19 are unchanged. The corrected remote workflow must still pass before the
+entire PR check set is described as green. The PR remains draft and unmerged.

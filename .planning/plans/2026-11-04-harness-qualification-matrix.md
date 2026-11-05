@@ -11,7 +11,7 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 | Gate | Current evidence | Remaining work |
 |---|---|---|
-| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
+| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | Native 3.11/3.12 PostgreSQL CI passed at 8a99af19; transitional job dependency repair pending remote rerun; artifact build; retire conflicting LiteLLM test dependency |
 | Native execution | 157 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure/restart follow-ups; bounded host cancellation cleanup; actual cancelled-stream unknown usage and blocked follow-ups | Broader storage-I/O deadlines, abandoned-worker ownership, effect/write reconciliation, operator tooling, blocking-adapter and outage settlement |
@@ -105,3 +105,12 @@ host policy (`jvagent/tooling/access.py:53`), including delegated children
 progress record. New skill group declarations are explicitly rejected pending a
 qualified adapter (`jvagent/harness/skill_admission.py:39`); this is a visible
 compatibility limit, not completed handoff/native group-policy qualification.
+
+
+The first PR #260 remote run passed native PostgreSQL lanes on both supported
+Python versions and jvchat; transitional full/isolation/load jobs exposed a missing
+optional pilot SDK. Their explicit `test,pydantic-pilot` profile now reproduces
+4,697 passing tests in a fresh Python 3.11 environment with a clean dependency
+check. See the progress record for run links and profile versions. Final unified
+installation, cutover and deletion remain open; remote checks of the repair are
+required separately.
