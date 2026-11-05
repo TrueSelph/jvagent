@@ -45,6 +45,7 @@ class NativeHarnessAction(InteractAction):
 
     model: str = attribute(default="openai:gpt-4.1")
     skill_directory: str = attribute(default="")
+    delegates: list[dict[str, Any]] = attribute(default_factory=list)
     instructions: str = attribute(default="Help the user using the available skill.")
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
@@ -96,9 +97,58 @@ class NativeHarnessAction(InteractAction):
                 channel=getattr(visitor, "channel", "default"),
             )
 
+        async def events(ctx: Any, stream: Any) -> None:
+            from pydantic_ai.messages import (
+                FunctionToolCallEvent,
+                FunctionToolResultEvent,
+            )
+
+            async for event in stream:
+                if not isinstance(
+                    event, (FunctionToolCallEvent, FunctionToolResultEvent)
+                ):
+                    continue
+                part = event.part
+                phase = (
+                    "tool_call"
+                    if isinstance(event, FunctionToolCallEvent)
+                    else "tool_result"
+                )
+                metadata: dict[str, Any] = {
+                    "tool_name": part.tool_name,
+                    "native_run_id": ctx.run_id,
+                    "native_agent_name": (
+                        ctx.agent.name if ctx.agent is not None else None
+                    ),
+                }
+                if phase == "tool_call":
+                    metadata["tool_args"] = part.args_as_dict()
+                    content = part.tool_name
+                else:
+                    content = str(part.content)[:8000]
+                    metadata["tool_result"] = content
+                bus = getattr(visitor, "response_bus", None)
+                if bus is not None:
+                    await bus.publish(
+                        session_id=visitor.session_id,
+                        content=content,
+                        channel=getattr(visitor, "channel", "default"),
+                        category="thought",
+                        thought_type=phase,
+                        segment_id=part.tool_call_id,
+                        transient=True,
+                        interaction=interaction,
+                        interaction_id=interaction.id,
+                        user_id=visitor.user_id,
+                        metadata=metadata,
+                    )
+
         agent = build_native_agent(
             self.model,
             skill_directory=Path(self.skill_directory),
+            delegates=self.delegates,
+            conversation_id=visitor.session_id,
+            event_stream_handler=events,
             tools=tools,
             access_check=access,
             instructions=self.instructions,
@@ -133,46 +183,6 @@ class NativeHarnessAction(InteractAction):
                 )
             history = snapshot.messages
 
-        async def events(ctx: Any, stream: Any) -> None:
-            from pydantic_ai.messages import (
-                FunctionToolCallEvent,
-                FunctionToolResultEvent,
-            )
-
-            async for event in stream:
-                if not isinstance(
-                    event, (FunctionToolCallEvent, FunctionToolResultEvent)
-                ):
-                    continue
-                part = event.part
-                phase = (
-                    "tool_call"
-                    if isinstance(event, FunctionToolCallEvent)
-                    else "tool_result"
-                )
-                metadata: dict[str, Any] = {"tool_name": part.tool_name}
-                if phase == "tool_call":
-                    metadata["tool_args"] = part.args_as_dict()
-                    content = part.tool_name
-                else:
-                    content = str(part.content)[:8000]
-                    metadata["tool_result"] = content
-                bus = getattr(visitor, "response_bus", None)
-                if bus is not None:
-                    await bus.publish(
-                        session_id=visitor.session_id,
-                        content=content,
-                        channel=getattr(visitor, "channel", "default"),
-                        category="thought",
-                        thought_type=phase,
-                        segment_id=part.tool_call_id,
-                        transient=True,
-                        interaction=interaction,
-                        interaction_id=interaction.id,
-                        user_id=visitor.user_id,
-                        metadata=metadata,
-                    )
-
         run_id = uuid.uuid4().hex
         interaction.native_run = {"run_id": run_id, "status": "running"}
         await interaction.save()
@@ -187,6 +197,7 @@ class NativeHarnessAction(InteractAction):
                     run_id=run_id,
                     message_history=history,
                     event_stream_handler=events,
+                    max_cost_usd=self.max_run_cost_usd,
                     max_requests=self.max_requests,
                     max_tokens=self.max_tokens,
                     timeout_seconds=self.timeout_seconds,
@@ -196,6 +207,10 @@ class NativeHarnessAction(InteractAction):
             record_native_usage(
                 interaction, result.new_messages(), run_id=run_id, model=self.model
             )
+            if self.delegates:
+                from jvagent.harness.accounting import recover_native_usage
+
+                await recover_native_usage(interaction, run_id=run_id, model=self.model)
             usage = result.usage
             interaction.native_run = {
                 "run_id": run_id,

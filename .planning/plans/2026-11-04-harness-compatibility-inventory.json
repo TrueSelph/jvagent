@@ -1680,5 +1680,22 @@
       },
       "disposition": "preserve-assets-review-execution"
     }
+  ],
+  "native_additions": [
+    {
+      "path": "jvagent/action/native_harness/info.yaml",
+      "name": "jvagent/native_harness",
+      "qualification": "development: explicit native execution; not release migration"
+    },
+    {
+      "path": "jvagent/action/pageindex_read/info.yaml",
+      "name": "jvagent/pageindex_read",
+      "qualification": "partial: direct read tools, populated/public retrieval and restricted denial"
+    },
+    {
+      "path": "jvagent/skills/delegate/SKILL.md",
+      "name": "delegate",
+      "qualification": "partial: bounded foreground native child skills; shared limits, graph linkage and browser events; citation quality, background and recovery pending"
+    }
   ]
 }

@@ -629,7 +629,8 @@ class PageIndexAction(Action):
         self,
         query: Annotated[str, "Search query."],
         doc_name: Annotated[
-            Optional[str], "Restrict search to a specific document name."
+            Optional[str],
+            "Exact known document name; omit when uncertain. Restricts search to that document.",
         ] = None,
         limit: Annotated[
             Optional[int],

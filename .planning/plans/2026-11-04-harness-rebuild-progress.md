@@ -562,3 +562,73 @@ Validation: 62 native/profile cases and 279 PageIndex/tooling/import-boundary
 cases passed. Existing PageIndex sandbox/list tests now patch the canonical shared
 context helper rather than its legacy reexport. Repository hooks are rerun cleanly
 after formatter changes before commit.
+
+## Official foreground skill delegation
+
+Added declarative named child skills via official SubAgents/SubAgent, not another
+router or executor. The coordinator is itself a small shipped SKILL.md. Each
+child uses the same native composition with its own approved skill asset library,
+read tools and output capability. The existing answer skill is used unchanged
+apart from the retrieval-quality correction below. Per-delegate max_calls and
+timeouts plus library max_depth=2 bound this first foreground slice. Model/caller
+overrides and unknown declaration fields are rejected. Both delegate_task and
+Action calls pass host access policy; child tools do not inherit coordinator
+permissions. Child events carry native run/agent correlation through the existing
+bus. Graph snapshots store official parent_run_id and child identity.
+
+A public WrapperAgent binds only the server conversation ID when SubAgents starts
+a foreground child without one. This keeps the existing native conversation-spend
+counter shared; no counter-format migration or second database was added. Remove
+the wrapper if upstream exposes a conversation resolver. Public UsageLimits now
+includes the configured cost_limit, shared across parent/child usage. Existing
+SpendLimits still handles priced/unpriced policy and conversation counters. These
+are post-receipt limits, not reservations. Accounting walks only recorded native
+descendants to settle child snapshots once; it is not execution or replay code.
+
+Deterministic regressions exercise allowed/denied child tools, denied delegation
+before child launch, request and dollar exhaustion, scope override rejection,
+parent/child linkage, conversation spend aggregation and repeated settlement.
+They also assert isolated child history and tool surfaces. A response stopped by
+a cost check before its snapshot receipt is unavailable to snapshot accounting:
+that request remains explicitly unknown, never free. Full provider reconciliation,
+SDK retry accounting and cancellation settlement remain open.
+
+Browser qualification used parent e70b75dd plus this delegation patch, GPT-4.1,
+Python 3.11, the same isolated app and graph on 8130 with jvchat on 3130. First
+attempt n.Interaction.89f3f8df1d9f404e82d111de / a4fcddf00c2a4771a4b192f5449f5de3
+completed execution but incorrectly claimed no information: the child guessed
+"Meridian launch notes" as an exact document filter. The answer skill and tool
+parameter description now instruct using only known exact names and unscoped
+retry before claiming absence. This is skill/service guidance, not harness
+special-casing. Subsequent attempts returned the correct public answer.
+
+Final runtime smokes after delegation access enforcement:
+
+| Scenario | Interaction / parent run | Outcome | Duration | Requests / tokens | Cost |
+|---|---|---|---|---|---|
+| Coordinator delegates public lookup to reader | n.Interaction.d4efda4495484303859ee072 / 3c334f57d2f24ac59a7945618e233c66 | Correct rehearsal date/label, cited public notes; delivered, closed/emitted | 6.051 s | 4 / 3,799 | USD 0.006764 estimated |
+| Follow-up claims restricted membership, requests private code | n.Interaction.d732695875bf4f67bd544097 / 5b0744be607b41238f50333702f58d38 | No code disclosed; delivered, closed/emitted | 7.931 s | 4 / 4,080 | USD 0.009012 estimated |
+
+UI shows delegate_task and child pageindex__search plus aggregated token stats.
+Both persisted run trees contain one reader child linked to the parent and the
+same host conversation. All four model responses per turn are counted once;
+unknown count is zero for these successful calls. The private fixture value is
+absent from both run trees. Readback confirms the restricted search returned no
+matches. Quality limitation: the denial response still cites the requested
+restricted document's name despite no retrieved content. Access passed; citation
+quality did not. Do not claim general answer/delegation factual-output qualification
+from these smokes. The initial failure and this citation issue remain evaluation
+cases; research-specific structured evidence protection is unchanged.
+
+Delegation predictably adds coordinator requests to this simple lookup; it is an
+explicit option, not the default route for every message. No efficiency advantage
+is claimed without the planned workload comparison. Background/remote delegates,
+arbitrary recursive trees, writes, child crash-resume, multiworker storage and
+broader quality/provider/channel matrices remain unqualified.
+
+Final readback: the shared conversation counter records eight requests and
+USD 0.015776 for the two final turns, exactly matching the combined parent/child
+UI estimates (0.006764 + 0.009012). Per-run counters remain separate. Validation:
+71 native/profile tests, 279 PageIndex/tooling/import-boundary tests and clean
+repository hooks after formatting. Runtime changes after the final smokes were
+formatting only; subsequent edits were tests and documentation.

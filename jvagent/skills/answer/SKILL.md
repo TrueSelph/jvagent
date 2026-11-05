@@ -29,7 +29,10 @@ optional but recommended for reading promising pages in full.
 
 1. **Search internal sources first (when available)**: if `pageindex__search`
    is on the tool surface, call it before synthesizing — internal KB is
-   authoritative and should anchor the answer.
+   authoritative and should anchor the answer. Set `doc_name` only when the exact
+   document name is known from the user or prior retrieval. Otherwise omit it.
+   If a named-document search returns no matches, retry without `doc_name` before
+   concluding that the internal knowledge base has no relevant information.
 2. **Evaluate**: critically assess the results. If they are missing,
    incomplete, or tangential to the core intent, do not settle for a partial
    answer.

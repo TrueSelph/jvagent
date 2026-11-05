@@ -28,6 +28,9 @@ def build_native_agent(
     max_conversation_cost_usd: str = "20.00",
     available_actions: Sequence[str] = (),
     channel: str = "default",
+    delegates: Sequence[Any] = (),
+    conversation_id: str | None = None,
+    event_stream_handler: Any = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -37,13 +40,15 @@ def build_native_agent(
     from pydantic_ai import Agent, RunContext, Tool
     from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
     from pydantic_ai.exceptions import ModelRetry
+    from pydantic_ai.workspaces import LocalWorkspaceBackend
     from pydantic_ai_harness import Skills
 
     directory = skill_directory.resolve(strict=True)
     metadata = admit_skill(
         directory,
         available_actions=available_actions,
-        available_tools=[tool.name for tool in tools],
+        available_tools=[tool.name for tool in tools]
+        + (["delegate_task"] if delegates else []),
         channel=channel,
         supported_output_contracts=SUPPORTED_OUTPUT_CONTRACTS,
     )
@@ -92,11 +97,78 @@ def build_native_agent(
         async def before_run(self, ctx: RunContext[Any]) -> None:
             ctx.load_capability(metadata["name"])
 
+        async def before_tool_execute(
+            self,
+            ctx: RunContext[Any],
+            *,
+            call: Any,
+            tool_def: Any,
+            args: dict[str, Any],
+        ) -> dict[str, Any]:
+            if call.tool_name == "delegate_task" and not await access_check(
+                "delegate_task"
+            ):
+                raise ModelRetry("Delegation access denied")
+            return args
+
     capabilities = [
         LocalWorkspace(directory.parent, read_only=True),
-        Skills(".", include=[directory.name]),
+        Skills(
+            ".",
+            include=[directory.name],
+            workspace=LocalWorkspaceBackend(directory.parent),
+        ),
         SelectedSkill(),
     ]
+    if delegates:
+        if len(delegates) > 16:
+            raise ValueError("At most 16 named delegates may be configured")
+        from pydantic import TypeAdapter
+        from pydantic_ai_harness import SubAgent, SubAgents
+
+        from jvagent.harness.delegation import ConversationAgent, NativeDelegate
+
+        definitions = TypeAdapter(list[NativeDelegate]).validate_python(list(delegates))
+        if not conversation_id or "delegate_task" not in allowed:
+            raise ValueError("Delegation requires host scope and skill permission")
+        if len({entry.name for entry in definitions}) != len(definitions):
+            raise ValueError("Duplicate delegate names")
+        if any(tool.name == "delegate_task" for tool in tools):
+            raise ValueError("delegate_task is reserved for official SubAgents")
+        children = []
+        for entry in definitions:
+            child = build_native_agent(
+                model,
+                skill_directory=Path(entry.skill_directory),
+                tools=tools,
+                access_check=access_check,
+                instructions=instructions,
+                step_store=step_store,
+                spend_store=spend_store,
+                max_run_cost_usd=max_run_cost_usd,
+                max_conversation_cost_usd=max_conversation_cost_usd,
+                available_actions=available_actions,
+                channel=channel,
+            )
+            child.name = entry.name
+            children.append(
+                SubAgent(
+                    ConversationAgent(child, conversation_id),
+                    name=entry.name,
+                    description=entry.description,
+                    max_calls=entry.max_calls,
+                    timeout_seconds=entry.timeout_seconds,
+                    read_only=True,
+                )
+            )
+        capabilities.append(
+            SubAgents(
+                agents=children,
+                max_depth=2,
+                forward_usage=True,
+                event_stream_handler=event_stream_handler,
+            )
+        )
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
 
@@ -145,6 +217,7 @@ async def run_native_agent(
     max_tool_calls: int = 40,
     max_tokens: int = 100_000,
     timeout_seconds: float = 180.0,
+    max_cost_usd: str = "2.00",
 ) -> Any:
     """Run through native lifecycle, limits and events, returning the full result.
 
@@ -152,6 +225,7 @@ async def run_native_agent(
     delivery separately. No partial text is substituted for a failed native run.
     """
     import math
+    from decimal import Decimal
 
     from pydantic_ai.usage import UsageLimits
 
@@ -166,6 +240,9 @@ async def run_native_agent(
         or timeout_seconds <= 0
     ):
         raise ValueError("Native timeout must be finite and positive")
+    cost_limit = Decimal(max_cost_usd)
+    if not cost_limit.is_finite() or cost_limit <= 0:
+        raise ValueError("Native cost limit must be finite and positive")
     return await agent.run(
         question,
         conversation_id=conversation_id,
@@ -173,6 +250,7 @@ async def run_native_agent(
         message_history=message_history,
         event_stream_handler=event_stream_handler,
         usage_limits=UsageLimits(
+            cost_limit=cost_limit,
             request_limit=max_requests,
             tool_calls_limit=max_tool_calls,
             total_tokens_limit=max_tokens,

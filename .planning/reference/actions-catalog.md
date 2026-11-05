@@ -60,6 +60,7 @@ Bases:
 
 | Action | Class | Base | Weight | Purpose |
 |---|---|---|---:|---|
+| jvagent/native_harness | `NativeHarnessAction` | `InteractAction` | -200 | Explicit native development entrypoint; selected skills and official skill-based subagents. See [native guide](../../jvagent/action/native_harness/README.md) and qualification limits. |
 | jvagent/orchestrator | `OrchestratorInteractAction` | `InteractAction` | -200 | Single orchestrator (Orchestrator pattern). One `execute()` per turn: deterministic continuation check, then a bounded think-act-observe loop over a unified tool surface (routing = tool selection). ADR-0012/0013/0014/0015/0016. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | -300 | First-message self-introduction. Contributes a response-shaping *parameter* (not a directive) so ReplyAction weaves the greeting into the same reply as the answer (coexists with the executive; fires on `visitor.new_user`) |
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
@@ -74,6 +75,7 @@ Bases: `InteractAction` — `interact/base.py:27`. See `.planning/architecture.m
 
 | Action | Class | Base | Purpose |
 |---|---|---|---|
+| jvagent/pageindex_read | `PageIndexReadAction` | `PageIndexAction` | Direct retrieval tool profile without legacy model dependencies. See [read profile](../../jvagent/action/pageindex_read/README.md). |
 | jvagent/pageindex | `PageIndexAction` | `Action` | Document indexing + FTS + semantic search (`pageindex__search`, `pageindex__assimilate`, …) |
 
 ### 1.4 Messaging / broadcast

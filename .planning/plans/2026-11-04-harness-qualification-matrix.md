@@ -3,8 +3,8 @@
 [Machine-readable migration inventory](2026-11-04-harness-compatibility-inventory.json)
 contains all 58 pre-rebuild Action manifests, 22 skill assets (including embedded
 Action skills/examples), and 91 persisted Orchestrator settings with source lines.
-The new native_harness Action is additional to that baseline. Dispositions are
-proposed engineering decisions; every integration still needs conformance proof.
+The native_harness and pageindex_read Actions and delegate skill are additional
+to that baseline. Dispositions are proposed engineering decisions; every integration still needs conformance proof.
 No automatic migration tool or deletion authorization is inferred from a category.
 
 ## Qualification status
@@ -12,11 +12,11 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Gate | Current evidence | Remaining work |
 |---|---|---|
 | Dependency/Python | Pinned native pair installs/tests on Python 3.11 and 3.12; dependency checks pass | CI lane authored but remote run pending; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 62 native/profile cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Native execution | 71 native/profile cases; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit | PostgreSQL, in-transaction death, outage and multi-worker fencing |
 | Spend | Official capability and graph batch-store regressions | Real pricing, unknown receipts, historical-total migration and concurrency |
 | Research | Existing evidence tests, native typed output and actual Serper/fetch/citation browser flow | Quality evaluation, publisher freshness and research efficiency |
-| Compatibility | Named inventory, explicit admission, direct PageIndex with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, subagents, channels |
+| Compatibility | Named inventory, explicit admission, direct PageIndex and bounded foreground skill delegation with public retrieval and restricted-document denial | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 
 ## Required asset migrations

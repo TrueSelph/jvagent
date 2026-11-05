@@ -69,6 +69,7 @@ async def test_native_receipt_precedes_delivery(
         max_conversation_cost_usd="20",
         model="test",
         skill_directory=".",
+        delegates=[],
         instructions="",
         max_requests=2,
         max_tokens=2000,

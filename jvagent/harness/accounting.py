@@ -53,7 +53,24 @@ def record_native_usage(
 
 
 async def recover_native_usage(interaction: Any, *, run_id: str, model: str) -> None:
-    """Read failed-run receipts from official snapshots; retain unknown attempts."""
+    """Settle this run and its recorded descendants without charging other runs."""
+    from jvagent.harness.step_store import InteractionStepStore
+
+    store = InteractionStepStore(interaction)
+    records = await store.list_runs()
+    owned = {run_id}
+    while True:
+        descendants = {r.run_id for r in records if r.parent_run_id in owned}
+        expanded = owned | descendants
+        if expanded == owned:
+            break
+        owned = expanded
+    for identity in sorted(owned):
+        await _recover_run_usage(interaction, run_id=identity, model=model)
+
+
+async def _recover_run_usage(interaction: Any, *, run_id: str, model: str) -> None:
+    """Read one run's official receipts and retain unmatched request starts."""
     from jvagent.harness.step_store import InteractionStepStore
 
     store = InteractionStepStore(interaction)
