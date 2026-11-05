@@ -1940,5 +1940,29 @@
       "resource/script compatibility",
       "migration and legacy deletion"
     ]
+  },
+  "native_interview_increment": {
+    "evidence": "2026-11-05-native-interview.md",
+    "qualified_scope": "built-in activation, validation and manual review/confirmation, reset/cancel; bounded by recorded evidence",
+    "preserved": [
+      "existing domain handlers",
+      "SKILL.md extends",
+      "TaskStore domain records",
+      "caller scope",
+      "official SDK execution and effects"
+    ],
+    "retired": [
+      "legacy activation grammar on native path",
+      "duplicate data.state on touched native interview tasks"
+    ],
+    "remaining": [
+      "complex field extensions",
+      "trusted hooks/custom tools",
+      "external callbacks",
+      "operator reconciliation",
+      "client reset",
+      "unused prompt-parameter injection",
+      "migration and legacy execution deletion"
+    ]
   }
 }

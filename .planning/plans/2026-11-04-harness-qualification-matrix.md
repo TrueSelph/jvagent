@@ -240,3 +240,12 @@ not full native interview execution or release qualification.
 official Skills passes actual GPT-4.1 jvchat/MCP and fresh PostgreSQL readback.
 Action bases require an explicit host map; the interview base, activation, mutations,
 custom hooks and continuation remain unqualified. No migration/deletion gate closes.
+
+## Native interview built-in vertical — 2026-11-05
+
+[Record](2026-11-05-native-interview.md): built-in activation/validation/manual review
+and later confirmation across restart pass actual GPT-4.1 browser and SQL checks.
+Reset/cancel, write fault/cancellation and policy boundaries have deterministic
+regressions. Native mutation intent uses official effect annotations. Complex hooks,
+branching/for-each, external callbacks, delegated writes, operator recovery and
+client reset remain unqualified; no release/migration/deletion gate closes.

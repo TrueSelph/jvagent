@@ -191,3 +191,52 @@ async def test_native_explicit_named_permission_requires_host_tool_check(
     await agent.run("Lookup")
     assert called == ([True] if host_permission else [])
     assert checked == ([] if host_permission is None else ["lookup"])
+
+
+@pytest.mark.asyncio
+async def test_action_argument_named_ctx_does_not_shadow_sdk_context(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "context-argument"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: context-argument\ndescription: Context argument\nallowed-tools: [echo]\n---\nUse echo.\n"
+    )
+    received = []
+
+    async def echo(ctx: str) -> str:
+        received.append(ctx)
+        return ctx
+
+    async def allow(name: str) -> bool:
+        return True
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        return (
+            ModelResponse(parts=[TextPart("done")])
+            if received
+            else ModelResponse(parts=[ToolCallPart("echo", {"ctx": "user-data"})])
+        )
+
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=directory,
+        tools=[
+            Tool(
+                "echo",
+                "Echo",
+                parameters_schema={
+                    "type": "object",
+                    "properties": {"ctx": {"type": "string"}},
+                    "required": ["ctx"],
+                    "additionalProperties": False,
+                },
+                execute=echo,
+                effect_class="read",
+            )
+        ],
+        access_check=allow,
+        instructions="Echo",
+    )
+    assert (await agent.run("Echo")).output == "done"
+    assert received == ["user-data"]

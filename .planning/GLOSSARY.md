@@ -265,3 +265,11 @@ A read-only view of composed JV skill procedure text and inherited declarations,
 supplied to official Skills through its public workspace boundary without rewriting
 authored files or adding an execution engine. See `jvagent/harness/skill_assets.py:34`
 and [the qualification record](plans/2026-11-05-native-sop-projection.md).
+
+### Conversation mutation effect
+
+A reviewed Action operation on the admitted Conversation, annotated in the official
+SDK effect ledger before dispatch and acknowledged after strict graph persistence.
+A failed run with this marker requires reconciliation; it is not rollback proof.
+See `jvagent/harness/conversation_tools.py:11` and
+[the interview acceptance record](plans/2026-11-05-native-interview.md).

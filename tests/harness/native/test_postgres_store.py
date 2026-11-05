@@ -105,6 +105,35 @@ async def test_interview_cleanup_retains_durable_host_replay_protection(
     assert len(rows[0]["context"]["context"][HOST_CONTEXT_REPLAY_KEY]) == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_native_interview_workflow_has_durable_domain_and_effect_state(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_interview import (
+        test_native_interview_validation_review_and_later_confirmation,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_native_interview_validation_review_and_later_confirmation(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
+    assert len(rows) == 1
+    state = rows[0]["context"]
+    assert "interview" not in state.get("context", {})
+    assert state["tasks"][0]["status"] == "completed"
+    assert "state" not in state["tasks"][0]["data"]
+    interactions = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(interactions) == 2
+    effects = [
+        e for row in interactions for e in row["context"]["native_steps"]["effects"]
+    ]
+    assert len(effects) == 6
+    assert all(e["status"] == "completed" for e in effects)
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

@@ -1,10 +1,9 @@
 # Harness rebuild execution record
 
-Latest increment: [native SOP inheritance](2026-11-05-native-sop-projection.md).
-Next: implement the native interview base SOP, explicit activation and reviewed
-mutation boundaries in the [interview adapter course](2026-11-05-interview-platform-state.md),
-while keeping the remaining recovery/effect/deployment gates open. Member browser API
-and anonymous popup admission are qualified only to the scope of that increment.
+Latest increment: [native interview domain execution](2026-11-05-native-interview.md).
+Next: qualify complex interview extensions and recovery, repair client conversation
+reset, then continue the supported compatibility/migration/deletion gates. The
+[interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
@@ -1997,3 +1996,15 @@ procedure text and cumulative prerequisite/tool policy through the public Skills
 workspace boundary. Actual GPT-4.1 jvchat/MCP execution and fresh PG readback pass.
 Missing/cyclic bases and inherited policy relaxation fail closed. Explicit native
 interview activation, mutation effects, task compatibility and migration remain open.
+
+## Native interview domain execution — 2026-11-05
+
+[Evidence](2026-11-05-native-interview.md) covers explicit activation, validation,
+review/confirmation across restart, reset/cancel and public SDK mutation receipts.
+Failed/uncertain writes cannot disappear into pre-write accepted input. Legacy
+task-close failures and unqualified callbacks fail closed; duplicate data.state is
+retired on touched tasks. Final native/real-PG cohorts pass 280 tests on each of
+Python 3.11 and 3.12; 282 existing interview tests pass. Seven actual-model browser
+turns are delivered. Complex extensions, operator recovery, client reset, migration,
+legacy deletion and enterprise release gates remain open. Parent 226c705f has all
+nine exact-head CI checks green.

@@ -163,14 +163,24 @@ class NativeHarnessAction(InteractAction):
             raise RuntimeError("Existing native invocation requires reconciliation")
         tools: list[Any] = []
         toolsets: list[Any] = []
+        action_skill_bases: dict[str, Path] = {}
         for action in actions:
             if isinstance(action, InteractAction):
                 continue
+            base_provider = getattr(action, "get_native_skill_bases", None)
+            if base_provider is not None:
+                bases = await base_provider()
+                if action_skill_bases.keys() & bases.keys():
+                    raise ValueError("Duplicate native Action skill bases")
+                action_skill_bases.update(bases)
             native_toolsets = getattr(action, "get_native_toolsets", None)
             if native_toolsets is not None:
                 toolsets.extend(await native_toolsets())
                 continue
-            for tool in await action.get_tools() or []:
+            tool_provider = (
+                getattr(action, "get_native_tools", None) or action.get_tools
+            )
+            for tool in await tool_provider() or []:
                 if getattr(action, "binds_tools_to_visitor", False):
                     tool = replace(tool, binds_visitor=True)
                 tools.append(tool)
@@ -251,6 +261,7 @@ class NativeHarnessAction(InteractAction):
             self.model,
             model_settings=self.model_settings,
             skill_directory=Path(self.skill_directory),
+            action_skill_bases=action_skill_bases,
             delegates=self.delegates,
             conversation_id=visitor.session_id,
             event_stream_handler=events,

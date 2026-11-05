@@ -1,0 +1,536 @@
+{
+  "browser_page": 19,
+  "isolated_context": "native-interview-flow",
+  "phase": "final policy admission and cancellation",
+  "ui": "jvchat\nAGENT TESTING\nNew Conversation\n3 conversations\n\nCancel this interview, please. Do not keep an active interview task.\n\nYes, I confirm the reviewed email. Please complete the interview.\n\nYes, I confirm these reviewed details. Please complete the interview.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-INTERVIEW-FINAL-CHECK: Please start the contact interview. My email is qualified.member@example.com. Validate it, save it and show me the review. Wait for my confirmation.\n\n3 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details below:\n\nEmail: qualified.member@example.com\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 5.3k tokens\n\nYes, I confirm the reviewed email. Please complete the interview.\n\n1 tool call\nUsed tool: interview__complete\n\nThank you for confirming. The interview is now complete.\n\nYour recorded email: qualified.member@example.com\n\ngpt-4.1-2025-04-14 · 3.4k tokens\n\nNATIVE-INTERVIEW-POLICY-CHECK: Start a fresh contact interview and ask me for the email. Do not store any email yet.\n\n1 tool call\nUsed tool: interview__start\n\nWhat email address should I record?\n\ngpt-4.1-2025-04-14 · 2.3k tokens\n\nCancel this interview, please. Do not keep an active interview task.\n\n1 tool call\nUsed tool: interview__cancel\n\nI've cancelled this interview. Say what you'd like to do next, or start a new request when you're ready.\n\ngpt-4.1-2025-04-14 · 2.6k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "turns": [
+    {
+      "started_at": "2026-11-05T16:58:08.894Z",
+      "status": 200,
+      "duration_ms": 4433.5999999940395,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+          "session_id": "sess_e8604281c2b94163",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.0fd2dd43965b46eaba67fda3",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+            "message_type": "adhoc",
+            "content": "interview__start",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_gbzPRMzBxOvfoVTM6yj6NGvX",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-f7b9b57538bf468c90101b9d02dfb31e",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "interview_type": "conversation"
+              }
+            },
+            "timestamp": "2026-11-05T12:58:11.832078"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.57bd977f35bf4cc795c63700",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_gbzPRMzBxOvfoVTM6yj6NGvX",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-f7b9b57538bf468c90101b9d02dfb31e",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+            },
+            "timestamp": "2026-11-05T12:58:11.897411"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-f7b9b57538bf468c90101b9d02dfb31e",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+            "message_type": "adhoc",
+            "content": "What email address should I record?",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T12:58:13.260277"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-f7b9b57538bf468c90101b9d02dfb31e",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T12:58:13.269652"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_e8604281c2b94163",
+          "response": "What email address should I record?",
+          "interaction": {
+            "id": "n.Interaction.eae8c538972a448dbbe946a7",
+            "utterance": "NATIVE-INTERVIEW-POLICY-CHECK: Start a fresh contact interview and ask me for the email. Do not store any email yet.",
+            "response": "What email address should I record?",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_6712365e6e2d",
+                "title": "Contact interview",
+                "description": "Collect and confirm a contact email without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T16:58:11.865187+00:00",
+                "updated_at": "2026-11-05T16:58:11.870410+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-f7b9b57538bf468c90101b9d02dfb31e"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-f7b9b57538bf468c90101b9d02dfb31e:1",
+                  "native_run_id": "corr-f7b9b57538bf468c90101b9d02dfb31e",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1074,
+                    "completion_tokens": 19,
+                    "total_tokens": 1093,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.0023,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-f7b9b57538bf468c90101b9d02dfb31e:2",
+                  "native_run_id": "corr-f7b9b57538bf468c90101b9d02dfb31e",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1220,
+                    "completion_tokens": 9,
+                    "total_tokens": 1229,
+                    "cached_prompt_tokens": 1024,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000976,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2294,
+              "completion_tokens": 28,
+              "total_tokens": 2322,
+              "cached_prompt_tokens": 1024,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.003276,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003276,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T16:58:13.269949+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.eae8c538972a448dbbe946a7",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_e8604281c2b94163"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started_at": "2026-11-05T17:00:06.498Z",
+      "status": 200,
+      "duration_ms": 4544.800000011921,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+          "session_id": "sess_e8604281c2b94163",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.d5823a807652483c8da0fa9b",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+            "message_type": "adhoc",
+            "content": "interview__cancel",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_RWGUb6APMd1KhzKCctLOdYmL",
+            "metadata": {
+              "tool_name": "interview__cancel",
+              "native_run_id": "corr-48fbc44819cf4fea989572f8c76b033a",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {}
+            },
+            "timestamp": "2026-11-05T13:00:09.375210"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.9d31d5bc186544d5928432f1",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"cancelled\", \"response_directive\": \"Tell the user or ask the user: I've cancelled this. Say what you'd like to do next, or start a new request when you're ready.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\", \"fields\": {}}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_RWGUb6APMd1KhzKCctLOdYmL",
+            "metadata": {
+              "tool_name": "interview__cancel",
+              "native_run_id": "corr-48fbc44819cf4fea989572f8c76b033a",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"cancelled\", \"response_directive\": \"Tell the user or ask the user: I've cancelled this. Say what you'd like to do next, or start a new request when you're ready.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\", \"fields\": {}}"
+            },
+            "timestamp": "2026-11-05T13:00:09.457392"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-48fbc44819cf4fea989572f8c76b033a",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+            "message_type": "adhoc",
+            "content": "I've cancelled this interview. Say what you'd like to do next, or start a new request when you're ready.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:00:10.933766"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-48fbc44819cf4fea989572f8c76b033a",
+            "session_id": "sess_e8604281c2b94163",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T13:00:10.956717"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_e8604281c2b94163",
+          "response": "I've cancelled this interview. Say what you'd like to do next, or start a new request when you're ready.",
+          "interaction": {
+            "id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+            "utterance": "Cancel this interview, please. Do not keep an active interview task.",
+            "response": "I've cancelled this interview. Say what you'd like to do next, or start a new request when you're ready.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_6712365e6e2d",
+                "title": "Contact interview",
+                "description": "Collect and confirm a contact email without external effects",
+                "status": "cancelled",
+                "created_at": "2026-11-05T16:58:11.865187+00:00",
+                "updated_at": "2026-11-05T17:00:09.429473+00:00",
+                "completed_at": "2026-11-05T17:00:09.429473+00:00",
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-48fbc44819cf4fea989572f8c76b033a"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-48fbc44819cf4fea989572f8c76b033a:1",
+                  "native_run_id": "corr-48fbc44819cf4fea989572f8c76b033a",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1249,
+                    "completion_tokens": 13,
+                    "total_tokens": 1262,
+                    "cached_prompt_tokens": 1152,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000874,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-48fbc44819cf4fea989572f8c76b033a:2",
+                  "native_run_id": "corr-48fbc44819cf4fea989572f8c76b033a",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1345,
+                    "completion_tokens": 24,
+                    "total_tokens": 1369,
+                    "cached_prompt_tokens": 1152,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001154,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 2594,
+              "completion_tokens": 37,
+              "total_tokens": 2631,
+              "cached_prompt_tokens": 2304,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.002028,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.002028,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T17:00:10.957530+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.c0c618f4b26a4eefad5ad3d3",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_e8604281c2b94163"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "privacy": {
+    "headers_omitted": true,
+    "session_capabilities_removed": true
+  },
+  "limits": [
+    "New Conversation created a distinct backend session, verified in PostgreSQL, while the client continued displaying earlier messages. Client reset behavior is not qualified.",
+    "The final cancel used the positional-only SDK context adapter; earlier startup source is separately identified in its receipt."
+  ]
+}

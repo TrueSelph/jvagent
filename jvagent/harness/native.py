@@ -44,14 +44,19 @@ def build_native_agent(
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
-    Only reviewed nonterminal read tools are admitted. Visitor-bound tools use
-    host context; write and flow tools require separate compatibility qualification.
+    Reviewed reads and explicit conversation-mutation adapters are admitted.
+    Mutations require SDK persistence and host visitor scope. Other writes, flows
+    and external effects require separate compatibility qualification.
     """
     from pydantic_ai import Agent, RunContext, Tool
     from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
     from pydantic_ai.exceptions import ModelRetry
     from pydantic_ai_harness import Skills
 
+    from jvagent.harness.conversation_tools import (
+        CONVERSATION_EFFECT,
+        ConversationMutationTool,
+    )
     from jvagent.harness.model_settings import validate_model_settings
     from jvagent.harness.skill_assets import project_skill, projected_workspace
 
@@ -88,7 +93,7 @@ def build_native_agent(
         raise ValueError("Duplicate Action tool names")
 
     def adapt(original: JVTool) -> Any:
-        async def invoke(**arguments: Any) -> str:
+        async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
             reject_model_authority_fields(arguments)
             # Bind the checked name in the closure, never in model arguments.
             permitted = (
@@ -98,13 +103,36 @@ def build_native_agent(
                 and await access_check(original.access_label or original.name)
             )
             if not permitted:
+                if isinstance(original, ConversationMutationTool):
+                    raise PermissionError("Conversation mutation access denied")
                 raise ModelRetry("Action access denied")
             call_arguments = dict(arguments)
             if original.binds_visitor:
                 from jvagent.tooling.context import require_tool_visitor
 
                 call_arguments["visitor"] = require_tool_visitor()
-            result = await original.call(**call_arguments)
+            if isinstance(original, ConversationMutationTool):
+                from pydantic_ai.exceptions import ToolRetryError
+                from pydantic_ai_harness.step_persistence import annotate_tool_effect
+
+                await annotate_tool_effect(
+                    step_store, ctx, effect_summary=CONVERSATION_EFFECT
+                )
+                effect = await step_store.get_tool_effect(
+                    run_id=ctx.run_id, tool_call_id=ctx.tool_call_id
+                )
+                if effect is None or effect.effect_summary != CONVERSATION_EFFECT:
+                    raise RuntimeError(
+                        "Conversation mutation lacks an SDK effect record"
+                    )
+                try:
+                    result = await original.call(**call_arguments)
+                except (ModelRetry, ToolRetryError) as error:
+                    raise RuntimeError(
+                        "Conversation mutation requires reconciliation"
+                    ) from error
+            else:
+                result = await original.call(**call_arguments)
             if result.is_error:
                 raise ModelRetry(result.content)
             if policy is not None:
@@ -125,6 +153,7 @@ def build_native_agent(
             name=original.name,
             description=original.description,
             json_schema=schema,
+            takes_ctx=True,
             sequential=bool(original.binds_visitor),
         )
 
@@ -146,7 +175,14 @@ def build_native_agent(
     for tool in tools:
         if tool.name not in allowed:
             continue
-        if tool.effect_class != "read" or tool.terminal:
+        mutation = isinstance(tool, ConversationMutationTool)
+        if mutation and (
+            tool.effect_class != "write" or not tool.binds_visitor or step_store is None
+        ):
+            raise ValueError(
+                "Conversation mutations require visitor scope and SDK persistence"
+            )
+        if (tool.effect_class != "read" and not mutation) or tool.terminal:
             raise ValueError(
                 f"Action is not qualified for native execution: {tool.name}"
             )
@@ -249,7 +285,11 @@ def build_native_agent(
         run_services.append(
             ReadRetryReceipts(
                 persistence,
-                frozenset(tool.name for tool in admitted).union(
+                frozenset(
+                    tool.name
+                    for tool in tools
+                    if tool.name in allowed and tool.effect_class == "read"
+                ).union(
                     name
                     for toolset in selected_toolsets
                     for name in toolset.allowed_names
@@ -321,7 +361,11 @@ def build_native_agent(
                 model,
                 skill_directory=Path(entry.skill_directory),
                 action_skill_bases=action_skill_bases,
-                tools=tools,
+                tools=[
+                    tool
+                    for tool in tools
+                    if not isinstance(tool, ConversationMutationTool)
+                ],
                 toolsets=toolsets,
                 access_check=access_check,
                 tool_access_check=tool_access_check,

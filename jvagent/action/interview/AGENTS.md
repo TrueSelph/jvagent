@@ -57,6 +57,22 @@ interview/
 
 ---
 
+## Native Harness adapter
+
+`native.py` supplies explicit `interview__start` and reviewed built-in domain tools;
+`native_skill/SKILL.md` replaces the legacy activation/turn-lock procedure for native
+execution. Official Skills and SDK tools own loading/dispatch; no `use_skill` router
+or activation auto-store runs. Native Action assets enter through generic host hooks.
+Conversation mutations require caller scope, SDK effect annotation and strict graph
+acknowledgement (`jvagent/harness/conversation_tools.py:14`). Failure after a mutation
+requires reconciliation; do not discard its outcomes into pre-write input history.
+Native tools retire the duplicate task `data.state`; TaskStore.status is canonical.
+Custom hooks/validators, complex fields and external task callbacks remain gated
+until their effect classes and recovery behavior have evidence. Qualification and
+migration limits: [native interview record](../../../.planning/plans/2026-11-05-native-interview.md).
+
+---
+
 ## Creating a new interview skill (minimum steps)
 
 1. Copy [`examples/example_interview/`](examples/example_interview/) → `agents/<ns>/<agent>/skills/<name>/`. For **per-item subparts**, also read [`examples/example_for_each_interview/`](examples/example_for_each_interview/).

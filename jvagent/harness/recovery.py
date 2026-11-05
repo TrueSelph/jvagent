@@ -65,6 +65,18 @@ async def history_for_new_turn(
         events = await store.list_events(run_id=item.run_id)
         if not events or events[-1].kind not in {"run_completed", "run_failed"}:
             raise NativeHistoryError("Previous native execution is not terminal")
+        from jvagent.harness.conversation_tools import CONVERSATION_EFFECT
+
+        for event in events:
+            if event.kind != "tool_call_started" or not event.tool_call_id:
+                continue
+            effect = await store.get_tool_effect(
+                run_id=item.run_id, tool_call_id=event.tool_call_id
+            )
+            if effect is not None and effect.effect_summary == CONVERSATION_EFFECT:
+                raise NativeHistoryError(
+                    "Previous conversation mutation requires reconciliation"
+                )
         inspection = await inspect_recovery(store=store, run_id=item.run_id)
         if inspection.unresolved:
             raise NativeHistoryError(

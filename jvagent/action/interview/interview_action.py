@@ -155,6 +155,17 @@ class InterviewAction(Action):
 
     # -- tool surface --------------------------------------------------------
 
+    async def get_native_tools(self) -> List[Any]:
+        from .native import build_native_tools
+
+        await self._ensure_specs_loaded()
+        return build_native_tools(self)
+
+    async def get_native_skill_bases(self) -> Dict[str, Any]:
+        from .native import native_skill_bases
+
+        return native_skill_bases()
+
     async def get_tools(self) -> List[Any]:
         await self._ensure_specs_loaded()
         return build_tools(self)
