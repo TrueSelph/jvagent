@@ -39,13 +39,17 @@ dependencies = [
     # Version-spec parsing for dependency probing (core/dependency_installer)
     "packaging>=21.0",
     # MCP stdio client + jvspatial_fs_server
-    "mcp>=1.0.0",
+    "mcp==2.3.0",
 ]
 
 [project.optional-dependencies]
 native-harness = [
     "pydantic-ai-slim[openai]==2.66.0",
     "pydantic-ai-harness[skills]==0.66.0",
+]
+native-mcp = [
+    "pydantic-ai-slim[mcp]==2.66.0",
+    "fastmcp-slim[client]==4.1.6",
 ]
 pydantic-pilot = [
     "pydantic-ai-slim==2.54.0",

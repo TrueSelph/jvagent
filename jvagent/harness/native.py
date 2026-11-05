@@ -23,6 +23,7 @@ def build_native_agent(
     *,
     skill_directory: Path,
     tools: Sequence[JVTool],
+    toolsets: Sequence[Any] = (),
     access_check: AccessCheck,
     instructions: str,
     tool_access_check: Callable[[JVTool], Awaitable[bool]] | None = None,
@@ -67,6 +68,7 @@ def build_native_agent(
         directory,
         available_actions=available_actions,
         available_tools=[tool.name for tool in tools]
+        + [name for toolset in toolsets for name in toolset.declared_names]
         + (["delegate_task"] if delegates else []),
         channel=channel,
         supported_output_contracts=SUPPORTED_OUTPUT_CONTRACTS,
@@ -98,6 +100,8 @@ def build_native_agent(
 
                 call_arguments["visitor"] = require_tool_visitor()
             result = await original.call(**call_arguments)
+            if result.is_error:
+                raise ModelRetry(result.content)
             if policy is not None:
                 return await policy.observe(original.name, arguments, result)
             return str(result.content)
@@ -119,6 +123,20 @@ def build_native_agent(
             sequential=bool(original.binds_visitor),
         )
 
+    declared = [tool.name for tool in tools] + [
+        name for toolset in toolsets for name in toolset.declared_names
+    ]
+    if len(declared) != len(set(declared)):
+        raise ValueError("Duplicate Action tool names")
+    selected_toolsets = [
+        toolset.for_skill(allowed, access_check)
+        for toolset in toolsets
+        if toolset.declared_names.intersection(allowed)
+    ]
+    if policy is not None and selected_toolsets:
+        raise ValueError(
+            "MCP evidence output contracts require provenance qualification"
+        )
     admitted = []
     for tool in tools:
         if tool.name not in allowed:
@@ -209,13 +227,23 @@ def build_native_agent(
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
 
+        from jvagent.harness.read_retries import ReadRetryReceipts
         from jvagent.harness.recovery import INPUT_CHECKPOINT_POLICY
 
+        persistence = StepPersistence(
+            store=step_store,
+            capture_frontier=True,
+            metadata={"jv_checkpoint_policy": INPUT_CHECKPOINT_POLICY},
+        )
+        run_services.append(persistence)
         run_services.append(
-            StepPersistence(
-                store=step_store,
-                capture_frontier=True,
-                metadata={"jv_checkpoint_policy": INPUT_CHECKPOINT_POLICY},
+            ReadRetryReceipts(
+                persistence,
+                frozenset(tool.name for tool in admitted).union(
+                    name
+                    for toolset in selected_toolsets
+                    for name in toolset.allowed_names
+                ),
             )
         )
     if spend_store is not None:
@@ -283,6 +311,7 @@ def build_native_agent(
                 model,
                 skill_directory=Path(entry.skill_directory),
                 tools=tools,
+                toolsets=toolsets,
                 access_check=access_check,
                 tool_access_check=tool_access_check,
                 instructions=instructions,
@@ -322,6 +351,7 @@ def build_native_agent(
         model_settings=settings,
         output_type=policy.finish if policy is not None else str,
         tools=admitted,
+        toolsets=selected_toolsets,
         capabilities=capabilities,
         name="jvagent-native",
     )

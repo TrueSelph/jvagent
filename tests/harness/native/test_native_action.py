@@ -17,6 +17,28 @@ from jvagent.action.native_harness import NativeHarnessAction
 
 
 @pytest.mark.asyncio
+async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        NativeHarnessAction,
+        "_execute",
+        AsyncMock(side_effect=ValueError("private configuration detail")),
+    )
+    interaction = SimpleNamespace(
+        native_run={}, has_emitted=lambda: False, save=AsyncMock()
+    )
+    publish = AsyncMock(return_value=True)
+    facade = SimpleNamespace(
+        get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish))
+    )
+    visitor = SimpleNamespace(interaction=interaction)
+    await NativeHarnessAction.execute(facade, visitor)
+    assert interaction.native_run == {"status": "blocked", "reason": "admission_failed"}
+    interaction.save.assert_awaited_once()
+    assert "configuration prevented" in publish.call_args.args[0]
+    assert "private configuration detail" not in publish.call_args.args[0]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "delivered,settled",
     [

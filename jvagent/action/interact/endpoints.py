@@ -1073,14 +1073,17 @@ async def _stream_interaction(
             # Use asyncio.Queue to avoid polling delays and improve latency
             message_queue: asyncio.Queue[Any] = asyncio.Queue()
 
-            async def message_callback(message: Any) -> None:
+            def message_callback(message: Any) -> None:
                 """Callback to receive new messages."""
                 if message.interaction_id != interaction.id:
                     return
-                await message_queue.put(message)
+                message_queue.put_nowait(message)
 
             await walker.response_bus.subscribe(
-                walker.session_id, message_callback, receive_chunks=True
+                walker.session_id,
+                message_callback,
+                receive_chunks=True,
+                replay_interaction_id=interaction.id,
             )
 
             try:

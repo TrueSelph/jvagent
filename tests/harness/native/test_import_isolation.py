@@ -11,6 +11,7 @@ import sys
 import jvagent.harness.native
 from jvagent.action.native_harness import NativeHarnessAction
 from jvagent.action.leadgen.leadgen_action import LeadGenAction
+from jvagent.action.mcp.mcp_action import MCPAction
 assert 'jvagent.tooling.tool_executor' not in sys.modules
 assert 'jvagent.harness.runtime' not in sys.modules
 assert 'jvagent.action.orchestrator.orchestrator_interact_action' not in sys.modules

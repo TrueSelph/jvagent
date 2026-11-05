@@ -1337,6 +1337,8 @@ class ResponseBus:
         session_id: str,
         callback: Callable[[ResponseMessage], Any],
         receive_chunks: bool = False,
+        *,
+        replay_interaction_id: Optional[str] = None,
     ) -> None:
         """Subscribe to messages for a session.
 
@@ -1345,6 +1347,8 @@ class ResponseBus:
             callback: Callback function to call when messages are published
             receive_chunks: If True, receive stream_chunk messages. If False, only receive
                           final and adhoc messages. Default: False
+            replay_interaction_id: Replay the bounded session queue for this Interaction.
+                Used by SSE admission, whose walker can publish before subscription.
         """
         # Initialize each map independently. Guarding only on ``_subscribers``
         # membership left the two maps able to desync (e.g. a cleanup path that
@@ -1357,11 +1361,21 @@ class ResponseBus:
 
         # Use O(1) set lookup for duplicate check instead of O(n) list search
         cb_id = id(callback)
+        newly_subscribed = cb_id not in self._subscriber_ids[session_id]
         if cb_id not in self._subscriber_ids[session_id]:
             self._subscribers[session_id].append(callback)
             self._subscriber_ids[session_id].add(cb_id)
 
         self._subscriber_preferences[callback] = {"receive_chunks": receive_chunks}
+        if newly_subscribed and replay_interaction_id:
+            for message in list(self._session_queues.get(session_id, [])):
+                if message.interaction_id != replay_interaction_id or (
+                    message.message_type == "stream_chunk" and not receive_chunks
+                ):
+                    continue
+                result = callback(message)
+                if asyncio.iscoroutine(result):
+                    await result
 
     async def unsubscribe(
         self, session_id: str, callback: Callable[[ResponseMessage], Any]

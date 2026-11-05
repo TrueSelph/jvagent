@@ -1758,5 +1758,32 @@
     "completion": "Reject normalized length-limited final candidates through public output lifecycle; preserve receipts",
     "workload_protocol": "../fixtures/harness-workload-v1.yaml",
     "qualification": "179 native/profile cases each on Python 3.11/3.12; measured conversation slice incomplete; other compatibility pending"
+  },
+  "native_mcp_read_increment": {
+    "parent_revision": "952079a5",
+    "evidence": "2026-11-05-native-mcp.md",
+    "status": "functional plain-stdio read cohort; release qualification pending",
+    "keep": [
+      "MCPAction server declarations and existing names",
+      "per-call authenticated scope and named access policy"
+    ],
+    "replace": [
+      "native use of MCPClientWrapper/fulfill with public Pydantic MCPToolset lifecycle"
+    ],
+    "dependencies": {
+      "mcp": "2.3.0",
+      "optional_native_mcp_fastmcp_slim_client": "4.1.6"
+    },
+    "remaining": [
+      "HTTP/auth",
+      "per-user filesystem profiles",
+      "sampling/elicitation",
+      "background tasks",
+      "writes/effect idempotency",
+      "delegated MCP",
+      "MCP research provenance",
+      "ordinary-member browser isolation",
+      "timeout/cancel deployment faults"
+    ]
   }
 }

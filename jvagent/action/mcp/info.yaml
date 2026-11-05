@@ -17,4 +17,4 @@ package:
     jvagent: ~0.0.1
     actions: []
     pip:
-      - "mcp>=1.0,<2"
+      - "mcp==2.3.0"

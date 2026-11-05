@@ -19,7 +19,7 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Startup configuration | Declared Action resolution/construction and registration failures refuse bootstrap; real misspelled-policy merge/source and failing-lifecycle process tests; existing policy preserved; restored GPT-4.1 browser delegation/recall | Atomic rollout, other live workers, runtime policy-node loss and custom hosts deferring initialization; strictness compatibility documented |
 | Spend | Official capability, graph batch-store regressions, strict flushed journal, budget-failure receipts and two-tab serialized browser totals reconciled to six calls | Provider bill reconciliation, transport/SDK unknown receipts, historical-total migration and distributed concurrency |
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
-| Compatibility | Named inventory, explicit admission, direct PageIndex, bounded foreground skill delegation, and reviewed visitor-bound LeadGen status with allow/deny/restart and unchanged-profile readback | Interviews/flows, scripts, MCP, writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
+| Compatibility | Named inventory, explicit admission, direct PageIndex, bounded foreground skill delegation, and reviewed visitor-bound LeadGen status with allow/deny/restart and unchanged-profile readback; plain-stdio MCP read success/error and cleanup | Interviews/flows, scripts, MCP HTTP/auth/filesystem scope/delegation/writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
 | Browser client | Actual GPT-4.1 delegation/follow-up; two-tab reload convergence and stale-edit browser proof; tool activity/usage persist; one POST on validation failure; clean npm install and 121 UI tests | Live cross-tab updates and conflict/deletion cases, historical transcript/receipt backfill, cache failures, native timing, uncertain-outcome reconciliation, channel matrix |
 | Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
 
@@ -157,3 +157,14 @@ Raw-string format failures remain. Typed output contracts, fresh-client-build
 reproduction of observed 422/new-conversation issues, native request timings and
 replacement of the deprecated on_spend shim remain open. None of these results
 complete the provider, recovery, migration, deletion or enterprise release gates.
+
+
+## MCP read and fast-failure increment
+
+The [cohort record](2026-11-05-native-mcp.md) preserves the discarded client route,
+MCP SDK pin correction, public MCPToolset replacement, server exit evidence,
+SSE fast-reply race, read-retry receipt gap and actual provider/UI/state outcomes.
+Only exact host-reviewed plain-stdio reads are admitted. Optional native-mcp
+client dependencies preserve the smaller default native profile. Remaining MCP
+classes, ordinary-member browser access, delivery recovery and release gates are
+not qualified by these results.

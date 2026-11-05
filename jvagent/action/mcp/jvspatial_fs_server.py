@@ -2,7 +2,7 @@
 
 Run as: ``python -m jvagent.action.mcp.jvspatial_fs_server --root-prefix <key>``
 
-Requires Python 3.10+ and the ``mcp`` package (same as :class:`MCPAction` / :class:`MCPClientWrapper`).
+Requires Python 3.11+ and the ``mcp`` package (same as :class:`MCPAction` / :class:`MCPClientWrapper`).
 """
 
 from __future__ import annotations
@@ -206,9 +206,9 @@ async def _describe_workspace() -> str:
 
 
 def _run_fastmcp() -> None:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
-    mcp = FastMCP("jvspatial-filesystem")
+    mcp = MCPServer("jvspatial-filesystem")
 
     @mcp.tool(
         description="Read a text file under the sandbox. Optional head/tail line limits."
@@ -296,9 +296,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     try:
         _run_fastmcp()
     except ImportError as e:
-        logger.error("MCP / FastMCP not available: %s", e)
+        logger.error("MCP server SDK not available: %s", e)
         print(
-            "Error: the 'mcp' package (Python 3.10+) is required for jvspatial_fs_server.",
+            "Error: the 'mcp' package (Python 3.11+) is required for jvspatial_fs_server.",
             file=sys.stderr,
         )
         raise SystemExit(1) from e

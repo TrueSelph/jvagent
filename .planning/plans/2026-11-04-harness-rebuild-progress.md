@@ -1,5 +1,12 @@
 # Harness rebuild execution record
 
+Latest milestone in progress: [native MCP and fast-failure delivery](2026-11-05-native-mcp.md).
+Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
+The older branch name and dependency snapshots below are historical evidence.
+The goal remains active: compatibility, migration, deletion and enterprise gates
+are incomplete. All nine remote checks passed at `952079a5`; the current new
+milestone requires its own push and exact-head CI.
+
 ## W0 started
 
 Branch: `codex/pydantic-harness-rebuild`; source baseline `7d689e4d`.
@@ -1834,3 +1841,21 @@ Observed native token footprint is smaller for this slice; backend medians are
 similar. This is not the workload acceptance or optimization gate. Source is
 still larger during transition; legacy/pilot deletion, migration, other extension
 classes, distributed recovery and release qualification remain mandatory.
+
+
+## Native MCP read cohort and fast-failure delivery — 2026-11-05
+
+See the [detailed record](2026-11-05-native-mcp.md), [graph receipts](2026-11-05-native-mcp-smoke.json)
+and [UI observations](2026-11-05-native-mcp-ui.json). Native MCP now uses public
+MCPToolset lifecycle, with an optional client extra, exact host-reviewed read
+names and per-call caller/access checks. The rejected Action-client experiment,
+its leaked processes and the original invisible admission notices are retained.
+The SSE race is repaired by current-Interaction backlog replay, not a harness delay.
+A public read-only retry-receipt gap adapter terminalizes the observed SDK retry
+case without repeating tools or settling writes/cancellation.
+
+Eleven browser attempts include eight actual-model turns: 16 requests, 7,152 tokens,
+USD 0.016374 estimated, zero recorded unknown-cost requests. The final error has
+a failed/end-dated tool record and confirmed subprocess exit. This is a functional
+read cohort; MCP HTTP/auth/filesystem isolation/writes/delegation and broad release
+qualification remain open. Interview SOP/state adaptation is still pending.

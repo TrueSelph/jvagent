@@ -105,6 +105,30 @@ class NativeHarnessAction(InteractAction):
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
+        try:
+            await NativeHarnessAction._execute(self, visitor)
+        except Exception:
+            interaction = getattr(visitor, "interaction", None)
+            if (
+                interaction is None
+                or interaction.native_run
+                or interaction.has_emitted()
+            ):
+                raise
+            responder = await self.get_responder()
+            if responder is None:
+                raise
+            logging.getLogger(__name__).exception("native_admission_failed")
+            interaction.native_run = {"status": "blocked", "reason": "admission_failed"}
+            await interaction.save()
+            if not await responder.publish(
+                "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
+                visitor=visitor,
+            ):
+                raise RuntimeError("Native admission notice delivery is unconfirmed")
+
+    async def _execute(self, visitor: Any) -> None:
+        """Admit configuration, run the native agent, and reconcile its delivery."""
         from jvagent.harness.spend_store import ConversationSpendStore
         from jvagent.harness.step_store import InteractionStepStore
 
@@ -134,8 +158,13 @@ class NativeHarnessAction(InteractAction):
         if interaction.native_run:
             raise RuntimeError("Existing native invocation requires reconciliation")
         tools: list[Any] = []
+        toolsets: list[Any] = []
         for action in actions:
             if isinstance(action, InteractAction):
+                continue
+            native_toolsets = getattr(action, "get_native_toolsets", None)
+            if native_toolsets is not None:
+                toolsets.extend(await native_toolsets())
                 continue
             for tool in await action.get_tools() or []:
                 if getattr(action, "binds_tools_to_visitor", False):
@@ -222,6 +251,7 @@ class NativeHarnessAction(InteractAction):
             conversation_id=visitor.session_id,
             event_stream_handler=events,
             tools=tools,
+            toolsets=toolsets,
             access_check=access,
             tool_access_check=tool_access,
             instructions=self.instructions,
