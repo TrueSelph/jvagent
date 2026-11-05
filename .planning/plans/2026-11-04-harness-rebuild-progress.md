@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [browser outage authentication](2026-11-05-native-auth.md).
+Latest increment: [idle delivery renewal](2026-11-05-native-idle.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,23 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Idle delivery renewal
+
+Actual one-minute JWT expiry now renews the parked reader without a chat/model
+POST, caller change, duplicate reply or stale background error. A queued real
+SDK/MCP task delivers through that renewed reader; three provider calls total
+4,099 reported tokens and USD 0.008486 estimated. Server revocation then yields
+refresh 401 and login with no additional model execution or spend. Fresh SQL
+proves renewal and revocation did not alter model/task/budget state.
+Frontend 167 tests, npm lint, build and eight web-client server tests pass.
+Parent 5acc988e had eight green checks and one prefer-const frontend lint failure;
+the omitted local lint check is corrected and included in this validation round.
+Production npm audit has five high entries; the full build/development audit
+has 23 entries including critical Vitest/tinypool entries. All require qualified
+mitigation/exposure review before release. Graceful shutdown, scheduler deployment, cross-tab/rotation,
+packaging, migration and legacy deletion remain open. Full-push/new-head CI are
+separate gates.
 
 ## Browser outage authentication
 

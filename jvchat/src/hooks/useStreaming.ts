@@ -137,6 +137,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [channelEpoch, setChannelEpoch] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [channelError, setChannelError] = useState<{ scope: string; message: string } | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId)
   const channelScope = `${callerId}\0${agentId}\0${sessionId ?? ''}`
   const channelScopeRef = useRef(channelScope)
@@ -268,6 +269,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
   // Between user turns, listen to the existing read-only session bus. The
   // generation counter and caller refs retire late frames before view changes.
   useEffect(() => {
+    setChannelError(null)
     if (!agentId || !sessionId || isStreaming || abortControllerRef.current || (!getToken() && !getInteractSessionToken(sessionId))) return
     const controller = new AbortController()
     channelControllerRef.current = controller
@@ -280,6 +282,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
         await apiClient.streamReplies(agentId, sessionId, message => {
           if (getEffectiveUserId() !== callerId) { controller.abort(); return }
           if (retired || controller.signal.aborted || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current) return
+          setChannelError(null)
           if (message.metadata?.native_replay !== true && (message.metadata?.is_proactive === false || messagesRef.current.some(row => row.role === 'user' && row.interactionId === message.interaction_id))) return
           setMessages(previous => {
             if (retired || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current || getEffectiveUserId() !== callerId) return previous
@@ -292,8 +295,10 @@ export function useStreaming(agentId: string, sessionId?: string) {
         }, controller.signal)
       } catch (failure) {
         if (retired || controller.signal.aborted || channelScopeRef.current !== channelScope || abortControllerRef.current) return
-        if (failure instanceof Error && failure.message === 'Unauthorized') {
-          setError('Background updates require a valid session. Sign in again or reopen this conversation.')
+        if (failure instanceof Error && ['Unauthorized', 'Forbidden'].includes(failure.message)) {
+          setChannelError({ scope: channelScope, message: failure.message === 'Forbidden'
+            ? 'This account does not have permission for background updates in this conversation.'
+            : 'Background updates require a valid session. Sign in again or reopen this conversation.' })
           return
         }
       }
@@ -1307,7 +1312,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     clearMessages,
     loadMessages,
     isStreaming,
-    error,
+    error: error ?? (channelError?.scope === channelScope ? channelError.message : null),
     sessionId: currentSessionId,
     editAndResend,
     selectBranchVersion,

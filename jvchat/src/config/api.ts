@@ -249,8 +249,7 @@ class ApiClient {
       if (current()) this.redirectToLoginAfterAuthFailure()
       throw new RefreshFailure(401)
     }
-    let pending: Promise<string>
-    pending = (async () => {
+    const pending: Promise<string> = (async () => {
       let response: TokenRefreshResponse
       try {
         response = await this.refreshToken({ refresh_token: refresh })
@@ -881,26 +880,46 @@ class ApiClient {
 
   /** Read-only session delivery. Reconnecting never invokes the model. */
   async streamReplies(agentId: string, sessionId: string, onMessage: (message: ResponseMessageData) => void, signal: AbortSignal): Promise<void> {
-    await this._ensureFreshLogin(signal)
-    await this._ensureFreshInteractSession(agentId, sessionId)
-    for (const base of this.baseUrls) {
-      for (const prefix of ['/api', '']) {
-        if (signal.aborted) return
-        const response = await fetch(this._joinBase(base, `${prefix}/agents/${encodeURIComponent(agentId)}/reply/subscribe`), {
-          method: 'POST', headers: { 'Content-Type': 'application/json', ...this._interactAuthHeaders(sessionId) },
-          body: JSON.stringify({ session_id: sessionId, stream: true }), signal,
-        })
-        if (response.status === 404) continue
-        if (response.status === 401 || response.status === 403) throw new Error('Unauthorized')
+    const caller = getEffectiveUserId(), server = this.baseUrls[0]
+    while (!signal.aborted) {
+      await this._ensureFreshLogin(signal)
+      await this._ensureFreshInteractSession(agentId, sessionId)
+      if (getEffectiveUserId() !== caller || this.baseUrls[0] !== server) throw new RefreshFailure(undefined, 'The sign-in context changed. Please retry.')
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', ...this._interactAuthHeaders(sessionId) }
+      const sentBearer = headers.Authorization?.replace(/^Bearer /, '')
+      let response: Response | undefined
+      routes: for (const base of this.baseUrls) {
+        for (const prefix of ['/api', '']) {
+          if (signal.aborted) return
+          response = await fetch(this._joinBase(base, `${prefix}/agents/${encodeURIComponent(agentId)}/reply/subscribe`), {
+            method: 'POST', headers, body: JSON.stringify({ session_id: sessionId, stream: true }), signal,
+          })
+          if (response.status === 404) continue
+          break routes
+        }
+      }
+      if (!response || response.status === 404) throw new Error('Background subscription is unavailable')
+      try {
+        if (response.status === 401) throw new Error('Unauthorized')
+        if (response.status === 403) throw new Error('Forbidden')
         if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Background subscription is unavailable')
-        return this._consumeSSE(response, (frame) => {
+        await this._consumeSSE(response, (frame) => {
           if (frame.type === 'error') throw new Error(frame.code === 'session_access_revoked' ? 'Unauthorized' : 'Background subscription interrupted')
           const message = frame.message && typeof frame.message === 'object' ? frame.message : frame
           if (message.message_type && message.session_id === sessionId) onMessage(message)
         }, signal)
+        return
+      } catch (error) {
+        // Only a bearer in the existing expiry window permits renewal. A fresh refusal, changed
+        // caller/host, or revoked Mode B capability must still stop the reader.
+        if (!signal.aborted && error instanceof Error && error.message === 'Unauthorized' && sentBearer && isTokenExpired(sentBearer) && getToken() && getRefreshToken() && getEffectiveUserId() === caller && this.baseUrls[0] === server) {
+          await this._ensureFreshLogin(signal)
+          const renewed = getToken()
+          if (renewed && renewed !== sentBearer && !isTokenExpired(renewed)) continue
+        }
+        throw error
       }
     }
-    throw new Error('Background subscription is unavailable')
   }
 
   async deleteConversation(agentId: string, userId: string, sessionId: string): Promise<void> {

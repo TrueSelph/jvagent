@@ -8,7 +8,7 @@ vi.mock('./config', () => ({
   getConfigAsync: async () => ({ jvagent: { url: 'http://127.0.0.1:8136' }, jvforge: { url: 'http://127.0.0.1:8088' } }),
 }))
 
-import { clearAuthSession, getRefreshToken, getToken, getUserId, setRefreshToken, setToken, setUserId } from '../utils/storage'
+import { clearAuthSession, getRefreshToken, getToken, getUserId, setInteractSessionToken, setRefreshToken, setToken, setUserId } from '../utils/storage'
 
 const token = (seconds: number, user = 'caller') => `synthetic.${btoa(JSON.stringify({ user_id: user, exp: Date.now() / 1000 + seconds }))}.signature`
 
@@ -192,5 +192,61 @@ describe('login refresh preserves caller and request ownership', () => {
       'http://127.0.0.1:8136/api/auth/refresh', 'http://127.0.0.1:8136/auth/refresh',
       'http://127.0.0.1:8136/api/agents/agent/interact',
     ])
+  })
+
+  it.each(['frame', 'http'])('renews an expired parked bearer after %s refusal without interact', async refusal => {
+    const { apiClient } = await import('./api')
+    vi.useFakeTimers()
+    try {
+      const old = token(60), renewed = token(3600)
+      setToken(old)
+      fetchMock.mockImplementationOnce(async () => {
+        vi.setSystemTime(Date.now() + 61_000)
+        return refusal === 'http' ? new Response('', { status: 401 }) : new Response('data: {"type":"error","code":"session_access_revoked"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+      })
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ access_token: renewed, token_type: 'bearer' })))
+      fetchMock.mockResolvedValueOnce(new Response('data: {"id":"reply","session_id":"session","message_type":"adhoc","content":"Scheduled result"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+      const receive = vi.fn()
+      await apiClient.streamReplies('agent', 'session', receive, new AbortController().signal)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+        'http://127.0.0.1:8136/api/agents/agent/reply/subscribe',
+        'http://127.0.0.1:8136/api/auth/refresh',
+        'http://127.0.0.1:8136/api/agents/agent/reply/subscribe',
+      ])
+      expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe(`Bearer ${renewed}`)
+      expect(receive).toHaveBeenCalledTimes(1)
+    } finally { vi.useRealTimers() }
+  })
+
+  it.each([401, 403])('does not renew an unexpired bearer refused with %s', async status => {
+    const { apiClient } = await import('./api')
+    const current = token(3600)
+    setToken(current)
+    fetchMock.mockResolvedValueOnce(new Response('', { status }))
+    await expect(apiClient.streamReplies('agent', 'session', vi.fn(), new AbortController().signal)).rejects.toThrow(status === 403 ? 'Forbidden' : 'Unauthorized')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(getToken()).toBe(current)
+  })
+
+  it('does not renew a revoked Mode B capability', async () => {
+    const { apiClient } = await import('./api')
+    clearAuthSession(); setUserId('guest')
+    setInteractSessionToken('session', token(3600, 'guest'))
+    fetchMock.mockResolvedValueOnce(new Response('data: {"type":"error","code":"session_access_revoked"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+    await expect(apiClient.streamReplies('agent', 'session', vi.fn(), new AbortController().signal)).rejects.toThrow('Unauthorized')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reconnect on a stale renewal result', async () => {
+    const { apiClient } = await import('./api')
+    vi.useFakeTimers()
+    try {
+      const old = token(60); setToken(old)
+      fetchMock.mockImplementationOnce(async () => { vi.setSystemTime(Date.now() + 61_000); return new Response('', { status: 401 }) })
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ access_token: old, token_type: 'bearer' })))
+      await expect(apiClient.streamReplies('agent', 'session', vi.fn(), new AbortController().signal)).rejects.toThrow('Unauthorized')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
   })
 })

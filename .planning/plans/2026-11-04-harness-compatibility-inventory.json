@@ -2121,5 +2121,30 @@
       "per-message transport failure presentation and packaged client",
       "other provider/channel profiles and full migration/legacy engine deletion"
     ]
+  },
+  "native_idle_delivery_increment": {
+    "evidence": "2026-11-05-native-idle.md",
+    "qualified_scope": "local source-client real-expiry reader renewal and scheduled SDK/MCP delivery, followed by server token revocation",
+    "preserved": [
+      "existing scoped auth/refresh and reply subscriptions",
+      "official SDK execution and graph records",
+      "caller-scoped client cache and foreground failure state"
+    ],
+    "retired": [
+      "parked reader requiring manual reopen after bearer expiry",
+      "background denial overwriting foreground failure or surviving another conversation scope"
+    ],
+    "remaining": [
+      "bounded SSE shutdown and scheduler loop deployment",
+      "cross-tab/rotating refresh, load/Retry-After and clock skew",
+      "historical credentials/capabilities and packaged client",
+      "other providers/channels, migration and legacy engine deletion"
+    ]
+  },
+  "native_ui_dependency_security_gate": {
+    "evidence": "2026-11-05-native-ui-production-audit.json",
+    "status": "open: five high production entries; full build/development tree has 23 entries including two critical Vitest/tinypool entries; exposure/remediation unqualified",
+    "dependency_changes_in_this_increment": false,
+    "full_audit_evidence": "2026-11-05-native-ui-full-audit.json"
   }
 }

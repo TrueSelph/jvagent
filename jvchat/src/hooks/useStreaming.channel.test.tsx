@@ -91,4 +91,23 @@ describe('background session ownership', () => {
     expect(saveMessages).not.toHaveBeenCalled()
     unmount()
   })
+
+  it('retires a denied background error when another conversation is opened', async () => {
+    vi.mocked(apiClient.streamReplies).mockRejectedValueOnce(new Error('Forbidden'))
+    const { result, rerender, unmount } = renderHook(({ session }) => useStreaming('agent', session), { initialProps: { session: 'one' } })
+    await waitFor(() => expect(result.current.error).toContain('permission'))
+    rerender({ session: 'two' })
+    await waitFor(() => expect(result.current.error).toBeNull())
+    unmount()
+  })
+
+  it('does not let background denial overwrite a foreground failure', async () => {
+    const { result, unmount } = renderHook(() => useStreaming('agent', 'one'))
+    await waitFor(() => expect(connections).toHaveLength(1))
+    vi.mocked(apiClient.streamInteract).mockRejectedValueOnce(new Error('Foreground request failed'))
+    vi.mocked(apiClient.streamReplies).mockRejectedValue(new Error('Unauthorized'))
+    await act(async () => { await result.current.sendMessage('Hello') })
+    await waitFor(() => expect(result.current.error).toBe('Foreground request failed'))
+    unmount()
+  })
 })

@@ -349,3 +349,16 @@ under the same caller/session. Frontend 159 tests/build and eight Python web-cli
 tests pass; all nine parent 37820122 CI checks passed. This closes only that local
 outage-auth profile. Cross-tab rotation, outage load/Retry-After, clock skew,
 per-message failures, packaged-wheel client and bounded shutdown remain open.
+
+## Idle delivery renewal — 2026-11-05
+
+[Real-expiry/browser/SDK/SQL record](2026-11-05-native-idle.md) proves read-only
+renewal without another interaction POST or spending change, scheduled MCP
+delivery afterward, and server revocation failing closed. Frontend 167 tests,
+lint/build and eight web-client server tests pass. Parent 5acc988e jvchat CI failed
+prefer-const; that declaration is fixed here and the manual lint gate is included.
+The [production dependency audit](2026-11-05-native-ui-production-audit.json) has
+five high entries; the full build/development audit adds critical Vitest/tinypool
+entries. Both require exposure/mitigation evidence before release.
+This does not qualify shutdown, timer deployment, cross-tab rotation, broader
+providers/channels, packaging, migration or engine deletion.
