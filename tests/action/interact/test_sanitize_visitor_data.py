@@ -3,6 +3,20 @@
 from jvagent.action.interact.webhook_pipeline import sanitize_visitor_data_for_log
 
 
+def test_host_policy_credentials_are_never_logged() -> None:
+    data = {
+        "host_system_context": {
+            "body": "private host policy",
+            "signature": "fixture-signature",
+        },
+        "run_id": "host-request",
+        "routing": {"recipient": "fixture"},
+    }
+    assert sanitize_visitor_data_for_log(data) == {"routing": {"recipient": "fixture"}}
+    assert data["host_system_context"]["signature"] == "fixture-signature"
+    assert sanitize_visitor_data_for_log({"run_id": "app-run"}) == {"run_id": "app-run"}
+
+
 def test_redacts_image_urls_data_uri():
     b64 = "iVBORw0KGgo" + ("A" * 500)
     data = {"image_urls": [f"data:image/png;base64,{b64}"]}

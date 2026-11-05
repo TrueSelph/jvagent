@@ -805,6 +805,14 @@ async def interact_endpoint(
                                 },
                             )
                     error_code = getattr(walker, "_bootstrap_error", None)
+                    if error_code == "invalid_host_context":
+                        raise ValidationError(
+                            message="Host context could not be verified.",
+                            details={
+                                "reason": error_code,
+                                "request_id": profile.request_id,
+                            },
+                        )
                     error_detail = next(
                         (
                             item.get("error")
@@ -1028,6 +1036,17 @@ async def _stream_interaction(
                     "stream": True,
                 },
             )
+            if error_code == "invalid_host_context":
+                yield format_sse_chunk(
+                    {
+                        **_sse_error_event(
+                            profile.request_id,
+                            message="Host context could not be verified.",
+                        ),
+                        "code": error_code,
+                    }
+                )
+                return
             stream_msg = "Interaction was not created during traversal."
             if error_code:
                 stream_msg = (

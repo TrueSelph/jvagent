@@ -21,6 +21,15 @@ _REPLAY_KEY = "_jvagent_host_context_nonces"
 _MAX_REPLAY_ENTRIES = 512
 
 
+def public_turn_metadata(data: Optional[Mapping[str, Any]]) -> dict[str, Any]:
+    """Keep application metadata without exporting private host-policy fields."""
+    public = dict(data or {})
+    if "host_system_context" in public:
+        del public["host_system_context"]
+        public.pop("run_id", None)
+    return public
+
+
 def _secret() -> Optional[str]:
     """Return a sufficiently strong dedicated key, never the JWT key."""
     secret = os.getenv("JVAGENT_HOST_CONTEXT_SECRET", "").strip()
@@ -211,6 +220,8 @@ async def consume_host_system_context(visitor: Any) -> Optional[str]:
     if claims is None or not conversation_id:
         return None
     try:
+        from jvspatial import flush_deferred_entities
+
         from jvagent.memory.conversation import Conversation
         from jvagent.memory.distributed_conversation_lock import (
             conversation_mutation_lock,
@@ -255,6 +266,7 @@ async def consume_host_system_context(visitor: Any) -> Optional[str]:
             }
             conversation_context[_REPLAY_KEY] = ledger
             await current.save()
+            await flush_deferred_entities(current, strict=True)
             # Keep later walker work on the freshly loaded node that now carries
             # the persisted nonce ledger, rather than its stale bootstrap object.
             visitor.conversation = current

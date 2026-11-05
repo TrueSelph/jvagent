@@ -13,6 +13,37 @@ from jvagent.action.response.response_bus import ResponseBus
 
 
 @pytest.mark.asyncio
+async def test_invalid_host_context_has_stable_safe_stream_error() -> None:
+    async def spawn(agent: Any) -> None:
+        return None
+
+    walker = SimpleNamespace(
+        interaction=None,
+        conversation=None,
+        agent_id="agent",
+        user_id="user",
+        session_id="session",
+        channel="default",
+        response_bus=None,
+        background_actions=[],
+        _bootstrap_error="invalid_host_context",
+        spawn=spawn,
+        get_report=AsyncMock(return_value=[{"code": "invalid_host_context"}]),
+    )
+    frames = [
+        json.loads(frame.removeprefix("data: ").strip())
+        async for frame in endpoints._stream_interaction(
+            walker, SimpleNamespace(id="agent")
+        )
+    ]
+    assert len(frames) == 1
+    assert frames[0]["type"] == "error"
+    assert frames[0]["code"] == "invalid_host_context"
+    assert frames[0]["message"] == "Host context could not be verified."
+    assert frames[0]["request_id"]
+
+
+@pytest.mark.asyncio
 async def test_fast_turn_replays_only_its_messages(monkeypatch: Any) -> None:
     bus = ResponseBus()
     await bus.publish(

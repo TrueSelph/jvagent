@@ -475,16 +475,14 @@ async def interact_stream(
         for key in task_keys:
             await _register_interact_task(key, walk_task, native=native)
 
-        # Wait up to 5s for InteractWalker to instantiate the Interaction.
-        max_wait = 5.0
-        waited = 0.0
-        while not walker.interaction and waited < max_wait:
+        # Admission may queue behind an active conversation turn. Observe its
+        # task and host disconnect instead of guessing a five-second deadline.
+        while not walker.interaction and not walk_task.done():
             if await _disc():
                 if walk_task and not walk_task.done():
                     walk_task.cancel()
                 return
-            await asyncio.sleep(0.1)
-            waited += 0.1
+            await asyncio.sleep(poll_interval)
 
         if not walker.interaction:
             # Drain the walker for diagnostics, surface as terminal error.
@@ -513,6 +511,13 @@ async def interact_stream(
                         "message": "Access denied.",
                     }
                     return
+            if error_code == "invalid_host_context":
+                yield {
+                    "type": "error",
+                    "code": error_code,
+                    "message": "Host context could not be verified.",
+                }
+                return
             msg = "Interaction was not created during traversal"
             if error_code:
                 msg = f"{msg} [{error_code}]"

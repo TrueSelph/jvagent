@@ -12,6 +12,13 @@ Native durable delivery cursors return an explicit unsupported error
 ([stream](../response/streaming.py:75)); bounded in-process queue replay remains
 available. See the [shared-host evidence and remaining gates](../../../.planning/plans/2026-11-05-shared-host-results.md).
 
+An explicitly supplied `data.host_system_context` must verify and be consumed;
+otherwise native admission rejects the request, including non-empty requests and
+explicit null values. Ordinary requests omit the field
+([guard](../interact/interact_walker.py:461)). See the
+[authenticated browser qualification](../../../.planning/plans/2026-11-05-native-host-context.md)
+for signed context, rejection outcomes and the remaining deployment gates.
+
 `skill_directory` selects one existing SKILL.md. For skill-based delegation,
 select the shipped `delegate` skill and declare named specialists:
 

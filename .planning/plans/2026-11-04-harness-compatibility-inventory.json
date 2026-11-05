@@ -1827,5 +1827,23 @@
       "persisted configuration migration and legacy/pilot deletion",
       "complete representative workload and release evaluation"
     ]
+  },
+  "native_host_context_validation_increment": {
+    "parent_revision": "5739cf5d",
+    "evidence": "2026-11-05-native-host-context.md",
+    "confirmed_defect": "Non-empty native turn ran after an explicitly supplied invalid host envelope was discarded; confirmed with actual browser/model call.",
+    "change": "Reject explicit invalid/unconsumed context before Interaction creation or native execution; ordinary requests omit the field; null is rejected.",
+    "browser_qualified": "Administrator, auth=required: valid signed policy, unexpired replay, foreign signed agent/user/session, expiry, signature, request mismatch, null/malformed; nonstreaming 422; ordinary MCP remains functional.",
+    "embedded": "Specific error outcome, immediate completed-admission failure, and active-task-based queued admission; actual 5.3-second regression mutation-checked against old deadline.",
+    "open": [
+      "ordinary-member and foreign bearer/session isolation",
+      "actual-provider embedded/popup/cancellation transport",
+      "development/unknown public auth modes and migration",
+      "distributed recovery and durable delivery",
+      "interview/flow/proactive/write adapters",
+      "migration, legacy deletion and full workload/release qualification"
+    ],
+    "durability": "Strict jvspatial flush under the conversation lock before policy promotion; fresh-context on/off and flush-failure regressions, plus actual-provider deferred-mode success and unexpired replay rejection.",
+    "egress_privacy": "Actual signed replies echoed host envelopes before the privacy fix; ResponseBus and interaction logging use one shared projection to remove reserved host data and associated request IDs. Final provider/browser replies have clean metadata; unrelated app metadata preserved."
   }
 }

@@ -514,6 +514,9 @@ class ResponseBus:
         must leave its durable task pending when a configured adapter rejects it.
         Queue-based delivery without a channel adapter retains its normal behavior.
         """
+        from jvagent.core.host_context import public_turn_metadata
+
+        metadata = public_turn_metadata(metadata)
         if message_id is not None and (
             not isinstance(message_id, str)
             or not message_id.startswith("o.ResponseMessage.")

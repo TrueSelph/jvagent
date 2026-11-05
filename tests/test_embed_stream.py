@@ -19,8 +19,58 @@ from jvagent.harness.runtime import reset_runtime
 
 
 @pytest.mark.asyncio
+async def test_invalid_host_context_has_same_embed_stream_error(
+    monkeypatch: Any,
+) -> None:
+    from jvagent.action.native_harness import NativeHarnessAction
+    from jvagent.embed import interact_stream
+
+    async def spawn(agent: Any) -> None:
+        return None
+
+    walker = SimpleNamespace(
+        interaction=None,
+        conversation=None,
+        user_id="user",
+        session_id="session",
+        _bootstrap_error="invalid_host_context",
+        spawn=spawn,
+        get_report=AsyncMock(return_value=[{"code": "invalid_host_context"}]),
+    )
+    monkeypatch.setattr(
+        "jvagent.action.interact.interact_walker.InteractWalker",
+        lambda **kwargs: walker,
+    )
+    monkeypatch.setattr(
+        "jvagent.core.cache.get_cached_agent",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                get_actions=AsyncMock(return_value=[NativeHarnessAction()])
+            )
+        ),
+    )
+
+    async def consume() -> list[dict[str, Any]]:
+        return [
+            frame
+            async for frame in interact_stream(agent_id="agent", utterance="hello")
+        ]
+
+    frames = await asyncio.wait_for(consume(), timeout=2)
+    assert frames == [
+        {
+            "type": "error",
+            "code": "invalid_host_context",
+            "message": "Host context could not be verified.",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("admission_delay", [0.0, 5.3])
 async def test_native_fast_embed_reply_replays_only_the_current_interaction(
     monkeypatch: Any,
+    admission_delay: float,
 ) -> None:
     from jvagent.action.native_harness import NativeHarnessAction
     from jvagent.action.response.response_bus import ResponseBus
@@ -46,6 +96,7 @@ async def test_native_fast_embed_reply_replays_only_the_current_interaction(
     )
 
     async def spawn(agent: Any) -> None:
+        await asyncio.sleep(admission_delay)
         walker.interaction = interaction
         await bus.publish(
             channel="web",

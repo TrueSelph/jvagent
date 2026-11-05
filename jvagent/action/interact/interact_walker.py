@@ -286,7 +286,7 @@ class InteractWalker(Walker):
 
         Returns:
             Machine-readable outcome: ``ok``, ``ready``, ``no_memory``, ``access_denied``,
-            or ``init_error``.
+            ``invalid_host_context``, or ``init_error``.
         """
         if through == "create":
             if not self.conversation:
@@ -461,16 +461,16 @@ class InteractWalker(Walker):
         self._host_system_context = await consume_host_system_context(self)
         if (
             self._native_execution
-            and not self.utterance.strip()
             and not self._host_system_context
+            and ("host_system_context" in self.data or not self.utterance.strip())
         ):
             await self.report(
                 {
-                    "error": "Host context is invalid or already used",
+                    "error": "Host context could not be verified.",
                     "code": "invalid_host_context",
                 }
             )
-            return "init_error"
+            return "invalid_host_context"
 
         if through == "session":
             return "ready"
@@ -642,6 +642,8 @@ class InteractWalker(Walker):
             return InteractionInitResult(False, "access_denied")
         if code == "session_resolution_error":
             return InteractionInitResult(False, "session_resolution_error")
+        if code == "invalid_host_context":
+            return InteractionInitResult(False, "invalid_host_context")
         return InteractionInitResult(False, "init_error")
 
     @on_visit("Agent")

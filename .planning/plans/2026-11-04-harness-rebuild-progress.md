@@ -1,13 +1,47 @@
 # Harness rebuild execution record
 
-Latest increment: [native shared-host extraction](2026-11-05-shared-host-results.md).
-Next: qualify signed caller/embed/popup/cancellation boundaries, then interview
+Latest increment: [native signed host-policy validation](2026-11-05-native-host-context.md).
+Next: qualify member/embed/popup/cancellation boundaries and public-auth policy, then interview
 execution adapters under the [shared-host plan](2026-11-05-shared-host-extraction.md).
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `d4f67b99`; each new milestone
+are incomplete. All nine remote checks passed at `5739cf5d`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native host-context validation
+
+The parent browser probe confirmed a non-empty request still ran after its invalid
+host envelope was discarded. Native admission now fails closed instead of dropping
+explicit policy. Ordinary requests omit the field; null is an invalid envelope.
+HTTP streaming/embedded streaming expose a safe specific code; non-streaming HTTP
+returns 422. The embedded five-second admission guess was also removed and its
+queued-turn regression fails when that old behavior is restored.
+
+Fresh authenticated browser cohort: signed policy with immediate and deferred
+writes, ten UI rejection cases, one non-streaming host-policy rejection, and
+ordinary MCP execution afterward. All seven model-backed fixture turns are delivered;
+nonce bindings match the actual server/SDK runs, with expired entries pruned.
+No Interactions/usage were created by the eleven host-policy rejections.
+A second confirmed defect in deferred nonce durability now requires strict flush
+before policy promotion, verified before model execution through a fresh graph.
+Actual response inspection found host envelopes echoed in reply metadata; the
+ResponseBus and interaction logging now use one shared projection to strip that
+reserved data. Fresh signed-model browser runs confirm functional execution with
+clean public metadata. Raw pre-fix envelopes were redacted from evidence; the
+finding flags and all request/cost receipts remain. Costs include the unsigned automation mistake and parent
+defect probe: nine requests, 3,524 tokens, USD 0.007654 estimated for the whole round.
+The full evidence retains both fixture mistakes and request timings.
+
+Validation before final commit: affected ingress/embed/response/HMAC/ownership
+suite 288 passed (9.77s), including batching, metadata privacy and log redaction tests. Earlier native/host
+suites passed 201 with six PG skips per Python version; the six real-PG cases
+passed separately on each version (8.66s / 7.38s). Final combined native/host/real-PG suites: 211 passed on Python 3.11 (20.80s)
+and 3.12 (22.02s), 121 warnings each, including all sixteen new policy/durability
+cases. Five publication privacy tests and one log-redaction regression are also
+covered by the affected suite. All-files hooks are rerun
+after the final formatting changes; the normal full
+push hook and exact-head remote CI remain mandatory. This is not release approval.
 
 ## Shared-host extraction validation
 
