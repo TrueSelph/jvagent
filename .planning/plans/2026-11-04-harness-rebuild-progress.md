@@ -1550,3 +1550,113 @@ in /private/tmp/jvagent-native-ci-failed.log. This repair changes only workflow 
 evidence files; the tested runtime sources and actual-model browser evidence from
 8a99af19 are unchanged. The corrected remote workflow must still pass before the
 entire PR check set is described as green. The PR remains draft and unmerged.
+
+
+## Required Action admission and startup failure propagation — 2026-11-05
+
+Base revision f90a3bd5. Declared Action lookup used to warn/skip missing or invalid
+references, and a failed constructor could silently remove a declaration from
+composition. Registration/agent installation failures could still report a usable
+bootstrap. Separately, CLI/default embed startup ignored a false lifecycle result,
+and failed graph enumeration could return an empty successful result map.
+
+The existing ConfigError taxonomy now makes malformed/unresolved/duplicate Action
+declarations, singleton conflicts and failed declared construction fatal
+(`jvagent/action/loader/action_loader.py:1212`, `:1299`, `:1319`). Diagnostics use
+entry position, not a dump of resolved configuration. Existing undeclared filesystem
+discovery remains distinct. Every declared package must be valid, including a
+currently disabled declaration; remove unused invalid declarations or fix/install
+the package. No lenient fallback or new execution engine/config switch was added.
+
+Action loading/construction precedes persisted Action cleanup in merge/source
+updates (`jvagent/core/agent_loader.py:806`, `:820`). Reported registration failures
+raise, failed declared agents abort app bootstrap before agent removal, and the
+existing declarative CLI guard refuses to open the listener. Enumeration errors
+propagate into the existing startup coordinator's failure result; CLI run/bootstrap
+and default embed bootstrap now check it (`jvagent/core/app.py:311`,
+`jvagent/cli/server_config.py:739`, `jvagent/cli/server.py:521`,
+`jvagent/embed/bootstrap.py:163`). See the linked migration note in
+[configuration.md](../../docs/configuration.md#action-startup-failures).
+
+### Deterministic checks
+
+Five initial loader regressions failed before implementation, proving silent skip,
+wrong exception type and failed-construction acceptance. The final increment adds
+13 cases for declaration/ambiguity, cleanup ordering, failed registration, all
+three startup entrypoints and graph-enumeration failure. The missing-reference
+cases also check that simulated private config values do not enter diagnostics.
+
+A test-fixture-only caplog signature omission failed four focused cases while
+adding log-redaction assertions; corrected without runtime changes. A formatter
+rerun is required and completed before commit. The final clean Python 3.11 legacy
+profile passed **4,710 tests, 25 skipped, 30 warnings in 130.14 s**. The native /
+declared read profile / real PostgreSQL suites passed **157 tests each** on Python
+3.11 and 3.12; no native SDK/provider ownership changed. The initial broader core
+slice passed 238 and CLI/embed/startup slice 72 before the last focused additions.
+All-files checks are rerun on staged final files; push/remote checks are separate.
+
+### Disposable process and browser fault evidence
+
+Same isolated PostgreSQL app 8131 + jvchat 3131, GPT-4.1/OpenAI. No user deployment
+or graph was purged. Before faults: 11 Interactions, 32 measured model calls;
+AccessControlAction n.AccessControlAction.a7cb1a3f9f404126a1fa6825, permissions SHA256
+b52f7a345843703ba90b8cbf3097eb661f630e7a9baafa155b2f66aac19c6344.
+
+- Change the sixth declaration from canonical jvagent/access_control_action to
+  catalog shorthand jvagent/access_control. Merge-mode startup exits 1 at declared
+  lookup; no listener/model turn starts. Browser submission visibly ends Failed to
+  fetch. Graph counts and the policy ID/hash remain unchanged.
+- A preliminary source command exits at its CLI confirmation (0.584 s); **not**
+  admission evidence. The confirmed source-mode test against the same disposable
+  graph exits 1 in 1.243 s at the declaration error, before Action reconciliation.
+  The same counts/policy hash remain unchanged. The confirmation was not bypassed
+  for a user deployment; the explicit source command targets only this fixture.
+- Restore the canonical declaration and start merge mode. Real reader retrieval
+  succeeds (first positive row below).
+- Add a disposable local StartupFault Action whose on_startup raises the literal
+  qualification startup fault. It registers, actually runs and fails; CLI exits 1
+  in 1.667 s with Action initialization failed; startup refused, before listening.
+  Counts remain 12 Interactions / 36 calls and the policy hash is unchanged. This
+  proves failure propagation, **not** transactional registration rollback.
+- Remove the fault declaration, merge-update the fixture and start normally.
+  Restart recall succeeds. Final-source clean process restart and another recall
+  succeed as well. Failed web submission created no persisted Interaction/model
+  receipt. Source/merge fault logs and helper readback remain under
+  /private/tmp/jvagent-strict-*.log and -before.json/-after.json.
+
+| Interaction / root run | Visible and persisted outcome | Interaction / native seconds | Calls / tokens / estimated USD |
+|---|---|---|---|
+| 4eb339f2ee9545e7abc4c42e / f53224f93f8b49a7967e1c149acf32c6 | Reader retrieval: 18 November 2026, CEDAR-47, Meridian launch public notes; two tool calls and 4.0k badge | 8.141 / 6.549 | 4 / 3,987 / 0.007380 |
+| 647bcb9b33664ac7a139558f / 7b216668f43f4ace9d98c2147bba5e3e | Correct date/label/document after lifecycle fault removed and backend restarted; no tools, 759-token badge | 3.989 / 2.186 | 1 / 759 / 0.001722 |
+| b8210492d05040c9ac381f6b / 248f23108e4d42928b55e50adb0e1bad | Correct date/label/document on final-source normal restart; no tools, 816-token badge | 2.791 / 1.477 | 1 / 816 / 0.001836 |
+
+All three are delivered, closed/emitted, usage_complete=true. Model receipts total
+six logical calls, 5,562 tokens and USD 0.010938 estimated. First retrieval includes
+1,152 cached input tokens. These are SDK price-table estimates, not provider bills
+or a workload benchmark. History_source in the recall rows points to the previous
+delivered native root. Durable readback is
+/private/tmp/jvagent-strict-browser-evidence.json. The first two positive rows and
+fault runs preceded final comment/dead-log cleanup; the third ran after reloading
+all final runtime sources. Final runtime blobs: ActionLoader
+fc936f9d98441c184c8b4c622783a25be4e3d5a8, AgentLoader
+5e386093978f714fb31bcfff5bc77454fd237559, AppLoader
+07f4951ffe331638fbf24bf934cb8616711557c2, App
+934bef32cf0d12634d37eec33304f9de2e223696, CLI server_config
+6830028c87da31739bff28b88f0c1122e53e5d40, CLI server
+58b5e61773cc6868f543d820abc9509a93346fe2 and embed bootstrap
+52c52a4586fe982e367b873c7b2c8c71a413dfb1. The containing commit identifies all tests/docs.
+
+### Limits and next gates
+
+This protects the tested process bootstrap, not a distributed/transactional
+rollout. App/Agent/registration writes can precede a later failure; existing live
+workers are not fenced by another worker's failed startup. Module reload failures,
+runtime loss/removal of a policy node, dynamic installation and custom embed hosts
+explicitly deferring initialization need separate qualification. A successfully
+empty manual app is still permitted. Compatibility assets should use canonical
+manifest names; structural validate alone is not package/runtime admission.
+
+The native/Pydantic execution path, permissions and model/tool protocol are
+unchanged. Remaining interview/script/MCP/write/proactive/channel, ownership,
+migration, legacy deletion and baseline/release gates remain open. No enterprise
+qualification or performance improvement is claimed by this increment.

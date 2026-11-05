@@ -11,7 +11,7 @@ import yaml
 from jvagent.action.base import Action
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.env_resolver import resolve_env_placeholders
-from jvagent.core.errors import log_classified_exception
+from jvagent.core.errors import ConfigError, log_classified_exception
 
 from . import core_discovery, factory
 from . import importer as _importer_module
@@ -1209,23 +1209,29 @@ class ActionLoader:
         # Resolve environment variable placeholders in action configs
         config_lookup = {}
         if action_configs:
-            for cfg in action_configs:
+            for index, cfg in enumerate(action_configs):
+                if not isinstance(cfg, dict):
+                    raise ConfigError(
+                        f"Action declaration {index + 1} must be a mapping"
+                    )
                 # Resolve environment variables in action config
                 cfg = resolve_env_placeholders(cfg)
 
                 # Action reference: "namespace/action_name" in 'action' field
                 action_ref = cfg.get("action")
 
-                if not action_ref:
-                    logger.warning(f"Action config missing 'action' field: {cfg}")
-                    continue
-
-                # Parse namespace/action_name format
-                if "/" not in action_ref:
-                    logger.warning(
-                        f"Invalid action reference format (expected 'namespace/action_name'): {action_ref}"
+                if not isinstance(action_ref, str) or "/" not in action_ref:
+                    raise ConfigError(
+                        f"Action declaration {index + 1} requires a namespace/name reference"
                     )
-                    continue
+                if not all(action_ref.split("/", 1)):
+                    raise ConfigError(
+                        f"Action declaration {index + 1} has an empty reference segment"
+                    )
+                if action_ref in config_lookup:
+                    raise ConfigError(
+                        f"Action declaration {index + 1} duplicates an earlier reference"
+                    )
 
                 action_namespace, action_name = action_ref.split("/", 1)
                 key = f"{action_namespace}/{action_name}"
@@ -1241,8 +1247,9 @@ class ActionLoader:
                         discovered_lookup[key] = core_metadata
                         logger.debug(f"Using core action for {key}")
                     else:
-                        logger.warning(
-                            f"Action {key} not found locally or in core library. Skipping."
+                        raise ConfigError(
+                            f"Action declaration {index + 1} could not be resolved; "
+                            "use its canonical package.name from info.yaml"
                         )
 
         discover_filesystem_actions = bool(discover_filesystem_actions)
@@ -1286,9 +1293,13 @@ class ActionLoader:
                     if key in config_overrides:
                         property_overrides[key] = config_overrides[key]
 
-            # Singleton filter: skip duplicate singleton types (first wins)
+            # Declarations must be unambiguous; skip only discovery-only duplicates.
             is_singleton = metadata.config.get("singleton", True)
             if is_singleton and metadata.archetype in seen_singleton_types:
+                if full_key in config_lookup:
+                    raise ConfigError(
+                        "Declared Actions conflict on a singleton archetype"
+                    )
                 continue
             if is_singleton:
                 seen_singleton_types.add(metadata.archetype)
@@ -1305,5 +1316,9 @@ class ActionLoader:
 
             if action:
                 actions.append(action)
+            elif full_key in config_lookup:
+                raise ConfigError(
+                    "A declared Action could not be constructed; startup refused"
+                )
 
         return actions

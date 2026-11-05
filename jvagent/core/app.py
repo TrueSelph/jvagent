@@ -285,7 +285,10 @@ class App(Node):
         channel adapters.
 
         Returns:
-            Dict mapping action IDs to initialization status
+            Dict mapping action IDs to initialization status. Hook failures are False.
+
+        Raises:
+            Exceptions encountered enumerating the graph propagate to startup.
         """
         import logging
 
@@ -307,7 +310,9 @@ class App(Node):
             for agent in agents:
                 actions_manager = await agent.get_actions_manager()
                 if not actions_manager:
-                    continue
+                    raise RuntimeError(
+                        "Agent Actions manager is unavailable during startup"
+                    )
 
                 actions = await actions_manager.get_actions()
 
@@ -325,7 +330,7 @@ class App(Node):
             return results
         except Exception as e:
             logger.error(f"Error initializing actions: {e}", exc_info=True)
-            return results
+            raise
 
     # ============================================================================
     # File Storage Operations

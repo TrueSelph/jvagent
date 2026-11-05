@@ -30,6 +30,7 @@ from jvagent.core.config import (
     resolve_log_db_path,
     resolve_pageindex_purge_path,
 )
+from jvagent.core.errors import ConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -517,7 +518,8 @@ async def bootstrap_only(
         # This ensures runtime components like channel adapters are initialized
         from jvagent.core.startup import run_app_startup
 
-        await run_app_startup()
+        if not await run_app_startup():
+            raise ConfigError("Action initialization failed; startup refused")
 
         await ensure_admin_user()
 
