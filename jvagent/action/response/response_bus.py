@@ -613,6 +613,7 @@ class ResponseBus:
                     segment_id=flush_message.segment_id or "",
                     content=full_content,
                     action_name=(flush_message.metadata or {}).get("action_name"),
+                    message_id=flush_message.id,
                 )
 
         if _governed(message_category, transient):
@@ -1259,6 +1260,7 @@ class ResponseBus:
         segment_id: str,
         content: str,
         action_name: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> None:
         """Append a thought trace entry to interaction.agent_trace and persist."""
         entry = {
@@ -1269,6 +1271,8 @@ class ResponseBus:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if message_id:
+            entry["message_id"] = message_id
 
         append_fn = getattr(interaction, "append_agent_trace", None)
         changed = False

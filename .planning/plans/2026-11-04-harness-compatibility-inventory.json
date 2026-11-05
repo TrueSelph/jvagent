@@ -2075,5 +2075,27 @@
       "other channels, providers, deployments and extension classes",
       "migration and legacy/pilot engine deletion"
     ]
+  },
+  "native_completed_reply_readback_increment": {
+    "evidence": "2026-11-05-native-replay.md",
+    "qualified_scope": "bounded completed native reply/tool/usage readback through existing subscription after abrupt local backend restart and assistant-cache loss",
+    "preserved": [
+      "existing graph Interaction response, trace and native receipt",
+      "official SDK root/event validation",
+      "existing authorization, response stream and caller-scoped client cache"
+    ],
+    "retired": [
+      "completed native reply recovery dependent on process-local bus backlog",
+      "native delivery intent/outcome depending on unflushed deferred saves",
+      "replay ordering based on naive app-local Interaction timestamps"
+    ],
+    "remaining": [
+      "pending/unknown delivery and client acknowledgement",
+      "abandoned/distributed execution recovery and external-effect settlement",
+      "arbitrary cursor pagination and long-session database scaling",
+      "historical receipt/trace migration",
+      "bounded graceful shutdown and outage credential recovery",
+      "other providers/channels and final migration/legacy engine deletion"
+    ]
   }
 }

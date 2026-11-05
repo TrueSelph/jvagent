@@ -329,3 +329,13 @@ complete or requeue. Initial closure failure and repaired timezone conversion ar
 recorded with adversarial regressions and fresh PostgreSQL outcomes. Background
 jvchat synchronization/live tool display remains open; other triggers, callbacks,
 channels, distributed recovery, migration, legacy deletion and release remain open.
+
+## Completed native reply readback — 2026-11-05
+
+[Actual provider/browser/SQL record](2026-11-05-native-replay.md) qualifies bounded
+completed reply/tool/usage restoration after abrupt process restart and assistant
+cache loss, with an empty new bus and no model/adapter replay or spending change.
+Native/host/real-PG tests pass 356 on each Python 3.11/3.12; UI 140 and build pass.
+This closes completed local native reply readback only. Arbitrary cursors, old
+receipt migration, client acknowledgement, uncertain delivery, abandoned/distributed
+runs, graceful shutdown, outage authentication and other deployments remain open.

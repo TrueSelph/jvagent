@@ -1,0 +1,141 @@
+{
+  "before": {
+    "status": 200,
+    "process_id": 97181,
+    "bus_messages": 0,
+    "assistant_cache_rows": 0
+  },
+  "after": {
+    "process_id": 97181,
+    "bus_messages": 0
+  },
+  "wire": [
+    {
+      "kind": "subscription",
+      "status": 200,
+      "started_at": "2026-11-05T22:04:21.340Z",
+      "frames": [
+        {
+          "session_id": "sess_747f971043734ca8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.fb46b204accb418f9b3ccc9a",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-7e43587fc9244758accbd4b23bd28927",
+          "content": "READY",
+          "category": "user",
+          "timestamp": "2026-11-05T22:02:46.773048+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:02:46.836491+00:00",
+                "total_tokens": 1555,
+                "prompt_tokens": 1552,
+                "total_cost_usd": 0.003128,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 3,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003128,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.873,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.873,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "session_id": "sess_747f971043734ca8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.6e5bd4fbc00d418b877d7016",
+          "content": "mcp_records__lookup_record",
+          "category": "thought",
+          "thought_type": "tool_call",
+          "segment_id": "call_M5dP1JxF32FNhc1zEcHRSVhR",
+          "timestamp": "2026-11-05T22:03:15.335776+00:00",
+          "metadata": {
+            "native_replay": true
+          }
+        },
+        {
+          "session_id": "sess_747f971043734ca8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.40807fb0ae114dbbbdeea30a",
+          "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+          "category": "thought",
+          "thought_type": "tool_result",
+          "segment_id": "call_M5dP1JxF32FNhc1zEcHRSVhR",
+          "timestamp": "2026-11-05T22:03:15.401473+00:00",
+          "metadata": {
+            "native_replay": true
+          }
+        },
+        {
+          "session_id": "sess_747f971043734ca8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.a987b913e33c442794efc95327a811e2",
+          "content": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+          "category": "user",
+          "timestamp": "2026-11-05T22:03:16.837603+00:00",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": true,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T22:03:17.044608+00:00",
+                "total_tokens": 2553,
+                "prompt_tokens": 2508,
+                "total_cost_usd": 0.003648,
+                "litellm_cost_usd": 0,
+                "model_call_count": 2,
+                "completion_tokens": 45,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003648,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 1152,
+                "total_duration_seconds": 2.391,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.391,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n5 conversations\n\nNATIVE-REPLAY-FINAL-CHECK: Reply exactly READY.\n\nNATIVE-REPLAY-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-FINAL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-REPLAY-FINAL-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 1.9s · 1.6 tok/s\n1 tool call\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.6k tokens · 2.4s · 18.8 tok/s\n2 provider attempts\nTotal: 2.4s\n18.8 tok/s\n2,553 tokens\nEstimated $0.0036\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "interact_requests": 0
+}

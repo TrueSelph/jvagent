@@ -50,6 +50,8 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         (None, True),
         (None, False),
         ("cancel_before_delivery", False),
+        ("intent_write_failed", True),
+        ("settlement_write_failed", True),
     ],
 )
 async def test_native_receipt_precedes_delivery(
@@ -102,14 +104,28 @@ async def test_native_receipt_precedes_delivery(
         saved.append(dict(interaction.native_run))
 
     interaction.save = save
+    published: list[str] = []
+    if delivered in {"intent_write_failed", "settlement_write_failed"}:
+        original_flush = module.flush_deferred_entities
+
+        async def flush(entity: Any, *, strict: bool) -> None:
+            status = entity.native_run.get("status")
+            if (
+                delivered == "intent_write_failed" and status == "pending_delivery"
+            ) or (delivered == "settlement_write_failed" and status == "delivered"):
+                raise OSError("Synthetic graph acknowledgement failure")
+            await original_flush(entity, strict=strict)
+
+        monkeypatch.setattr(module, "flush_deferred_entities", flush)
 
     async def publish(text: str, **kwargs: Any) -> bool:
+        published.append(text)
         assert kwargs["message_id"].startswith("o.ResponseMessage.")
         assert saved[-1]["status"] == "pending_delivery"
         assert saved[-1]["usage"]["requests"] == 1
         if delivered is None:
             raise asyncio.CancelledError()
-        return delivered
+        return bool(delivered)
 
     owner = SimpleNamespace(
         id="owner",
@@ -147,7 +163,16 @@ async def test_native_receipt_precedes_delivery(
         correlation_id="corr-server-owned",
         _host_system_context="Trusted host policy",
     )
-    if delivered == "cancel_before_delivery":
+    if delivered in {"intent_write_failed", "settlement_write_failed"}:
+        with pytest.raises(OSError, match="acknowledgement"):
+            await NativeHarnessAction.execute(facade, visitor)
+        assert interaction.native_run["status"] == (
+            "pending_delivery"
+            if delivered == "intent_write_failed"
+            else "delivery_unknown"
+        )
+        assert published == ([] if delivered == "intent_write_failed" else ["ok"])
+    elif delivered == "cancel_before_delivery":
         with pytest.raises(asyncio.CancelledError):
             await NativeHarnessAction.execute(facade, visitor)
         assert interaction.native_run["status"] == "blocked"

@@ -69,6 +69,12 @@ describe('background session ownership', () => {
     })
     expect(result.current.messages.some(m => m.id === 'old-foreground')).toBe(false)
     expect(result.current.messages.some(m => m.id === 'background')).toBe(true)
+    act(() => {
+      const restored = { ...message, id: 'restored-foreground', interaction_id: 'foreground', content: 'Recovered answer', metadata: { native_replay: true, is_proactive: false } }
+      connections[1].callback(restored)
+      connections[1].callback(restored)
+    })
+    expect(result.current.messages.filter(m => m.content === 'Recovered answer')).toHaveLength(1)
     unmount()
   })
   it('retires delivery and clears the transcript when the authenticated caller changes', async () => {

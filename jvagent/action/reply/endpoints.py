@@ -324,11 +324,19 @@ async def reply_subscribe_endpoint(
         # needs keepalives (proxies drop silent streams at 60-100s) and a
         # bounded backlog replay: streaming subscribers never drain the session
         # queue, so an unbounded replay re-sends everything on every reconnect.
+        history = None
+        if native:
+            from jvagent.action.response.native_replay import replay_completed_replies
+
+            memory = await agent.get_memory()
+            conversation = await memory.get_conversation_by_session(session_id)
+            history = replay_completed_replies(conversation, user_id=uid)
         source = stream_messages(
             session_id,
             bus,
             keepalive_seconds=SUBSCRIBE_KEEPALIVE_SECONDS,
             max_replay=SUBSCRIBE_MAX_REPLAY,
+            history=history,
         )
 
         async def authorized_messages() -> Any:

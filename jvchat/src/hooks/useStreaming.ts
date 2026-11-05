@@ -280,7 +280,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
         await apiClient.streamReplies(agentId, sessionId, message => {
           if (getEffectiveUserId() !== callerId) { controller.abort(); return }
           if (retired || controller.signal.aborted || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current) return
-          if (message.metadata?.is_proactive === false || messagesRef.current.some(row => row.role === 'user' && row.interactionId === message.interaction_id)) return
+          if (message.metadata?.native_replay !== true && (message.metadata?.is_proactive === false || messagesRef.current.some(row => row.role === 'user' && row.interactionId === message.interaction_id))) return
           setMessages(previous => {
             if (retired || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current || getEffectiveUserId() !== callerId) return previous
             channelIdsRef.current.add(message.id)

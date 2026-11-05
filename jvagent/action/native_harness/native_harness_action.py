@@ -23,6 +23,7 @@ def delivery_metadata(visitor: Any, interaction: Any, model: str) -> dict[str, A
     """Public numeric receipt for both foreground and unsolicited delivery."""
     usage = interaction.compute_usage()
     return {
+        "native_replay": False,
         "is_proactive": getattr(visitor, "_native_task_dispatch", None) is not None,
         "observability": {
             "usage": usage,
@@ -419,7 +420,6 @@ class NativeHarnessAction(InteractAction):
                 },
                 "output": result.output,
             }
-            await interaction.save()
             response_models = [
                 getattr(message, "model_name", None)
                 for message in result.new_messages()
@@ -432,6 +432,16 @@ class NativeHarnessAction(InteractAction):
                 ),
                 self.model,
             )
+            # This is an egress receipt, not a second SDK execution journal.
+            # Store only routing/observability; governed text remains response.
+            interaction.native_run["delivery"] = {
+                "version": 1,
+                "message_id": f"o.ResponseMessage.{run_id}",
+                "channel": getattr(visitor, "channel", "default") or "default",
+                "metadata": delivery_metadata(visitor, interaction, response_model),
+            }
+            await interaction.save()
+            await flush_deferred_entities(interaction, strict=True)
             if not await responder.publish(
                 result.output,
                 visitor=visitor,
@@ -440,7 +450,15 @@ class NativeHarnessAction(InteractAction):
             ):
                 raise RuntimeError("Native response delivery is unconfirmed")
             interaction.native_run = {**interaction.native_run, "status": "delivered"}
-            await interaction.save()
+            try:
+                await interaction.save()
+                await flush_deferred_entities(interaction, strict=True)
+            except BaseException:
+                interaction.native_run = {
+                    **interaction.native_run,
+                    "status": "delivery_unknown",
+                }
+                raise
         except asyncio.CancelledError:
             receipt = interaction.native_run
             delivery_started = receipt.get("status") in {

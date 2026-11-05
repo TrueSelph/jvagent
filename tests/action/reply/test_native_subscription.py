@@ -84,6 +84,7 @@ async def test_native_stream_revalidates_before_delivering_a_frame(
         token_secret=conversation.ensure_token_secret(),
     )
     agent, bus = install_native(monkeypatch, conversation)
+    monkeypatch.setattr(Conversation, "get_interactions", AsyncMock(return_value=[]))
     bus.get_messages.return_value = [
         ResponseMessage(session_id="session", content="first")
     ]

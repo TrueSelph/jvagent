@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native background channel delivery](2026-11-05-native-channel.md).
+Latest increment: [native completed reply readback](2026-11-05-native-replay.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,23 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native completed reply readback
+
+Completed foreground and scheduled MCP replies now restore from existing graph
+state after abrupt backend restart, even after deleting cached assistant rows.
+The fresh process has an empty bus; subscription/readback causes no model call,
+channel redelivery, task or budget change. Final repeated selection retains five
+unique rows. Original governed text, tool IDs and aggregate usage survive.
+Final actual-model cohort: three requests, 4,108 reported tokens, USD 0.006776
+estimated. A timed local read returned four frames in 177ms; no benchmark claim.
+Native/host/real-PG suites: 356 passed on Python 3.11/3.12; affected legacy slice
+140 passed; UI 140 passed and production build passed. Parent 84de5f48 has all
+nine CI checks green. Final hooks/full pre-push and new-head CI are tracked
+separately. Pending/unknown delivery reconciliation, client acknowledgement,
+old-state migration, arbitrary cursors, bounded graceful shutdown, outage auth
+recovery, deployment and legacy deletion remain open. See the linked record for
+the initial fixture/import failures, timestamp correction and source variants.
 
 ## Native background channel delivery
 

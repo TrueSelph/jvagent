@@ -287,7 +287,7 @@ async def test_native_proactive_outcome_persists_without_retry(
 
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
     await test_native_task_sdk_output_and_failure_do_not_replay(
-        tmp_path, monkeypatch, failure
+        tmp_path, monkeypatch, failure, deferred
     )
     rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
     assert rows[0]["context"]["tasks"][0]["status"] == (

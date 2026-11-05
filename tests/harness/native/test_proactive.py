@@ -23,13 +23,17 @@ from jvagent.memory.task_store import TaskStore
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
 @pytest.mark.parametrize("failure", [False, True, "unqualified_pin", "cancel"])
 async def test_native_task_sdk_output_and_failure_do_not_replay(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure: bool | str,
+    deferred: bool,
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
 
     for name in ("conversation", "summary"):
         directory = tmp_path / name
@@ -140,6 +144,25 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
     assert task.status == ("failed" if failure else "completed")
     assert task.data["attempt_count"] == 0
     assert len(seen) == (0 if failure == "unqualified_pin" else 1)
+    interaction = walker_ref[0].interaction
+    if not failure:
+        # A new bus has no backlog. Readback uses persisted graph state and
+        # cannot dispatch another paid run or external channel delivery.
+        from jvspatial import flush_deferred_entities
+
+        from jvagent.action.response.native_replay import replay_completed_replies
+
+        await flush_deferred_entities(interaction, strict=True)
+        frames = [
+            frame
+            async for frame in replay_completed_replies(conversation, user_id="caller")
+        ]
+        assert len(frames) == 1
+        assert frames[0]["content"] == "Summary ALDER-42"
+        assert frames[0]["metadata"]["native_replay"] is True
+        assert frames[0]["metadata"]["is_proactive"] is True
+        assert frames[0]["id"] == "o.ResponseMessage.proactive-test-run"
+        assert len(seen) == 1
     interaction = walker_ref[0].interaction
     assert interaction.utterance == ""
     assert interaction.native_run["status"] == (
