@@ -225,11 +225,20 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 
 **Parallel batch** — the sibling tool calls one model response returned together (same `group_id`) that the Orchestrator dispatches concurrently within a single tick when `max_concurrent_tools` > 1; each sibling passes the pre-dispatch guards first and gets its own call-id-stamped observation (ADR-0048). Counted per turn as `parallel_batches` in the activation telemetry.
 
-**Native delegate** — a host-configured SKILL.md specialist run by the official `SubAgents` capability with a separate message history, shared caller access checks and bounded parent usage. Declaration and conversation scope: `jvagent/harness/delegation.py:9`; composition: `jvagent/harness/native.py:123`. Background and remote modes remain unqualified.
+**Native delegate** — a host-configured SKILL.md specialist run by the official `SubAgents` capability with a separate message history, shared caller access checks and bounded parent usage. Declaration and conversation scope: `jvagent/harness/delegation.py:9`; composition: `jvagent/harness/native.py:196`. Background and remote modes remain unqualified.
 
 ### Native context compaction
 The official Harness capability summarizes older model messages while retaining a
 recent suffix and tool-call pairing. JV configures the capability and persists its
 public snapshots and spend receipts; it does not implement another history editor.
 The context trigger is an estimate, and the retained suffix is a floor, not a hard
-request-size cap. Source: [`jvagent/harness/native.py:179`](../jvagent/harness/native.py).
+request-size cap. Source: [`jvagent/harness/native.py:188`](../jvagent/harness/native.py).
+
+### Accepted-input checkpoint
+A public Harness snapshot captured before model execution, containing the admitted
+question and prior context. The native host may use it for a new user request
+after a terminal failed/cancelled read-only run, after checking caller scope,
+run-tree termination, settled usage and unresolved effects. It does not authorize replay or turn
+an undelivered model answer into conversation history. Sources:
+[`native.py:150`](../jvagent/harness/native.py),
+[`recovery.py:18`](../jvagent/harness/recovery.py).

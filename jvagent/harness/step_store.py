@@ -35,6 +35,24 @@ class InteractionStepStore:
             state = dict(self.interaction.native_steps)
             values = list(state.get(key, []))
             encoded = TypeAdapter(type(record)).dump_python(record, mode="json")
+            if key == "runs":
+                prior = next(
+                    (v for v in values if v.get("run_id") == record.run_id), None
+                )
+                if prior is not None:
+                    same_registration = encoded.get("registration_id") and all(
+                        prior.get(field) == encoded.get(field)
+                        for field in (
+                            "registration_id",
+                            "conversation_id",
+                            "parent_run_id",
+                            "agent_name",
+                            "metadata",
+                        )
+                    )
+                    if prior == encoded or same_registration:
+                        return
+                    raise ValueError("Native run identity is already registered")
             if identity is not None:
                 values = [
                     value
@@ -85,6 +103,22 @@ class InteractionStepStore:
 
     async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
         await self._write("snapshots", snapshot)
+
+    async def first_snapshot(self, *, run_id: str) -> ContinuableSnapshot | None:
+        """Read the earliest library checkpoint for host recovery admission.
+
+        Storage extension only: public StepStore exposes the latest frontier,
+        while a new user turn after failure needs the accepted-input frontier.
+        No history is repaired, replayed or synthesized here.
+        """
+        return next(
+            (
+                r
+                for r in self._records("snapshots", ContinuableSnapshot)
+                if r.run_id == run_id
+            ),
+            None,
+        )
 
     async def latest_snapshot(
         self, *, run_id: str, include_interrupted: bool = False

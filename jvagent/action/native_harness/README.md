@@ -26,7 +26,7 @@ Supply the child skill's required Action packages too. Paths must resolve in the
 host deployment. Delegate declarations reject unknown fields, including model or
 caller overrides ([schema](../../harness/delegation.py:9)). The configured model is
 shared. The official `SubAgents` capability owns foreground delegation, isolated
-child histories and bounded depth ([composition](../../harness/native.py:188)).
+child histories and bounded depth ([composition](../../harness/native.py:196)).
 Each child loads its own approved skill library and exposes only its declared,
 qualified read tools. Both `delegate_task` and child Action calls pass host access
 checks ([admission](../../harness/native.py:116)). No inherited parent tools or
@@ -68,7 +68,7 @@ fallback was added. Quote matching proves observation, not claim entailment.
 
 
 Native context compaction uses the official `SummarizingCompaction` capability
-([composition](../../harness/native.py:179)). The Action exposes
+([composition](../../harness/native.py:188)). The Action exposes
 `context_max_tokens` (default 32,000 estimated tokens) and `context_keep_tokens`
 (default 16,000 tokens of recent messages). Both must be positive; retention must
 be smaller than the trigger. The same limits apply to configured specialists
@@ -81,7 +81,7 @@ custom summarization prompt, text slicing or silent legacy fallback is added.
 Summary model requests use the configured model, share native usage limits and
 conversation spending, and persist as named child runs on the same Interaction.
 Accounting includes them even when no delegates are configured
-([settlement](native_harness_action.py:220)). A summary failure fails the turn.
+([settlement](native_harness_action.py:231)). A summary failure fails the turn.
 
 The retained suffix is a minimum of whole messages, not a hard upper bound. A
 single oversized current message or an indivisible tool dependency can exceed
@@ -89,3 +89,36 @@ the trigger; current input is never silently truncated. Summary quality,
 provider-window headroom, graph snapshot retention, distributed ownership and
 crash-resumed evidence rehydration remain qualification gates. A model-generated
 summary is context, never a new authorization or a verified research receipt.
+
+
+For a new user turn after a handled failure, native admission uses an
+accepted-input checkpoint, not the failed run's final output
+([policy](../../harness/recovery.py:18)). Official StepPersistence captures input
+and tool frontiers with a versioned host policy marker
+([configuration](../../harness/native.py:150)). Every recorded parent/child must
+be terminal, in the same caller conversation, and free of unresolved tool effects.
+Provider usage/cost must also be settled: missing receipts remain unknown and
+block new model calls until reconciled.
+The input checkpoint must predate execution and retain the original question.
+Only a response actually emitted by JV is added to that history; undelivered
+model answers and failed-run tool observations are not carried forward. A new
+run gets a new ID, current permissions and fresh per-run skill policy. Previous
+usage and conversation spend remain intact.
+
+This host policy is qualified for the factory's current read-only foreground
+profile. It is not external-write reconciliation, automatic crash replay or
+restoration of research evidence. Pending/unknown delivery, abandoned workers,
+unresolved effects, legacy records without the checkpoint marker and mixed
+non-native predecessors are blocked visibly, with no model call
+([admission](native_harness_action.py:179)). Empty predecessor state cannot reset
+the conversation's recovery boundary. Start a new conversation or reconcile the
+old state explicitly; migration and operator reconciliation tooling remain open.
+
+The graph adapter's `first_snapshot` query reads public library records without
+repairing history or executing tools ([storage](../../harness/step_store.py:107)).
+Remove this storage extension when the public StepStore offers accepted-input
+checkpoint selection. Run registrations cannot replace another registration's
+identity or scope, while replays of the same registration preserve the first
+record. These adapter guards do not provide multi-worker fencing, transactional
+ownership or a bound on cancellation-settlement writes. Checkpoint retention and
+long-run storage costs also remain qualification gates.

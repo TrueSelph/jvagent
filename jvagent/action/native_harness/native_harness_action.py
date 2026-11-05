@@ -176,23 +176,34 @@ class NativeHarnessAction(InteractAction):
             ),
             channel=getattr(visitor, "channel", "default"),
         )
-        previous = await interaction.get_previous_interaction()
-        history = []
-        if previous is not None and previous.native_run:
-            if previous.native_run.get("status") != "delivered":
-                raise RuntimeError("Previous native run requires reconciliation")
-        if previous is not None and previous.native_run:
-            snapshot = await InteractionStepStore(previous).latest_snapshot(
-                run_id=previous.native_run["run_id"]
-            )
-            if snapshot is None:
-                raise RuntimeError(
-                    "Previous native run has no settled library snapshot"
-                )
-            history = snapshot.messages
+        from jvagent.harness.recovery import NativeHistoryError, history_for_new_turn
 
+        previous = await interaction.get_previous_interaction()
+        try:
+            history, history_source = await history_for_new_turn(
+                previous,
+                conversation_id=conversation.id,
+                user_id=visitor.user_id,
+                session_id=visitor.session_id,
+            )
+        except NativeHistoryError:
+            interaction.native_run = {
+                "status": "blocked",
+                "reason": "predecessor_requires_reconciliation",
+                "predecessor_interaction_id": previous.id,
+            }
+            await interaction.save()
+            await responder.publish(
+                "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+                visitor=visitor,
+            )
+            return
         run_id = uuid.uuid4().hex
-        interaction.native_run = {"run_id": run_id, "status": "running"}
+        interaction.native_run = {
+            "run_id": run_id,
+            "status": "running",
+            "history_source": history_source,
+        }
         await interaction.save()
         try:
             from jvagent.tooling.context import bind_dispatch_context
@@ -222,6 +233,7 @@ class NativeHarnessAction(InteractAction):
             interaction.native_run = {
                 "run_id": run_id,
                 "status": "pending_delivery",
+                "history_source": history_source,
                 "usage_complete": True,
                 "usage": {
                     "requests": usage.requests,

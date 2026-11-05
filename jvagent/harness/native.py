@@ -142,7 +142,15 @@ def build_native_agent(
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
 
-        run_services.append(StepPersistence(store=step_store))
+        from jvagent.harness.recovery import INPUT_CHECKPOINT_POLICY
+
+        run_services.append(
+            StepPersistence(
+                store=step_store,
+                capture_frontier=True,
+                metadata={"jv_checkpoint_policy": INPUT_CHECKPOINT_POLICY},
+            )
+        )
     if spend_store is not None:
         from decimal import Decimal
 
@@ -176,6 +184,7 @@ def build_native_agent(
             workspace=LocalWorkspaceBackend(directory.parent),
         ),
         SelectedSkill(),
+        *run_services,
         SummarizingCompaction(
             max_tokens=context_max_tokens,
             keep_tokens=context_keep_tokens,
@@ -183,7 +192,6 @@ def build_native_agent(
             receipts=True,
             summarization_capabilities=run_services,
         ),
-        *run_services,
     ]
     if delegates:
         if len(delegates) > 16:

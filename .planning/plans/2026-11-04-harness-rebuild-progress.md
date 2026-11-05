@@ -916,3 +916,107 @@ idempotency, ambiguous provider billing, native timing metrics (currently absent
 not guessed in the UI), historical receipt backfill, provider/channel/concurrency
 qualification, migration and legacy engine removal. No enterprise qualification
 or general performance improvement is claimed from this UI milestone.
+
+## Accepted-input recovery for fresh user requests
+
+Tested base `f3310283` plus the recovery increment in the working tree. A handled
+native failure previously caused every immediate follow-up to raise before a new
+model request. The native adapter now admits a new user request using the public
+library's accepted-input checkpoint after inspecting the recorded run tree
+(`jvagent/harness/recovery.py:18`). This is a host continuation policy for the
+current read-only foreground profile, not another agent engine or automatic
+retry/replay service.
+
+Official StepPersistence now uses capture_frontier=True and versioned metadata,
+with persistence ordered before compaction so even a summary failure can retain
+accepted input (`jvagent/harness/native.py:150`). The helper uses public
+inspect_recovery/is_provider_valid, and continue_run for delivered predecessors.
+It verifies graph caller/conversation ownership, root registration/session,
+terminal parent/child records, no unresolved effects and an initial complete
+snapshot captured before the first recorded model request. Original input must
+be present; a model response belonging to the failed run is forbidden in that
+frontier. Actual emitted JV failure text may follow the input; no unacknowledged
+answer or tool result is promoted into history. Usage settlement is idempotent,
+and the new run records history_source without rewriting the old failure.
+
+The graph StepStore exposes first_snapshot as a storage-only query of public
+records (`jvagent/harness/step_store.py:107`). Remove it if upstream adds accepted
+input selection to the public protocol. Run registration also rejects another
+registration ID or changed scope instead of overwriting it; same-registration
+replay preserves the initial record/timestamp. These are single-writer adapter
+guards, not a distributed atomic-claim/fencing guarantee. No second database,
+custom tool replay, synthetic tool returns or legacy execution fallback was added.
+
+Unsafe predecessor admission now persists a blocked Interaction and displays a
+recovery notice without a model call (`jvagent/action/native_harness/native_harness_action.py:179`).
+A predecessor with empty native state is also rejected, so an unsuccessful
+blocked attempt cannot bypass an older uncertainty by resetting history. Legacy
+or mixed-engine histories require migration/reconciliation; older failed runs
+without the marker are not retroactively declared safe. Operator tooling for
+resolving a blocked chain remains open.
+
+Deterministic regressions cover failure before response, paid-budget failure,
+validation rejection with an undelivered answer present in the failure snapshot,
+completed delegated children, fresh JSON graph reload, graceful provider-call
+cancellation with unknown usage, changed caller/session/conversation, unqualified
+old state, unfinished/mis-scoped children, unresolved effects, orphan roots,
+late/interrupted/undelivered frontiers, empty/blocked predecessors and immutable
+run registrations. Missing provider usage is persisted as unknown and blocks new
+model execution until reconciled, including after graceful cancellation. Mutation tests in an isolated worktree removed unresolved-
+effect, empty-predecessor and registration guards; all three corresponding
+regressions failed for their intended assertions. Corrected checks pass.
+
+Real GPT-4.1 browser evidence used the existing disposable app and graph on
+8130/3130. Temporary run ceiling USD 0.002 deliberately exhausted a delegated
+lookup; normal USD 2.00 was restored in YAML and graph before restarting the
+backend. The test account reauthenticated and reopened the same conversation.
+Durations below are native run-event durations, not end-to-end latency benchmarks.
+
+| Scenario | Interaction / root run | Persisted and visible result | Duration | Model calls / tokens | Cost |
+|---|---|---|---|---|---|
+| Remember WILLOW-62, delegate internal lookup under tiny budget | n.Interaction.025c465bf45c47a1a72f7f38 / 1bcd39984ced4f77bcc807be2f29d7ad | Budget notice; delegate tool visible; failed, closed/emitted | 4.623 s | 2 / 1,868 | USD 0.004252 estimated |
+| Restart, ask for original test code without repeating lookup | n.Interaction.66e9922ea58349058295ba7f / f902449a2ec545d98e8725177242b3d7 | WILLOW-62; no tools; delivered, closed/emitted; accepted_input source points to failed root | 0.945 s | 1 / 608 | USD 0.001258 estimated |
+| Ordinary subsequent turn | n.Interaction.231adf472107433c8937b48c / 8f673fa490c645f6a50ecced48b18dc1 | 42; no tools; delivered, closed/emitted; delivered source points to preceding successful root | 1.236 s | 1 / 634 | USD 0.001286 estimated |
+
+The failed tree includes reader 01a1a9a3-2329-7474-b107-39ba1a55a33d. Parent and
+child both end with run_failed; the delegate effect is failed with an ended_at,
+and no effect is left started. Its two measured provider receipts remain unchanged
+after recovery. Across the sequence there are four measured model calls, 3,110
+tokens and USD 0.006796 estimated, with zero unknown-cost receipts. No delegated
+work was repeated on recovery. UI retained the failure tool item and 1.9k, 608
+and 634-token badges. Actual provider-billed cost is not claimed.
+
+The failed Interaction retains five snapshots across its two runs; each later
+single-call run retains three. Capturing frontiers increases graph writes/storage;
+this is recorded rather than claimed as a performance improvement. Retention,
+long sessions and published deployment limits require further qualification.
+This does not qualify in-flight process-death recovery, network partition/fencing,
+external writes, bounded cancellation settlement under outage, signed-context
+migration, or idempotent delivery. The old ingress HarnessRuntime coupling also
+remains in the deletion inventory and must be retired. No enterprise claim is
+made from this increment.
+
+Final accounting-admission tightening requires zero known missing/unpriced cost
+receipts before a failed/cancelled predecessor can supply history. This is
+settlement of recorded logical model requests, not proof of final provider bills
+or hidden SDK retry charges. A missing-receipt transport failure or graceful
+cancellation stays unknown and blocks the next model request; it is never
+reset to a free request. Two additional mutation tests removing this guard both
+fail for their intended DID NOT RAISE assertions.
+
+A final actual-model pair exercised the completed guard after new backend
+processes: Interaction n.Interaction.d3741a8648664ef09300a490, run
+a43bd70eb4f24c12af5aa844ee1bcf0e, deliberately exhausted USD 0.0001 while recording
+ALDER-29. It failed visibly with a measured receipt: 1.953 s, one call, 526 tokens,
+USD 0.001076 estimated, zero unknown-cost receipts. After restoring USD 2.00,
+restarting, reauthenticating and reopening the conversation, Interaction
+n.Interaction.5aa397d3868946d2946d2356, run bafc701ef71345a283348dd31a2dc9d6,
+returned ALDER-29 without tools: delivered/closed/emitted, accepted_input provenance
+to the failed root, 3.571 s, one call, 576 tokens, USD 0.001188 estimated and zero
+unknown-cost receipts. Both token badges are visible. The app remains on normal
+budgets and GPT-4.1.
+
+Clean Python 3.11.15 and 3.12.15 qualification slices each pass 130 cases, including
+23 recovery cases and the visible blocked-admission case. All-files formatting,
+lint, type and secret checks pass before the final evidence-record append and
+are rerun for the commit. Remote CI remains separate from these local gates.

@@ -79,7 +79,7 @@ async def test_native_receipt_precedes_delivery(
     )
     visitor = SimpleNamespace(
         interaction=interaction,
-        conversation=SimpleNamespace(native_spend={}),
+        conversation=SimpleNamespace(id="conversation", native_spend={}),
         user_id="user",
         session_id="session",
         utterance="hello",
@@ -167,3 +167,56 @@ async def test_dispatch_context_is_task_local_and_legacy_compatible() -> None:
     ]
     assert get_dispatch_context() is None
     assert get_tool_visitor() is None
+
+
+@pytest.mark.asyncio
+async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
+    monkeypatch: Any,
+) -> None:
+    from jvagent.action.native_harness import native_harness_action as module
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        raise AssertionError("Blocked recovery must not call a model")
+
+    monkeypatch.setattr(
+        module,
+        "build_native_agent",
+        lambda *args, **kwargs: Agent(FunctionModel(respond)),
+    )
+    interaction = SimpleNamespace(
+        native_run={},
+        native_steps={},
+        observability_metrics=[],
+        has_emitted=lambda: False,
+        save=AsyncMock(),
+        get_previous_interaction=AsyncMock(
+            return_value=SimpleNamespace(id="previous", native_run={})
+        ),
+    )
+    publish = AsyncMock(return_value=True)
+    facade = SimpleNamespace(
+        get_agent=AsyncMock(
+            return_value=SimpleNamespace(get_actions=AsyncMock(return_value=[]))
+        ),
+        get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
+        model="test",
+        skill_directory=".",
+        delegates=[],
+        instructions="",
+        max_run_cost_usd="2",
+        max_conversation_cost_usd="20",
+        context_max_tokens=32000,
+        context_keep_tokens=16000,
+    )
+    visitor = SimpleNamespace(
+        interaction=interaction,
+        conversation=SimpleNamespace(id="conversation", native_spend={}),
+        user_id="caller",
+        session_id="session",
+        channel="web",
+    )
+    await NativeHarnessAction.execute(facade, visitor)
+    assert interaction.native_run["status"] == "blocked"
+    assert interaction.native_run["predecessor_interaction_id"] == "previous"
+    assert "needs recovery" in publish.await_args.args[0]
+    assert not interaction.native_steps
