@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from jvagent.tooling.context import get_tool_visitor
@@ -177,11 +176,6 @@ def _for_each_staged_example_snippets(
     review = '{"2": ' + json.dumps(staged_partial, separators=(",", ": ")) + "}"
     return full, partial, review
 
-
-_WORD_RE = re.compile(r"\b[a-z0-9_]{3,}\b", re.IGNORECASE)
-_LABEL_RE = re.compile(r"\b[a-z][a-z0-9_\-\s]{1,40}\s*(?:is|:|=)", re.IGNORECASE)
-_TIME_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", re.IGNORECASE)
-_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 # ---------------------------------------------------------------------------
 # Session plumbing
@@ -528,65 +522,6 @@ def _normalize_field_map(
     return {str(k): str(v) for k, v in fields.items() if v is not None}
 
 
-def _latest_user_text(visitor: Any = None) -> str:
-    utterance = getattr(visitor, "utterance", None)
-    if isinstance(utterance, str):
-        return utterance.strip()
-    interaction = getattr(visitor, "interaction", None) if visitor else None
-    request = getattr(interaction, "request", None) if interaction else None
-    text = getattr(request, "text", None) if request else None
-    if isinstance(text, str):
-        return text.strip()
-    return ""
-
-
-def _field_text_tokens(fdef: FieldDef) -> List[str]:
-    source = " ".join(
-        [fdef.key.replace("_", " "), fdef.prompt or "", fdef.guidance or ""]
-    ).lower()
-    return [token for token in _WORD_RE.findall(source) if len(token) >= 4]
-
-
-def _under_extracted_candidate_keys(
-    spec: InterviewSpec,
-    field_map: Dict[str, str],
-    visitor: Any = None,
-) -> List[str]:
-    """Detect likely under-extraction when a compound utterance yields one key."""
-    if len(field_map) != 1:
-        return []
-    text = _latest_user_text(visitor)
-    if not text:
-        return []
-
-    lower = text.lower()
-    compound_signals = 0
-    if " and " in lower:
-        compound_signals += 1
-    if "," in text or ";" in text:
-        compound_signals += 1
-    if len(_LABEL_RE.findall(text)) >= 2:
-        compound_signals += 1
-    if _EMAIL_RE.search(text):
-        compound_signals += 1
-    if _TIME_RE.search(text):
-        compound_signals += 1
-    if compound_signals < 2:
-        return []
-
-    submitted = set(field_map.keys())
-    candidates: List[str] = []
-    for fdef in spec.fields:
-        if fdef.key in submitted:
-            continue
-        tokens = _field_text_tokens(fdef)
-        if not tokens:
-            continue
-        if any(re.search(rf"\b{re.escape(token)}\b", lower) for token in tokens):
-            candidates.append(fdef.key)
-    return candidates
-
-
 async def _chain_hint(
     action: Any,
     session: InterviewSession,
@@ -634,8 +569,6 @@ async def handle_set_fields(
             status="completed",
             response_directive=restart_session_directive(session.interview_type),
         )
-
-    under_extracted_keys = _under_extracted_candidate_keys(spec, field_map, visitor)
 
     load_fn = action._load_fn(spec)
     ordered = sorted(
@@ -1015,20 +948,6 @@ async def handle_set_fields(
 
     if stored_any:
         await action._save_session(session, visitor)
-
-    if under_extracted_keys and not failures:
-        append_system_event(
-            system_queue,
-            field=sorted(field_map.keys())[0] if field_map else "",
-            stage="set",
-            source="under_extract_heuristic",
-            system_message=(
-                "Likely compound utterance with only one submitted field. "
-                f"Review the latest user message for additional values "
-                f"({', '.join(under_extracted_keys)}) and call interview__set_fields "
-                "again when confident."
-            ),
-        )
 
     complete_check = completion_candidates[-1] if completion_candidates else None
     if complete_check is not None and not failures:
@@ -2072,6 +1991,17 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             ok=False,
             status=session.status.value,
             error="Review required before completion.",
+            next_tool="interview__review",
+            response_directive=call_tool_directive("interview__review"),
+        )
+
+    if spec.confirm != "auto" and session.context.get(
+        REVIEW_PRESENTED_FIELDS_KEY
+    ) != _fields_fingerprint(session.get_collected_summary()):
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error="The current values require a fresh review before completion.",
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )

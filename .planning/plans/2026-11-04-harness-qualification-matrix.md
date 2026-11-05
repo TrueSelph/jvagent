@@ -264,3 +264,11 @@ old request, keeps its sidebar entry and permits isolated new-session success.
 Old uncertain usage refuses a paid continuation. Late callbacks/final cleanup,
 Stop/sidebar overlap and attachment preparation have deterministic regressions.
 Other live transition, lifecycle/telemetry, reconciliation and deployment gates remain open.
+
+## Declarative branches and review binding — 2026-11-05
+
+[Record](2026-11-05-native-branches.md): real GPT-4.1 browser intake, branch pivot
+and confirmation after restart pass, with fresh SQL pruning/shared-field/task checks.
+Invalid declarations fail admission. Corrected or missing review fingerprints cannot
+authorize manual completion. Custom hooks/for-each, recovery, migration, deletion and
+broader enterprise gates remain open.

@@ -9,6 +9,7 @@ from typing import Any
 from jvagent.harness.conversation_tools import ConversationMutationTool
 from jvagent.tooling.tool import Tool
 
+from .flow import evaluate_operator
 from .session import load_session
 from .spec import InterviewSpec
 from .tools import _build_core_tools
@@ -48,11 +49,74 @@ def qualify_spec(
             field.pre_processor
             or field.post_processor
             or field.for_each
-            or field.branches
-            or field.else_field
+            or field.for_each_prefix
             or (field.validator and field.validator not in BUILTIN_VALIDATORS)
         ):
             raise ValueError("Native interview field extensions require qualification")
+    qualify_branches(spec)
+
+
+def qualify_branches(spec: InterviewSpec) -> None:
+    """Validate declarations; the existing domain resolver still walks the path."""
+    keys = spec.field_keys()
+    if any(not isinstance(key, str) or not key.strip() for key in keys) or len(
+        keys
+    ) != len(set(keys)):
+        raise ValueError("Native interview field names must be unique and nonempty")
+    edges: dict[str, set[str]] = {key: set() for key in keys}
+    for index, field in enumerate(spec.fields):
+        targets = []
+        for branch in field.branches:
+            condition = branch.when
+            if (
+                not isinstance(condition, dict)
+                or not condition
+                or set(condition) - {"op", "value"}
+            ):
+                raise ValueError(
+                    "Native branch conditions require declarative operators; hooks are unqualified"
+                )
+            operator = condition.get("op", "equals")
+            if not isinstance(operator, str):
+                raise ValueError("Native branch operator must be a name")
+            try:
+                json.dumps(condition, allow_nan=False)
+                evaluate_operator(operator, None, condition.get("value"))
+            except (TypeError, ValueError) as error:
+                raise ValueError("Native branch operator/value is invalid") from error
+            if operator.strip().lower() in {
+                "in",
+                "in_list",
+                "not_in",
+                "not_in_list",
+            } and not isinstance(condition.get("value"), list):
+                raise ValueError("Membership branch operators require a list")
+            targets.append(branch.goto)
+        if field.else_field:
+            targets.append(field.else_field)
+        elif not field.branches and index + 1 < len(keys):
+            targets.append(keys[index + 1])
+        for target in targets:
+            if not isinstance(target, str) or target not in edges:
+                raise ValueError("Native branch target must name an existing field")
+            edges[field.key].add(target)
+    incoming = dict.fromkeys(keys, 0)
+    for successors in edges.values():
+        for target in successors:
+            incoming[target] += 1
+    ready = [key for key, count in incoming.items() if count == 0]
+    visited = 0
+    while ready:
+        key = ready.pop()
+        visited += 1
+        for target in edges[key]:
+            incoming[target] -= 1
+            if incoming[target] == 0:
+                ready.append(target)
+    if visited != len(keys):
+        raise ValueError(
+            "Native interview branch cycles require a qualified repeat adapter"
+        )
 
 
 def native_skill_bases() -> dict[str, Path]:

@@ -134,6 +134,35 @@ async def test_native_interview_workflow_has_durable_domain_and_effect_state(
     assert all(e["status"] == "completed" for e in effects)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_native_branch_pivot_and_review_bindings_persist(
+    postgres_scope: PostgresScope,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_interview_branches import (
+        test_native_branch_pivot_preserves_shared_fields_and_rebinds_review,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_native_branch_pivot_preserves_shared_fields_and_rebinds_review(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
+    assert len(rows) == 1
+    assert rows[0]["context"]["tasks"][0]["status"] == "completed"
+    assert "interview" not in rows[0]["context"].get("context", {})
+    interactions = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(interactions) == 3
+    effects = [
+        effect
+        for row in interactions
+        for effect in row["context"]["native_steps"]["effects"]
+    ]
+    assert len(effects) == 7
+    assert all(effect["status"] == "completed" for effect in effects)
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,

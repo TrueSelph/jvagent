@@ -42,3 +42,9 @@ calling interview__complete. Never confirm on the user's behalf or claim a task 
 completed before the tool reports completion. After cancellation or completion,
 use interview__start again for a new interview. Plain tool results and persisted
 session/task state are authoritative; do not claim external side effects.
+
+For branched interviews, follow interview__next_field or inspect interview__get_status
+for the reachable fields. A correction may prune an old branch while shared answers
+remain stored. Inspect the actual tool outcomes; never restore pruned answers from
+chat history. Review the revised values and wait for a new confirmation before
+completion. Do not ask again for shared values the domain session still retains.

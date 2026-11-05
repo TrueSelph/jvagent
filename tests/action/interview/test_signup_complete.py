@@ -8,6 +8,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from jvagent.action.interview.engine import (
+    REVIEW_PRESENTED_FIELDS_KEY,
+    _fields_fingerprint,
+)
 from jvagent.action.interview.interview_action import InterviewAction
 from jvagent.action.interview.session import (
     InterviewSession,
@@ -39,6 +43,10 @@ async def test_complete_returns_completion_result(signup_action):
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon@mail.com")
     session.skip_field("phone_number")
+    # This isolates the completion handler with an explicitly reviewed snapshot.
+    session.context[REVIEW_PRESENTED_FIELDS_KEY] = _fields_fingerprint(
+        session.get_collected_summary()
+    )
 
     conv = SimpleNamespace(
         context={"new_user": False, "signup_records": {"old": "data"}},

@@ -2028,3 +2028,13 @@ Deterministic regressions cover Stop/sidebar overlap and abandoned attachment re
 All 129 frontend tests, production build and eight Python static-server tests pass.
 Unknown interrupted billing, generic cancellation timestamps, operator settlement,
 other live transition/deployment cases and broader release gates remain open.
+
+## Declarative interview branches — 2026-11-05
+
+[Evidence](2026-11-05-native-branches.md) qualifies acyclic declarative paths through
+existing domain tools, branch correction/pruning with shared-answer retention, fresh
+manual review and confirmation across restart. Three actual GPT-4.1 browser turns
+delivered; fresh PostgreSQL confirms active/corrected/completed task/session states.
+Removed utterance-regex extraction steering. 299 interview tests and 285 native/PG
+tests on each supported native Python pass. Hooks, for-each, external effects,
+reconciliation, migration/deletion and enterprise release gates remain open.

@@ -566,3 +566,81 @@ async def test_other_registered_specs_cannot_bypass_their_own_skill_policy(
         assert spec is not None
         with pytest.raises(ValueError):
             qualify_spec(spec, channel="default", tool_name="interview__start")
+
+
+@pytest.mark.asyncio
+async def test_manual_review_cannot_authorize_corrected_values(tmp_path: Path) -> None:
+    directory = declaration(tmp_path, {})
+    action = InterviewAction()
+    action._registry.discover([str(tmp_path)])
+    visitor = await host()
+    tools = await action.get_native_tools()
+    bases = await action.get_native_skill_bases()
+    await turn(
+        directory,
+        visitor,
+        tools,
+        [
+            ("interview__start", {"interview_type": "profile"}),
+            ("interview__set_fields", {"fields": {"email": "old@example.com"}}),
+            ("interview__review", {}),
+        ],
+        bases,
+    )
+    result, _ = await turn(
+        directory,
+        visitor,
+        tools,
+        [
+            ("interview__set_fields", {"fields": {"email": "new@example.com"}}),
+            ("interview__complete", {}),
+        ],
+        bases,
+    )
+    outputs = [
+        json.loads(part.content)
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "interview__complete"
+    ]
+    assert outputs[-1]["ok"] is False
+    assert outputs[-1]["next_tool"] == "interview__review"
+    assert load_session(visitor.conversation).fields["email"] == "new@example.com"
+    assert visitor.tasks.list()[0].status == "active"
+
+
+@pytest.mark.asyncio
+async def test_missing_review_snapshot_requires_fresh_review(tmp_path: Path) -> None:
+    from jvagent.action.interview.session import InterviewStatus, save_session
+
+    directory = declaration(tmp_path, {})
+    action = InterviewAction()
+    action._registry.discover([str(tmp_path)])
+    visitor = await host()
+    tools = await action.get_native_tools()
+    bases = await action.get_native_skill_bases()
+    await turn(
+        directory,
+        visitor,
+        tools,
+        [
+            ("interview__start", {"interview_type": "profile"}),
+            ("interview__set_fields", {"fields": {"email": "member@example.com"}}),
+        ],
+        bases,
+    )
+    session = load_session(visitor.conversation)
+    session.status = InterviewStatus.REVIEW
+    await save_session(visitor.conversation, session)
+    result, _ = await turn(
+        directory, visitor, tools, [("interview__complete", {})], bases
+    )
+    output = next(
+        json.loads(part.content)
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "interview__complete"
+    )
+    assert output["ok"] is False
+    assert output["next_tool"] == "interview__review"
+    assert load_session(visitor.conversation) is not None

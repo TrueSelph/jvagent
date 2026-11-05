@@ -1,0 +1,874 @@
+{
+  "parent_revision": "git-commit:de9c4fd1f229369688d75c9520e7276c8d4228a0",
+  "source_blobs": {
+    "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+    "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+    "tests/harness/native/test_interview_branches.py": "git-blob:f83ae80314a5297143cf432722525fea79404756",
+    "tests/action/interview/test_native_branch_admission.py": "git-blob:e172a4dad0ec18f4c3d03e7707a4f08b3e3f7b75",
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+    "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+    "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937",
+    "tests/harness/native/test_interview.py": "git-blob:af45ec338dc14aeaca7acc1dab1276e128ccc2f2",
+    "tests/harness/native/test_postgres_store.py": "git-blob:fa9cbb8dd7a40795a4ed64117f9dd07cbeef5b16"
+  },
+  "phase": "completed",
+  "observed_at": "2026-11-05T18:12:27.182210+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "model": "openai:gpt-4.1",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "public_entrypoint": true,
+    "skill": "---\nname: conversation\ndescription: Collect and confirm a premium or standard membership request\nextends: action:jvagent/interview\ninterview:\n  title: Membership request\n  summary: Collect and confirm a membership selection without external effects\n  confirm: manual\n  fields:\n    - key: tier\n      prompt: Premium or standard membership?\n      required: true\n      validator: text\n      branches:\n        - when: {op: equals, value: premium}\n          goto: premium_note\n      else: standard_note\n    - key: premium_note\n      prompt: What premium detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: standard_note\n      prompt: What standard detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: email\n      prompt: What email address should I record?\n      required: true\n      validator: email\n---\nUse the inherited procedure to collect and review the reachable membership fields.\nNormalize tier to lowercase premium or standard. Store explicit supplied details\nusing interview__set_fields. A correction can change the branch: follow the tool's\nreachable fields and pruned_fields, preserve the already stored shared email, and\nshow a fresh review before waiting for a new confirmation. Do not complete against\nan earlier review of different values. Do not claim to register, contact, or charge\nanyone; this is an isolated intake demonstration with no external effects.\n",
+    "patched_execution_functions": false
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.00cb72417e91413a9e9fb3bd",
+      "session_id": "sess_06071a93260b4a5c",
+      "interview": null,
+      "tasks": [
+        {
+          "id": "task_ae7e668d20b2",
+          "data": {
+            "interview_type": "conversation",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Membership request",
+          "status": "completed",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-05T18:11:20.010093+00:00",
+          "updated_at": "2026-11-05T18:12:11.863309+00:00",
+          "description": "Collect and confirm a membership selection without external effects",
+          "completed_at": "2026-11-05T18:12:11.863309+00:00",
+          "owner_action": "conversation"
+        }
+      ]
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.68b04344d4bd454cabaf28ad",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_06071a93260b4a5c",
+      "utterance": "NATIVE-BRANCH-CHECK: Please record a premium membership request. My premium detail is priority workshop access and my email is branch.member@example.com. Please show me the review before completing.",
+      "response": "Please review the details:\n\n**Tier**: premium\n\n**Premium Note**: priority workshop access\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 6112,
+          "output_tokens": 125
+        },
+        "output": "Please review the details:\n\n**Tier**: premium\n\n**Premium Note**: priority workshop access\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+        "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:11:26.016798+00:00",
+        "total_tokens": 6237,
+        "prompt_tokens": 6112,
+        "total_cost_usd": 0.008808,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 125,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.008808,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 2944,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T14:11:16.465528",
+      "completed_at": "2026-11-05T14:11:26.016750",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:17.910717Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:17.941336Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:19.894140Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:19.987558Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_KiagZ1CSY62ojRzSGrtlVsoC",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "3:1:tool_call_started:call_KiagZ1CSY62ojRzSGrtlVsoC"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:20.029646Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_KiagZ1CSY62ojRzSGrtlVsoC",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "4:1:tool_call_completed:call_KiagZ1CSY62ojRzSGrtlVsoC"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:20.100801Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:22.158589Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:22.246338Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_1RncFrg0tmR7fHSrFu3MZzqc",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "7:2:tool_call_started:call_1RncFrg0tmR7fHSrFu3MZzqc"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:22.278409Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_1RncFrg0tmR7fHSrFu3MZzqc",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "8:2:tool_call_completed:call_1RncFrg0tmR7fHSrFu3MZzqc"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:22.348242Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "9:3:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:23.624359Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "10:3:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:23.720005Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": "call_8AaeG32UDxqtLgRfeWiOkncW",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "11:3:tool_call_started:call_8AaeG32UDxqtLgRfeWiOkncW"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:23.767288Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": "call_8AaeG32UDxqtLgRfeWiOkncW",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "12:3:tool_call_completed:call_8AaeG32UDxqtLgRfeWiOkncW"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:23.843162Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 4,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "13:4:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:25.636327Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 4,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "14:4:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:25.746280Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "15:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:11:20.026883Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-05T18:11:19.984413Z",
+          "tool_call_id": "call_KiagZ1CSY62ojRzSGrtlVsoC",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:11:22.274260Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-05T18:11:22.240064Z",
+          "tool_call_id": "call_1RncFrg0tmR7fHSrFu3MZzqc",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:11:23.756388Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-05T18:11:23.712936Z",
+          "tool_call_id": "call_8AaeG32UDxqtLgRfeWiOkncW",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 9.551222
+    },
+    {
+      "id": "n.Interaction.5943185f6410415ca9a76574",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_06071a93260b4a5c",
+      "utterance": "Change that to standard membership, with standard detail monthly community sessions. Keep my email the same. Please review the revised details before completing.",
+      "response": "Please review the details:\n\n**Tier**: standard\n\n**Standard Note**: monthly community sessions\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "native_run": {
+        "usage": {
+          "requests": 3,
+          "input_tokens": 6443,
+          "output_tokens": 99
+        },
+        "output": "Please review the details:\n\n**Tier**: standard\n\n**Standard Note**: monthly community sessions\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+        "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:11:41.728958+00:00",
+        "total_tokens": 6542,
+        "prompt_tokens": 6443,
+        "total_cost_usd": 0.005038,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 99,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005038,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 5760,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T14:11:36.450838",
+      "completed_at": "2026-11-05T14:11:41.728895",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:36.961447Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:36.997291Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:38.621954Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:38.688005Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_Ky1Kmu0gkR7y1cdI2Go2VtxB",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "3:1:tool_call_started:call_Ky1Kmu0gkR7y1cdI2Go2VtxB"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:38.724650Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_Ky1Kmu0gkR7y1cdI2Go2VtxB",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "4:1:tool_call_completed:call_Ky1Kmu0gkR7y1cdI2Go2VtxB"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:38.801294Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:39.657989Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:39.744509Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_7aFMdTYTSPRyTMMvY9wkXRzr",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "7:2:tool_call_started:call_7aFMdTYTSPRyTMMvY9wkXRzr"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:39.788571Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_7aFMdTYTSPRyTMMvY9wkXRzr",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "8:2:tool_call_completed:call_7aFMdTYTSPRyTMMvY9wkXRzr"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:39.883232Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "9:3:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:41.394792Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "10:3:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:11:41.505013Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "11:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:11:38.720340Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-05T18:11:38.682948Z",
+          "tool_call_id": "call_Ky1Kmu0gkR7y1cdI2Go2VtxB",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:11:39.781465Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-05T18:11:39.734669Z",
+          "tool_call_id": "call_7aFMdTYTSPRyTMMvY9wkXRzr",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 5.278057
+    },
+    {
+      "id": "n.Interaction.fa3e647f96554341a7b075a4",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_06071a93260b4a5c",
+      "utterance": "Confirm the revised standard membership details.",
+      "response": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: monthly community sessions\n- Email: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 4986,
+          "output_tokens": 71
+        },
+        "output": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: monthly community sessions\n- Email: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!",
+        "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:12:13.683844+00:00",
+        "total_tokens": 5057,
+        "prompt_tokens": 4986,
+        "total_cost_usd": 0.005356,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 71,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005356,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 3456,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T14:12:09.024515",
+      "completed_at": "2026-11-05T14:12:13.683801",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:10.459270Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:10.492799Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:11.675556Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:11.833724Z",
+          "tool_name": "interview__complete",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_tHmoterdjc8q3rX9Te3Dwzql",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "3:1:tool_call_started:call_tHmoterdjc8q3rX9Te3Dwzql"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:11.894490Z",
+          "tool_name": "interview__complete",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_tHmoterdjc8q3rX9Te3Dwzql",
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "4:1:tool_call_completed:call_tHmoterdjc8q3rX9Te3Dwzql"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:11.976295Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:13.404109Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:12:13.522171Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_06071a93260b4a5c",
+          "idempotency_key": "7:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:12:11.881685Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-05T18:12:11.828980Z",
+          "tool_call_id": "call_tHmoterdjc8q3rX9Te3Dwzql",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 4.659286
+    }
+  ],
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:0fa8f6455c2e30178617b54308f04a8ce3b700d8",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+      "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937"
+    },
+    "process_id": 68861,
+    "observed_at": "2026-11-05T18:12:02.910593+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T18:12:27.021834+00:00"
+  }
+}

@@ -123,7 +123,9 @@ async def test_set_fields_multi_field_hooks_use_single_compact_directive(signup_
 
 
 @pytest.mark.asyncio
-async def test_set_fields_under_extracted_stores_and_nudges(signup_action):
+async def test_set_fields_stores_explicit_values_without_utterance_steering(
+    signup_action,
+):
     action, spec = signup_action
     session = InterviewSession(interview_type="signup_interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -144,7 +146,9 @@ async def test_set_fields_under_extracted_stores_and_nudges(signup_action):
 
     assert result["ok"] is True
     assert session.get_value("user_name") == "Jane Doe"
-    assert "user_email" in str(result.get("system_message", ""))
+    assert "user_email" not in str(result.get("system_message", ""))
+    assert "Likely compound utterance" not in str(result)
+    assert "user_email" not in session.fields
 
 
 @pytest.mark.asyncio

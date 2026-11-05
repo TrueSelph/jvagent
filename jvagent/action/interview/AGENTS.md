@@ -67,9 +67,15 @@ Conversation mutations require caller scope, SDK effect annotation and strict gr
 acknowledgement (`jvagent/harness/conversation_tools.py:14`). Failure after a mutation
 requires reconciliation; do not discard its outcomes into pre-write input history.
 Native tools retire the duplicate task `data.state`; TaskStore.status is canonical.
+Native declarative branches use the existing domain resolver. Admission rejects
+unknown operators, malformed targets, duplicate names and cycles before execution
+(`native.py:59`); branch hooks remain unqualified. Manual completion requires a
+review fingerprint matching current values, including after a branch correction
+(`engine.py:1998`). No utterance-regex extraction steering runs in `set_fields`.
 Custom hooks/validators, complex fields and external task callbacks remain gated
 until their effect classes and recovery behavior have evidence. Qualification and
 migration limits: [native interview record](../../../.planning/plans/2026-11-05-native-interview.md).
+Branch qualification: [browser and persistence record](../../../.planning/plans/2026-11-05-native-branches.md).
 
 ---
 
