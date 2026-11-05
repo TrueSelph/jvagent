@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -43,6 +44,33 @@ from jvagent.harness.spend_store import ConversationSpendStore
 from jvagent.harness.step_store import InteractionStepStore
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.interaction import Interaction
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("reported", [False, True])
+async def test_http_cancellation_terminal_event_survives_postgres_flush(
+    postgres_scope: "PostgresScope",
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+    reported: bool,
+) -> None:
+    from tests.harness.native.test_cancellation import (
+        test_http_disconnect_preserves_sdk_terminal_cleanup,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_http_disconnect_preserves_sdk_terminal_cleanup(
+        monkeypatch,
+        tmp_path,
+        "responses",
+        True,
+        reported=reported,
+    )
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 1
+    assert rows[0]["context"]["native_steps"]["events"][-1]["kind"] == "run_failed"
 
 
 @dataclass

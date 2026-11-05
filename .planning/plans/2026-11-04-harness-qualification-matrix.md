@@ -197,3 +197,15 @@ now sends its capability. The evidence record explicitly separates member API
 coverage from authenticated UI coverage and notes popup tool-row rendering,
 voice-provider, concurrency, timing and release limits. This advances W2/W3
 security; W4 recovery, W5 migration/deletion and W6 qualification remain incomplete.
+
+
+## Native HTTP cancellation durability — 2026-11-05
+
+The [focused acceptance record](2026-11-05-native-cancellation.md) closes the
+confirmed HTTP teardown/durable-terminal gap and empty/interrupted false-zero
+accounting. Actual Messenger Stop persists official SDK failure state and unknown
+billing; a following request refuses another paid run, while a separate session
+works. Fresh SQL assertions fail on the unshielded parent. In-memory tests alone
+were insufficient. Historical receipt migration, operator recovery and all other
+cancellation/effect/deployment classes remain open; no broader release or
+simplification claim follows.

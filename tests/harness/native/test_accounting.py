@@ -1,5 +1,7 @@
 """Failed native runs retain receipts without charging prior-run history twice."""
 
+from decimal import Decimal
+
 import pytest
 
 pytest.importorskip("pydantic_ai_harness")
@@ -56,4 +58,42 @@ async def test_missing_provider_receipt_is_unknown_spend() -> None:
     await recover_native_usage(interaction, run_id="missing", model="test")
     assert interaction.usage["unknown_cost_call_count"] == 1
     await recover_native_usage(interaction, run_id="missing", model="test")
+    assert interaction.usage["unknown_cost_call_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_partial_checkpoint_is_not_a_complete_zero_cost_receipt() -> None:
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.usage import RequestUsage
+    from pydantic_ai_harness.step_persistence import ContinuableSnapshot
+
+    interaction = await Interaction.create(utterance="cancelled response")
+    interaction.native_run = {"run_id": "partial", "status": "cancelled"}
+    store = InteractionStepStore(interaction)
+    await store.append_event(
+        StepEvent(run_id="partial", kind="model_request_started", step_index=1)
+    )
+    await store.save_snapshot(
+        ContinuableSnapshot(
+            run_id="partial",
+            step_index=1,
+            state="interrupted",
+            messages=[
+                ModelResponse(
+                    parts=[TextPart("partial")],
+                    run_id="partial",
+                    model_name="gpt-4.1",
+                    provider_name="openai",
+                    state="interrupted",
+                    usage=RequestUsage(input_tokens=7, cost=Decimal(0)),
+                )
+            ],
+        )
+    )
+    await recover_native_usage(interaction, run_id="partial", model="gpt-4.1")
+    assert interaction.usage["model_call_count"] == 1
+    assert interaction.usage["total_tokens"] == 7
+    assert interaction.usage["unknown_cost_call_count"] == 1
+    await recover_native_usage(interaction, run_id="partial", model="gpt-4.1")
+    assert interaction.usage["model_call_count"] == 1
     assert interaction.usage["unknown_cost_call_count"] == 1

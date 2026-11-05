@@ -1845,5 +1845,35 @@
     ],
     "durability": "Strict jvspatial flush under the conversation lock before policy promotion; fresh-context on/off and flush-failure regressions, plus actual-provider deferred-mode success and unexpired replay rejection.",
     "egress_privacy": "Actual signed replies echoed host envelopes before the privacy fix; ResponseBus and interaction logging use one shared projection to remove reserved host data and associated request IDs. Final provider/browser replies have clean metadata; unrelated app metadata preserved."
+  },
+  "native_public_identity_increment": {
+    "parent_revision": "git-commit:8673299c",
+    "evidence": "2026-11-05-public-identity-binding.md",
+    "status": "local public caller binding qualified; member API and anonymous popup only; release migration incomplete",
+    "remaining": [
+      "authenticated member UI",
+      "operator recovery",
+      "legacy auth/state migration"
+    ]
+  },
+  "native_http_cancellation_increment": {
+    "parent_revision": "git-commit:9a056a1f",
+    "evidence": "2026-11-05-native-cancellation.md",
+    "status": "local HTTP Stop persists SDK terminal event and unknown billing; recovery release gate remains open",
+    "removed_responsibilities": [
+      "unshielded repeated cancellation of SDK cleanup",
+      "treating empty/interrupted native pricing snapshots as known free calls"
+    ],
+    "runtime_ownership": "Official SDK error hooks write graph-backed terminal state; JV supplies HTTP teardown and telemetry only",
+    "migration_requirements": [
+      "reconcile or reject historical native false-zero receipts",
+      "do not invent missing historical terminal events"
+    ],
+    "remaining": [
+      "embedded/tool/delegate/write/publication cancellation",
+      "operator settlement and explicit recovery",
+      "distributed ownership and outage behavior",
+      "legacy/pilot deletion after supported workflows qualify"
+    ]
   }
 }

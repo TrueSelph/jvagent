@@ -1,14 +1,26 @@
 # Harness rebuild execution record
 
-Latest increment: [native public identity binding](2026-11-05-public-identity-binding.md).
+Latest increment: [native HTTP cancellation durability and partial usage](2026-11-05-native-cancellation.md).
 Next: qualify remaining embed/cancellation boundaries and interview execution adapters
 under the [shared-host plan](2026-11-05-shared-host-extraction.md). Member browser API
 and anonymous popup admission are qualified only to the scope of that increment.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
-are incomplete. All nine remote checks passed at `8673299c`; each new milestone
+are incomplete. All nine remote checks passed at `9a056a1f`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native HTTP cancellation and partial usage
+
+The [cancellation record](2026-11-05-native-cancellation.md) and linked browser/SQL
+receipts prove two repairs. HTTP teardown now lets the official SDK commit its
+terminal event under cancellation. Fresh PostgreSQL reads exposed the failure
+that in-memory tests missed. Partial/unreported usage is no longer a known zero
+cost, while reported partial tokens remain counted. Real Messenger Stop,
+follow-up refusal and a separate working conversation passed. Existing false-zero
+receipts require migration; operator settlement, embedded/tool/delegate/write/
+publication cancellation and deployment recovery remain open. No legacy engine
+was removed in this increment and no replacement engine/store was added.
 
 ## Native host-context validation
 

@@ -1,5 +1,6 @@
 """Spend receipts survive snapshot gaps, replay and unpriced provider usage."""
 
+from dataclasses import replace
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -88,6 +89,32 @@ async def test_spend_receipt_without_host_run_scope_is_rejected() -> None:
     with pytest.raises(ValueError, match="run ID"):
         await NativeSpendRecorder(interaction).record(receipt(1))
     assert interaction.observability_metrics == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("partial_tokens", [0, 7])
+async def test_interrupted_spend_is_unknown_even_if_library_prices_zero(
+    partial_tokens: int,
+) -> None:
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    interaction = await Interaction.create(utterance="cancelled stream")
+    event = receipt(1)
+    event = replace(
+        event, usage=RequestUsage(input_tokens=partial_tokens), usd=Decimal(0)
+    )
+    response = ModelResponse(
+        parts=[TextPart("partial")],
+        run_id="test",
+        state="interrupted",
+        usage=event.usage,
+    )
+    recorder = NativeSpendRecorder(interaction)
+    with recorder.bind(SimpleNamespace(run_id="test", run_step=1, messages=[response])):
+        await recorder.record(event)
+    assert interaction.usage["unknown_cost_call_count"] == 1
+    assert interaction.usage["total_tokens"] == partial_tokens
+    assert interaction.observability_metrics[0]["data"]["cost_record"]["amount"] is None
 
 
 @pytest.mark.asyncio

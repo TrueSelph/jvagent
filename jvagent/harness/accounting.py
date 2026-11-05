@@ -10,6 +10,19 @@ from typing import Any
 from jvspatial import flush_deferred_entities
 
 
+def _measured_usage(usage: Any, response: Any = None) -> bool:
+    """A priced empty/interrupted stream is not proof of complete billing."""
+    return (
+        usage.has_values()
+        and not usage.unmeasured_requests
+        and (
+            response is None
+            or response.state == "complete"
+            or response.finish_reason is not None
+        )
+    )
+
+
 class NativeSpendRecorder:
     """Persist public spend snapshots before settled message snapshots exist.
 
@@ -62,7 +75,19 @@ class NativeSpendRecorder:
                 await flush_deferred_entities(self.interaction, strict=True)
                 return
             usage = event.usage
-            priced = event.priced and not usage.unmeasured_requests
+            from pydantic_ai.messages import ModelResponse
+
+            response = next(
+                (
+                    message
+                    for message in reversed(getattr(ctx, "messages", ()))
+                    if isinstance(message, ModelResponse)
+                    and message.run_id == ctx.run_id
+                ),
+                None,
+            )
+            measured = _measured_usage(usage, response)
+            priced = event.priced and measured
             provider = getattr(getattr(ctx, "model", None), "system", None)
             data = {
                 "native_receipt_key": key,
@@ -72,6 +97,11 @@ class NativeSpendRecorder:
                 "model": event.model or "unknown",
                 "provider": provider if isinstance(provider, str) else "unknown",
                 "native_receipt_origin": "spend_snapshot",
+                "usage_status": (
+                    "provider_reported"
+                    if measured
+                    else "provider_partial_or_unreported"
+                ),
                 "usage": {
                     "prompt_tokens": usage.input_tokens,
                     "completion_tokens": usage.output_tokens,
@@ -140,7 +170,16 @@ def record_native_usage(
             },
         }
         cost = usage.cost
-        if cost is not None and math.isfinite(float(cost)) and cost >= 0:
+        if not _measured_usage(usage, message):
+            data["usage_status"] = "provider_partial_or_unreported"
+            data["cost_record"] = {
+                "amount": None,
+                "currency": "USD",
+                "source": "unpriced",
+                "estimated": False,
+                "pricing_version": None,
+            }
+        elif cost is not None and math.isfinite(float(cost)) and cost >= 0:
             # Native APIs do not consistently distinguish billed cost from the
             # library's price-table calculation. Do not claim actual billing.
             data["cost_record"] = {
