@@ -1660,3 +1660,96 @@ The native/Pydantic execution path, permissions and model/tool protocol are
 unchanged. Remaining interview/script/MCP/write/proactive/channel, ownership,
 migration, legacy deletion and baseline/release gates remain open. No enterprise
 qualification or performance improvement is claimed by this increment.
+
+## Native visitor-bound read compatibility — 2026-11-05
+
+Candidate based on 986ddbe0 on `feat/pydantic-harness-rebuild`. Runtime source
+blobs, per-run events, durations, usage, effects and raw-profile equality hashes
+are retained in [browser evidence](2026-11-05-native-visitor-smoke.json). No graph
+or user deployment was purged. Disposable PostgreSQL app 8131 and jvchat 3131
+used actual OpenAI GPT-4.1 through core 2.66.0 / official Harness 0.66.0.
+
+### Compatibility and confirmed findings
+
+The native Action honors `binds_tools_to_visitor` on a copied Tool, preserving
+existing Action metadata without mutating the original
+(`jvagent/action/native_harness/native_harness_action.py:129`). The adapter
+admits only declared nonterminal read tools, removes the host visitor argument
+from the model schema, enforces access before injection, and uses official
+Tool sequential scheduling (`jvagent/harness/native.py:75`). Frozen caller scope
+is checked against the live visitor and Interaction before invocation
+(`jvagent/tooling/context.py:50`). This is not a sandbox for untrusted Action code.
+
+Only `leadgen__status` is newly qualified. Previously, status created or migrated
+stored profiles. It now computes an unsaved view using current required fields
+(`jvagent/action/leadgen/engine.py:424`). A separate isolated reproduction of the
+previous committed lookup proved a misdirected User edge could return another
+owner's profile. Conflicting ownership now fails closed
+(`jvagent/action/leadgen/store.py:235`). Retrieve/capture/sync remain unqualified.
+
+Import isolation initially failed because the tooling package eagerly imported
+its legacy executor. Its compatibility export is now lazy; the native LeadGen
+path does not import legacy/pilot execution, while the explicit old public import
+still resolves (`jvagent/tooling/__init__.py:17`). This is an import separation,
+not completion of legacy deletion.
+
+The first browser delegation failed after one paid parent request because the
+fixture used `lead_status` as its skill name. Official Skills rejects underscores
+and skips invalid assets. The host now checks `Skills.load()`'s public catalog
+for all configured root/child skills before any request
+(`jvagent/harness/native.py:143`), without copying its validator or loader.
+Renamed the disposable skill to `lead-status`; its independent delegate name
+remains `lead_status`. Four regressions cover invalid names and non-invocable
+root/child skills, asserting zero model requests. Catalog reads repeat during
+library lifecycle; immutable assets/atomic configuration rollout are not proved.
+
+### Actual browser and durable readback
+
+| Interaction / root run | Outcome | Interaction / native seconds | Calls / tokens / estimated USD |
+|---|---|---|---|
+| d8a2374edf6a4d38aa2ae66a / fccedae3c19940688610be4379082e43 | Before fix: invalid child capability, visible configuration error; no status execution | 3.595 / 2.383 | 1 / 602 / 0.001492 |
+| 5cdc3d9b4b97447f839ee1c1 / 003fe235a4de4320b5068c131af9947d | After fix, still invalid fixture: same visible configuration error before any model/tool execution | 0.968 / not started | 0 / 0 / 0 |
+| 58e09bb397334fb2bc601f83 / 6656ecf9d1604f5fadff46eced069306 | Corrected fixture: email/full name required, email missing, 50% complete | 6.874 / 5.401 | 4 / 1,984 / 0.004766 |
+| 1a881d6d855e433f90082b34 / acc56ede0480450bb476472ac03771ba | Explicit named-tool denial: no fields or score disclosed; model reports denied | 6.395 / 4.838 | 4 / 1,903 / 0.004520 |
+| e1199a28f0c546aeb43ff212 / 96bb0e80c82548018f24008ec9f1aba8 | Original policy restored and backend restarted: correct email missing / 50% again | 6.845 / 5.291 | 4 / 2,008 / 0.004958 |
+
+Positive/denied replies are delivered, closed/emitted, usage_complete=true;
+UI shows delegate_task and leadgen__status and 2.0k/1.9k/2.0k token badges. The
+before/after invalid-config failures are persisted failed and conservatively
+usage_complete=false; the repaired failure has zero receipts and no SDK run.
+Costs are price-table estimates, not provider-reported charges. The three
+completed calls total 12 requests, 5,895 tokens and USD 0.014244 estimated.
+
+Both fixture profiles compare exactly equal to their original raw database rows
+after all five scenarios, including stored requirements/score, timestamps and
+ownership. The second profile contains a different owner's complete profile;
+status exposes only the authenticated caller's missing email. The named-tool
+policy was restored exactly; normal backend remains available. This does not
+substitute for an ordinary-member/browser account isolation test.
+
+### Verification and remaining scope
+
+Native + PageIndex/WebFetch + real PostgreSQL: 169 passed on each of Python 3.11
+and 3.12. Scope mutation, missing context, model-supplied visitor, permission
+denial, concurrent caller isolation, real graph identity, read-only profile
+behavior and conflicting-edge ownership have regressions. Formatter changed one
+new test; stage and rerun all hooks clean before commit. Full repository and final
+hook results are recorded below once complete.
+
+Remaining: other visitor Actions, interviews/scripts/continuation, MCP, writes,
+external/proactive/channel effects, distributed ownership/recovery, migration,
+legacy removal, unified dependencies and the 60-turn baseline/release gates.
+No enterprise qualification or workload optimization is claimed.
+
+Final local gates: fresh legacy Python 3.11 `[test,pydantic-pilot]` full suite
+4,714 passed, 28 skipped, 30 warnings, 518.70 seconds. The added native preflight
+module is skipped in that environment and executed in both native lanes above.
+During the slow legacy run, process inspection observed a live connection to
+127.0.0.1:11434; the test run was environment-dependent and does not qualify
+hermetic network isolation. Actual browser scenarios used OpenAI, never local
+models. This observation is retained as a test-infrastructure limitation.
+All-files pre-commit passed clean after staging the formatter change. Secret
+scanner false positives on revision/profile hashes were resolved by explicit
+`git-commit:`, `git-blob:`, `sha256:` and `run:` identifiers in the evidence file;
+no scanner rule was disabled. Push-time full tests and remote checks still need
+separate results for the containing commit.

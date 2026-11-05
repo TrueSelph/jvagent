@@ -10,12 +10,17 @@ def test_native_imports_do_not_load_legacy_execution() -> None:
 import sys
 import jvagent.harness.native
 from jvagent.action.native_harness import NativeHarnessAction
+from jvagent.action.leadgen.leadgen_action import LeadGenAction
+assert 'jvagent.tooling.tool_executor' not in sys.modules
 assert 'jvagent.harness.runtime' not in sys.modules
 assert 'jvagent.action.orchestrator.orchestrator_interact_action' not in sys.modules
 assert 'jvagent.action.orchestrator.pilot.runtime' not in sys.modules
 from jvagent.harness import HarnessRuntime
 from jvagent.harness.runtime import HarnessRuntime as original
 assert HarnessRuntime is original
+from jvagent.tooling import ToolExecutionEngine
+from jvagent.tooling.tool_executor import ToolExecutionEngine as legacy_executor
+assert ToolExecutionEngine is legacy_executor
 """
     subprocess.run(
         [sys.executable, "-c", source],

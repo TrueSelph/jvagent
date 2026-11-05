@@ -115,3 +115,22 @@ optional pilot SDK. Their explicit `test,pydantic-pilot` profile now reproduces
 check. See the progress record for run links and profile versions. Final unified
 installation, cutover and deletion remain open; remote checks of the repair are
 required separately.
+
+## Visitor-bound read cohort — 2026-11-05
+
+Partial compatibility is now evidenced for existing LeadGen `leadgen__status`
+through official foreground delegation and native tool execution. The
+[progress record](2026-11-04-harness-rebuild-progress.md) and
+[machine evidence](2026-11-05-native-visitor-smoke.json) include the initial
+invalid-skill failure, zero-request rejection after repair, positive and denied
+actual GPT-4.1 browser runs, restored-policy restart and unchanged raw profiles.
+Tests cover host-scope mutation, forged visitor arguments, access denial,
+concurrent callers, real graph identity, profile mutation and conflicting legacy
+ownership. Root/child skill invocability is checked through the official public
+Skills catalog before model execution (`jvagent/harness/native.py:143`).
+
+This qualifies one reviewed nonterminal read tool, not arbitrary visitor code,
+flow continuations, LeadGen retrieve/capture/sync, ordinary-member browser access,
+MCP or external effects. Native core/Harness still owns scheduling and execution;
+JV supplies only the existing Action context and access boundary. Migration,
+legacy deletion and the wider acceptance matrix remain incomplete.

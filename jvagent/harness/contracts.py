@@ -24,6 +24,7 @@ FORBIDDEN_HOST_DOMAIN_KEYS = frozenset(
 
 FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
+        "visitor",
         "authority",
         "trust_tier",
         "capability_token",

@@ -447,6 +447,31 @@ web-search and web-fetch evidence tools; write/external tools, MCP, and visitor-
 bound tools remain outside its authority surface. The legacy Orchestrator does
 not use this classification to change existing tool behavior.
 
+The native rebuild separately admits reviewed, nonterminal read tools declared
+by the selected skill (`jvagent/harness/native.py:114`). For an existing tool
+that needs the host walker, set `binds_visitor=True` on its `Tool`, or retain the
+Action's `binds_tools_to_visitor=True` contract. The native adapter removes the
+root `visitor` schema argument, rejects model-supplied authority arguments,
+checks access, and injects the caller-bound visitor. The official native Tool
+uses `sequential=True` for this case (`jvagent/harness/native.py:75`); it does not
+serialize independent users or provide a distributed lock. Host scope must
+remain unchanged (`jvagent/tooling/context.py:50`).
+
+Only LeadGen's `leadgen__status` has been reviewed in this visitor-bound cohort
+(`jvagent/action/leadgen/tools.py:136`). Status reads an unsaved view of current
+requirements without creating or migrating a profile
+(`jvagent/action/leadgen/engine.py:424`). Capture, retrieve, sync, flow and external
+effects remain outside this qualification. A read classification requires review
+of the implementation, including hidden writes and legacy ownership fallback
+(`jvagent/action/leadgen/store.py:235`).
+
+Configured root and child skills must also be model-invocable under the official
+Skills specification. The host checks `Skills.load()`'s public catalog before
+any model request (`jvagent/harness/native.py:143`); library-skipped invalid assets
+are configuration failures. JV metadata admission does not replace library
+frontmatter validation. See the [qualification record](../plans/2026-11-04-harness-qualification-matrix.md)
+for tested scope and remaining gaps.
+
 ---
 
 ## 11. Channel adapters

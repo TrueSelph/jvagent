@@ -47,6 +47,33 @@ def get_tool_visitor() -> Optional[Any]:
     return _dispatch_visitor_var.get()
 
 
+def require_tool_visitor() -> Any:
+    """Return the host visitor only while its authenticated scope is unchanged."""
+    visitor = get_tool_visitor()
+    context = get_dispatch_context()
+    if (
+        visitor is None
+        or context is None
+        or not all(
+            (
+                context.agent_id,
+                context.user_id,
+                context.session_id,
+                context.interaction_id,
+            )
+        )
+    ):
+        raise ValueError("Visitor-bound tools require complete host context")
+    interaction = getattr(visitor, "interaction", None)
+    if (
+        _build_context_from_visitor(visitor) != context
+        or getattr(interaction, "user_id", None) != context.user_id
+        or getattr(interaction, "session_id", None) != context.session_id
+    ):
+        raise ValueError("Visitor-bound tool scope changed after host admission")
+    return visitor
+
+
 @contextlib.contextmanager
 def bind_dispatch_context(visitor: Optional[Any]) -> Iterator[None]:
     """Bind the visitor-derived dispatch context for direct tool execution.

@@ -38,8 +38,8 @@ def build_native_agent(
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
-    Only reviewed read tools are admitted in this first increment. Writes, flows
-    and visitor-bound tools require separate compatibility qualification.
+    Only reviewed nonterminal read tools are admitted. Visitor-bound tools use
+    host context; write and flow tools require separate compatibility qualification.
     """
     from pydantic_ai import Agent, RunContext, Tool
     from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
@@ -84,27 +84,50 @@ def build_native_agent(
             )
             if not permitted:
                 raise ModelRetry("Action access denied")
-            result = await original.call(**arguments)
+            call_arguments = dict(arguments)
+            if original.binds_visitor:
+                from jvagent.tooling.context import require_tool_visitor
+
+                call_arguments["visitor"] = require_tool_visitor()
+            result = await original.call(**call_arguments)
             if policy is not None:
                 return await policy.observe(original.name, arguments, result)
             return str(result.content)
 
+        schema = dict(original.parameters_schema)
+        if original.binds_visitor:
+            properties = dict(schema.get("properties", {}))
+            properties.pop("visitor", None)
+            schema["properties"] = properties
+            if "required" in schema:
+                schema["required"] = [
+                    key for key in schema["required"] if key != "visitor"
+                ]
         return Tool.from_schema(
             invoke,
             name=original.name,
             description=original.description,
-            json_schema=original.parameters_schema,
+            json_schema=schema,
+            sequential=bool(original.binds_visitor),
         )
 
     admitted = []
     for tool in tools:
         if tool.name not in allowed:
             continue
-        if tool.effect_class != "read" or tool.binds_visitor:
+        if tool.effect_class != "read" or tool.terminal:
             raise ValueError(
                 f"Action is not qualified for native execution: {tool.name}"
             )
         admitted.append(adapt(tool))
+
+    def skill_library(path: Path) -> Any:
+        return Skills(
+            ".", include=[path.name], workspace=LocalWorkspaceBackend(path.parent)
+        )
+
+    selected_library = skill_library(directory)
+    skill_libraries = [selected_library]
 
     class SelectedSkill(AbstractCapability[Any]):
         """Materialize an explicitly configured skill using the library lifecycle."""
@@ -118,6 +141,16 @@ def build_native_agent(
                 return await handler()
 
         async def before_run(self, ctx: RunContext[Any]) -> None:
+            # A configured child must be usable before the parent spends on
+            # choosing it. Skills intentionally skips invalid files; inspect its
+            # public catalog instead of duplicating the library's specification.
+            for library in skill_libraries:
+                catalog = await library.load()
+                if len(catalog.skills) != 1 or not catalog.skills[0].model_invocable:
+                    raise ValueError(
+                        "Configured skill is not model-invocable: "
+                        + "; ".join(item.message for item in catalog.skipped)
+                    )
             ctx.load_capability(metadata["name"])
 
         async def before_tool_execute(
@@ -185,11 +218,7 @@ def build_native_agent(
 
     capabilities = [
         LocalWorkspace(directory.parent, read_only=True),
-        Skills(
-            ".",
-            include=[directory.name],
-            workspace=LocalWorkspaceBackend(directory.parent),
-        ),
+        selected_library,
         SelectedSkill(),
         *run_services,
         SummarizingCompaction(
@@ -217,6 +246,9 @@ def build_native_agent(
             raise ValueError("delegate_task is reserved for official SubAgents")
         children = []
         for entry in definitions:
+            skill_libraries.append(
+                skill_library(Path(entry.skill_directory).resolve(strict=True))
+            )
             child = build_native_agent(
                 model,
                 skill_directory=Path(entry.skill_directory),

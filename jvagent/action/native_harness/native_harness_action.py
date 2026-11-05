@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -129,14 +130,22 @@ class NativeHarnessAction(InteractAction):
         for action in actions:
             if isinstance(action, InteractAction):
                 continue
-            tools.extend(await action.get_tools() or [])
+            for tool in await action.get_tools() or []:
+                if getattr(action, "binds_tools_to_visitor", False):
+                    tool = replace(tool, binds_visitor=True)
+                tools.append(tool)
+
+        # Admission identity stays fixed even if a legacy integration mutates
+        # its live visitor while an asynchronous tool is running.
+        caller_user_id = visitor.user_id
+        caller_channel = getattr(visitor, "channel", "default")
 
         async def access(label: str) -> bool:
             return await is_tool_allowed(
                 host,
                 label=label,
-                user_id=visitor.user_id,
-                channel=getattr(visitor, "channel", "default"),
+                user_id=caller_user_id,
+                channel=caller_channel,
             )
 
         async def tool_access(tool: Any) -> bool:
@@ -145,8 +154,8 @@ class NativeHarnessAction(InteractAction):
                 label=tool.access_label or tool.name,
                 tool_name=tool.name,
                 requires_tool_permission=tool.requires_tool_permission,
-                user_id=visitor.user_id,
-                channel=getattr(visitor, "channel", "default"),
+                user_id=caller_user_id,
+                channel=caller_channel,
             )
 
         async def events(ctx: Any, stream: Any) -> None:

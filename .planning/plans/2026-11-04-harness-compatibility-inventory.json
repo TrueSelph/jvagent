@@ -1721,5 +1721,23 @@
       "denied-groups": "native admission rejects pending group-policy adapter"
     },
     "excluded_vendor_auth": "Integral-specific OAuth/service-key modules and wiring are not part of the domain-neutral rebuild"
+  },
+  "native_visitor_qualification": {
+    "status": "partial",
+    "reviewed_tools": [
+      "leadgen__status"
+    ],
+    "host_adapter": "Caller-bound visitor, authority rejection, native sequential dispatch, immutable admission identity",
+    "profile_semantics": "Status does not create or migrate profiles; conflicting legacy ownership edges fail closed",
+    "unqualified": [
+      "leadgen__retrieve",
+      "leadgen__capture",
+      "leadgen__sync",
+      "other visitor Actions",
+      "write/flow/external effects",
+      "ordinary-member browser permissions"
+    ],
+    "skill_admission": "Official Skills.load catalog checked for root and all configured children before model requests",
+    "evidence": "2026-11-05-native-visitor-smoke.json"
   }
 }

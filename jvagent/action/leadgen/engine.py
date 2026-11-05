@@ -7,7 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
-from jvagent.tooling.tool_executor import get_tool_visitor
+from jvagent.tooling.context import get_tool_visitor
 
 from . import sync as sync_mod
 from .hooks import HookExecutionContext, call_hook
@@ -432,9 +432,16 @@ async def handle_status(
         return json.dumps({"error": "no user found"})
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
-    record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
-    )
+    # Status is a read: use an unsaved view when defaults differ or no profile
+    # exists. Capture remains responsible for creating/migrating stored records.
+    record = await LeadRecord.get_for_user(user)
+    fields = spec.get_required_fields()
+    if record is None:
+        record = LeadRecord(required_fields=", ".join(fields or []))
+    elif fields and record._get_list_field("required_fields") != fields:
+        record = record.model_copy(update={"required_fields": ", ".join(fields)})
+        missing = record.get_missing_fields()
+        record.score = int(((len(fields) - len(missing)) / len(fields)) * 100)
     profile_data = record.get_yaml() or {}
     digest = sync_mod.get_stored_digest(profile_data)
 

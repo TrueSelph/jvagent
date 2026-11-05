@@ -47,7 +47,16 @@ async def test_native_receipt_precedes_delivery(
             stream_function=stream,
         )
     )
-    monkeypatch.setattr(module, "build_native_agent", lambda *args, **kwargs: runtime)
+    from jvagent.tooling.tool import Tool
+
+    original_tool = Tool("visitor_status", "Scoped status", effect_class="read")
+
+    def factory(*args: Any, **kwargs: Any) -> Any:
+        assert kwargs["tools"][0].binds_visitor is True
+        assert original_tool.binds_visitor is None
+        return runtime
+
+    monkeypatch.setattr(module, "build_native_agent", factory)
     if not settled:
         monkeypatch.setattr(
             module, "persist_cancelled_receipt", AsyncMock(return_value=False)
@@ -75,9 +84,17 @@ async def test_native_receipt_precedes_delivery(
             raise asyncio.CancelledError()
         return delivered
 
+    owner = SimpleNamespace(
+        id="owner",
+        binds_tools_to_visitor=True,
+        get_manifest=lambda: SimpleNamespace(pattern_orchestrator=False),
+        get_tools=AsyncMock(return_value=[original_tool]),
+        get_class_name=lambda: "VisitorAction",
+    )
     facade = SimpleNamespace(
+        id="native",
         get_agent=AsyncMock(
-            return_value=SimpleNamespace(get_actions=AsyncMock(return_value=[]))
+            return_value=SimpleNamespace(get_actions=AsyncMock(return_value=[owner]))
         ),
         get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
         max_run_cost_usd="2",
