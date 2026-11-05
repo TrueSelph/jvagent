@@ -8,7 +8,8 @@ vi.mock("../config/api", () => ({
   },
 }));
 
-vi.mock("../utils/storage", () => ({
+vi.mock("../utils/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../utils/storage")>(),
   saveMessages: vi.fn(),
   getMessages: vi.fn(() => []),
   syncUserIdFromAccessToken: vi.fn(() => "user-1"),
@@ -25,7 +26,11 @@ const mockSaveMessages = vi.mocked(saveMessages);
 describe("useStreaming thought handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetMessages.mockReturnValue([]);
+    const disk = new Map<string, unknown[]>();
+    mockGetMessages.mockImplementation(session => disk.get(session) ?? []);
+    mockSaveMessages.mockImplementation((session, messages) => {
+      disk.set(session, structuredClone(messages));
+    });
   });
 
   it("streams thought chunks and finalizes thought streaming state", async () => {
@@ -92,7 +97,7 @@ describe("useStreaming thought handling", () => {
     expect(thought?.category).toBe("thought");
     expect(thought?.content).toBe("Thinking...");
     expect(thought?.streaming).toBe(false);
-    expect(result.current.messages.some((m) => m.role === "user")).toBe(true);
+    expect(result.current.messages.find((m) => m.role === "user")?.interactionId).toBe("int-1");
   });
 
   it("merges thought adhoc flush into the streaming row instead of duplicating", async () => {

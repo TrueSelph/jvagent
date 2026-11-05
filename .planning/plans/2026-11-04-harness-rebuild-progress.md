@@ -1131,3 +1131,79 @@ in 167.90 seconds. Native Harness is separately tested in the clean supported
 as native qualification. After adding test annotations, the affected admission,
 streaming and memory regression slice passes 21 tests. The three restored
 deferred-persistence regressions pass again after mutation checking.
+
+
+## Browser cache convergence after overlapping native turns
+
+Based on 79fef49b, on feat/pydantic-harness-rebuild. The source/test index tree
+before this evidence append is 6540cb8f8a7e8d3204180a45e99fe0eef7b05163.
+The preceding round's confirmed cross-tab cache loss is corrected for new writes.
+No backend execution, model policy, graph schema or provider dependency changed.
+
+Each mounted chat view now tracks its own recent submitted/loaded snapshots.
+A save applies that view's changed/removed messages to the latest stored cache;
+unchanged stale messages cannot overwrite another tab's edits or resurrect a
+removed branch. Cached presentation order is ignored when comparing removals.
+Public Web Locks serialize the cache read/merge/write across tabs on supporting
+browsers (`jvchat/src/lib/messageHistory.ts:48`). Baselines are capped at eight
+recent sessions. Debug payload stripping and bounded numeric receipts reuse the
+existing sanitizer. This is browser cache handling, not another agent state store.
+
+SSE start binds the outgoing user bubble to the admitted Interaction, keeping its
+reply/tool activity together when histories merge (`jvchat/src/hooks/useStreaming.ts:358`).
+Independent tab order counters are normalized by turn, and outgoing user/fallback
+IDs use crypto.randomUUID instead of millisecond timestamps (same file:277).
+Explicit edit/resend remains an actual new model request and retains its existing
+UI branch behavior. It does not erase the original graph Interaction or its spend.
+
+Six new cache regressions cover disjoint stale writers, edited-away messages,
+foreign edits, changed presentation order, Web Locks and immutable queued snapshots,
+and debug-data exclusion. Replacing merge behavior with the original incoming
+snapshot overwrite makes three of those tests fail; restoring it passes all six.
+The first mutation attempt overlapped npm ci and could not find vitest; it was
+not treated as evidence and was rerun after installation finished. Existing hook
+fixtures now model actual cache read/write behavior, and assert user-to-Interaction
+binding. All 121 UI tests pass on the current Node runtime and explicit Node
+20.20.2. Clean npm ci, lint, TypeScript/Vite build and staged bundled-UI build pass;
+Node 20 TypeScript/Vite build also passes. The Python interact slice passes 144.
+All-files repository hooks pass and are rerun for the commit.
+
+### Actual GPT-4.1 browser readback
+
+The rebuilt bundled jvchat was served on 3130 against the existing isolated
+8130 app/graph. This browser reports secureContext=true and Web Locks available.
+Conversation n.Conversation.6307c4956ef44ea792d9bb0d / sess_47513a70c7464e3e:
+
+| Scenario | Interaction / root run | Visible result | Native duration | Calls / tokens | Estimated USD |
+|---|---|---|---|---|---|
+| Seed shared code | n.Interaction.c0a04e1ba7ae42e4a8072b3e / f20d74a50b024a799a4f29c6ba587f31 | ASH-58 | 1.262 s | 1 / 532 | 0.001094 |
+| First tab delegated lookup | n.Interaction.c1f319e6e10948f7bef7b838 / d4d47fa8b12f44f7bfef40a9713b45e1 | 18 November 2026, CEDAR-47, source; two tool calls | 6.337 s | 4 / 3,929 | 0.006910 |
+| Overlapping second tab recall | n.Interaction.95360a8579624286b16ea6ac / db3b19d055ef406e959c03442621e5d7 | ASH-58 | 0.941 s | 1 / 712 | 0.001454 |
+| Edit/resend recall to 41 plus 1 | n.Interaction.e92a27d3e4ec422ea4cdf4a2 / 185079476eff44cab8cff6b09998a7d9 | 42, branch selector works | 1.580 s | 1 / 738 | 0.001494 |
+| Stale peer submits new follow-up | n.Interaction.f5a4804e707a4d7699cc1d05 / 309f56df049a4ce48db0107cdcd7ceff | CEDAR-47, no tools | 1.423 s | 1 / 767 | 0.001570 |
+
+After the overlapping pair, both tabs were reloaded and reselected: all three
+turns, tool activity and 532/3.9k/712 usage badges appeared in each. After the edit
+and stale-peer save, both were reloaded again: four selected-view turns showed
+ASH-58, the cited lookup, 42 and CEDAR-47; the old recall question did not return.
+Usage badges were 532/3.9k/738/767. The cache contained no raw debugData, and the
+Web Locks query showed no held/pending writes after settlement.
+
+Graph readback retains all five Interactions, delivered/closed/emitted, with
+history provenance following the real sequence including the original recall.
+Conversation counters and spend equal their receipt sum: eight logical model
+requests, 6,678 tokens, USD 0.012522 estimated, zero unknown/unpriced requests.
+The original recall's cost remains counted although its UI branch is replaced.
+Durations are root native event durations, not end-to-end timings or queue waits.
+Provider-billed dollars/SDK attempt counts are not inferred. Detailed temporary
+evidence is in /private/tmp/jvagent-history-browser-evidence.json and the two
+jvagent-history-*-browser.txt snapshots.
+
+Scope: this proves new-write convergence on reload with Web Locks and the tested
+stale-edit sequence. It does not backfill messages lost by earlier builds, push
+other tabs' changes live into an already rendered transcript, qualify cross-tab
+writes without Web Locks, arbitrate simultaneous edits to the same message, or
+qualify deletion while another tab streams. Cache quota/failure and browser-crash
+behavior remain best effort; the graph is authoritative. Those browser gates,
+harness compatibility/migration/deletion, outage recovery and comparative workload
+evaluation remain open. No enterprise release claim is made.
