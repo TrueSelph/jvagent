@@ -168,3 +168,14 @@ Only exact host-reviewed plain-stdio reads are admitted. Optional native-mcp
 client dependencies preserve the smaller default native profile. Remaining MCP
 classes, ordinary-member browser access, delivery recovery and release gates are
 not qualified by these results.
+
+
+## Interview hosting versus live native isolation
+
+The [browser/process probe](2026-11-05-interview-host-smoke.json) confirms module
+hosting without old loop/executor imports, but shared ingress and response
+journaling still instantiate HarnessRuntime. Live native runtime isolation is
+FAIL, despite cold-import and functional read success. Follow the
+[shared-host extraction sequence](2026-11-05-shared-host-extraction.md) before
+qualifying interview execution. Parent 749ccf28 has one native CI fixture timeout;
+new-head CI is required after isolating normal setup from intentional fault limits.

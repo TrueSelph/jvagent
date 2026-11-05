@@ -1785,5 +1785,26 @@
       "ordinary-member browser isolation",
       "timeout/cancel deployment faults"
     ]
+  },
+  "interview_hosting_increment": {
+    "parent_revision": "749ccf28",
+    "evidence": "2026-11-05-interview-host.md",
+    "status": "module hosting/import compatibility only; interview execution unqualified",
+    "cold_import_old_loop_executor": "absent after shared context and lazy archetype extraction",
+    "live_legacy_host_runtime_isolation": "FAIL: HarnessRuntime still instantiated by shared ingress and outbox",
+    "next_required_plan": "2026-11-05-shared-host-extraction.md",
+    "preserve": [
+      "Action loader explicit archetype and endpoint registration",
+      "signed host context and replay protection",
+      "graph caller identity and conversation locking",
+      "provider receipts and uncertain delivery outcomes"
+    ],
+    "remaining": [
+      "shared ingress/embed legacy-runtime removal",
+      "response journaling/cursor cutover",
+      "auth/run identity binding",
+      "interview SOP activation/session/hook/continuation adapters",
+      "migration/deletion/release qualification"
+    ]
   }
 }

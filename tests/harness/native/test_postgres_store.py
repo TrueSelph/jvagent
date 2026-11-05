@@ -54,7 +54,9 @@ class PostgresScope:
 
 
 @pytest.fixture
-async def postgres_scope() -> AsyncIterator[PostgresScope]:
+async def postgres_scope(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[PostgresScope]:
     dsn = os.environ.get("JVAGENT_TEST_POSTGRES_DSN")
     if not dsn:
         pytest.skip(
@@ -65,7 +67,11 @@ async def postgres_scope() -> AsyncIterator[PostgresScope]:
     schema = "native_qualification_" + uuid.uuid4().hex
     await admin.execute(f'CREATE SCHEMA "{schema}"')
     database = PostgresDB(
-        dsn=dsn, schema_name=schema, min_size=1, max_size=2, command_timeout=0.2
+        dsn=dsn,
+        schema_name=schema,
+        min_size=1,
+        max_size=2,
+        command_timeout=getattr(request, "param", 10.0),
     )
     previous = get_default_context()
     set_default_context(GraphContext(database=database))
@@ -82,6 +88,7 @@ async def postgres_scope() -> AsyncIterator[PostgresScope]:
 async def test_native_records_and_spend_survive_postgres_context_reload(
     postgres_scope: PostgresScope,
 ) -> None:
+    assert postgres_scope.database.command_timeout == 10
     conversation = await Conversation.create(user_id="caller", session_id="session")
     interaction = await conversation.add_interaction(utterance="Hello")
     agent = Agent(
@@ -104,7 +111,7 @@ async def test_native_records_and_spend_survive_postgres_context_reload(
     await store.add_many([entry, entry])
     await postgres_scope.database.close()
     fresh_database = PostgresDB(
-        dsn=postgres_scope.dsn, schema_name=postgres_scope.schema, command_timeout=1
+        dsn=postgres_scope.dsn, schema_name=postgres_scope.schema, command_timeout=10
     )
     try:
         set_default_context(GraphContext(database=fresh_database))
@@ -127,12 +134,14 @@ async def test_native_records_and_spend_survive_postgres_context_reload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("postgres_scope", [0.2], indirect=True)
 @pytest.mark.parametrize(
     "kind", ["registration", "checkpoint", "snapshot", "effect", "spend_receipt"]
 )
 async def test_postgres_timeout_does_not_turn_retry_into_false_ack(
     postgres_scope: PostgresScope, kind: str
 ) -> None:
+    assert postgres_scope.database.command_timeout == 0.2
     interaction = await Interaction.create(utterance="locked write")
     if kind in {"registration", "checkpoint", "snapshot", "effect"}:
         store = InteractionStepStore(interaction)

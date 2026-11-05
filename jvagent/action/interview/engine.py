@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.tooling.tool_executor import get_tool_visitor
+from jvagent.tooling.context import get_tool_visitor
 
 from . import tasks
 from .directive_compose import (

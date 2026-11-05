@@ -1,6 +1,7 @@
 # Harness rebuild execution record
 
-Latest milestone in progress: [native MCP and fast-failure delivery](2026-11-05-native-mcp.md).
+Latest increment: [interview hosting and CI repair](2026-11-05-interview-host.md).
+Next required removal: [shared host extraction](2026-11-05-shared-host-extraction.md).
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
 The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
@@ -1859,3 +1860,21 @@ USD 0.016374 estimated, zero recorded unknown-cost requests. The final error has
 a failed/end-dated tool record and confirmed subprocess exit. This is a functional
 read cohort; MCP HTTP/auth/filesystem isolation/writes/delegation and broad release
 qualification remain open. Interview SOP/state adaptation is still pending.
+
+
+## Interview module hosting and cold PostgreSQL CI boundary — 2026-11-05
+
+The [record](2026-11-05-interview-host.md) separates an import/declaration fix from
+interview execution, which remains unqualified. A real GPT-4.1/MCP browser read
+with InterviewAction installed succeeds (2 calls / 668 tokens / USD 0.001624
+estimated), and the loop/executor stay unloaded. The process nevertheless loads
+legacy HarnessRuntime through shared ingress/outbox hooks. This FAILS the stronger
+native isolation gate; [host extraction](2026-11-05-shared-host-extraction.md) is
+now the next removal dependency before enabling interview state writes.
+
+Parent 749ccf28 CI passed eight checks but failed the native Python 3.11 cold-DDL
+case under a 200ms fixture deadline. Normal setup/reload now has 10 seconds;
+explicit locked-write cases keep 200ms and their original timing assertion. Both
+local native/PostgreSQL lanes pass 195 tests; interview/import 283 and legacy
+interview/loader/orchestrator 1201 pass with recorded skips/warnings. Fresh-head
+remote CI remains required. No completed migration or enterprise claim is made.

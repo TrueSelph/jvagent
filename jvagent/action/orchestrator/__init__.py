@@ -12,11 +12,26 @@ Routing is tool selection; turn-lock is an emergent flow property. See
 ``.planning/adr/0012-skill-executive-architecture.md``.
 """
 
-from jvagent.action.orchestrator import endpoints as _endpoints  # noqa: F401
-from jvagent.action.orchestrator.orchestrator_interact_action import (
-    OrchestratorInteractAction,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
 
-__all__ = [
-    "OrchestratorInteractAction",
-]
+if TYPE_CHECKING:
+    from jvagent.action.orchestrator.orchestrator_interact_action import (
+        OrchestratorInteractAction,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Keep the Action export without loading its engine for shared metadata."""
+    if name == "OrchestratorInteractAction":
+        import_module("jvagent.action.orchestrator.endpoints")
+        value = getattr(
+            import_module("jvagent.action.orchestrator.orchestrator_interact_action"),
+            name,
+        )
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["OrchestratorInteractAction"]
