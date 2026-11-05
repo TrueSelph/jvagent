@@ -1,5 +1,6 @@
 """Failed native runs retain receipts without charging prior-run history twice."""
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -14,6 +15,123 @@ from pydantic_ai_harness.step_persistence import StepEvent
 from jvagent.harness.accounting import recover_native_usage
 from jvagent.harness.step_store import InteractionStepStore
 from jvagent.memory.interaction import Interaction
+
+
+@pytest.mark.asyncio
+async def test_native_request_events_restore_attempts_and_duration_once() -> None:
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.usage import RequestUsage
+    from pydantic_ai_harness.step_persistence import ContinuableSnapshot
+
+    interaction = await Interaction.create(utterance="request timing")
+    interaction.native_run = {"run_id": "timed", "status": "failed"}
+    store = InteractionStepStore(interaction)
+    start = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    for kind, step, seconds in [
+        ("model_request_started", 1, 0),
+        ("model_request_completed", 1, 2),
+        ("model_request_started", 2, 3),
+        ("model_request_failed", 2, 7),
+    ]:
+        await store.append_event(
+            StepEvent(
+                run_id="timed",
+                kind=kind,
+                step_index=step,
+                timestamp=start + timedelta(seconds=seconds),
+            )
+        )
+    await store.save_snapshot(
+        ContinuableSnapshot(
+            run_id="timed",
+            step_index=1,
+            state="complete",
+            messages=[
+                ModelResponse(
+                    parts=[TextPart("ok")],
+                    run_id="timed",
+                    usage=RequestUsage(
+                        input_tokens=10, output_tokens=5, cost=Decimal("0.001")
+                    ),
+                )
+            ],
+        )
+    )
+    for _ in range(2):
+        await recover_native_usage(interaction, run_id="timed", model="test")
+        assert interaction.usage["model_attempt_count"] == 2
+        assert interaction.usage["failed_model_attempt_count"] == 1
+        assert interaction.usage["model_attempt_duration_seconds"] == 6
+        assert interaction.usage["total_duration_seconds"] == 2
+        assert interaction.usage["model_call_count"] == 1
+        assert interaction.usage["total_tokens"] == 15
+        assert interaction.usage["total_cost_usd"] == pytest.approx(0.001)
+        assert interaction.usage["unknown_cost_call_count"] == 1
+    from jvspatial import flush_deferred_entities
+
+    await interaction.save()
+    await flush_deferred_entities(interaction, strict=True)
+    restored = (await Interaction.find({"id": interaction.id}))[0]
+    assert restored.usage["model_attempt_count"] == 2
+    assert restored.usage["model_attempt_duration_seconds"] == 6
+    assert restored.usage["total_duration_seconds"] == 2
+
+
+@pytest.mark.asyncio
+async def test_completed_request_without_receipt_stays_unknown() -> None:
+    interaction = await Interaction.create(utterance="missing billing")
+    store = InteractionStepStore(interaction)
+    for kind in ("model_request_started", "model_request_completed"):
+        await store.append_event(StepEvent(run_id="run", kind=kind, step_index=1))
+    await recover_native_usage(interaction, run_id="run", model="test")
+    attempts = [
+        m["data"]
+        for m in interaction.observability_metrics
+        if m["event_type"] == "model_attempt"
+    ]
+    assert len(attempts) == 1
+    assert attempts[0]["outcome"] == "completed"
+    assert interaction.usage["unknown_cost_call_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ending", ["missing", "reversed", "cancelled"])
+async def test_missing_or_invalid_request_end_is_not_zero_latency(ending: str) -> None:
+    interaction = await Interaction.create(utterance="interrupted request")
+    interaction.native_run = {"run_id": "run", "status": "cancelled"}
+    store = InteractionStepStore(interaction)
+    start = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    await store.append_event(
+        StepEvent(
+            run_id="run", kind="model_request_started", step_index=1, timestamp=start
+        )
+    )
+    if ending == "reversed":
+        await store.append_event(
+            StepEvent(
+                run_id="run",
+                kind="model_request_completed",
+                step_index=1,
+                timestamp=start - timedelta(seconds=1),
+            )
+        )
+    if ending == "cancelled":
+        await store.append_event(
+            StepEvent(
+                run_id="run",
+                kind="run_failed",
+                step_index=1,
+                timestamp=start + timedelta(seconds=10),
+            )
+        )
+    await recover_native_usage(interaction, run_id="run", model="test")
+    assert interaction.usage["model_attempt_count"] == 1
+    assert interaction.usage["unmeasured_model_attempt_count"] == 1
+    assert interaction.usage["model_attempt_duration_seconds"] == 0
+    assert interaction.usage["unknown_cost_call_count"] == 1
+    attempt = interaction.observability_metrics[0]["data"]
+    assert attempt["duration"] is None
+    assert attempt["outcome"] == ("completed" if ending == "reversed" else "cancelled")
 
 
 @pytest.mark.asyncio

@@ -272,3 +272,12 @@ and confirmation after restart pass, with fresh SQL pruning/shared-field/task ch
 Invalid declarations fail admission. Corrected or missing review fingerprints cannot
 authorize manual completion. Custom hooks/for-each, recovery, migration, deletion and
 broader enterprise gates remain open.
+
+## Native attempt and timing telemetry — 2026-11-05
+
+[Evidence](2026-11-05-native-timing.md): official SDK model-request events now
+populate attempts and measured duration; missing ends remain explicitly unmeasured.
+Actual GPT-4.1 browser success/history and Stop have fresh PostgreSQL readback.
+These are SDK boundary timings, not transport retry counts or pure decode latency.
+Historical settlement/backfill, generic cancellation timestamps and broader
+provider/recovery/migration/deletion/enterprise gates remain open.

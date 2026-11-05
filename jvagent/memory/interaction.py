@@ -1,5 +1,6 @@
 """Interaction node for representing single exchanges within a conversation."""
 
+import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -600,6 +601,7 @@ class Interaction(DeferredSaveMixin, Node):
         failed_model_attempt_count = 0
         cancelled_model_attempt_count = 0
         model_attempt_duration_seconds = 0.0
+        unmeasured_model_attempt_count = 0
         estimated_cost_usd = 0.0
         reported_cost_usd = 0.0
         litellm_cost_usd = 0.0
@@ -613,19 +615,26 @@ class Interaction(DeferredSaveMixin, Node):
                 attempt_data = event.get("data", {})
                 if attempt_data.get("outcome") == "failed":
                     failed_model_attempt_count += 1
-                    # A failed request may have reached the provider before
-                    # transport/parsing failed. Without a provider receipt its
-                    # cost is unknown, even when a later retry succeeds.
-                    if attempt_data.get("usage_status") == "provider_unreported":
-                        unknown_cost_call_count += 1
                 elif attempt_data.get("outcome") == "cancelled":
                     cancelled_model_attempt_count += 1
-                    # Cancellation does not prove the provider stopped work.
-                    if attempt_data.get("usage_status") == "provider_unreported":
-                        unknown_cost_call_count += 1
-                attempt_duration = attempt_data.get("duration") or 0.0
-                if isinstance(attempt_duration, (int, float)):
+                # A completed SDK request is not itself a billing receipt.
+                if attempt_data.get("usage_status") == "provider_unreported":
+                    unknown_cost_call_count += 1
+                attempt_duration = attempt_data.get("duration")
+                if (
+                    isinstance(attempt_duration, (int, float))
+                    and not isinstance(attempt_duration, bool)
+                    and math.isfinite(attempt_duration)
+                    and attempt_duration >= 0
+                ):
                     model_attempt_duration_seconds += float(attempt_duration)
+                    if (
+                        attempt_data.get("native_attempt_origin") == "step_events_v1"
+                        and attempt_data.get("outcome") == "completed"
+                    ):
+                        total_duration_seconds += float(attempt_duration)
+                else:
+                    unmeasured_model_attempt_count += 1
                 continue
             if event_type not in ("model_call", "embedding_call"):
                 continue
@@ -706,6 +715,7 @@ class Interaction(DeferredSaveMixin, Node):
             "failed_model_attempt_count": failed_model_attempt_count,
             "cancelled_model_attempt_count": cancelled_model_attempt_count,
             "model_attempt_duration_seconds": round(model_attempt_duration_seconds, 3),
+            "unmeasured_model_attempt_count": unmeasured_model_attempt_count,
             "estimated_cost_usd": round(estimated_cost_usd, 6),
             "reported_cost_usd": round(reported_cost_usd, 6),
             "litellm_cost_usd": round(litellm_cost_usd, 6),

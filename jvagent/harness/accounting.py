@@ -222,40 +222,77 @@ async def _recover_run_usage(interaction: Any, *, run_id: str, model: str) -> No
     messages = snapshot.messages if snapshot is not None else ()
     receipts = record_native_usage(interaction, messages, run_id=run_id, model=model)
     events = await store.list_events(run_id=run_id)
-    attempted = sum(event.kind == "model_request_started" for event in events)
     live = _spend_receipts(interaction, run_id)
-    if live:
-        covered = {item["native_step_index"] for item in live}
-        unknown = len(
-            {
-                event.step_index
-                for event in events
-                if event.kind == "model_request_started"
-            }
-            - covered
-        )
-    else:
-        unknown = max(0, attempted - receipts)
     metrics = [
         event
         for event in interaction.observability_metrics
         if event.get("data", {}).get("native_unknown_run") != run_id
+        and not (
+            event.get("data", {}).get("native_run_id") == run_id
+            and event.get("data", {}).get("native_attempt_origin") == "step_events_v1"
+        )
     ]
     metrics.extend(
-        {
-            "event_type": "model_attempt",
-            "data": {
-                "outcome": (
-                    "cancelled"
-                    if interaction.native_run.get("status")
-                    in {"cancelled", "delivery_unknown"}
-                    else "failed"
-                ),
-                "usage_status": "provider_unreported",
-                "native_unknown_run": run_id,
-            },
-        }
-        for _ in range(unknown)
+        _request_attempts(
+            events,
+            run_id=run_id,
+            status=interaction.native_run.get("status"),
+            live=live,
+            receipts=receipts,
+        )
     )
     interaction.observability_metrics = metrics
     interaction.compute_usage()
+
+
+def _request_attempts(
+    events: Sequence[Any],
+    *,
+    run_id: str,
+    status: str | None,
+    live: list[dict[str, Any]],
+    receipts: int,
+) -> list[dict[str, Any]]:
+    """Project official request boundaries, never schedule or infer HTTP retries.
+
+    Timings include SDK boundary overhead. A missing end is unmeasured, not a
+    zero-second request. Fallback HTTP attempts can share one SDK boundary;
+    their billing receipts remain independently counted by the spend journal.
+    """
+    attempts: list[dict[str, Any]] = []
+    pending: dict[int, list[tuple[Any, dict[str, Any]]]] = {}
+    covered = {item["native_step_index"] for item in live}
+    terminal = any(event.kind == "run_failed" for event in events)
+    for event in events:
+        if event.kind == "model_request_started":
+            known = event.step_index in covered if live else len(attempts) < receipts
+            covered.discard(event.step_index)
+            data = {
+                "native_run_id": run_id,
+                "native_step_index": event.step_index,
+                "native_attempt_origin": "step_events_v1",
+                "outcome": (
+                    "cancelled"
+                    if status in {"cancelled", "delivery_unknown"}
+                    else "failed" if terminal or status == "failed" else "incomplete"
+                ),
+                "usage_status": "receipt_recorded" if known else "provider_unreported",
+                "started_at": event.timestamp.isoformat(),
+                "duration": None,
+                "duration_scope": "sdk_model_request",
+            }
+            attempts.append({"event_type": "model_attempt", "data": data})
+            pending.setdefault(event.step_index, []).append((event, data))
+        elif event.kind in {"model_request_completed", "model_request_failed"}:
+            queue = pending.get(event.step_index)
+            if not queue:
+                continue
+            start, data = queue.pop(0)
+            data["outcome"] = (
+                "completed" if event.kind == "model_request_completed" else "failed"
+            )
+            data["completed_at"] = event.timestamp.isoformat()
+            duration = (event.timestamp - start.timestamp).total_seconds()
+            if math.isfinite(duration) and duration >= 0:
+                data["duration"] = duration
+    return attempts

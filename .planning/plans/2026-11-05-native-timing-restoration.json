@@ -1,0 +1,4 @@
+{
+  "phase": "history-after-reload-and-selection",
+  "text": "NATIVE-TIMING-CHECK: Please record a standard membership request with standard detail weekend group sessions and email timing.member@example.com. Show me the review and wait for confirmation.\n\n3 tool calls\n\nPlease review the details:\n\nTier: standard\nStandard Note: weekend group sessions\nEmail: timing.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 4 attempts · 6.2k tokens · 6.0s · 21.1 tok/s\n\nConfirm these standard membership details.\n\nYour standard membership request with the following details has been recorded:\n\nTier: standard\nStandard Note: weekend group sessions\nEmail: timing.member@example.com\n\nThe process is now complete.\n\ngpt-4.1-2025-04-14 · 2 attempts · 4.0k tokens · 2.6s · 21.1 tok/s\nCopy\nRefresh\nAdd Attachment\nSend message"
+}

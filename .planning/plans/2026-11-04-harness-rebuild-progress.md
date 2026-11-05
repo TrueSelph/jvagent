@@ -2038,3 +2038,13 @@ delivered; fresh PostgreSQL confirms active/corrected/completed task/session sta
 Removed utterance-regex extraction steering. 299 interview tests and 285 native/PG
 tests on each supported native Python pass. Hooks, for-each, external effects,
 reconciliation, migration/deletion and enterprise release gates remain open.
+
+## Native model-request statistics — 2026-11-05
+
+[Record](2026-11-05-native-timing.md) closes zero attempt/duration reporting by
+projecting persisted official SDK request events through existing accounting.
+Actual GPT-4.1 browser intake/confirmation and history restoration show statistics;
+a separate interrupted request retains unknown billing and unmeasured duration.
+292 native/PG tests pass on each Python 3.11 and 3.12; memory tests pass 199 with
+two skips. Historical backfill, operator settlement, generic cancellation timestamps,
+transport-retry visibility and broader recovery/release gates remain open.

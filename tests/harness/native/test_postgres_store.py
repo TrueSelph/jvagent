@@ -163,6 +163,28 @@ async def test_native_branch_pivot_and_review_bindings_persist(
     assert all(effect["status"] == "completed" for effect in effects)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_native_request_timing_has_fresh_persisted_readback(
+    postgres_scope: PostgresScope,
+    monkeypatch: pytest.MonkeyPatch,
+    deferred: bool,
+) -> None:
+    from tests.harness.native.test_accounting import (
+        test_native_request_events_restore_attempts_and_duration_once,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_native_request_events_restore_attempts_and_duration_once()
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 1
+    usage = rows[0]["context"]["usage"]
+    assert usage["model_attempt_count"] == 2
+    assert usage["failed_model_attempt_count"] == 1
+    assert usage["model_attempt_duration_seconds"] == 6
+    assert usage["unknown_cost_call_count"] == 1
+
+
 @pytest.fixture
 async def postgres_scope(
     request: pytest.FixtureRequest,
