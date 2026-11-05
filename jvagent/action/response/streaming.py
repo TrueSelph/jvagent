@@ -86,15 +86,19 @@ async def stream_messages(
     # end-of-walk detection stays snappy; long-lived ones poll at the keepalive.
     poll_timeout = keepalive_seconds if keepalive_seconds else 0.1
     # Subscribe to new messages using asyncio.Queue for real-time delivery
-    message_queue: asyncio.Queue = asyncio.Queue()
+    message_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+    overflowed = False
     done = asyncio.Event()
 
     async def message_callback(message: Any) -> None:
         """Callback to receive new messages."""
+        nonlocal overflowed
         if interaction_id and message.interaction_id != interaction_id:
             return
         try:
-            await message_queue.put(message)
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            overflowed = True
         except Exception as e:
             logger.error(f"Error queuing message: {e}", exc_info=True)
 
@@ -150,6 +154,15 @@ async def stream_messages(
 
         # Stream new messages as they arrive using queue-based waiting
         while True:
+            if overflowed:
+                yield format_sse_chunk(
+                    {
+                        "type": "error",
+                        "code": "subscription_overflow",
+                        "message": "The subscription fell behind. Reconnect to recover the bounded backlog.",
+                    }
+                )
+                return
             try:
                 # Wait for message with timeout to allow checking for done event
                 message = await asyncio.wait_for(

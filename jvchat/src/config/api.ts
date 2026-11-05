@@ -26,6 +26,7 @@ import type {
   AgentsResponse,
   InteractionRequest,
   InteractionResponse,
+  ResponseMessageData,
   LogsResponse,
   PageIndexListResponse,
   PageIndexUploadResponse,
@@ -875,48 +876,74 @@ class ApiClient {
     onError?: (error: Error) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     try {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
       const response = await this._postInteraction(agentId, { ...request, stream: true }, signal)
-      reader = response.body?.getReader()
-      if (!reader) throw new Error('Response body is not readable')
-      const decoder = new TextDecoder()
       let terminal = false
-      const parser = createParser({
-        maxBufferSize: 8 * 1024 * 1024,
-        onError(error) { if (error.type === 'max-buffer-size-exceeded') throw error },
-        onEvent: (event) => {
-          const data = JSON.parse(event.data)
+      await this._consumeSSE(response, (data) => {
           if (data?.session_token && typeof data.session_id === 'string') {
             this._captureInteractSessionToken(data.session_id, data.session_token)
           }
           onChunk(data)
           if (data?.type === "final" || data?.type === "error") terminal = true
-        },
-      })
-      // Read the one admitted stream. Neither parse nor consumer failures replay it.
-      for (;;) {
-        const { done, value } = await reader.read()
-        parser.feed(done ? decoder.decode() : decoder.decode(value, { stream: true }))
-        if (done) {
-          // EOF never dispatches an unterminated SSE event (WHATWG 9.2.6).
-          parser.reset()
-          if (!terminal) throw new Error('The response stream ended before completion. Check this conversation before retrying.')
-          return
-        }
-      }
+      }, signal)
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (!terminal) throw new Error('The response stream ended before completion. Check this conversation before retrying.')
     } catch (error: unknown) {
       if (signal?.aborted || (error as { name?: string })?.name === 'AbortError') throw error
       const failure = error instanceof Error ? error : new Error('The interaction stream could not complete')
       if (!signal?.aborted && failure.name !== 'AbortError' && failure.message !== 'Unauthorized') onError?.(failure)
       throw failure
+    }
+  }
+
+  private async _consumeSSE(response: Response, onFrame: (frame: any) => void, signal?: AbortSignal): Promise<void> {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Response body is not readable')
+    const abort = () => { void reader.cancel().catch(() => {}) }
+    signal?.addEventListener('abort', abort, { once: true })
+    const decoder = new TextDecoder()
+    const parser = createParser({
+      maxBufferSize: 8 * 1024 * 1024,
+      onError(error) { if (error.type === 'max-buffer-size-exceeded') throw error },
+      onEvent(event) { if (!signal?.aborted) onFrame(JSON.parse(event.data)) },
+    })
+    try {
+      while (!signal?.aborted) {
+        const { done, value } = await reader.read()
+        parser.feed(done ? decoder.decode() : decoder.decode(value, { stream: true }))
+        if (done) { parser.reset(); return }
+      }
     } finally {
-      if (reader) {
-        try { await reader.cancel() } catch { /* original outcome takes precedence */ }
-        reader.releaseLock()
+      signal?.removeEventListener('abort', abort)
+      try { await reader.cancel() } catch { /* preserve the original outcome */ }
+      reader.releaseLock()
+    }
+  }
+
+  /** Read-only session delivery. Reconnecting never invokes the model. */
+  async streamReplies(agentId: string, sessionId: string, onMessage: (message: ResponseMessageData) => void, signal: AbortSignal): Promise<void> {
+    await this._ensureFreshInteractSession(agentId, sessionId)
+    const token = getToken()
+    if (token && isTokenExpired(token)) await this._refreshAuth()
+    for (const base of this.baseUrls) {
+      for (const prefix of ['/api', '']) {
+        if (signal.aborted) return
+        const response = await fetch(this._joinBase(base, `${prefix}/agents/${encodeURIComponent(agentId)}/reply/subscribe`), {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...this._interactAuthHeaders(sessionId) },
+          body: JSON.stringify({ session_id: sessionId, stream: true }), signal,
+        })
+        if (response.status === 404) continue
+        if (response.status === 401 || response.status === 403) throw new Error('Unauthorized')
+        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Background subscription is unavailable')
+        return this._consumeSSE(response, (frame) => {
+          if (frame.type === 'error') throw new Error(frame.code === 'session_access_revoked' ? 'Unauthorized' : 'Background subscription interrupted')
+          const message = frame.message && typeof frame.message === 'object' ? frame.message : frame
+          if (message.message_type && message.session_id === sessionId) onMessage(message)
+        }, signal)
       }
     }
+    throw new Error('Background subscription is unavailable')
   }
 
   async deleteConversation(agentId: string, userId: string, sessionId: string): Promise<void> {

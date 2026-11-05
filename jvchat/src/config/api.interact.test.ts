@@ -19,6 +19,23 @@ describe("interaction request safety", () => {
     apiClient.updateBaseUrl("http://127.0.0.1:8130");
   });
 
+  it('reads session replies without invoking interact and rejects foreign-session frames', async () => {
+    fetchMock.mockResolvedValue(new Response('data: {"id":"foreign","session_id":"other","message_type":"adhoc"}\n\ndata: {"id":"own","session_id":"session","message_type":"adhoc","content":"Ready"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+    const receive = vi.fn()
+    await apiClient.streamReplies('agent', 'session', receive, new AbortController().signal)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/reply/subscribe')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ session_id: 'session', stream: true })
+    expect(receive).toHaveBeenCalledTimes(1)
+    expect(receive.mock.calls[0][0].id).toBe('own')
+  })
+
+  it('does not downgrade or retry a refused reply subscription', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 401 }))
+    await expect(apiClient.streamReplies('agent', 'session', vi.fn(), new AbortController().signal)).rejects.toThrow('Unauthorized')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it.each([false, true])("does not replay an admitted 422 (stream=%s)", async (stream) => {
     fetchMock.mockImplementation(async () => new Response(JSON.stringify({ error: { message: "utterance exceeds maximum length" } }), { status: 422 }));
     const fail = vi.fn();

@@ -29,6 +29,15 @@ function setInteraction(usage: Record<string, unknown>, metrics: unknown[]) {
 }
 
 describe("MessageStats", () => {
+  it('shows aggregate background attempts without inventing per-call metric rows', () => {
+    mockState.value = { message: { role: 'assistant', status: { type: 'complete' }, metadata: { custom: {
+      debugMessage: null, observability: { model: 'gpt-4.1', usage: { model_attempt_count: 2, model_call_count: 2, total_tokens: 500 }, observability_metrics: [] },
+    } } } }
+    render(<MessageStats />)
+    expect(screen.getByRole('button')).toHaveTextContent('gpt-4.1 · 2 attempts · 500 tokens')
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
   beforeEach(() => {
     mockState.value = {};
   });

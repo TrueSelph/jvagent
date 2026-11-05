@@ -27,6 +27,15 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 ## Required asset migrations
 
+Latest background-channel qualification: [2026-11-05 record](2026-11-05-native-channel.md).
+The local native jvchat foreground/scheduled-MCP profile now delivers unsolicited
+replies, tool groups and aggregate usage, restores selected client history after
+reload, and rejects revoked subscription capabilities. Native/host/real-PG suites
+pass 333 cases on each Python 3.11/3.12; frontend passes 140 tests and build.
+These incremental proofs supersede the earlier open live-background-client item
+only for this profile. Durable server cursor replay, transparent credential recovery
+after restart, cross-tab conflict cases and other channels/deployments remain open.
+
 - Retain SKILL.md bodies, resources and scripts. Translate JV metadata through
   adapters; never assume the official loader enforces allowed-tools or Action
   prerequisites. Admission must reject unsupported semantics.

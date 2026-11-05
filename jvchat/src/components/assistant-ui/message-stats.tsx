@@ -58,6 +58,7 @@ export const MessageStats: FC = () => {
   const attempts = (interaction.observability_metrics ?? []).filter(
     (m) => m.event_type === "model_attempt",
   );
+  const attemptCount = usage.model_attempt_count ?? attempts.length;
 
   const totalIn = usage.prompt_tokens ?? 0;
   const totalOut = usage.completion_tokens ?? 0;
@@ -70,26 +71,26 @@ export const MessageStats: FC = () => {
       : undefined;
 
   const primaryModel = shortModel(
-    steps[0]?.data?.model ?? attempts[0]?.data?.model,
+    interaction.model ?? steps[0]?.data?.model ?? attempts[0]?.data?.model,
   );
   const multiModel =
     steps.length > 1 &&
     new Set(steps.map((s) => s.data?.model).filter(Boolean)).size > 1;
 
   const summaryParts: string[] = [];
-  if (steps.length > 0 || attempts.length > 0) {
+  if (steps.length > 0 || attemptCount > 0) {
     summaryParts.push(primaryModel);
   }
-  if (attempts.length > 0) {
+  if (attemptCount > 0) {
     summaryParts.push(
-      `${attempts.length} attempt${attempts.length === 1 ? "" : "s"}`,
+      `${attemptCount} attempt${attemptCount === 1 ? "" : "s"}`,
     );
   }
   if (totalTokens > 0) summaryParts.push(`${formatTokens(totalTokens)} tokens`);
   const timeStr = formatTimeSec(durationSec);
   if (timeStr) summaryParts.push(timeStr);
   const attemptTimeStr = formatTimeSec(usage.model_attempt_duration_seconds);
-  if (attemptTimeStr && steps.length === 0) {
+  if (attemptTimeStr && (usage.model_call_count ?? steps.length) === 0) {
     summaryParts.push(`${attemptTimeStr} provider time`);
   }
   const unknownCostCount = usage.unknown_cost_call_count ?? 0;
@@ -170,10 +171,10 @@ export const MessageStats: FC = () => {
             </table>
           )}
 
-          {attempts.length > 0 && (
+          {attemptCount > 0 && (
             <div className="mt-1.5" role="status">
-              {attempts.length} provider attempt
-              {attempts.length === 1 ? "" : "s"}
+              {attemptCount} provider attempt
+              {attemptCount === 1 ? "" : "s"}
               {usage.failed_model_attempt_count
                 ? ` · ${usage.failed_model_attempt_count} failed`
                 : ""}

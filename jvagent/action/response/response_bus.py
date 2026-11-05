@@ -289,11 +289,11 @@ class ResponseBus:
         self._last_cleanup_time: float = 0.0
 
     async def _get_now(self) -> datetime:
-        """Current datetime in app timezone, or UTC if App unavailable."""
+        """UTC wire time, localized consistently with the application clock."""
+        from jvagent.core.app import app_now_aware_utc
+
         app = await App.get()
-        if app:
-            return await app.now()
-        return datetime.now(timezone.utc)
+        return await app_now_aware_utc(app)
 
     def _maybe_cleanup(self) -> None:
         """Lazy cleanup - evict expired entries only. Runs at most once per CLEANUP_INTERVAL_SECONDS.

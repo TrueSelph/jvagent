@@ -19,6 +19,22 @@ _MAX_CANCELLATION_WRITES = 16
 _pending_cancellation_writes: set[asyncio.Task[Any]] = set()
 
 
+def delivery_metadata(visitor: Any, interaction: Any, model: str) -> dict[str, Any]:
+    """Public numeric receipt for both foreground and unsolicited delivery."""
+    usage = interaction.compute_usage()
+    return {
+        "is_proactive": getattr(visitor, "_native_task_dispatch", None) is not None,
+        "observability": {
+            "usage": usage,
+            **(
+                {"model": model[:128]}
+                if usage.get("model_attempt_count") or usage.get("model_call_count")
+                else {}
+            ),
+        },
+    }
+
+
 async def persist_cancelled_receipt(
     interaction: Any, *, model: str = "unknown"
 ) -> bool:
@@ -126,6 +142,9 @@ class NativeHarnessAction(InteractAction):
             if not await responder.publish(
                 "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
                 visitor=visitor,
+                metadata=delivery_metadata(
+                    visitor, interaction, getattr(self, "model", "unknown")
+                ),
             ):
                 raise RuntimeError("Native admission notice delivery is unconfirmed")
 
@@ -227,6 +246,7 @@ class NativeHarnessAction(InteractAction):
                 )
                 metadata: dict[str, Any] = {
                     "tool_name": part.tool_name,
+                    "is_proactive": task_spec is not None,
                     "native_run_id": ctx.run_id,
                     "native_agent_name": (
                         ctx.agent.name if ctx.agent is not None else None
@@ -345,6 +365,7 @@ class NativeHarnessAction(InteractAction):
             await responder.publish(
                 RECOVERY_NOTICE,
                 visitor=visitor,
+                metadata=delivery_metadata(visitor, interaction, self.model),
             )
             return
         run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
@@ -399,8 +420,23 @@ class NativeHarnessAction(InteractAction):
                 "output": result.output,
             }
             await interaction.save()
+            response_models = [
+                getattr(message, "model_name", None)
+                for message in result.new_messages()
+            ]
+            response_model = next(
+                (
+                    name
+                    for name in reversed(response_models)
+                    if isinstance(name, str) and name
+                ),
+                self.model,
+            )
             if not await responder.publish(
-                result.output, visitor=visitor, message_id=f"o.ResponseMessage.{run_id}"
+                result.output,
+                visitor=visitor,
+                message_id=f"o.ResponseMessage.{run_id}",
+                metadata=delivery_metadata(visitor, interaction, response_model),
             ):
                 raise RuntimeError("Native response delivery is unconfirmed")
             interaction.native_run = {**interaction.native_run, "status": "delivered"}
@@ -452,7 +488,10 @@ class NativeHarnessAction(InteractAction):
                 else:
                     message = "The model request could not complete. Please check the service configuration."
                 await responder.publish(
-                    message, visitor=visitor, message_id=f"o.ResponseMessage.{run_id}"
+                    message,
+                    visitor=visitor,
+                    message_id=f"o.ResponseMessage.{run_id}",
+                    metadata=delivery_metadata(visitor, interaction, self.model),
                 )
                 return
             raise

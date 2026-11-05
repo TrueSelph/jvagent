@@ -2049,10 +2049,31 @@
       "native failure requires reconciliation instead of legacy automatic max_attempts requeue"
     ],
     "remaining": [
-      "live background response/tool synchronization in jvchat",
+      "live background jvchat profile qualified separately; durable server replay remains open",
       "event-trigger attachment and other channel/effect classes",
       "abandoned/distributed ownership and deployment recovery",
       "migration and legacy/pilot execution deletion"
+    ]
+  },
+  "native_background_channel_increment": {
+    "evidence": "2026-11-05-native-channel.md",
+    "qualified_scope": "local actual-model jvchat foreground and scheduled MCP delivery, aggregate usage, revocation and client-history reload",
+    "preserved": [
+      "existing ResponseBus subscription and channel ownership",
+      "official SDK execution and graph records",
+      "existing caller-scoped client history"
+    ],
+    "retired": [
+      "native reply endpoint capability checks independent of current conversation secret",
+      "unbounded streaming subscriber queue",
+      "aggregate usage projected as invented per-call metrics",
+      "background tool grouping across distinct Interactions"
+    ],
+    "remaining": [
+      "durable native cursor replay and restart delivery reconciliation",
+      "transparent credential recovery after backend restart",
+      "other channels, providers, deployments and extension classes",
+      "migration and legacy/pilot engine deletion"
     ]
   }
 }

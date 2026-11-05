@@ -147,9 +147,12 @@ function parseAssistantRun(
 ): { thoughts: Message[]; textBlocks: Message[]; endIndex: number } {
   const thoughts: Message[] = [];
   const textBlocks: Message[] = [];
+  let interactionId = messages[start]?.interactionId;
   let i = start;
   while (i < messages.length && messages[i].role === "assistant") {
     const row = messages[i];
+    if (interactionId && row.interactionId && row.interactionId !== interactionId) break;
+    interactionId ??= row.interactionId;
     if (isThoughtMessage(row)) {
       thoughts.push(row);
     } else if (isTextAssistantMessage(row)) {

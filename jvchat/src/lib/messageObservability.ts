@@ -12,6 +12,7 @@ export type MetricEntry = {
 };
 
 export type MessageObservability = {
+  model?: string;
   usage: Usage;
   observability_metrics: MetricEntry[];
   metricsTruncated?: boolean;
@@ -63,5 +64,6 @@ export function messageObservability(message: {
   }
   if (!Object.keys(usage).length && !metrics.length) return undefined;
   return { usage, observability_metrics: metrics,
+    ...(typeof source.model === 'string' ? { model: source.model.slice(0, 128) } : {}),
     ...(matching > 128 || source.metricsTruncated === true ? { metricsTruncated: true } : {}) };
 }

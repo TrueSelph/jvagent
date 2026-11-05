@@ -351,6 +351,7 @@ class ReplyAction(Action):
         streaming: bool = False,
         transient: bool = False,
         message_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Persist and/or publish ``content`` (ported from PersonaAction).
 
@@ -401,7 +402,7 @@ class ReplyAction(Action):
             "content": content,
             "channel": channel,
             "stream": False,
-            "metadata": dict(visitor_data),
+            "metadata": {**dict(visitor_data), **(metadata or {})},
             "interaction_id": getattr(interaction, "id", None),
             "interaction": interaction,
             "user_id": getattr(interaction, "user_id", None),
@@ -426,12 +427,15 @@ class ReplyAction(Action):
         *,
         transient: bool = False,
         message_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Egress primitive — publish literal ``content`` to the user."""
         interaction = getattr(visitor, "interaction", None)
         options: Dict[str, Any] = {"transient": transient}
         if message_id is not None:
             options["message_id"] = message_id
+        if metadata is not None:
+            options["metadata"] = metadata
         return await self._pipe_response(
             content,
             interaction,

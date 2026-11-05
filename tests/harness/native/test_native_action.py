@@ -24,7 +24,10 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         AsyncMock(side_effect=ValueError("private configuration detail")),
     )
     interaction = SimpleNamespace(
-        native_run={}, has_emitted=lambda: False, save=AsyncMock()
+        native_run={},
+        has_emitted=lambda: False,
+        save=AsyncMock(),
+        compute_usage=lambda: {},
     )
     publish = AsyncMock(return_value=True)
     facade = SimpleNamespace(
@@ -265,6 +268,7 @@ async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
         get_previous_interaction=AsyncMock(
             return_value=SimpleNamespace(id="previous", native_run={})
         ),
+        compute_usage=lambda: {},
     )
     publish = AsyncMock(return_value=True)
     facade = SimpleNamespace(

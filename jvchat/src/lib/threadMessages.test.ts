@@ -78,6 +78,16 @@ function partTypes(thread: ReturnType<typeof buildThreadMessages>[number]) {
 }
 
 describe("buildThreadMessages", () => {
+  it('keeps a scheduled tool group separate from the previous foreground answer', () => {
+    const thread = buildThreadMessages([
+      userMessage('user', 'Say ready'), assistantText('ready', 'READY', 'foreground'),
+      assistantToolCall('lookup', 'read_record', 'scheduled'), assistantText('result', 'Scheduled result', 'scheduled'),
+    ])
+    const assistants = thread.filter(message => message.role === 'assistant')
+    expect(assistants).toHaveLength(2)
+    expect((assistants[0].content as readonly { type: string }[]).some(part => part.type === 'tool-call')).toBe(false)
+    expect((assistants[1].content as readonly { type: string }[]).some(part => part.type === 'tool-call')).toBe(true)
+  })
   it("keeps all reasoning and tools on the first row when interleaved with catalog cards", () => {
     const messages: Message[] = [
       userMessage("u1", "drills"),

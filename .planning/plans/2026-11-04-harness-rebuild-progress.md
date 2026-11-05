@@ -1,7 +1,7 @@
 # Harness rebuild execution record
 
-Latest increment: [native scheduled tasks](2026-11-05-native-proactive.md).
-Next: close background client delivery, remaining extension classes, operator recovery and deployment cases,
+Latest increment: [native background channel delivery](2026-11-05-native-channel.md).
+Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
 Current branch: `feat/pydantic-harness-rebuild`; author `eldonm`.
@@ -9,6 +9,22 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native background channel delivery
+
+Actual GPT-4.1 browser/SQL final cohort delivered ordinary and scheduled MCP replies,
+with separate tool groups and aggregate usage. Duplicate dispatch changed neither
+Interactions nor spending; reload and conversation selection restored both replies.
+Live capability revocation blocked a subsequent marker and rejected reconnection.
+The first paid publication failure and intermediate UI defects remain in evidence;
+real ReplyAction/ResponseBus regressions now cover the mock boundary that missed it.
+Native/host/PostgreSQL suites: 333 passed on each Python 3.11/3.12; frontend 140
+passed and production build passed; affected backend 157 passed (overlapping suites).
+Final staged all-files hooks passed without modifications; frontend rerun passed
+140 tests (2.09s). Final affected reply/response/latch slice passed 140 tests;
+the broader normal full pre-push gate remains required before publication.
+Durable server replay, transparent restart credential recovery, other extension/
+provider/deployment profiles, migration and legacy deletion remain open.
 
 ## Native HTTP cancellation and partial usage
 

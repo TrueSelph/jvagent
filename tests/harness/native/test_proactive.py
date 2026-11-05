@@ -10,11 +10,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 pytest.importorskip("pydantic_ai_harness")
-from jvspatial import flush_deferred_entities
 from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 from jvagent.action.native_harness import NativeHarnessAction
+from jvagent.action.reply import ReplyAction
+from jvagent.action.response.response_bus import ResponseBus
 from jvagent.action.task_monitor.task_monitor import TaskMonitor
 from jvagent.memory.conversation import Conversation
 from jvagent.memory.task_proactive import ProactiveTaskSpec
@@ -49,11 +50,13 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
         )
     )
     native = NativeHarnessAction()
+    bus = ResponseBus()
+    bus.native_execution = True
     agent = SimpleNamespace(
         id="agent",
         get_actions=AsyncMock(return_value=[native]),
         get_action_by_type=AsyncMock(return_value=None),
-        get_response_bus=AsyncMock(),
+        get_response_bus=AsyncMock(return_value=bus),
     )
     seen = []
 
@@ -85,18 +88,10 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
     monkeypatch.setattr(module, "build_native_agent", factory)
     walker_ref = []
 
-    async def publish(text: str, **kwargs: Any) -> bool:
-        interaction = kwargs["visitor"].interaction
-        interaction.set_response(text)
-        interaction.mark_emitted()
-        await interaction.save()
-        await flush_deferred_entities(interaction, strict=True)
-        return True
-
     facade = SimpleNamespace(
         id=native.id,
         get_agent=AsyncMock(return_value=agent),
-        get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
+        get_responder=AsyncMock(return_value=ReplyAction()),
         model="openai:gpt-4.1",
         model_settings={},
         skill_directory=str(tmp_path / "conversation"),
