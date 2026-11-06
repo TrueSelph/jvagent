@@ -35,6 +35,7 @@ from jvagent.action.parameters import (
     reply_core_parameters,
     response_parameters,
 )
+from jvagent.action.response.policy import egress_parameters as _reply_pool
 
 logger = logging.getLogger(__name__)
 
@@ -136,24 +137,6 @@ CHANNEL_FORMATS: Dict[str, str] = {
     "linkedin": "Professional tone; light formatting; raw URLs.",
     "email": "Clear paragraphs; simple structure suitable for HTML rendering.",
 }
-
-
-def _reply_pool(interaction: Any) -> Optional[list]:
-    """Rules governing this reply: the interaction's pool, else the core."""
-    pool = getattr(interaction, "parameters", None) if interaction is not None else None
-    try:
-        listed = list(pool) if pool else []
-    except TypeError:  # not iterable — treat as absent, not as "no rules"
-        listed = []
-    if not listed:
-        return None  # no pool: vet_egress falls back to the framework core
-    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
-    # it contains no response rules at all — and vet_egress, which filters to
-    # response scope, would then scrub nothing. Union the response core in, or
-    # egress governance silently switches off for exactly those turns that
-    # accumulated parameters. An operator override already in the pool still
-    # wins: resolve_parameters ranks agent tier above the core default.
-    return listed + reply_core_parameters()
 
 
 class ReplyAction(Action):

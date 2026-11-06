@@ -983,7 +983,9 @@
       "name": "block_raw_tool_invocation",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1042",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed booleans retire explicitly; native SDK/host permission remains mandatory",
+      "qualification_evidence": "2026-11-06-native-controls.md"
     },
     {
       "name": "tool_tier",
@@ -1047,7 +1049,9 @@
       "name": "tool_servers",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1120",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Partial: all-enabled selector retires after enabled MCP native review; restricted/empty/invalid selectors block",
+      "qualification_evidence": "2026-11-06-native-controls.md"
     },
     {
       "name": "max_concurrent_tools",

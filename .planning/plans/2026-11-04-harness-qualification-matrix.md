@@ -47,6 +47,14 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Control retirement and egress: [qualification](2026-11-06-native-controls.md).
+Raw-tool prompt controls and all-enabled MCP selectors retire explicitly; active
+unreviewed MCP declarations and restricted selectors block. Browser/model lookup,
+unreviewed-name refusal, repaired useful output and unchanged reload pass.
+Host-bound native output uses declared response rules rather than implicit legacy
+scrubs, with explicit policy and legacy compatibility regressions. Full parameter,
+clock/reasoning, remaining migration/deletion and enterprise gates remain open.
+
 Native scheduling: [qualification](2026-11-06-native-tool-mode.md). Legacy one-tool
 ceilings map to the public SDK sequential mode; new native apps keep parallel by
 default. Actual-model MCP batches prove peak overlap one/three, correct output,

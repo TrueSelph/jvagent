@@ -64,6 +64,8 @@ Unmapped controls and provider policy are checked in
 | Finite `skills` / `skills_source` | Official deferred catalog preserving app-over-library precedence; no silent subset selection |
 | `max_statement_length` | Soft instruction when positive; no character truncation of generated output |
 | Known light-model, synthetic ack/progress, lean pre-surface and turn-window controls | Explicit retirement into single-model, native-event, official-Skills and SDK-compaction behavior; report requires review |
+| Typed `block_raw_tool_invocation` boolean | Explicit retirement of legacy selection prompt/auto-promotion; SDK skill ownership and host tool permission remain |
+| `tool_servers: "-all"` or implicit default with MCP Actions | Retire the selector only with reviewed native tool declarations on enabled MCP Actions; restricted/empty/invalid selectors stay blocked |
 | Typed inactive pilot settings under the legacy driver | Explicit retirement; active legacy budgets migrate independently |
 | Empty/disabled channel/tool/vision/flow controls | May retire only when exactly empty/disabled; active policies block until qualified |
 
@@ -71,6 +73,11 @@ Mapping/default construction: [`harness_migrate.py:359`](../../jvagent/cli/harne
 
 See [native tool execution](native-tool-execution.md) for scheduling modes and
 the difference between preserving a concurrency ceiling and reproducing legacy ticks.
+
+See [control retirement and response-policy qualification](../plans/2026-11-06-native-controls.md).
+Retiring the MCP selector neither enables a disabled Action nor qualifies its
+transport/tools. Native replies use [declared response policy](native-egress.md)
+instead of implicit legacy response defaults; explicit scrub rules still apply.
 
 The candidate uses app-relative skill directories or portable `library:<directory>`
 references to installed JV assets, resolved independently of process cwd. No skill

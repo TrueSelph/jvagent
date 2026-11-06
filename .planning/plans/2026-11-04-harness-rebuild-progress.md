@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native tool scheduling](2026-11-06-native-tool-mode.md).
+Latest increment: [control retirement and response policy](2026-11-06-native-controls.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Control retirement and response policy
+
+Typed raw-tool controls and all-enabled MCP selection retire explicitly, while
+restricted selectors and enabled unreviewed declarations block. Actual GPT-4.1
+named lookups pass for both flag values. A negative browser request exposed an
+implicit legacy scrub replacing a useful unavailable answer; the shared native
+policy selector now preserves SDK output with declared rules and bound run scope.
+The original failure and original records remain intact. Four turns/six requests,
+2,216 reported tokens and USD 0.005092 estimated reconcile; reload is read-only.
+Both Python versions pass 173 affected migration/MCP cases, 253 response cases
+and 577 native/host/PG cases. The [record](2026-11-06-native-controls.md) bounds
+this increment; 13 reference blockers, parameter/clock/reasoning compatibility,
+recovery, migration/deletion and enterprise gates remain. Parent 93f9e4e3 has
+nine green checks; new-head publication gates are separate.
 
 ## Native tool scheduling
 

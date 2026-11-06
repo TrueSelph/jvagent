@@ -17,6 +17,12 @@ Do not build parallel generic execution engines or provider protocols. Prefer
 native providers; retain custom model adapters only for demonstrated extension
 needs. Keep research-specific evidence policy outside the general harness.
 
+SDK-owned final output uses literal publication and declared JV egress policy.
+Do not silently apply implicit legacy identity/tool-name/style scrubs or invoke
+an additional legacy compose model. Preserve host authorization, configured
+response rules and channel delivery. See [ADR-0057](.planning/adr/0057-native-declared-egress.md)
+and [the scoped native egress contract](.planning/runbooks/native-egress.md).
+
 Preserve Action lifecycle and skill authoring contracts while replacing their
 execution machinery. Legacy execution is transitional: qualify each compatibility
 class with adversarial tests and real provider-backed browser flows, then delete

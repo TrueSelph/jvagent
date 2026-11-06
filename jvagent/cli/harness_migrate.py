@@ -61,6 +61,7 @@ _RETIRE = {
     "lean_tool_threshold": "integer",
     "lean_presurface_k": "integer",
     "history_limit": "integer",
+    "block_raw_tool_invocation": "boolean",
 }
 _EMPTY = {
     "pinned_tools": list,
@@ -74,7 +75,10 @@ _EMPTY = {
 
 
 def _retire_controls(
-    context: dict[str, Any], report: dict[str, Any], mode: Any
+    context: dict[str, Any],
+    report: dict[str, Any],
+    mode: Any,
+    actions: Sequence[dict[str, Any]],
 ) -> None:
     retired = report.setdefault("retired_settings", {})
     for key, kind in _RETIRE.items():
@@ -110,7 +114,52 @@ def _retire_controls(
             )
         )
         retired[key] = reason
+        if key == "block_raw_tool_invocation":
+            retired[key] = (
+                "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory"
+            )
         report["mappings"][key] = "retired"
+    mcp_actions = [a for a in actions if a["action"] == "jvagent/mcp"]
+    if "tool_servers" in context or mcp_actions:
+        selector = context.get("tool_servers", "-all")
+        if not isinstance(selector, str) or selector.strip() != "-all":
+            report["blockers"].append(
+                "Restricted or invalid MCP selector requires explicit native policy migration"
+            )
+        else:
+            for action in mcp_actions:
+                configured = action.get("context", {})
+                if isinstance(configured, dict) and configured.get("enabled") is False:
+                    continue
+                reviewed = (
+                    configured.get("native_read_tools")
+                    if isinstance(configured, dict)
+                    else None
+                )
+                if (
+                    not isinstance(configured, dict)
+                    or type(configured.get("enabled", True)) is not bool
+                    or not isinstance(reviewed, list)
+                    or not reviewed
+                    or any(
+                        not isinstance(name, str)
+                        or not name.strip()
+                        or "*" in name
+                        or "?" in name
+                        for name in reviewed
+                    )
+                ):
+                    report["blockers"].append(
+                        "Enabled MCP Action requires reviewed native_read_tools before selector migration"
+                    )
+                    break
+            retired["tool_servers"] = (
+                "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure"
+            )
+            report["mappings"]["tool_servers"] = "retired"
+            report["required_review"].append(
+                "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools"
+            )
     for key, kind in _EMPTY.items():
         if key not in context:
             continue
@@ -187,6 +236,7 @@ _KNOWN = (
         "pilot_max_output_tokens",
         "pilot_max_tool_calls",
         "max_concurrent_tools",
+        "tool_servers",
     }
 )
 
@@ -314,7 +364,7 @@ def plan_harness_migration(
             report["required_review"].append(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
-    _retire_controls(context, report, mode)
+    _retire_controls(context, report, mode, actions)
     if mode == "capability_pilot":
         for key in ("activation_budget", "max_duration_seconds"):
             if key in context:

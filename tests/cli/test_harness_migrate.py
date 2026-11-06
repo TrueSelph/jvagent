@@ -99,6 +99,94 @@ def change(app: Path, **settings: Any) -> None:
     source(app).write_text(yaml.safe_dump(document))
 
 
+@pytest.mark.parametrize("block_raw", [True, False])
+def test_native_tool_controls_retire_without_changing_host_policy(
+    app: Path, block_raw: bool
+) -> None:
+    change(app, block_raw_tool_invocation=block_raw, tool_servers="-all")
+    before = source(app).read_bytes()
+    original = yaml.safe_load(before)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and not report["blockers"]
+    target = candidate["actions"][0]["context"]
+    assert "block_raw_tool_invocation" not in target and "tool_servers" not in target
+    assert set(report["retired_settings"]) >= {
+        "block_raw_tool_invocation",
+        "tool_servers",
+    }
+    assert "permission" in report["retired_settings"]["block_raw_tool_invocation"]
+    assert candidate["actions"][1:] == original["actions"][1:]
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["records", ["MCPAction"], [], None, False, {}, "private-selector-value"],
+)
+def test_restricted_mcp_selector_cannot_be_silently_widened(
+    app: Path, selector: Any
+) -> None:
+    change(app, tool_servers=selector)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("MCP selector" in item for item in report["blockers"])
+    assert "private-selector-value" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("value", ["true", 1, None])
+def test_raw_tool_control_retirement_requires_an_actual_boolean(
+    app: Path, value: Any
+) -> None:
+    change(app, block_raw_tool_invocation=value)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("Invalid legacy setting" in item for item in report["blockers"])
+
+
+@pytest.mark.parametrize(
+    "reviewed", [None, [], ["*"], [""], [1], ["mcp_records__lookup_record"]]
+)
+@pytest.mark.parametrize("explicit_selector", [False, True])
+def test_all_mcp_migration_requires_reviewed_native_tools(
+    app: Path, reviewed: Any, explicit_selector: bool
+) -> None:
+    if explicit_selector:
+        change(app, tool_servers="-all")
+    document = yaml.safe_load(source(app).read_text())
+    configuration = {
+        "enabled": True,
+        "servers": [{"name": "records", "transport": "stdio", "command": "python"}],
+    }
+    if reviewed is not None:
+        configuration["native_read_tools"] = reviewed
+    document["actions"].append({"action": "jvagent/mcp", "context": configuration})
+    source(app).write_text(yaml.safe_dump(document))
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    accepted = reviewed == ["mcp_records__lookup_record"]
+    assert (candidate is not None) == accepted
+    if accepted:
+        assert candidate["actions"][-1] == document["actions"][-1]
+    else:
+        assert any("reviewed native_read_tools" in item for item in report["blockers"])
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize("enabled", [False, 0, "false"])
+def test_only_explicitly_disabled_mcp_skips_native_review(
+    app: Path, enabled: Any
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"].append(
+        {"action": "jvagent/mcp", "context": {"enabled": enabled}}
+    )
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert (candidate is not None) == (enabled is False)
+    if candidate is None:
+        assert any("reviewed native_read_tools" in item for item in report["blockers"])
+
+
 @pytest.mark.parametrize("width", [0, 1])
 def test_serial_tool_ceiling_uses_public_sdk_execution_mode(
     app: Path, width: int
