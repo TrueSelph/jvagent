@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [authenticated Messenger user isolation](2026-11-06-native-user-scope.md).
+Latest increment: [native artifact downloads](2026-11-06-native-artifact-downloads.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native artifact downloads
+
+Bounded FileInterface publication uses the existing storage/proxy services and
+official SDK mutation path. Actual GPT-4.1/jvchat proves text snapshot immutability,
+binary download, expiry, live named-permission denial/restoration, strict host
+admission and unchanged ten-turn reload. Ten observed turns retain one content
+failure and one malformed admin probe; 23 requests/61,935 reported tokens and
+USD 0.074862 estimated reconcile. Capability credentials are masked in operational
+logs and committed evidence, preserved in canonical recipient results. The
+[record](2026-11-06-native-artifact-downloads.md) bounds this local profile;
+retention/capacity, operator reconciliation, renderer qualification, other storage
+and channels, migration/deletion and enterprise gates remain open. Parent
+4993e3be has all nine checks green; new publication gates are separate.
 
 ## Authenticated Messenger user isolation
 

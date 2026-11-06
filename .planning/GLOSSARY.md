@@ -393,3 +393,11 @@ execution. Host telemetry binds it to an exact SDK run/step/request-start bounda
 the original SDK checkpoint/event stays intact. It is neither a paid model receipt
 nor an unknown-billing attempt. Source:
 [`accounting.py:56`](../jvagent/harness/accounting.py:56).
+
+### Artifact snapshot
+
+A bounded copy of a caller-owned file held outside SDK/user writable mounts in
+the existing file service. Sharing issues an expiring bearer download capability
+backed by the existing jvspatial URLProxy; a digest binds the delivered bytes.
+It is application data, not a second execution checkpoint or file store. Source:
+[`sharing.py:39`](../jvagent/action/file_interface/sharing.py:39).

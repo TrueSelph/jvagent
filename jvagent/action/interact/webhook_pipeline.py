@@ -317,7 +317,9 @@ def build_interaction_log_data(
     if visitor_data:
         log_data["interact_data"] = sanitize_visitor_data_for_log(visitor_data)
 
-    return log_data, message
+    from jvagent.logging.capabilities import redact_download_links
+
+    return redact_download_links(log_data), redact_download_links(message)
 
 
 async def emit_interaction_log(

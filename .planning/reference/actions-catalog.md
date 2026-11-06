@@ -150,7 +150,7 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 | jvagent/access_control | `AccessControlAction` | `Action` | Multi-channel RBAC (per-user, per-action) |
 | jvagent/mcp | `MCPAction` | `Action` | Model Context Protocol server integration + sandbox. `get_tools()` surfaces each server's tools as `mcp_<server>__<tool>` with per-user dispatch; the Orchestrator consumes them via its `tool_servers` config |
 | jvagent/agent_utils | `AgentUtils` | `Action` | Agent utilities (schema/metadata/discovery) |
-| jvagent/file_interface | `FileInterfaceAction` | `Action` | Per-user sandboxed file I/O as first-class tools (`file_interface__read_file`/`write_file`/`list_directory`/…), same `<agent>/<user>` slice as the MCP filesystem + code_execution (ADR-0017) |
+| jvagent/file_interface | `FileInterfaceAction` | `Action` | Per-user sandboxed file I/O as first-class tools (`file_interface__read_file`/`write_file`/`list_directory`/…), same `<agent>/<user>` slice as MCP + code_execution (ADR-0017). Native bounded snapshot sharing uses the [artifact download profile](../runbooks/native-artifact-downloads.md); source: `jvagent/action/file_interface/sharing.py:39` |
 | jvagent/code_execution | `CodeExecutionAction` | `Action` | Multitenant sandboxed `bash` (`code_execution__bash`); the substrate Claude-spec skills run their bundled scripts in. cwd = caller's own per-user slice; pluggable executor (subprocess default). **Off by default** (ADR-0017) |
 | jvagent/skill_hub | `SkillHubAction` | `Action` | Search / install / remove skill bundles from the skills.sh ecosystem (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`) |
 

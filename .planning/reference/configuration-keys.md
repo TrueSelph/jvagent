@@ -385,6 +385,13 @@ This is not an exactly-once remote write guarantee. Interrupted/failed writes
 require operator reconciliation; binary writes and other providers are not
 admitted by this adapter. See [write qualification](../plans/2026-11-06-native-file-write.md).
 
+`native_share_max_bytes` defaults to 8388608, with an enforced maximum of 8 MiB.
+The named `file_interface__share_file` grant permits a bounded snapshot and an
+expiring bearer download link. It requires the configured public base URL and
+qualified local storage with generic storage HTTP routes disabled. See the
+[artifact download profile](../runbooks/native-artifact-downloads.md) for the
+contract and limitations. Source: `jvagent/action/file_interface/file_interface_action.py:108`.
+
 `skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/
 `install_skill`/`list_installed`/`remove_skill`) for transitional callers and needs
 `enabled: true`. Its native execution remains subject to compatibility qualification.

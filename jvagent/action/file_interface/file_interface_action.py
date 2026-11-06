@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 _NO_CONTEXT = "(no execution context)"
 
 
+class FileShareTool(NativeMutationTool):
+    """Issuing a bearer capability is a non-retryable host-authorized mutation."""
+
+    effect_summary = "jv:mutation:file-share:v1"
+
+
 @dataclass
 class FileWriteTool(NativeMutationTool):
     """Reviewed local text write; failures never imply rollback."""
@@ -99,6 +105,7 @@ class FileInterfaceAction(Action):
 
     native_read_max_bytes: int = attribute(default=262_144)
     native_write_max_bytes: int = attribute(default=262_144)
+    native_share_max_bytes: int = attribute(default=8 * 1024 * 1024)
 
     async def get_native_tools(self) -> list[Tool]:
         """Expose bounded reads and an explicitly authorized, journaled local write."""
@@ -112,6 +119,14 @@ class FileInterfaceAction(Action):
             or write_limit <= 0
         ):
             raise ValueError("native_write_max_bytes must be a positive integer")
+        from .sharing import MAX_BYTES, share_file
+
+        if (
+            isinstance(self.native_share_max_bytes, bool)
+            or not isinstance(self.native_share_max_bytes, int)
+            or not 1 <= self.native_share_max_bytes <= MAX_BYTES
+        ):
+            raise ValueError("native_share_max_bytes must be between 1 and 8 MiB")
         original = next(
             tool
             for tool in await self.get_tools()
@@ -171,6 +186,22 @@ class FileInterfaceAction(Action):
         legacy_write = next(
             t for t in await self.get_tools() if t.name == "file_interface__write_file"
         )
+        legacy_share = next(
+            t for t in await self.get_tools() if t.name == "file_interface__share_file"
+        )
+
+        async def share(*, visitor: Any, path: str, expires_in: int = 600) -> str:
+            try:
+                return json.dumps(
+                    await share_file(
+                        self, visitor, path, expires_in, self.native_share_max_bytes
+                    )
+                )
+            except (ValueError, OSError, StorageError):
+                raise RuntimeError(
+                    "Artifact sharing did not complete; reconciliation is required"
+                ) from None
+
         return [
             replace(
                 original,
@@ -198,7 +229,38 @@ class FileInterfaceAction(Action):
                 requires_tool_permission=True,
                 recovery_max_bytes=write_limit,
             ),
+            FileShareTool(
+                name=legacy_share.name,
+                description=legacy_share.description,
+                parameters_schema=legacy_share.parameters_schema,
+                execute=share,
+                binds_visitor=True,
+                effect_class="write",
+                idempotency_class=IdempotencyClass.NON_RETRYABLE,
+                requires_tool_permission=True,
+            ),
         ]
+
+    @tool(
+        name="file_interface__share_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+        effect_class="write",
+        requires_tool_permission=True,
+    )
+    async def _t_share_file(
+        self,
+        path: Annotated[str, "Existing path relative to the current user's workspace."],
+        expires_in: Annotated[int, "Link lifetime in seconds, from 1 to 3600."] = 600,
+    ) -> str:
+        """Issue a temporary bearer download link for a bounded immutable file snapshot. Anyone with the link can download it until expiry. Requires named host permission and a configured public base URL; never returns a raw storage URL."""  # noqa: E501
+        from .sharing import share_file
+
+        visitor = require_tool_visitor()
+        return json.dumps(
+            await share_file(
+                self, visitor, path, expires_in, self.native_share_max_bytes
+            )
+        )
 
     @tool(name="file_interface__describe_write_workspace")
     async def _t_describe_write_workspace(self) -> str:

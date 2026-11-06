@@ -47,6 +47,14 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native local artifact delivery: [qualification](2026-11-06-native-artifact-downloads.md).
+Existing FileInterface and same-graph URLProxy create immutable bounded snapshots
+outside user/script mounts. Actual model/browser tests cover binary/text bytes,
+expiry, live named permission, server admission and unchanged reload/accounting.
+This closes only the bounded local web-download profile. Retention/capacity,
+interrupted issuance reconciliation, renderer skills, S3, channels and broader
+migration/deletion/release remain open.
+
 Native scripts and existing user files: [storage qualification](2026-11-06-native-user-files.md)
 and [authenticated embed isolation](2026-11-06-native-user-scope.md). Public SDK
 Docker/Shell share the existing per-user store with physical-root policy binding.

@@ -35,8 +35,8 @@
       "name": "jvagent/code_execution",
       "archetype": "CodeExecutionAction",
       "disposition": "Preserve Action and bash declaration; replace execution/staging with official SDK Docker/Shell; retire old executor after file/artifact/state migration",
-      "qualification": "partial development profile: triage/container/permissions/restart; persistent storage and per-user artifact parity remain open",
-      "qualification_evidence": "2026-11-06-native-script-sandbox.md"
+      "qualification": "partial local profile: SDK Docker/Shell, existing per-user storage, authenticated Messenger isolation and bounded web artifact publication; broader recovery/deployment remain open",
+      "qualification_evidence": "2026-11-06-native-artifact-downloads.md"
     },
     {
       "path": "jvagent/action/email_action/info.yaml",
@@ -57,11 +57,12 @@
       "name": "jvagent/file_interface",
       "archetype": "FileInterfaceAction",
       "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
-      "qualification": "partial: bounded local native reads, granted text writes and verified single-write continuation with known or explicitly reserved unknown billing",
+      "qualification": "partial: bounded local native reads, granted text writes, immutable expiring artifact publication, and verified single-write continuation with known or explicitly reserved unknown billing",
       "evidence": "2026-11-06-native-effect-reserve.md",
       "native_tools": [
         "file_interface__read_file",
-        "file_interface__write_file"
+        "file_interface__write_file",
+        "file_interface__share_file"
       ],
       "remaining": [
         "other write/effect classes and distributed ownership",

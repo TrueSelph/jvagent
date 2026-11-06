@@ -36,6 +36,7 @@ async def test_native_file_profile_preserves_legacy_surface() -> None:
     assert [t.name for t in native] == [
         "file_interface__read_file",
         "file_interface__write_file",
+        "file_interface__share_file",
     ]
     assert native[0].binds_visitor and native[0].effect_class == "read"
     assert native[1].requires_tool_permission and native[1].effect_class == "write"
