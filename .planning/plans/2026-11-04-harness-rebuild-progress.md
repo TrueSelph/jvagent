@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [offline migration flag guard](2026-11-05-native-migration-flags.md).
+Latest increment: [cumulative output-limit qualification](2026-11-05-native-limit.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Actual output-limit failure and live settings retry
+
+Actual GPT-4.1 output exhaustion retains the failed turn, visible budget notice
+and reported 346-token receipt. Increasing the allowance through the settings API
+permits an explicit same-conversation MCP retry without restarting the backend;
+it delivers the correct result with 859 tokens over two requests. Fresh SQL
+reconciles all three requests to 1205 tokens and USD 0.002824 estimated, with no
+outstanding reserves. The failed attempt's model timing is unmeasured.
+Public immediate-event callback replacement was rejected after it forced streaming
+and broke valid non-streaming models; the supported callback remains with a
+documented removal condition and public-API regression. Native/host/real-PG suites
+pass 369 cases on each Python 3.11/3.12. All nine checks pass at parent 2fab70ee;
+final publication and new-head checks remain separate. Migration and deletion
+remain incomplete.
 
 ## Offline CLI mutation-flag guard
 

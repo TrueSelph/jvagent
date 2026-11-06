@@ -31,8 +31,10 @@ class NativeSpendRecorder:
     when several native children write the same Interaction.
 
     Upstream gap (pinned Harness 0.66): streamed SpendRecordedEvent listeners
-    can miss the final receipt on a limit exception. The supported but deprecated
-    on_spend callback is used until immediate failure-safe event delivery exists.
+    can miss the final receipt on a limit exception. Immediate public capability
+    listeners also force streaming, breaking otherwise valid non-streaming models.
+    Keep the supported deprecated callback until event delivery is failure-safe
+    without changing the model's request protocol. See native receipt regressions.
     This adapter records telemetry only; it does not execute or price requests.
     """
 

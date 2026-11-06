@@ -47,6 +47,15 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Actual cumulative output-limit qualification: [budget record](2026-11-05-native-limit.md).
+An OpenAI response crossing the SDK allowance retains a priced usage receipt
+and failed outcome; an administrator allowance update permits explicit native/MCP
+retry without restart. Reported tokens and estimated dollars reconcile in fresh
+PostgreSQL, with no reserves. This does not qualify provider clipping, failure
+notice replay after cache loss, invoice accuracy or distributed settlement.
+Immediate public spend listeners currently force model streaming; retain the
+supported callback until failure-safe delivery preserves the request protocol.
+
 Latest background-channel qualification: [2026-11-05 record](2026-11-05-native-channel.md).
 The local native jvchat foreground/scheduled-MCP profile now delivers unsolicited
 replies, tool groups and aggregate usage, restores selected client history after
