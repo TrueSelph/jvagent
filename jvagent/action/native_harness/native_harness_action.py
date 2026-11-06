@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import traceback
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -509,6 +510,18 @@ class NativeHarnessAction(InteractAction):
             raise
         except Exception as exc:
             if interaction.native_run.get("status") == "running":
+                frames = traceback.extract_tb(exc.__traceback__)
+                origin = frames[-1] if frames else None
+                failure_origin = (
+                    f"{Path(origin.filename).name}:{origin.lineno}:{origin.name}"
+                    if origin is not None
+                    else "unknown"
+                )
+                logging.getLogger(__name__).warning(
+                    "native_execution_failed: %s at %s",
+                    type(exc).__name__,
+                    failure_origin,
+                )
                 from jvagent.harness.accounting import recover_native_usage
                 from jvagent.harness.contracts import OutputTokenLimitReached
 
@@ -517,6 +530,8 @@ class NativeHarnessAction(InteractAction):
                     **interaction.native_run,
                     "status": "failed",
                     "usage_complete": False,
+                    "failure_type": type(exc).__name__,
+                    "failure_origin": failure_origin,
                 }
                 if isinstance(exc, OutputTokenLimitReached):
                     interaction.native_run["reason"] = "output_token_limit"

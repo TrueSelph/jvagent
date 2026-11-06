@@ -52,10 +52,11 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         ("cancel_before_delivery", False),
         ("intent_write_failed", True),
         ("settlement_write_failed", True),
+        ("pre_registration_failure", True),
     ],
 )
 async def test_native_receipt_precedes_delivery(
-    monkeypatch: Any, delivered: bool | str | None, settled: bool
+    monkeypatch: Any, delivered: bool | str | None, settled: bool, caplog: Any
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
 
@@ -86,6 +87,12 @@ async def test_native_receipt_precedes_delivery(
         return runtime
 
     monkeypatch.setattr(module, "build_native_agent", factory)
+    if delivered == "pre_registration_failure":
+        monkeypatch.setattr(
+            module,
+            "run_native_agent",
+            AsyncMock(side_effect=ValueError("private provider credential detail")),
+        )
     if not settled:
         monkeypatch.setattr(
             module, "persist_cancelled_receipt", AsyncMock(return_value=False)
@@ -121,6 +128,9 @@ async def test_native_receipt_precedes_delivery(
     async def publish(text: str, **kwargs: Any) -> bool:
         published.append(text)
         assert kwargs["message_id"].startswith("o.ResponseMessage.")
+        if delivered == "pre_registration_failure":
+            assert saved[-1]["status"] == "failed"
+            return True
         assert saved[-1]["status"] == "pending_delivery"
         assert saved[-1]["usage"]["requests"] == 1
         if delivered is None:
@@ -165,7 +175,16 @@ async def test_native_receipt_precedes_delivery(
         correlation_id="corr-server-owned",
         _host_system_context="Trusted host policy",
     )
-    if delivered in {"intent_write_failed", "settlement_write_failed"}:
+    if delivered == "pre_registration_failure":
+        await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1]["failure_type"] == "ValueError"
+        assert "native_execution_failed" in caplog.text
+        assert (
+            "private provider credential detail"
+            not in str(saved) + str(published) + caplog.text
+        )
+        assert len(published) == 1
+    elif delivered in {"intent_write_failed", "settlement_write_failed"}:
         with pytest.raises(OSError, match="acknowledgement"):
             await NativeHarnessAction.execute(facade, visitor)
         assert interaction.native_run["status"] == (

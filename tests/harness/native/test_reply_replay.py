@@ -40,6 +40,7 @@ async def fixture() -> tuple[Any, Any]:
         closed=True,
         has_emitted=lambda: True,
         response="Approved answer",
+        utterance="Original question",
         started_at=datetime.now(timezone.utc),
         completed_at=None,
         agent_trace=[
@@ -80,10 +81,21 @@ async def test_replay_has_stable_ids_governed_text_trace_and_usage() -> None:
     assert "must not be projected" not in str(frames)
     assert "Approved answer" in format_sse_chunk(frames[-1])
     assert frames[-1]["timestamp"].endswith("+00:00")
+    assert frames[-1]["metadata"]["replay_input"]["content"] == "Original question"
     assert frames == [
         x async for x in replay_completed_replies(conversation, user_id="caller")
     ]
     conversation.get_interactions.assert_awaited_with(limit=20, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_invalid_import_does_not_hide_completed_native_replies() -> None:
+    conversation, _ = await fixture()
+    conversation.native_history_import = {"status": "applied", "messages": "private"}
+    frames = [x async for x in replay_completed_replies(conversation, user_id="caller")]
+    assert len(frames) == 2
+    assert frames[-1]["content"] == "Approved answer"
+    assert "private" not in str(frames)
 
 
 @pytest.mark.asyncio

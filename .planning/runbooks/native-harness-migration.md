@@ -214,8 +214,20 @@ nonexecuting notices can follow the legacy frontier. Malformed, mixed or unquali
 state fails closed; do not purge it to force adoption. Source:
 `jvagent/harness/history_import.py:69`.
 
-Cold-browser conversation discovery and historical transcript backfill remain
-unqualified. The actual rehearsal selected an existing session by a local index
-entry without writing transcript messages. Multi-worker migration, active task/
+Cold-browser conversation discovery remains unqualified. Bounded approved text
+and completed native user/assistant pairs now restore through the existing
+authorized subscription; historical tool/cost backfill is separate. See the
+[actual cache-loss/browser/SQL rehearsal](../plans/2026-11-06-native-history-readback.md).
+The rehearsal selected an existing session by a local index entry without writing
+transcript messages. Multi-worker migration, active task/
 effect transfer, prepared-source conflict repair and released-artifact rollback
 are separate open gates. This operation does not authorize legacy engine deletion.
+
+Preserve the configured SDK workspace during supported upgrades. Persisted native
+messages reference that workspace; copying the graph to another application path
+does not authorize rebinding it. The current native profile has no workspace
+relocation approval operation. A moved workspace is refused by the library before
+execution; do not rewrite old messages or grant filesystem access based on a
+historical reference. Operator-reviewed relocation and recovery of the resulting
+pre-registration failed frontier remain separate migration work. Boundary
+regression: `tests/harness/native/test_context.py:42`.

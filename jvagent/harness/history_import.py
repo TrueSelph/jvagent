@@ -513,19 +513,18 @@ async def apply_history_import(
     return _public(receipt)
 
 
-async def imported_history(
-    conversation: Any, previous: Any
-) -> tuple[list[Any], dict[str, Any]]:
-    """Use a frozen approved text snapshot, never execute or reprice old tools."""
+def approved_history_messages(conversation: Any) -> list[Any]:
+    """Read approved canonical text without authorizing execution or spending."""
     receipt = conversation.native_history_import
     _bound_receipt(conversation, receipt)
+    ids = receipt.get("interaction_ids")
     if (
-        receipt.get("version") != VERSION
-        or receipt.get("status") != "applied"
-        or receipt.get("frontier_id") != previous.id
-        or previous.conversation_id != conversation.id
-        or previous.user_id != conversation.user_id
-        or previous.session_id != conversation.session_id
+        receipt.get("status") != "applied"
+        or not isinstance(ids, list)
+        or not ids
+        or len(ids) > MAX_TURNS
+        or any(not isinstance(value, str) or not value for value in ids)
+        or len(set(ids)) != len(ids)
     ):
         raise ValueError("Historical text has no matching applied import")
     frozen = receipt.get("messages")
@@ -565,6 +564,22 @@ async def imported_history(
         raise ValueError(
             "Imported history contains noncanonical authority or provider fields"
         )
+    return messages
+
+
+async def imported_history(
+    conversation: Any, previous: Any
+) -> tuple[list[Any], dict[str, Any]]:
+    """Use a frozen approved text snapshot, never execute or reprice old tools."""
+    receipt = conversation.native_history_import
+    messages = approved_history_messages(conversation)
+    if (
+        receipt.get("frontier_id") != previous.id
+        or previous.conversation_id != conversation.id
+        or previous.user_id != conversation.user_id
+        or previous.session_id != conversation.session_id
+    ):
+        raise ValueError("Historical text has no matching applied import")
     await _verify_counter(conversation, receipt)
     return messages, {
         "frontier": "imported_published_text",

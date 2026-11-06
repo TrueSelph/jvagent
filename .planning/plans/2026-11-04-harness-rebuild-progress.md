@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [approved published-text import](2026-11-06-native-history-import.md).
+Latest increment: [approved history readback](2026-11-06-native-history-readback.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Approved historical client readback
+
+The [record](2026-11-06-native-history-readback.md) qualifies paired approved text
+and completed native replies after reference-client cache loss without new model
+or accounting writes. Final actual GPT-4.1 date recall and sixteen-row restore
+pass; the rolled-back session stays empty. Two relocated-clone continuations
+fail before registration; diagnostics identify the SDK workspace guard, which
+remains intact. Workspace relocation and failed-frontier operator recovery stay
+open. Two recorded provider calls use 773 reported tokens/USD 0.001630 estimated;
+refusals are retained separately. Python 3.11 passes 457 native/host/PG plus the
+new workspace case; Python 3.12 passes all 458; frontend passes 174/lint/build.
+All nine parent 069b09e0 checks pass. New publication gates remain separate.
+Historical tools/costs, broader migration, legacy deletion and release remain open.
 
 ## Retained-state migration preflight
 

@@ -47,6 +47,15 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Approved text readback: [2026-11-06 qualification](2026-11-06-native-history-readback.md).
+The bounded subscription now restores both roles for approved legacy text and
+completed native replies in jvchat without charging or registering work. Actual
+GPT-4.1 continuation and cold-cache restore pass at the unchanged workspace.
+Relocated clones correctly fail the SDK workspace guard; explicit relocation and
+pre-registration failure recovery remain open. This supersedes the narrow old
+text-backfill limitation only, not historical tools/costs, server discovery,
+broader migration, channel, deployment or legacy removal gates.
+
 Applied historical subset: [published-text import](2026-11-06-native-history-import.md).
 An admin-bound approval supplies ordinary retained text and an explicitly estimated
 conversation spend baseline through public SDK types. Actual GPT-4.1 browser recall,

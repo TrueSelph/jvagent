@@ -311,12 +311,14 @@ admission, not an execution checkpoint or a second run engine. See
 
 ### Native reply readback
 
-Read-only projection of completed native replies and tool traces from existing
+Read-only projection of completed native replies, paired plain user input and tool traces from existing
 Interaction state and public SDK records into the authorized reply subscription.
 It does not rerun models/tools or redeliver external effects. Client receipt,
 uncertain delivery reconciliation and arbitrary cursor replay are separate gates.
 See `jvagent/action/response/native_replay.py:9` and
 [qualification](plans/2026-11-05-native-replay.md).
+Approved historical text adds a bounded readback cohort through the protected
+import receipt; see [qualification](plans/2026-11-06-native-history-readback.md).
 
 ### Native migration candidate
 

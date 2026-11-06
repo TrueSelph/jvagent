@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 pytest.importorskip("pydantic_ai_harness")
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.exceptions import UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     CompactionPart,
     ModelRequest,
@@ -36,6 +36,70 @@ def old_history() -> list[Any]:
         ModelRequest(parts=[UserPromptPart("Recent filler: " + "later " * 100)]),
         ModelResponse(parts=[TextPart("Noted.")]),
     ]
+
+
+@pytest.mark.asyncio
+async def test_relocated_workspace_history_is_not_silently_rebound(
+    tmp_path: Path,
+) -> None:
+    from copy import deepcopy
+
+    directories = []
+    for root in ("original", "relocated"):
+        directory = tmp_path / root / "example"
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text(
+            "---\nname: example\ndescription: Conversation\nallowed-tools: []\n---\nAnswer briefly.\n"
+        )
+        directories.append(directory)
+    calls = 0
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart("ok")])
+
+    async def denied(label: str) -> bool:
+        return False
+
+    def build(directory: Path, store: Any = None) -> Any:
+        return build_native_agent(
+            FunctionModel(respond),
+            skill_directory=directory,
+            tools=[],
+            access_check=denied,
+            instructions="Answer briefly.",
+            step_store=store,
+        )
+
+    result = await run_native_agent(
+        build(directories[0]),
+        "Remember a fact",
+        conversation_id="session",
+        run_id="first",
+    )
+    history = result.all_messages()
+    before = deepcopy(history)
+    interaction = Interaction()
+    store = InteractionStepStore(interaction)
+    with pytest.raises(UserError, match="workspace"):
+        await run_native_agent(
+            build(directories[1], store),
+            "Recall",
+            conversation_id="session",
+            run_id="relocated",
+            message_history=history,
+        )
+    assert calls == 1 and not interaction.native_steps
+    assert history == before
+    await run_native_agent(
+        build(directories[0]),
+        "Recall",
+        conversation_id="session",
+        run_id="retained",
+        message_history=history,
+    )
+    assert calls == 2
 
 
 @pytest.mark.asyncio

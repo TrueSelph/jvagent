@@ -57,6 +57,85 @@ async def legacy() -> tuple[Conversation, Interaction]:
     return c, turn
 
 
+@pytest.mark.asyncio
+async def test_approved_text_readback_is_readonly_and_separate_from_spend_admission() -> (
+    None
+):
+    from copy import deepcopy
+
+    from jvagent.action.response.native_replay import replay_completed_replies
+
+    c, turn = await legacy()
+    async with conversation_mutation_lock(c.id):
+        await apply(c)
+    before = deepcopy(c.native_spend)
+    frames = [x async for x in replay_completed_replies(c, user_id="owner")]
+    assert len(frames) == 1
+    assert frames[0]["id"] == f"o.ResponseMessage.history-{turn.id}"
+    assert frames[0]["content"] == turn.response
+    assert frames[0]["metadata"]["historical_import"] is True
+    assert frames[0]["metadata"]["replay_input"]["content"] == turn.utterance
+    assert "observability" not in frames[0]["metadata"]
+    assert c.native_spend == before
+    assert not turn.native_run and not turn.native_steps
+    assert frames == [x async for x in replay_completed_replies(c, user_id="owner")]
+    assert [x async for x in replay_completed_replies(c, user_id="foreign")] == []
+    c.native_spend = {}
+    assert frames == [x async for x in replay_completed_replies(c, user_id="owner")]
+    with pytest.raises(NativeHistoryError):
+        await history_for_new_turn(
+            turn,
+            conversation_id=c.id,
+            user_id="owner",
+            session_id="session",
+            conversation=c,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "unapproved",
+        "rolled_back",
+        "hash",
+        "ids",
+        "response",
+        "utterance",
+        "owner",
+        "session",
+        "conversation",
+        "open",
+        "unemitted",
+    ],
+)
+async def test_unqualified_or_changed_import_is_not_displayed(invalid: str) -> None:
+    from jvagent.action.response.native_replay import replay_completed_replies
+
+    c, turn = await legacy()
+    async with conversation_mutation_lock(c.id):
+        await apply(c)
+    if invalid == "unapproved":
+        object.__setattr__(c, "native_history_import", {})
+    elif invalid == "rolled_back":
+        c.native_history_import["status"] = "rolled_back"
+    elif invalid == "hash":
+        c.native_history_import["messages_digest"] = "changed"
+    elif invalid == "ids":
+        c.native_history_import["interaction_ids"] = [turn.id, turn.id]
+    else:
+        field = {
+            "owner": "user_id",
+            "session": "session_id",
+            "conversation": "conversation_id",
+            "open": "closed",
+            "unemitted": "emitted",
+        }.get(invalid, invalid)
+        setattr(turn, field, False if invalid in {"open", "unemitted"} else "changed")
+        await turn.save()
+    assert [x async for x in replay_completed_replies(c, user_id="owner")] == []
+
+
 async def apply(c: Conversation, **changes: Any) -> dict[str, Any]:
     plan = await inspect_history_import(
         c, naive_timestamp_zone=changes.get("naive_timestamp_zone")

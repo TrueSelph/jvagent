@@ -23,10 +23,13 @@ export function mergeMessageHistory(
     if (!same(before.get(id), message)) merged.set(id, message)
   }
 
-  // Separate tabs have independent order counters. Keep each admitted turn
-  // together, then assign one presentation order for the merged transcript.
+  return orderMessageHistory([...merged.values()])
+}
+
+/** Keep admitted turns together when cached and server history overlap. */
+export function orderMessageHistory(messages: Message[]): Message[] {
   const groups = new Map<string, Message[]>()
-  for (const message of merged.values()) {
+  for (const message of messages) {
     const key = message.interactionId || message.id
     const group = groups.get(key) ?? []
     group.push(message)

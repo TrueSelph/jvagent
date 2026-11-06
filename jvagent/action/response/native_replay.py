@@ -12,16 +12,68 @@ async def replay_completed_replies(
     """Project a bounded terminal history window into ordinary response frames.
 
     This is channel readback, not SDK execution replay or adapter redelivery.
-    Uncertain/incomplete runs and historical rows without a delivery receipt
-    are deliberately excluded. Each frame is reauthorized by the endpoint.
+    Uncertain/incomplete runs and unapproved historical rows are excluded.
+    Each frame is reauthorized by the endpoint.
     """
     if conversation is None or conversation.user_id != user_id:
         return
     recent = await conversation.get_interactions(
         limit=REPLAY_INTERACTIONS, reverse=True
     )
+    published: dict[str, tuple[Any, Any]] = {}
+    if getattr(conversation, "native_history_import", {}):
+        from jvagent.harness.history_import import approved_history_messages
+
+        try:
+            messages = approved_history_messages(conversation)
+            published = dict(
+                zip(
+                    conversation.native_history_import["interaction_ids"],
+                    zip(messages[::2], messages[1::2]),
+                )
+            )
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            # Invalid import authority cannot disclose old text. It must not
+            # hide separately qualified completed native replies, either.
+            pass
     for interaction in reversed(recent):
+        if (
+            interaction.conversation_id != conversation.id
+            or interaction.session_id != conversation.session_id
+            or interaction.user_id != user_id
+        ):
+            continue
         run = interaction.native_run
+        if not run:
+            pair = published.get(interaction.id)
+            if (
+                pair is not None
+                and interaction.closed
+                and interaction.has_emitted()
+                and interaction.utterance == pair[0].parts[0].content
+                and interaction.response == pair[1].parts[0].content
+            ):
+                yield {
+                    "id": f"o.ResponseMessage.history-{interaction.id}",
+                    "session_id": conversation.session_id,
+                    "user_id": user_id,
+                    "interaction_id": interaction.id,
+                    "message_type": "adhoc",
+                    "channel": "default",
+                    "category": "user",
+                    "content": pair[1].parts[0].content,
+                    "timestamp": pair[1].timestamp.isoformat(),
+                    "metadata": {
+                        "native_replay": True,
+                        "historical_import": True,
+                        "replay_input": {
+                            "content": pair[0].parts[0].content,
+                            "timestamp": pair[0].parts[0].timestamp.isoformat(),
+                        },
+                        "replay_window": {"interactions": REPLAY_INTERACTIONS},
+                    },
+                }
+            continue
         delivery = run.get("delivery", {})
         run_id = run.get("run_id")
         if (
@@ -92,6 +144,14 @@ async def replay_completed_replies(
             "timestamp": events[-1].timestamp.isoformat(),
             "metadata": {
                 "native_replay": True,
+                "replay_input": (
+                    {
+                        "content": interaction.utterance,
+                        "timestamp": record.started_at.isoformat(),
+                    }
+                    if getattr(interaction, "utterance", "")
+                    else None
+                ),
                 "is_proactive": metadata.get("is_proactive") is True,
                 "observability": metadata.get("observability", {}),
                 "replay_window": {
