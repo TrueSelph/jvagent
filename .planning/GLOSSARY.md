@@ -425,3 +425,11 @@ fixture scope. Matching the reviewed listing proves coverage, not runtime
 admission, compatibility or deletion approval. See the
 [coverage contract](runbooks/harness-asset-coverage.md) and
 [`harness_asset_inventory.py:91`](../scripts/harness_asset_inventory.py:91).
+
+### Native interview hook approval
+
+Host-reviewed fingerprint of an interview SOP and its custom_tools.py entrypoint,
+configured on InterviewAction rather than granted by skill metadata. It permits
+reviewed conversation-local callbacks inside SDK-dispatched Action tools. It is
+not a Python sandbox, transitive dependency pin or external-effect authorization.
+Source: [`native_hooks.py:1`](../jvagent/action/interview/native_hooks.py:1).

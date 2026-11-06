@@ -37,7 +37,7 @@ async def test_activation_includes_awaiting_fields_not_field_definitions(signup_
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_start("signup_interview", visitor, user_message="sign up")
+        await action._handle_start("signup-interview", visitor, user_message="sign up")
     )
 
     assert result["ok"] is True
@@ -61,7 +61,7 @@ async def test_on_skill_activate_includes_awaiting_fields(signup_action):
     action._save_session = AsyncMock()
     action._get_conversation = AsyncMock(return_value=None)
 
-    note = await action.on_skill_activate("signup_interview", user_message="sign up")
+    note = await action.on_skill_activate("signup-interview", user_message="sign up")
     parsed = json.loads(note)
 
     assert parsed["field_reference"][0]["key"] == "user_name"
@@ -73,7 +73,7 @@ async def test_on_skill_activate_includes_awaiting_fields(signup_action):
 @pytest.mark.asyncio
 async def test_unknown_field_references_awaiting_keys_only(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     result = json.loads(
@@ -97,7 +97,7 @@ async def test_unknown_field_references_awaiting_keys_only(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_success_is_compact(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -117,7 +117,7 @@ async def test_set_fields_success_is_compact(signup_action):
 @pytest.mark.asyncio
 async def test_saturday_branch_awaiting_includes_training_format(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Saturday 9:00 AM - 11:00 AM")
 
@@ -132,7 +132,7 @@ async def test_saturday_branch_awaiting_includes_training_format(signup_action):
 @pytest.mark.asyncio
 async def test_get_status_has_awaiting_fields_without_full_definitions(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     result = json.loads(await action._handle_get_status(visitor=SimpleNamespace()))
@@ -146,7 +146,7 @@ async def test_get_status_has_awaiting_fields_without_full_definitions(signup_ac
 @pytest.mark.asyncio
 async def test_get_status_field_reference_excludes_server_internals(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     result = json.loads(await action._handle_get_status(visitor=SimpleNamespace()))

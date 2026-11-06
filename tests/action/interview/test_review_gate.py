@@ -43,7 +43,7 @@ async def _activate(action):
 
     action._save_session = _persist
     await action.on_skill_activate(
-        "signup_interview", visitor, user_message=visitor.utterance
+        "signup-interview", visitor, user_message=visitor.utterance
     )
     return visitor
 

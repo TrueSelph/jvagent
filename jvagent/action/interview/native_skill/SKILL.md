@@ -61,7 +61,8 @@ or for_each_staged through interview__set_fields. Inspect get_status/next_field 
 the current item, catalog and remaining questions. Corrections target the specific
 item ID. Removing an ID removes its answers; changing order keeps each ID's answers.
 Finish the active collection before declaring another. Review all records and wait
-for a fresh confirmation after any correction. Never treat loading a skill as
-permission to run its legacy Python hooks.
+for a fresh confirmation after any correction. Validation and handlers are
+internal to the interview tools; never call hook function names directly or treat
+skill loading as permission to execute host code.
 Use returned domain state for existing IDs when changing membership; do not require
 the user to repeat stored items or reconstruct removed answers from chat.

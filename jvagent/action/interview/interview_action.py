@@ -100,6 +100,10 @@ class InterviewAction(Action):
         "the interview spec and SKILL.md procedure."
     )
     binds_tools_to_visitor: bool = True
+    native_hook_digests: Dict[str, str] = attribute(
+        default_factory=dict,
+        description="Host-reviewed SOP/extension digests for conversation-only native hooks.",
+    )
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description=(

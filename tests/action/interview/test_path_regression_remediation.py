@@ -86,7 +86,7 @@ def _onboarding_gate_spec():
 
 @pytest.mark.asyncio
 async def test_empty_signup_missing_only_first_field(signup_spec):
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     load_fn = lambda _n: None
 
     collectible = await compute_collectible_path_names(session, signup_spec, load_fn)
@@ -107,7 +107,7 @@ async def test_activation_awaiting_fields_only_first_field(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_start("signup_interview", visitor, user_message=_OPENING)
+        await action._handle_start("signup-interview", visitor, user_message=_OPENING)
     )
 
     assert result["start_field"] == "user_name"
@@ -125,7 +125,7 @@ async def test_activation_opening_extracts_user_name(signup_action):
 
     action._save_session = AsyncMock()
 
-    await action._handle_start("signup_interview", visitor, user_message=_OPENING)
+    await action._handle_start("signup-interview", visitor, user_message=_OPENING)
 
     set_result = json.loads(
         await action._handle_set_fields(
@@ -156,7 +156,7 @@ async def test_onboarding_unanswered_has_account_does_not_project_existing_email
 @pytest.mark.asyncio
 async def test_saturday_slot_store_chains_next_field(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
@@ -177,7 +177,7 @@ async def test_saturday_slot_store_chains_next_field(signup_action):
 @pytest.mark.asyncio
 async def test_idempotent_store_still_returns_next_tool(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))

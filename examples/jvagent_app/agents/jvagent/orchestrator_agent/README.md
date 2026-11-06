@@ -9,7 +9,7 @@ and [`.planning/adr/0012-skill-executive-architecture.md`](../../../../../.plann
 ```
 OrchestratorInteractAction (-200)
   ├─ think-act-observe loop over unified tool surface
-  ├─ signup interview (signup_interview skill + InterviewAction, turn-lock)
+  ├─ signup interview (signup-interview skill + InterviewAction, turn-lock)
   └─ ReplyAction — egress voice (identity from Agent alias + role)
 intro_interact_action runs BEFORE the executive (always_execute sidecar)
 ```
@@ -41,7 +41,7 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 | `hi there` | Orchestrator loop → `reply` tool (slim publish) |
 | `what is 19 x 23?` | Loop → web search or skill → `reply` |
 | `what do our internal docs say about X?` | `answer` skill → `pageindex__search` (internal KB) first, web fallback, cited synthesis → `respond` |
-| `sign up for jvagent training` | Model activates `signup_interview` skill → InterviewAction session starts, turn-lock via TaskStore |
+| `sign up for jvagent training` | Model activates `signup-interview` skill → InterviewAction session starts, turn-lock via TaskStore |
 | `Send me the signup template` (**WhatsApp only**) | `whatsapp_templates` skill → `whatsapp__send_template` → Meta HSM to **the same** inbound sender via jvconnect. Web/chat is refused (`whatsapp_templates_require_inbound_whatsapp`). Requires APPROVED Meta template `signup` + allowlist in `agent.yaml`. |
 | `Send me the signup flow` (**WhatsApp text or voice-call**) | `whatsapp_flows` skill → `whatsapp__send_flow` → interactive Flow to the inbound sender/caller. Web/chat refused (`whatsapp_flows_require_inbound_whatsapp`). Build/copy the Graph payload from jvconnect **Flows → Send**. |
 | `I want to sign in` / `I want to sign up` (**WhatsApp text or voice-call**) | `whatsapp_service_flows` skill → `whatsapp__send_flow` with published `signin_signup` Flow. On a voice call, spoken reply stays on the call; the Flow card appears in WhatsApp chat. |
@@ -81,7 +81,7 @@ the script reports the missing dependency.
 
 ## Notes
 
-- **Skill placement (ADR-0023):** all agent skills live under `skills/` — JV SOPs (`web-lookup`), interviews (`signup_interview`), and Claude bundles (`docx`). Library skills come from `jvagent/skills/`. Base action SOPs (e.g. `interview/SKILL.md`) are extends targets only, not skill folders. Configure exposure via `skills_source` and `skills` in `agent.yaml`.
+- **Skill placement (ADR-0023):** all agent skills live under `skills/` — JV SOPs (`web-lookup`), interviews (`signup-interview`), and Claude bundles (`docx`). Library skills come from `jvagent/skills/`. Base action SOPs (e.g. `interview/SKILL.md`) are extends targets only, not skill folders. Configure exposure via `skills_source` and `skills` in `agent.yaml`.
 - `jvagent/pageindex_action` provides the internal knowledge base (`pageindex__search/assimilate/list/delete`). Ingest documents first (`pageindex__assimilate`), then the `answer` skill searches them before falling back to the web. PageIndex auto-installs its pip deps (litellm, pdf libs) on first load.
-- The signup interview (`skills/signup_interview/` + `jvagent/interview`) is the demo multi-turn flow: frontmatter `interview:` contract, custom rules in `SKILL.md` body, standard procedure composed via `extends: action:jvagent/interview`. Copy the skill folder pattern for other structured interviews.
+- The signup interview (`skills/signup-interview/` + `jvagent/interview`) is the demo multi-turn flow: frontmatter `interview:` contract, custom rules in `SKILL.md` body, standard procedure composed via `extends: action:jvagent/interview`. Copy the skill folder pattern for other structured interviews.
 - This agent occupies weight `-200` as the single pattern orchestrator; it runs fine beside other agents in the same app.

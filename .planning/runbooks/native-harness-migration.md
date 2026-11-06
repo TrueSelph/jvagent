@@ -92,6 +92,17 @@ traversal/symlink escape;
 explicitly absolute paths remain supported for existing configurations.
 See [`skill_assets.py:34`](../../jvagent/harness/skill_assets.py#L34).
 
+Native interview skills use the explicit `action:jvagent/interview` base. Hooks
+require an enabled canonical InterviewAction and a host-reviewed
+`native_hook_digests` entry; the planner neither imports app code nor grants that
+approval. Review the SOP, callback source, imported dependencies and effects as
+host plugin code, then compute the digest with
+`jvagent.action.interview.native_hooks.native_hook_digest(Path(skill_directory))`
+and configure it under that Action's context. Any source change requires review
+and Action reload. This is not a Python sandbox or approval for external effects.
+See [qualification and remaining limits](../plans/2026-11-06-native-signup-hooks.md)
+and [`harness_migration_skills.py:61`](../../jvagent/cli/harness_migration_skills.py#L61).
+
 Native `max_tool_calls` defaults to 40. Optional `max_output_tokens` defaults to
 None, preserving the existing native profile; a migrated pilot carries its
 cumulative output ceiling explicitly. These are passed to public Pydantic

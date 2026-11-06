@@ -1,4 +1,4 @@
-"""Custom tools for the signup_interview skill (jvagent training registration).
+"""Custom tools for the signup-interview skill (jvagent training registration).
 
 Every hook takes the single ``ctx`` (HookExecutionContext): read inputs as
 attributes (``ctx.value``, ``ctx.session``, ``ctx.extracted_values``), furnish
@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_SKILL_NAME = "signup_interview"
+_SKILL_NAME = "signup-interview"
 
 AVAILABLE_TRAINING_TIMES: List[str] = [
     "Monday 9:00 AM - 11:00 AM",

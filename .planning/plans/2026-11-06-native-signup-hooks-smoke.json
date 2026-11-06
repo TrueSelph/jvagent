@@ -1,0 +1,797 @@
+{
+  "tested_parent": "git-commit:65b2898fdffd1bfad76087903ebac09560d816c1",
+  "runtime_probe_epochs": {
+    "epoch1": {
+      "process_id": 65586,
+      "observed_at": "2026-11-06T21:14:58.865374+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md": "git-blob:cd2bb989975d44b0cf9018166a9aac59c3eb4fe2",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:8c1881c1a492bc7de12cc86fe9b4bc6eb7f38312",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:67393c85db963fdf1b1abf62832f548eeeff8a70",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:f46c23d12a58d4866deaebd2329bff714d137065",
+        "jvagent/action/interview/AGENTS.md": "git-blob:874cf503807b095fa2e82d5d114087cbbfac1b0f",
+        "jvagent/action/interview/engine.py": "git-blob:fe32a8ab593417e42b95b3f0b93815bb9250d665",
+        "jvagent/action/interview/hooks.py": "git-blob:d144b4a9ed3d0c5232d42f3486fe9a64471101e1",
+        "jvagent/action/interview/interview_action.py": "git-blob:462ee2ab3a8580c75b381735fef5f0ab540b70a8",
+        "jvagent/action/interview/native.py": "git-blob:c36472451a5152fed23fa5ff0d6a75b181c0cda0",
+        "jvagent/action/interview/native_hooks.py": "git-blob:5658e9bb17801bf212fa2677026eec37355544af",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:45d28ff3a52911539513e9f62cf7b6bc80196c51",
+        "jvagent/harness/mutation_tools.py": "git-blob:2e01e6b5b16aa7f4f726f50198829f943749c0d8",
+        "jvagent/harness/native.py": "git-blob:0383b4d832b0d8c417d113b1125b3dedd1d5883a",
+        "jvagent/harness/tool_schema.py": "git-blob:e7896ceb272227926175e4de17e1666f5e9ff696"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch2": {
+      "process_id": 66023,
+      "observed_at": "2026-11-06T21:25:38.561698+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md": "git-blob:cd2bb989975d44b0cf9018166a9aac59c3eb4fe2",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:8c1881c1a492bc7de12cc86fe9b4bc6eb7f38312",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:67393c85db963fdf1b1abf62832f548eeeff8a70",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:f46c23d12a58d4866deaebd2329bff714d137065",
+        "jvagent/action/interview/AGENTS.md": "git-blob:874cf503807b095fa2e82d5d114087cbbfac1b0f",
+        "jvagent/action/interview/engine.py": "git-blob:fe32a8ab593417e42b95b3f0b93815bb9250d665",
+        "jvagent/action/interview/hooks.py": "git-blob:d144b4a9ed3d0c5232d42f3486fe9a64471101e1",
+        "jvagent/action/interview/interview_action.py": "git-blob:462ee2ab3a8580c75b381735fef5f0ab540b70a8",
+        "jvagent/action/interview/native.py": "git-blob:c36472451a5152fed23fa5ff0d6a75b181c0cda0",
+        "jvagent/action/interview/native_hooks.py": "git-blob:5658e9bb17801bf212fa2677026eec37355544af",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:45d28ff3a52911539513e9f62cf7b6bc80196c51",
+        "jvagent/harness/mutation_tools.py": "git-blob:2e01e6b5b16aa7f4f726f50198829f943749c0d8",
+        "jvagent/harness/native.py": "git-blob:0383b4d832b0d8c417d113b1125b3dedd1d5883a",
+        "jvagent/harness/tool_schema.py": "git-blob:e7896ceb272227926175e4de17e1666f5e9ff696"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch3": {
+      "process_id": 66733,
+      "observed_at": "2026-11-06T21:30:15.332250+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md": "git-blob:cd2bb989975d44b0cf9018166a9aac59c3eb4fe2",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:8c1881c1a492bc7de12cc86fe9b4bc6eb7f38312",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:67393c85db963fdf1b1abf62832f548eeeff8a70",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:f46c23d12a58d4866deaebd2329bff714d137065",
+        "jvagent/action/interview/AGENTS.md": "git-blob:874cf503807b095fa2e82d5d114087cbbfac1b0f",
+        "jvagent/action/interview/engine.py": "git-blob:fe32a8ab593417e42b95b3f0b93815bb9250d665",
+        "jvagent/action/interview/hooks.py": "git-blob:d144b4a9ed3d0c5232d42f3486fe9a64471101e1",
+        "jvagent/action/interview/interview_action.py": "git-blob:462ee2ab3a8580c75b381735fef5f0ab540b70a8",
+        "jvagent/action/interview/native.py": "git-blob:c36472451a5152fed23fa5ff0d6a75b181c0cda0",
+        "jvagent/action/interview/native_hooks.py": "git-blob:5658e9bb17801bf212fa2677026eec37355544af",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:45d28ff3a52911539513e9f62cf7b6bc80196c51",
+        "jvagent/cli/harness_migrate.py": "git-blob:4529583f9e5a49f79db5014ff6867447ae46a3b6",
+        "jvagent/cli/harness_migration_skills.py": "git-blob:e426478187bd2ce32491147a96c0f2d77d88e70e",
+        "jvagent/harness/mutation_tools.py": "git-blob:2e01e6b5b16aa7f4f726f50198829f943749c0d8",
+        "jvagent/harness/native.py": "git-blob:0383b4d832b0d8c417d113b1125b3dedd1d5883a",
+        "jvagent/harness/tool_schema.py": "git-blob:e7896ceb272227926175e4de17e1666f5e9ff696"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch4": {
+      "process_id": 66824,
+      "observed_at": "2026-11-06T21:32:59.991451+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md": "git-blob:cd2bb989975d44b0cf9018166a9aac59c3eb4fe2",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:8c1881c1a492bc7de12cc86fe9b4bc6eb7f38312",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:67393c85db963fdf1b1abf62832f548eeeff8a70",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:f46c23d12a58d4866deaebd2329bff714d137065",
+        "jvagent/action/interview/AGENTS.md": "git-blob:874cf503807b095fa2e82d5d114087cbbfac1b0f",
+        "jvagent/action/interview/engine.py": "git-blob:fe32a8ab593417e42b95b3f0b93815bb9250d665",
+        "jvagent/action/interview/hooks.py": "git-blob:d144b4a9ed3d0c5232d42f3486fe9a64471101e1",
+        "jvagent/action/interview/interview_action.py": "git-blob:462ee2ab3a8580c75b381735fef5f0ab540b70a8",
+        "jvagent/action/interview/native.py": "git-blob:c36472451a5152fed23fa5ff0d6a75b181c0cda0",
+        "jvagent/action/interview/native_hooks.py": "git-blob:5658e9bb17801bf212fa2677026eec37355544af",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:45d28ff3a52911539513e9f62cf7b6bc80196c51",
+        "jvagent/cli/harness_migrate.py": "git-blob:4529583f9e5a49f79db5014ff6867447ae46a3b6",
+        "jvagent/cli/harness_migration_skills.py": "git-blob:e426478187bd2ce32491147a96c0f2d77d88e70e",
+        "jvagent/harness/mutation_tools.py": "git-blob:2e01e6b5b16aa7f4f726f50198829f943749c0d8",
+        "jvagent/harness/native.py": "git-blob:0383b4d832b0d8c417d113b1125b3dedd1d5883a",
+        "jvagent/harness/tool_schema.py": "git-blob:e7896ceb272227926175e4de17e1666f5e9ff696"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch5": {
+      "process_id": 67166,
+      "observed_at": "2026-11-06T21:35:52.888075+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/README.md": "git-blob:cd2bb989975d44b0cf9018166a9aac59c3eb4fe2",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:8c1881c1a492bc7de12cc86fe9b4bc6eb7f38312",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:67393c85db963fdf1b1abf62832f548eeeff8a70",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:f46c23d12a58d4866deaebd2329bff714d137065",
+        "jvagent/action/interview/AGENTS.md": "git-blob:874cf503807b095fa2e82d5d114087cbbfac1b0f",
+        "jvagent/action/interview/engine.py": "git-blob:fe32a8ab593417e42b95b3f0b93815bb9250d665",
+        "jvagent/action/interview/hooks.py": "git-blob:d1b276ce26ceae6f6c637f95b6c83805b6c0a383",
+        "jvagent/action/interview/interview_action.py": "git-blob:462ee2ab3a8580c75b381735fef5f0ab540b70a8",
+        "jvagent/action/interview/native.py": "git-blob:c36472451a5152fed23fa5ff0d6a75b181c0cda0",
+        "jvagent/action/interview/native_hooks.py": "git-blob:5658e9bb17801bf212fa2677026eec37355544af",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:45d28ff3a52911539513e9f62cf7b6bc80196c51",
+        "jvagent/cli/harness_migrate.py": "git-blob:4529583f9e5a49f79db5014ff6867447ae46a3b6",
+        "jvagent/cli/harness_migration_skills.py": "git-blob:e426478187bd2ce32491147a96c0f2d77d88e70e",
+        "jvagent/harness/mutation_tools.py": "git-blob:2e01e6b5b16aa7f4f726f50198829f943749c0d8",
+        "jvagent/harness/native.py": "git-blob:0383b4d832b0d8c417d113b1125b3dedd1d5883a",
+        "jvagent/harness/tool_schema.py": "git-blob:e7896ceb272227926175e4de17e1666f5e9ff696"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  },
+  "model": "openai:gpt-4.1",
+  "backend_port": 8168,
+  "jvchat_port": 3140,
+  "acceptance": {
+    "scope": "reviewed conversation-local interview hooks, finite skill ownership and source asset migration",
+    "required": "actual callbacks, explicit review/confirmation, restart/correction, no mutation from side question, zero-model unapproved source refusal, cancellation, unconfigured owner refusal and unchanged reload",
+    "external_delivery_qualified": false,
+    "legacy_state_migration_qualified": false,
+    "performance_claim": false
+  },
+  "turns": [
+    {
+      "scenario": "activation_empty_fields",
+      "interaction_id": "n.Interaction.abdad9f4d3d14c3daed1a091",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "I would like to register for jvagent training.",
+      "response": "Let's get you registered for jvagent training! \n\nFirst, what's your full name? (Please provide your first and last name as they appear on your ID.)",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 7.769163,
+      "model_requests": 2,
+      "model_attempts": 2,
+      "provider_reported_tokens": 3981,
+      "estimated_cost_usd": "0.005994",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__start",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "65586"
+      ]
+    },
+    {
+      "scenario": "invalid_name_model_refusal_no_validator_call",
+      "interaction_id": "n.Interaction.e7d2f34911c1440abffbe367",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "My name is ok.",
+      "response": "Could you please provide your real full name (first and last name) as it appears on your ID? \"Ok\" isn't a valid name for registration purposes.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 3.906381,
+      "model_requests": 1,
+      "model_attempts": 1,
+      "provider_reported_tokens": 2354,
+      "estimated_cost_usd": "0.001648",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "65586"
+      ]
+    },
+    {
+      "scenario": "custom_callbacks_branches_review",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "I'm Casey River. Saturday at 9 works, and I'll attend virtually. My email is casey@mail.com and my employer is Orbit Fixtures. I don't want to give a phone number.",
+      "response": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I finalize your registration:\n\n**User Name**: Casey River  \n**Available Times**: Saturday 9:00 AM - 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: casey@mail.com  \n**Employer Name**: Orbit Fixtures\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 9.821344,
+      "model_requests": 4,
+      "model_attempts": 4,
+      "provider_reported_tokens": 11341,
+      "estimated_cost_usd": "0.008834",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__set_fields",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__skip_field",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__review",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 12,
+      "worker_pids": [
+        "65586"
+      ]
+    },
+    {
+      "scenario": "side_question_no_mutation",
+      "interaction_id": "n.Interaction.c3907739eef444a6b40c2edc",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "Before I confirm, what is 7 times 8?",
+      "response": "7 times 8 is 56.\n\nWhen you're ready, please reply 'Confirm' or 'Yes' to finalize your registration, or let me know if you need to make any changes.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 3.246029,
+      "model_requests": 1,
+      "model_attempts": 1,
+      "provider_reported_tokens": 3397,
+      "estimated_cost_usd": "0.002234",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "65586"
+      ]
+    },
+    {
+      "scenario": "cold_restart_correction_and_review",
+      "interaction_id": "n.Interaction.86be99752f994bcf9f5a57fd",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "Please change my employer to Northstar Fixtures. Keep the rest of my registration details.",
+      "response": "Here's a summary of your jvagent training signup with your updated employer:\n\n**User Name**: Casey River  \n**Available Times**: Saturday 9:00 AM - 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: casey@mail.com  \n**Employer Name**: Northstar Fixtures\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 9.164827,
+      "model_requests": 3,
+      "model_attempts": 3,
+      "provider_reported_tokens": 11030,
+      "estimated_cost_usd": "0.007696",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__set_fields",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__review",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 9,
+      "worker_pids": [
+        "66023"
+      ]
+    },
+    {
+      "scenario": "explicit_confirmation",
+      "interaction_id": "n.Interaction.59d6586151774254bdb396ee",
+      "session_id": "sess_c93cd97ed16c47c6",
+      "utterance": "Yes, confirm my registration.",
+      "response": "Thank you, Casey River! Your signup for jvagent training is complete. We will contact you at casey@mail.com. Employer: Northstar Fixtures. Your preferred time is Saturday 9:00 AM - 12:00 PM, and you'll attend virtually.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 5.386992,
+      "model_requests": 2,
+      "model_attempts": 2,
+      "provider_reported_tokens": 8491,
+      "estimated_cost_usd": "0.005492",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__complete",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "66023"
+      ]
+    },
+    {
+      "scenario": "unapproved_host_digest",
+      "interaction_id": "n.Interaction.a051094e328e445289957524",
+      "session_id": "sess_73c7282beb5049f9",
+      "utterance": "I would like to register for jvagent training.",
+      "response": "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
+      "status": "blocked",
+      "reason": "admission_failed",
+      "duration_seconds": 0.260111,
+      "model_requests": 0,
+      "model_attempts": 0,
+      "provider_reported_tokens": 0,
+      "estimated_cost_usd": "0.0",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 0,
+      "sdk_snapshots": 0,
+      "worker_pids": []
+    },
+    {
+      "scenario": "restored_approval_start",
+      "interaction_id": "n.Interaction.15b1fb03a8c54c0ba014ebaf",
+      "session_id": "sess_300c96b9d73f4201",
+      "utterance": "I would like to register for jvagent training.",
+      "response": "Let's get you registered for jvagent training! \n\nFirst, what's your full name? (Please provide your first and last name as they appear on your ID.)",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 6.773791,
+      "model_requests": 2,
+      "model_attempts": 2,
+      "provider_reported_tokens": 3981,
+      "estimated_cost_usd": "0.00561",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__start",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "66824"
+      ]
+    },
+    {
+      "scenario": "cancel_restored_registration",
+      "interaction_id": "n.Interaction.439838865c934402982ac8db",
+      "session_id": "sess_300c96b9d73f4201",
+      "utterance": "Cancel this registration, please.",
+      "response": "I've cancelled your registration request. If you'd like to start over or need help with something else, just let me know!",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 4.52603,
+      "model_requests": 2,
+      "model_attempts": 2,
+      "provider_reported_tokens": 4777,
+      "estimated_cost_usd": "0.006524",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__cancel",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "66824"
+      ]
+    },
+    {
+      "scenario": "hidden_interview_model_refusal",
+      "interaction_id": "n.Interaction.f259270351d84348a59d2c11",
+      "session_id": "sess_54179c8d47484649",
+      "utterance": "Start hidden-interview using interview__start. I want that hidden interview, not the signup.",
+      "response": "I'm sorry, but I can only start the available signup interview for jvagent training. There is no \"hidden-interview\" option to activate. If you want to proceed with the jvagent training signup, let me know and I can start that process for you.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 2.951436,
+      "model_requests": 1,
+      "model_attempts": 1,
+      "provider_reported_tokens": 1716,
+      "estimated_cost_usd": "0.003774",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "66824"
+      ]
+    },
+    {
+      "scenario": "final_source_inline_collection_review",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131",
+      "session_id": "sess_affedb8b235649ac",
+      "utterance": "Register me for jvagent training. My name is Taylor Brook. I want Saturday at 9, virtual attendance. My email is taylor@mail.com, employer Horizon Fixtures. Skip my phone number. Show my details for review before completing.",
+      "response": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I finalize your registration:\n\n**User Name**: Taylor Brook  \n**Available Times**: Saturday 9:00 AM - 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: taylor@mail.com  \n**Employer Name**: Horizon Fixtures  \n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 15.050321,
+      "model_requests": 6,
+      "model_attempts": 6,
+      "provider_reported_tokens": 14714,
+      "estimated_cost_usd": "0.017158",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__start",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__set_fields",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__skip_field",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "interview__review",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 18,
+      "worker_pids": [
+        "67166"
+      ]
+    },
+    {
+      "scenario": "final_source_confirmation",
+      "interaction_id": "n.Interaction.02812941ddb040c086d8d37c",
+      "session_id": "sess_affedb8b235649ac",
+      "utterance": "Yes, confirm those details.",
+      "response": "Thank you, Taylor Brook! Your signup for jvagent training is complete. We will contact you at taylor@mail.com. Employer: Horizon Fixtures. Your preferred time is Saturday 9:00 AM - 12:00 PM, and you'll be attending virtually.",
+      "status": "delivered",
+      "reason": null,
+      "duration_seconds": 5.276018,
+      "model_requests": 2,
+      "model_attempts": 2,
+      "provider_reported_tokens": 7004,
+      "estimated_cost_usd": "0.004822",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "interview__complete",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "67166"
+      ]
+    }
+  ],
+  "totals": {
+    "turns": 12,
+    "delivered": 11,
+    "blocked": 1,
+    "model_requests": 26,
+    "provider_reported_tokens": 72786,
+    "estimated_cost_usd": "0.069786",
+    "provider_reported_cost_usd": "0",
+    "unknown_usage_calls": 0,
+    "terminal_effects": 15
+  },
+  "conversation_readback": [
+    {
+      "conversation_id": "n.Conversation.a818f28742f44aad91293a2e",
+      "task_states": [
+        "completed"
+      ],
+      "requests": 13,
+      "tokens": 40594,
+      "estimated_cost_usd": "0.031898",
+      "ledger_reconciles": true,
+      "interview_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.02a89dcbdb144e42ae4d3add",
+      "task_states": [
+        "cancelled"
+      ],
+      "requests": 4,
+      "tokens": 8758,
+      "estimated_cost_usd": "0.012134",
+      "ledger_reconciles": true,
+      "interview_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.206e77cc385144c7be72beb9",
+      "task_states": [],
+      "requests": 1,
+      "tokens": 1716,
+      "estimated_cost_usd": "0.003774",
+      "ledger_reconciles": true,
+      "interview_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.1477aeb49cbb4b0698780ecb",
+      "task_states": [],
+      "requests": 0,
+      "tokens": 0,
+      "estimated_cost_usd": "0.0",
+      "ledger_reconciles": true,
+      "interview_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.c407994b21a345c9986427d1",
+      "task_states": [
+        "completed"
+      ],
+      "requests": 8,
+      "tokens": 21718,
+      "estimated_cost_usd": "0.021980",
+      "ledger_reconciles": true,
+      "interview_cleared": true
+    }
+  ],
+  "raw_record_comparisons": [
+    {
+      "scenario": "cold_restart",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:1fdf91683caceb2fc985f8d67d3940fdcf41aa15bb433b6a08a605eb6c834c04",
+      "after_digest": "sha256:1fdf91683caceb2fc985f8d67d3940fdcf41aa15bb433b6a08a605eb6c834c04"
+    },
+    {
+      "scenario": "cold_restart",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:886ffa4e974b672b8956ddee81186b2d59798501e8038eecdcdec7702b4c297d",
+      "after_digest": "sha256:886ffa4e974b672b8956ddee81186b2d59798501e8038eecdcdec7702b4c297d"
+    },
+    {
+      "scenario": "first_reload",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:49cf5a2db3e18e44ebddc5a90bec93ae7c7411714bec81658d139a81c8ab42ee",
+      "after_digest": "sha256:49cf5a2db3e18e44ebddc5a90bec93ae7c7411714bec81658d139a81c8ab42ee"
+    },
+    {
+      "scenario": "first_reload",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:9718f688e498438913c552517ff9c496076cb49dd99cbbdb76fc44093692ae1c",
+      "after_digest": "sha256:9718f688e498438913c552517ff9c496076cb49dd99cbbdb76fc44093692ae1c"
+    },
+    {
+      "scenario": "final_reload",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:d49bc257566b76a4af09e4ed7040b9dc67968ee193208397c8f47bd7165507e5",
+      "after_digest": "sha256:d49bc257566b76a4af09e4ed7040b9dc67968ee193208397c8f47bd7165507e5"
+    },
+    {
+      "scenario": "final_reload",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:56f1f25c514ec24a08493e3af9570fb606e5dc0c2039957b6997acd7bc1561d9",
+      "after_digest": "sha256:56f1f25c514ec24a08493e3af9570fb606e5dc0c2039957b6997acd7bc1561d9"
+    }
+  ],
+  "earlier_completed_cohort_unchanged_after_policy_denial": true,
+  "first_ten_interactions_and_conversations_unchanged_after_final_source_cohort": true,
+  "side_question_interview_state_unchanged": true,
+  "operator_policy_changes": [
+    {
+      "mode": "deny",
+      "policy": {
+        "signup-interview": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "interaction_and_conversation_rows_unchanged": true
+    },
+    {
+      "mode": "restore",
+      "policy": {
+        "signup-interview": "sha256:f4d5f0b00b9ee4376d2d73ef61f9c5f6951705f778ebd938d7d523d1f377dddf"
+      },
+      "interaction_and_conversation_rows_unchanged": true
+    }
+  ],
+  "hook_calls": [
+    {
+      "at": "2026-11-06T21:12:19.740466+00:00",
+      "pid": 65586,
+      "method": "validate_full_name",
+      "phase": "validate",
+      "field": "user_name",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:19.756027+00:00",
+      "pid": 65586,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:19.772998+00:00",
+      "pid": 65586,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:19.789039+00:00",
+      "pid": 65586,
+      "method": "validate_training_format",
+      "phase": "validate",
+      "field": "training_format",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:19.804743+00:00",
+      "pid": 65586,
+      "method": "validate_signup_email",
+      "phase": "validate",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:19.821011+00:00",
+      "pid": 65586,
+      "method": "append_work_email_note",
+      "phase": "post",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:12:23.866350+00:00",
+      "pid": 65586,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.ee7fd0b7c5954c969ced8867"
+    },
+    {
+      "at": "2026-11-06T21:18:04.789374+00:00",
+      "pid": 66023,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.86be99752f994bcf9f5a57fd"
+    },
+    {
+      "at": "2026-11-06T21:19:38.032996+00:00",
+      "pid": 66023,
+      "method": "signup_complete",
+      "phase": "complete",
+      "field": null,
+      "interaction_id": "n.Interaction.59d6586151774254bdb396ee"
+    },
+    {
+      "at": "2026-11-06T21:34:34.477412+00:00",
+      "pid": 67166,
+      "method": "validate_full_name",
+      "phase": "validate",
+      "field": "user_name",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:34.493499+00:00",
+      "pid": 67166,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:34.509745+00:00",
+      "pid": 67166,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:34.526212+00:00",
+      "pid": 67166,
+      "method": "validate_training_format",
+      "phase": "validate",
+      "field": "training_format",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:34.541392+00:00",
+      "pid": 67166,
+      "method": "validate_signup_email",
+      "phase": "validate",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:34.556816+00:00",
+      "pid": 67166,
+      "method": "append_work_email_note",
+      "phase": "post",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:34:38.652541+00:00",
+      "pid": 67166,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.32d6bb1741e3461abb3c6131"
+    },
+    {
+      "at": "2026-11-06T21:35:33.811172+00:00",
+      "pid": 67166,
+      "method": "signup_complete",
+      "phase": "complete",
+      "field": null,
+      "interaction_id": "n.Interaction.02812941ddb040c086d8d37c"
+    }
+  ],
+  "outgoing_start_schema": {
+    "observations": 26,
+    "all_enums": [
+      "signup-interview"
+    ],
+    "unconfigured_hidden_interview_never_advertised": true
+  },
+  "fixture_retirement": {
+    "from": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/smoke_frontmatter/SKILL.md",
+    "to": "tests/scaffold/fixtures/skills/smoke_frontmatter/SKILL.md",
+    "bytes_unchanged": true,
+    "digest": "sha256:c18cdde707a9c92430f2124c5221eb6e2ff634615a6fcba4791c9a6e45089c34"
+  },
+  "reference_preflight": {
+    "blockers": [
+      "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+      "Setting requires qualified native policy migration: channel_overrides",
+      "Setting requires qualified native policy migration: vision",
+      "Setting requires qualified native policy migration: lock_active_flow",
+      "Selected skill 7 needs reviewed native interview policy",
+      "Selected skill 8 needs native format/name/spec migration",
+      "Selected skill 9 needs native format/name/spec migration",
+      "Selected skill 10 needs native format/name/spec migration",
+      "Model service has unqualified callers or provider declarations; review before removal"
+    ],
+    "format_admitted_count": 7
+  },
+  "limitations": [
+    "No external email/contact delivery or production registration service write",
+    "Negative filler-name browser case is model refusal; validator failure is deterministic SDK evidence",
+    "Hidden-interview browser case is model refusal; forced SDK rejection is deterministic evidence",
+    "Old signup_interview tasks are not automatically migrated",
+    "Approved Python is trusted host plugin code; imports are not transitively pinned or sandboxed",
+    "Custom skill tools, branch/proactive hooks, repeated hooks and broader deployment/provider/recovery remain open"
+  ],
+  "verification": {
+    "native_host_real_postgres_with_docker": {
+      "python311": {
+        "passed": 722,
+        "duration_seconds": 100.39
+      },
+      "python312": {
+        "passed": 722,
+        "duration_seconds": 102.73
+      }
+    },
+    "interview_scaffold_migration": {
+      "python311": {
+        "passed": 482,
+        "duration_seconds": 4.09
+      },
+      "python312": {
+        "passed": 482,
+        "duration_seconds": 4.8
+      }
+    },
+    "native_hook_cases": 19,
+    "new_migration_approval_cases": 7,
+    "publication_gates": "Clean all-files pre-commit and normal full pre-push tests required separately; see commit/PR checks",
+    "final_runtime_source_fingerprints_match": true
+  }
+}

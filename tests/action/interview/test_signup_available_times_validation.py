@@ -27,7 +27,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_set_field_rejects_monday_at_7(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
@@ -46,7 +46,7 @@ async def test_set_field_rejects_monday_at_7(signup_action):
 @pytest.mark.asyncio
 async def test_set_field_rejects_invalid_slot_even_with_stale_context(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.context["matched_training_times"] = ["Monday 9:00 AM - 11:00 AM"]
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
@@ -66,7 +66,7 @@ async def test_set_field_rejects_invalid_slot_even_with_stale_context(signup_act
 @pytest.mark.asyncio
 async def test_set_field_accepts_monday_at_9_autocorrect(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()

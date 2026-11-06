@@ -45,12 +45,54 @@ def _inventory(root: Path) -> dict[str, tuple[Path, dict[str, Any]]]:
     return result
 
 
+def _review_interview_policy(
+    directory: Path,
+    metadata: dict[str, Any],
+    actions: Sequence[dict[str, Any]],
+    index: int,
+    report: dict[str, Any],
+) -> None:
+    """Use the shipped domain admission contract; never import app hook code."""
+    if (
+        "interview" not in metadata
+        and metadata.get("extends") != "action:jvagent/interview"
+    ):
+        return
+    from jvagent.action.interview.native import qualify_spec
+    from jvagent.action.interview.spec import load_interview_spec_from_skill
+
+    matches = [a for a in actions if a.get("action") == "jvagent/interview"]
+    try:
+        if len(matches) != 1:
+            raise ValueError("Interview Action requires review")
+        context = matches[0].get("context", {})
+        if not isinstance(context, dict) or context.get("enabled", True) is not True:
+            raise ValueError("Interview Action must be enabled")
+        digests = context.get("native_hook_digests", {})
+        spec = load_interview_spec_from_skill(directory)
+        if not isinstance(digests, dict) or spec is None:
+            raise ValueError("Interview policy is invalid")
+        qualify_spec(
+            spec, tool_name="interview__start", hook_digest=digests.get(spec.name)
+        )
+    except (ValueError, TypeError, OSError):
+        report["blockers"].append(
+            f"Selected skill {index} needs reviewed native interview policy"
+        )
+    else:
+        report["required_review"].append(
+            "Qualify the reviewed interview's tools, hooks, task state and completion in an isolated native app before cutover"
+        )
+
+
 def migrate_skill_selection(
     root: Path,
     agent_directory: Path,
     context: dict[str, Any],
     selection: str | Sequence[str] | None,
     report: dict[str, Any],
+    *,
+    actions: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Return native declarations; all loader checks are offline and model-free.
 
@@ -131,8 +173,8 @@ def migrate_skill_selection(
 
         from jvagent.harness.skill_assets import project_skill, projected_workspace
 
-        async def validate(directory: Path) -> None:
-            _, document = project_skill(directory)
+        async def validate(directory: Path, action_bases: dict[str, Path]) -> None:
+            _, document = project_skill(directory, action_bases=action_bases)
             catalog = await Skills(
                 ".",
                 include=[directory.name],
@@ -169,12 +211,18 @@ def migrate_skill_selection(
                 with (directory / "SKILL.md").open("rb") as stream:
                     if stream.read(4) != b"---\n":
                         raise ValueError("Selected skill needs frontmatter migration")
-                asyncio.run(validate(directory))
+                bases = {}
+                if metadata.get("extends") == "action:jvagent/interview":
+                    from jvagent.action.interview.native import native_skill_bases
+
+                    bases = native_skill_bases()
+                asyncio.run(validate(directory, bases))
             except (ValueError, RuntimeError):
                 blockers.append(
                     f"Selected skill {index} needs native format/name/spec migration"
                 )
                 continue
+            _review_interview_policy(directory, metadata, actions, index, report)
             refs.append(
                 str(directory.relative_to(root))
                 if name in app

@@ -17,10 +17,30 @@ from .tools import _build_core_tools
 from .validators import BUILTIN_VALIDATORS
 
 
+class InterviewMutationTool(ConversationMutationTool):
+    """Bind shared domain tools to their configured, loaded owning skill."""
+
+    @property
+    def skill_name_argument(self) -> str | None:
+        return "interview_type" if self.name == "interview__start" else None
+
+    def required_skill(self, arguments: dict[str, Any]) -> str | None:
+        from jvagent.tooling.context import require_tool_visitor
+
+        if self.name == "interview__start":
+            return arguments.get("interview_type")
+        session = load_session(require_tool_visitor().conversation)
+        return session.interview_type if session is not None else None
+
+
 def qualify_spec(
-    spec: InterviewSpec, *, channel: str | None = None, tool_name: str | None = None
+    spec: InterviewSpec,
+    *,
+    channel: str | None = None,
+    tool_name: str | None = None,
+    hook_digest: str | None = None,
 ) -> None:
-    """Admit the reviewed built-in domain surface, never arbitrary hook effects."""
+    """Admit reviewed domain tools and host-approved local hook sources."""
     if spec.source_dir:
         from jvagent.harness.skill_assets import project_skill
 
@@ -41,21 +61,33 @@ def qualify_spec(
     if (
         spec.skill_tools
         or spec.parameters
-        or any(getattr(spec.handlers, item.name) for item in fields(spec.handlers))
         or any((spec.nudge_after, spec.abandon_after, spec.parked_expire_after))
     ):
         raise ValueError("Native interview hooks/tasks require separate qualification")
+    extensions = bool(
+        any(getattr(spec.handlers, item.name) for item in fields(spec.handlers))
+        or any(
+            f.pre_processor
+            or f.post_processor
+            or (f.validator and f.validator not in BUILTIN_VALIDATORS)
+            for f in spec.fields
+        )
+    )
+    if extensions:
+        from .native_hooks import approved_source
+
+        approved_source(spec, hook_digest)
     child_names: set[str] = set()
     for field in spec.fields:
-        if (
-            field.pre_processor
-            or field.post_processor
-            or field.for_each_prefix
-            or (field.validator and field.validator not in BUILTIN_VALIDATORS)
-        ):
+        if field.for_each_prefix:
             raise ValueError("Native interview field extensions require qualification")
         if field.for_each:
-            if field.validator not in {"", "text"} or not field.for_each.fields:
+            if (
+                field.validator not in {"", "text"}
+                or not field.for_each.fields
+                or field.pre_processor
+                or field.post_processor
+            ):
                 raise ValueError(
                     "Native repeated parents require text and child declarations"
                 )
@@ -153,7 +185,7 @@ def build_native_tools(action: Any) -> list[Tool]:
     names = []
     for name, spec in action._registry.specs.items():
         try:
-            qualify_spec(spec)
+            qualify_spec(spec, hook_digest=action.native_hook_digests.get(name))
         except ValueError:
             continue
         names.append(name)
@@ -164,7 +196,12 @@ def build_native_tools(action: Any) -> list[Tool]:
         spec = action._registry.get(interview_type)
         if spec is None or interview_type not in names:
             raise ValueError("Interview type is not qualified for native execution")
-        qualify_spec(spec, channel=visitor.channel, tool_name="interview__start")
+        qualify_spec(
+            spec,
+            channel=visitor.channel,
+            tool_name="interview__start",
+            hook_digest=action.native_hook_digests.get(spec.name),
+        )
         return await action._handle_start(interview_type, visitor)
 
     activation = Tool(
@@ -219,7 +256,12 @@ def build_native_tools(action: Any) -> list[Tool]:
                 spec = action._registry.get(existing.interview_type)
                 if spec is None:
                     raise ValueError("Active interview has no admitted contract")
-                qualify_spec(spec, channel=visitor.channel, tool_name=original.name)
+                qualify_spec(
+                    spec,
+                    channel=visitor.channel,
+                    tool_name=original.name,
+                    hook_digest=action.native_hook_digests.get(spec.name),
+                )
                 if original.name == "interview__set_fields":
                     repeated_keys = spec.all_for_each_child_keys() | {
                         f.key for f in spec.fields if f.for_each
@@ -244,7 +286,20 @@ def build_native_tools(action: Any) -> list[Tool]:
                             status="active",
                             error="Use interview__set_item_fields with the item ID and skip_fields for repeated optional fields.",
                         )
-            result = await original.call(visitor=visitor, **arguments)
+            owner_spec = (
+                action._registry.get(existing.interview_type)
+                if existing
+                else action._registry.get(arguments.get("interview_type"))
+            )
+            if owner_spec is None:
+                result = await original.call(visitor=visitor, **arguments)
+            else:
+                from .native_hooks import bind_native_hooks
+
+                with bind_native_hooks(
+                    owner_spec, action.native_hook_digests.get(owner_spec.name)
+                ):
+                    result = await original.call(visitor=visitor, **arguments)
             payload = json.loads(result.content)
             owner = (
                 existing.interview_type if existing else arguments.get("interview_type")
@@ -272,7 +327,7 @@ def build_native_tools(action: Any) -> list[Tool]:
             effect_class="write",
             description=descriptions[original.name],
         )
-        return ConversationMutationTool(**values)
+        return InterviewMutationTool(**values)
 
     extra = []
     if any(

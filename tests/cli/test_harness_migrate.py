@@ -62,6 +62,62 @@ def source(app: Path) -> Path:
 
 
 @pytest.mark.parametrize(
+    "policy",
+    ["missing", "wrong", "valid", "changed", "disabled", "missing_action", "malformed"],
+)
+def test_interview_hook_migration_requires_host_review_without_import(
+    app: Path, policy: str
+) -> None:
+    from jvagent.action.interview.native_hooks import native_hook_digest
+
+    directory = app / "agents/demo/bot/skills/answer"
+    (directory / "scripts").mkdir()
+    module = directory / "scripts/custom_tools.py"
+    module.write_text(
+        "raise RuntimeError('MUST_NOT_IMPORT')\nasync def check(ctx): return ctx.valid(value=ctx.value)\n"
+    )
+    (directory / "SKILL.md").write_text(
+        "---\n"
+        + yaml.safe_dump(
+            {
+                "name": "answer",
+                "description": "Interview",
+                "trust_tier": "trusted",
+                "extends": "action:jvagent/interview",
+                "interview": {
+                    "fields": [{"key": "name", "prompt": "Name?", "validator": "check"}]
+                },
+            }
+        )
+        + "---\nUse interview tools.\n"
+    )
+    context: dict[str, Any] = {"enabled": policy != "disabled"}
+    if policy in {"valid", "changed", "disabled"}:
+        context["native_hook_digests"] = {"answer": native_hook_digest(directory)}
+    elif policy == "wrong":
+        context["native_hook_digests"] = {"answer": "sha256:" + "0" * 64}
+    elif policy == "malformed":
+        context["native_hook_digests"] = []
+    if policy == "changed":
+        module.write_text(module.read_text() + "\n# changed after review\n")
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"][0]["context"].update(skills=["answer"], skills_source="app")
+    if policy != "missing_action":
+        document["actions"].append({"action": "jvagent/interview", "context": context})
+    source(app).write_text(yaml.safe_dump(document))
+    before, code = source(app).read_bytes(), module.read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert (candidate is not None) == (policy == "valid")
+    assert any(
+        "reviewed native interview policy" in item for item in report["blockers"]
+    ) == (policy != "valid")
+    assert report["selected_skill_count"] == 1
+    assert source(app).read_bytes() == before and module.read_bytes() == code
+    assert "MUST_NOT_IMPORT" not in str(report)
+    assert "secret-example-value" not in str(report)
+
+
+@pytest.mark.parametrize(
     "settings,blocked",
     [
         ({"enabled": False}, False),

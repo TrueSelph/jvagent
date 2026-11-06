@@ -412,7 +412,7 @@ def plan_harness_migration(
             if key in context:
                 blockers.append(f"Mixed driver limit requires explicit review: {key}")
     skill_settings = migrate_skill_selection(
-        root, source.parent, context, skill, report
+        root, source.parent, context, skill, report, actions=actions
     )
     model = context.get("model")
     model_action = context.get("model_action_type", "OpenAILanguageModelAction")

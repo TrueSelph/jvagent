@@ -2099,6 +2099,18 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
     parsed = coerce_hook_result(result)
 
     # Deferred completion: async / queue work still open. Keep session + task.
+    if parsed.get("ok") is False or parsed.get("status") in {"error", "failed"}:
+        await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error=parsed.get("error") or "Completion handler did not confirm success.",
+            response_directive=parsed.get("response_directive")
+            or "Completion did not succeed; the interview remains open.",
+            completion_result=parsed,
+            fields=fields_summary,
+        )
+
     if str(parsed.get("status") or "") == "extraction_pending":
         payload: Dict[str, Any] = {
             "ok": True,

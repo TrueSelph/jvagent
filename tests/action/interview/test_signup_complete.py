@@ -37,7 +37,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_complete_returns_completion_result(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.status = InterviewStatus.REVIEW
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")

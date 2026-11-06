@@ -2616,5 +2616,27 @@
     "historical_unfinished_receipts_preserved": 4,
     "final_native_tests_per_python": 703,
     "enterprise_qualification": false
+  },
+  "native_signup_hooks_qualification": {
+    "evidence": "2026-11-06-native-signup-hooks.md",
+    "qualified": "reviewed conversation-local validators/processors/handlers through existing Action tools and public SDK ownership/receipts",
+    "confirmed_fixes": [
+      "failed completion preserves task/session",
+      "shared interview tools require configured loaded owner",
+      "native loader failure refuses instead of silently skipping"
+    ],
+    "asset_migration": {
+      "signup": "canonical signup-interview; old tasks not automatically migrated",
+      "smoke_frontmatter": "byte-preserving move from runnable app to test fixtures"
+    },
+    "reference_blockers": 9,
+    "format_admitted_selections": 7,
+    "remaining": [
+      "external effects and delivery",
+      "custom skill tools",
+      "branch/proactive/repeated hooks",
+      "retained tasks",
+      "full app cutover and legacy deletion"
+    ]
   }
 }

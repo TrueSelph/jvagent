@@ -106,6 +106,9 @@ def build_native_agent(
         | ({"write_plan"} if plan_store is not None else set())
         | script_names
     )
+    mutation_tools = {
+        tool.name: tool for tool in tools if isinstance(tool, NativeMutationTool)
+    }
 
     def adapt(original: JVTool) -> Any:
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
@@ -168,7 +171,10 @@ def build_native_agent(
                 return await policy.observe(original.name, arguments, result)
             return str(result.content)
 
-        from jvagent.harness.tool_schema import argument_validator
+        from jvagent.harness.tool_schema import (
+            argument_validator,
+            scope_skill_schema,
+        )
 
         schema = deepcopy(original.parameters_schema)
         if original.binds_visitor:
@@ -179,6 +185,22 @@ def build_native_agent(
                 schema["required"] = [
                     key for key in schema["required"] if key != "visitor"
                 ]
+        if isinstance(original, NativeMutationTool) and original.skill_name_argument:
+            scope_skill_schema(
+                schema,
+                original.skill_name_argument,
+                catalog.tool_owners.get(original.name, set()),
+            )
+        validate_arguments = argument_validator(
+            schema,
+            required_skill=(
+                original.required_skill
+                if isinstance(original, NativeMutationTool)
+                else None
+            ),
+            configured_skills=catalog.metadata,
+        )
+
         return Tool.from_schema(
             invoke,
             name=original.name,
@@ -186,7 +208,7 @@ def build_native_agent(
             json_schema=schema,
             takes_ctx=True,
             sequential=bool(original.binds_visitor),
-            args_validator=argument_validator(schema),
+            args_validator=validate_arguments,
         )
 
     declared = [tool.name for tool in tools] + [
@@ -270,6 +292,11 @@ def build_native_agent(
                 if (allow_mutations or tool.name not in mutation_names)
                 and (tool.name not in allowed or catalog.allows_tool(ctx, tool.name))
             ]
+            from jvagent.harness.tool_schema import prepare_skill_tools
+
+            selected = prepare_skill_tools(
+                selected, mutation_tools, catalog.tool_owners, ctx.active_capability_ids
+            )
             for index, tool in enumerate(selected):
                 if tool.name in script_names:
                     schema = deepcopy(tool.parameters_json_schema)

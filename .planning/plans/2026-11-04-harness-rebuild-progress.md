@@ -2657,3 +2657,25 @@ reconcile, zero unknown usage. Native/host/real-PG passes 703 on each Python
 byte-equivalent, including its four pre-fix receipts; historical repair is not
 claimed. Distributed/uncertain-work recovery, remaining compatibility, migration,
 legacy deletion and release gates remain open.
+
+## Reviewed native signup hooks — 2026-11-06
+
+[Qualification](2026-11-06-native-signup-hooks.md) preserves existing validators,
+processors and review/completion handlers through explicit host-reviewed source
+approval and existing SDK-dispatched domain tools. Approval is not a Python
+sandbox or authorization for external effects. Confirmed regressions close
+completion-handler failure cleanup and cross-catalog shared-tool mutations.
+Canonical signup naming and a byte-preserving move of the malformed smoke fixture
+into tests simplify app assets. Offline migration shares domain admission without
+importing callbacks or granting trust. The reference now has nine blockers/seven
+format-admitted skills; it is not cut over.
+
+Twelve actual GPT-4.1 browser turns cover callbacks, branch normalization, review,
+side-question preservation, cold restart, correction, confirmation, host-policy
+denial/restoration, cancellation, hidden-owner model refusal and unchanged reload.
+Twenty-six requests / 72,786 reported tokens / USD 0.069786 estimated reconcile;
+all fifteen effects are terminal (one known loader rejection). Two completed
+tasks and one cancelled task persist; no external contact is performed. Final
+native/host/real-PG lanes pass 722 per Python 3.11/3.12. Repeated/proactive hooks,
+custom skill tools, legacy retained tasks, remaining migration/deletion and
+enterprise qualification stay open.

@@ -649,3 +649,18 @@ Earlier four unfinished Storefront receipts are preserved unchanged; historical
 repair, unknown external effects and distributed recovery remain open. Final
 native/host/real-PostgreSQL lanes pass 703 on each Python 3.11/3.12. No reduction
 in the ten reference configuration blockers or legacy removal is claimed.
+
+## Reviewed native interview hooks
+
+[Signup qualification](2026-11-06-native-signup-hooks.md) covers explicit
+host-reviewed callback source, unchanged domain ABI, SDK effect ownership and
+finite configured/loaded skill enforcement. Failed completion handlers keep their
+task/session; native source/import/loader failures cannot silently skip callbacks.
+Actual GPT-4.1 browser workflows include restart/correction/confirmation, zero-call
+unapproved-source refusal, restored approval, cancellation and durable UI readback.
+All fifteen effects settle; shared spending reconciles across twelve turns.
+Native/host/real-PG lanes pass 722 on each Python 3.11/3.12. The source fixture
+retirement lowers reference blockers to nine; signup format is admitted but host
+approval remains explicit. Trusted Python imports are not sandboxed/transitively
+pinned, no external delivery is qualified, and legacy task migration, repeated/
+branch/proactive hooks, custom skill tools and full cutover/removal remain open.

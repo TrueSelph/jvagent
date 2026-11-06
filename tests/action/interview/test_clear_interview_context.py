@@ -15,7 +15,7 @@ from jvagent.action.interview.session import (
 async def test_clear_interview_context_removes_scratch_retains_new_user():
     from unittest.mock import AsyncMock
 
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     conv = type("Conv", (), {})()
     conv.context = {
         "new_user": False,

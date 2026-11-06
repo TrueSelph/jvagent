@@ -1,7 +1,5 @@
 # interview — Agent Guide
 
----
-
 ## What this is
 
 `InterviewAction` is a pure `Action` (not `InteractAction`) that registers eight fixed `interview__*` tools plus per-skill custom tools. The **orchestrator LLM** reads each skill's `SKILL.md` procedure and drives multi-turn interviews by calling tools — the action manages session state, validation, hooks, and task tracking; it does **not** classify user intent or choose the next question itself.
@@ -9,8 +7,6 @@
 Session state lives in `conversation.context["interview"]` as a lightweight `InterviewSession` dataclass (field values, skipped fields, status, scratch `context` dict).
 
 **Design contract:** always build and extend interviews with the **[thin harness principle](../../../docs/thin-harness.md)** (platform) and **[interview profile](docs/thin-harness.md)** — thick SOP + skill extensions, thin server steering.
-
----
 
 ## Foundation vs skill extensions
 
@@ -27,8 +23,6 @@ Session state lives in `conversation.context["interview"]` as a lightweight `Int
 When fixing behavior for one skill (e.g. `validate_full_name`, training slot matching), change the **skill extension** — not the foundation — unless the bug is in generic plumbing (chaining, validator dispatch, hook dispatch, session persistence).
 
 **Terminal cleanup:** `complete`, `cancel`, and `interview_complete` validators call `clear_interview_context()` — wipes interview/application scratch while retaining platform keys (`new_user` and the core host replay ledger) and any explicit `retain_context_keys`. Security state must survive without a skill-specific opt-in; see [`session.py:109`](session.py:109) and [`core/host_context.py:20`](../../core/host_context.py:20). Do not persist interview scratch in `conversation.context` unless opting in via `retain_context_keys`.
-
----
 
 ## File map
 
@@ -80,8 +74,15 @@ cannot write repeated parents/children or staged answers (`native.py:224`).
 Child keys must be globally unique within the spec; nested repeats and child
 branches/hooks remain gated (`native.py:20`). Finish one active collection before
 declaring another. See the [repeat qualification record](../../../.planning/plans/2026-11-05-native-repeats.md).
-Custom hooks/validators, other complex fields and external task callbacks remain gated
-until their effect classes and recovery behavior have evidence. Qualification and
+Foreground conversation-only hooks require host `native_hook_digests` approval
+binding the SOP and extension source; frontmatter trust never grants native host
+execution. The existing loader compiles the verified bytes and rechecks source
+and declaration freshness (`native_hooks.py:1`). This is trusted Action code,
+not a Python sandbox or approval for external/model calls. Unreviewed hooks,
+repeated-field expansion hooks, other complex fields and external callbacks remain gated.
+Shared tools require their configured, loaded owning skill before SDK effects;
+starting another discovered interview cannot bypass a finite catalog
+(`native.py:20`, `jvagent/harness/native.py:188`). Qualification and
 migration limits: [native interview record](../../../.planning/plans/2026-11-05-native-interview.md).
 Branch qualification: [browser and persistence record](../../../.planning/plans/2026-11-05-native-branches.md).
 

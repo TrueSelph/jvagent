@@ -180,10 +180,10 @@
         "tracked_directory_digest": "sha256:3ffbcfe41f1c636e03b952fbecd3264d3a0c90a5a2332ccf39284456853bcb86"
       },
       {
-        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/SKILL.md",
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:c01c9525ed8374b0a78210363ea3b31195c35a05abf370ed18c2b1da6077ece9",
-        "name": "signup_interview",
+        "sha256": "sha256:8401ede5dbc2bf6578e2051a33e6921f22a1d7e268e35a47f33346ff895517b7",
+        "name": "signup-interview",
         "spec": "jv",
         "extends": "action:jvagent/interview",
         "byte_order_mark": false,
@@ -196,42 +196,13 @@
           "description",
           "extends",
           "interview",
-          "lock-companions",
           "name",
           "requires-actions",
           "spec",
           "tags"
         ],
         "tracked_directory_files": 1,
-        "tracked_directory_digest": "sha256:5c82a32b44bfa115fce2280997c9e5c00281f70dd3ae42bf45390160674d93a8"
-      },
-      {
-        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/smoke_frontmatter/SKILL.md",
-        "scope": "app-example",
-        "sha256": "sha256:c18cdde707a9c92430f2124c5221eb6e2ff634615a6fcba4791c9a6e45089c34",
-        "name": "smoke_frontmatter",
-        "spec": "jv",
-        "extends": null,
-        "byte_order_mark": true,
-        "policy_fields": {
-          "allowed_tools": [
-            "file_interface__list_directory",
-            "file_interface__read_file"
-          ],
-          "requires_actions": [
-            "FileInterfaceAction"
-          ]
-        },
-        "metadata_keys": [
-          "allowed_tools",
-          "description",
-          "name",
-          "requires_actions",
-          "spec",
-          "tags"
-        ],
-        "tracked_directory_files": 0,
-        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        "tracked_directory_digest": "sha256:c58f4dfc476cd58c87f672fdf943a1686706c689b03f4869b72236b227c012ae"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
@@ -388,8 +359,8 @@
           "name",
           "task-lock"
         ],
-        "tracked_directory_files": 37,
-        "tracked_directory_digest": "sha256:77d60e8b4f909f33fd2a0594b2007443fc4c86a8af2d28bfbdb1e80554edbeb1"
+        "tracked_directory_files": 38,
+        "tracked_directory_digest": "sha256:99ed2bc88b1f66ff9ffa0afd245ac8ec4f7fc19c5e2ab96546f35149497cfee8"
       },
       {
         "path": "jvagent/action/interview/examples/example_account_gating/example_booking_interview/SKILL.md",
@@ -503,7 +474,7 @@
       {
         "path": "jvagent/action/interview/native_skill/SKILL.md",
         "scope": "package",
-        "sha256": "sha256:66be970033035ac4d1a533ee092db78d11c1efbc2530afb42e0742c8d11daedb",
+        "sha256": "sha256:48966840c1c38188160f9011e5de9f6bcb3519b3488e2557c83b1497f0e0ae58",
         "name": "native-interview",
         "spec": null,
         "extends": null,
@@ -1157,6 +1128,34 @@
         ],
         "tracked_directory_files": 1,
         "tracked_directory_digest": "sha256:aa17e6a965dccfba4100dbbe45189f5ec71a2d890d7e0235b9fca7f5902542b4"
+      },
+      {
+        "path": "tests/scaffold/fixtures/skills/smoke_frontmatter/SKILL.md",
+        "scope": "test-fixture",
+        "sha256": "sha256:c18cdde707a9c92430f2124c5221eb6e2ff634615a6fcba4791c9a6e45089c34",
+        "name": "smoke_frontmatter",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": true,
+        "policy_fields": {
+          "allowed_tools": [
+            "file_interface__list_directory",
+            "file_interface__read_file"
+          ],
+          "requires_actions": [
+            "FileInterfaceAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed_tools",
+          "description",
+          "name",
+          "requires_actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       }
     ],
     "action_manifests": [
@@ -1301,8 +1300,8 @@
         "sha256": "sha256:377f0a4d2710436e881d6cdcd36a22d004e84484c93a699edebf1007c892de2a",
         "name": "jvagent/interview",
         "archetype": "InterviewAction",
-        "tracked_directory_files": 37,
-        "tracked_directory_digest": "sha256:bd4fe6baf3e01a0fb7fc43eaa324e901aeb65ac91a25fa7a123600f610da6c2c"
+        "tracked_directory_files": 38,
+        "tracked_directory_digest": "sha256:b668e82ec0195283f744c1e75da48e5590121bf3889cdb7e0d89db5a7248015c"
       },
       {
         "path": "jvagent/action/intro/info.yaml",
@@ -1763,7 +1762,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",
         "scope": "app-example",
-        "sha256": "sha256:4a84450f53dfdcc1b606e55f79f59eea61b2e0cc5ed5e1e9058104eb2b15c437",
+        "sha256": "sha256:5b3faf8dc439802fa13e1bcbbf961096064bf7e40fd116d9a994b27e11855fcd",
         "agent": "jvagent/orchestrator_agent",
         "action_names": [
           "jvagent/orchestrator",
@@ -1839,18 +1838,17 @@
               "pdf-generation",
               "triage",
               "docx",
-              "signup_interview",
+              "signup-interview",
               "whatsapp_templates",
               "whatsapp_flows",
-              "whatsapp_service_flows",
-              "smoke_frontmatter"
+              "whatsapp_service_flows"
             ],
             "skill_directory": null,
             "skill_directories": null
           }
         ],
-        "tracked_directory_files": 69,
-        "tracked_directory_digest": "sha256:49338d0270d25a59254d26ddd12350ce63b38426271b5ed9d87bb0292e46f1af"
+        "tracked_directory_files": 68,
+        "tracked_directory_digest": "sha256:70660bca1fe435b7459550db582b4791e72d312fc14b7df7746a95d9b858271c"
       }
     ]
   }

@@ -1,5 +1,5 @@
 ---
-name: signup_interview
+name: signup-interview
 description: >-
   Sign up or register for jvagent training. Collect full name, training
   availability slot, email, and optional phone number, then confirm
@@ -9,10 +9,6 @@ spec: jv
 requires-actions:
   - InterviewAction
 extends: action:jvagent/interview
-# Permit a web-search side question mid-signup without dropping the turn-lock:
-# the agent answers, then returns to the active interview step.
-lock-companions:
-  - web_search__search
 interview:
   title: JVAgent Training Signup
   summary: >-
@@ -101,6 +97,12 @@ tags: [signup, training, interview, onboarding]
 ### Tone
 Relay the prompts in a friendly and helpful manner. Field hints are model-only
 compose steering — do not read them aloud.
+
+### Side questions
+Preserve interview progress when the user asks a side question. Answer using an
+appropriate available, authorized skill when needed, then continue the interview
+when the user is ready. Do not store a side question as a field answer or invent
+values to move the interview forward.
 
 ### Phone number
 - Digits in the latest message → call `interview__set_fields` with

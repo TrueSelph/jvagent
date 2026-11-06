@@ -32,6 +32,15 @@ class NativeMutationTool(Tool):
 
     effect_summary: ClassVar[str] = ""
 
+    @property
+    def skill_name_argument(self) -> str | None:
+        """Optional enum argument whose values are owning skill names."""
+        return None
+
+    def required_skill(self, arguments: dict[str, Any]) -> str | None:
+        """Optional domain owner checked by the SDK validator before effects."""
+        return None
+
     async def recovery_scope(self) -> str | None:
         """Optional domain resource fingerprint, captured in SDK run metadata."""
         return None
