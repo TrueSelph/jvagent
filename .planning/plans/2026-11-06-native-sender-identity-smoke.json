@@ -1,0 +1,214 @@
+{
+  "tested_parent": "git-commit:c845a87efa38b59f1576fbdbd4e0a3a4845df14c",
+  "model": "openai:gpt-4.1",
+  "source_sha256": {
+    "jvagent/tooling/channel_identity.py": "sha256:b2b0fa1c208d26ab1977c2bd041d38fda5ed540fae8cf85a4113d76cab4b536e",
+    "jvagent/tooling/context.py": "sha256:b88abdb1b7712465fbc560fa890fe32ab998abe693abeb1632986f5c36dc46ee",
+    "jvagent/action/interact/interact_walker.py": "sha256:fa78aa88f6a271e5b951990f37acd51ab36cad2c0e83c6f487cf475963f684ba",
+    "jvagent/action/whatsapp/utils/endpoint_helpers.py": "sha256:9b05d19c1d212696732c84a8066adc7c28d5e898e658cbee5829007d7825267d",
+    "jvagent/action/whatsapp/whatsapp_action.py": "sha256:aa20c5fb9239c7e17bb0738d1fa8b00faed96342de196dd932e42fc68bc6b0de"
+  },
+  "fixture_root": "/private/tmp/jvagent-native-sender-identity-smoke",
+  "backend_port": 8171,
+  "provider_stub_port": 8172,
+  "jvchat_port": 3140,
+  "browser_context": "native-sender-identity-20261106",
+  "scope": "Native sender gate; actual model and local signed Meta-shaped webhook; owned loopback provider stub only. No real Meta, jvvoice or human delivery qualification.",
+  "request_transport": "Loopback HTTP; signed webhook tests use X-Forwarded-Proto=https from trusted loopback proxy. Actual TLS was not exercised.",
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.434ab4ea54be422898e9f837",
+      "session_id": "sess_eb35e4cc78d94254",
+      "channel": "default",
+      "started_at": "2026-11-06T19:14:36.695896",
+      "completed_at": "2026-11-06T19:14:43.331517",
+      "response": "23 + 19 = 42.\n\nSender diagnostic: Channel is \"default\", admitted = false. Error: \"whatsapp_templates_require_inbound_whatsapp\". No provider was called.",
+      "run_status": "delivered",
+      "expectation_passed": true,
+      "expectation_failure": null,
+      "tool_results": [
+        {
+          "channel": "default",
+          "admitted": false,
+          "error": "whatsapp_templates_require_inbound_whatsapp",
+          "provider_called": false
+        }
+      ],
+      "terminal_effects": 1,
+      "duration_seconds": 3.413,
+      "provider_requests": 2,
+      "provider_reported_tokens": 819,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.002058,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.2bc4fbadf7a847e6bdac99d1",
+      "session_id": "sess_eb35e4cc78d94254",
+      "channel": "whatsapp",
+      "started_at": "2026-11-06T19:15:29.982046",
+      "completed_at": "2026-11-06T19:15:32.644498",
+      "response": "Sender diagnostic result: Channel is \"default\", admitted = false. Error: \"whatsapp_templates_require_inbound_whatsapp\". No message was sent.",
+      "run_status": "delivered",
+      "expectation_passed": false,
+      "expectation_failure": "Answered from history without the requested current diagnostic",
+      "tool_results": [],
+      "terminal_effects": 0,
+      "duration_seconds": 1.295,
+      "provider_requests": 1,
+      "provider_reported_tokens": 496,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.001184,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.58af69ed4e704b70979542c1",
+      "session_id": "sess_eb35e4cc78d94254",
+      "channel": "default",
+      "started_at": "2026-11-06T19:15:50.999759",
+      "completed_at": "2026-11-06T19:15:53.184895",
+      "response": "Sender diagnostic result: Channel is \"default\", admitted = false. Error: \"whatsapp_templates_require_inbound_whatsapp\". No message was sent.",
+      "run_status": "delivered",
+      "expectation_passed": false,
+      "expectation_failure": "Answered from history without the requested current diagnostic",
+      "tool_results": [],
+      "terminal_effects": 0,
+      "duration_seconds": 0.797,
+      "provider_requests": 1,
+      "provider_reported_tokens": 553,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.001298,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.ea58ca3e08de40438f2de6f7",
+      "session_id": "sess_289c74d2cee74151",
+      "channel": "whatsapp",
+      "started_at": "2026-11-06T19:16:22.044495",
+      "completed_at": "2026-11-06T19:16:26.438420",
+      "response": "Sender diagnostic result: Channel is WhatsApp. Admission: false. Error: whatsapp_verified_sender_required. No provider was called.",
+      "run_status": "delivered",
+      "expectation_passed": true,
+      "expectation_failure": null,
+      "tool_results": [
+        {
+          "channel": "whatsapp",
+          "admitted": false,
+          "error": "whatsapp_verified_sender_required",
+          "provider_called": false
+        }
+      ],
+      "terminal_effects": 1,
+      "duration_seconds": 2.675,
+      "provider_requests": 2,
+      "provider_reported_tokens": 789,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.001818,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.579da3abb6664a3b854936ac",
+      "session_id": "sess_98045232a779493d",
+      "channel": "whatsapp_call",
+      "started_at": "2026-11-06T19:16:38.431787",
+      "completed_at": "2026-11-06T19:16:42.299127",
+      "response": "Sender diagnostic result: Channel is \"whatsapp_call\". Admission: false. Error: \"whatsapp_verified_sender_required\". No provider was called.",
+      "run_status": "delivered",
+      "expectation_passed": true,
+      "expectation_failure": null,
+      "tool_results": [
+        {
+          "channel": "whatsapp_call",
+          "admitted": false,
+          "error": "whatsapp_verified_sender_required",
+          "provider_called": false
+        }
+      ],
+      "terminal_effects": 1,
+      "duration_seconds": 2.111,
+      "provider_requests": 2,
+      "provider_reported_tokens": 794,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.001852,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.031042beb9ea480c9e431241",
+      "session_id": "sess_874ab55bc93944a7",
+      "channel": "whatsapp",
+      "started_at": "2026-11-06T19:22:03.887682",
+      "completed_at": "2026-11-06T19:22:10.297937",
+      "response": "Sender diagnostic result: Channel is WhatsApp. Admission status: admitted=true. No errors detected.",
+      "run_status": "delivered",
+      "expectation_passed": true,
+      "expectation_failure": null,
+      "tool_results": [
+        {
+          "channel": "whatsapp",
+          "admitted": true,
+          "error": null,
+          "provider_called": false
+        }
+      ],
+      "terminal_effects": 1,
+      "duration_seconds": 3.341,
+      "provider_requests": 2,
+      "provider_reported_tokens": 774,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.001752,
+      "unknown_cost_call_count": 0
+    },
+    {
+      "interaction_id": "n.Interaction.5a9261a0673b4910bcd3d1a7",
+      "session_id": "sess_874ab55bc93944a7",
+      "channel": "whatsapp",
+      "started_at": "2026-11-06T19:24:14.625182",
+      "completed_at": "2026-11-06T19:24:21.025914",
+      "response": "Sender diagnostic result: Channel is WhatsApp. Admission status: admitted=true. No errors detected.",
+      "run_status": "delivered",
+      "expectation_passed": true,
+      "expectation_failure": null,
+      "tool_results": [
+        {
+          "channel": "whatsapp",
+          "admitted": true,
+          "error": null,
+          "provider_called": false
+        }
+      ],
+      "terminal_effects": 1,
+      "duration_seconds": 2.137,
+      "provider_requests": 2,
+      "provider_reported_tokens": 984,
+      "reported_cost_usd": 0.0,
+      "estimated_cost_usd": 0.002172,
+      "unknown_cost_call_count": 0
+    }
+  ],
+  "totals": {
+    "turns": 7,
+    "passed_expectations": 5,
+    "failed_expectations": 2,
+    "provider_requests": 12,
+    "provider_reported_tokens": 5209,
+    "estimated_cost_usd": "0.012134",
+    "reported_cost_usd": 0,
+    "unknown_cost_call_count": 0,
+    "terminal_effects": 5,
+    "new_tasks": 0
+  },
+  "readback": {
+    "cold_restart_rows_and_conversations_exact": true,
+    "new_trusted_turn_retains_prior_rows_exact": true,
+    "trusted_session_reused_after_restart": true,
+    "reload_rows_and_conversations_exact": true,
+    "conversation_spend_reconciles": true
+  },
+  "limits": [
+    "Native WhatsApp tools remain unadmitted; this uses a read-only app-local gate diagnostic.",
+    "Text sender proof is live in-process host authority, not a serialized credential or grant of tool permission.",
+    "Voice proof, serverless deployment, real Meta/jvconnect, native send acknowledgements and uncertain external writes remain unqualified.",
+    "Two stale model replies without tool calls remain recorded failures.",
+    "Native delivered is local harness publication, not proof of recipient delivery."
+  ]
+}

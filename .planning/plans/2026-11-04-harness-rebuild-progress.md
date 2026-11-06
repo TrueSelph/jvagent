@@ -2740,3 +2740,23 @@ migration. No runtime or skill assets change in this assessment round; no new
 browser qualification is claimed. Nine reference blockers, retained-state
 cutover, legacy removal and enterprise gates remain open. Published parent
 9f7dfbf9 has all nine remote checks green; new-head checks are separate.
+
+## Authenticated native channel sender — 2026-11-06
+
+[Qualification](2026-11-06-native-sender-identity.md) adds immutable, live-visitor
+adapter sender facts and native WhatsApp enforcement. A copied/changed proof or
+public channel/data claim cannot authorize native dispatch. Text walkers preserve
+the sender for existing sessions. No durable credential, execution loop, database
+or dependency is added; named tool permissions remain independent. Legacy gates
+remain transitional, and native WhatsApp send declarations are still refused.
+
+Seven actual GPT-4.1 browser-origin turns include fresh forged text/voice claims
+and two valid signed text-webhook turns across restart, against an owned
+loopback provider stub. Five expectations pass; two model history-only diagnostic
+answers remain failed expectations. Twelve requests / 5,209 reported tokens /
+USD 0.012134 estimated reconcile, zero unknown usage; all five effects are
+terminal. Restart/reload rows and spending remain exact. Fourteen sender tests
+include mutation-checked refusal; affected slices pass 228 per Python 3.11/3.12,
+native/host/real-PG/Docker lanes 742 each. Actual TLS/Meta/jvvoice, serverless,
+native send acknowledgements and uncertain-write recovery remain open. Nine
+reference blockers, cutover/deletion and enterprise qualification remain active.

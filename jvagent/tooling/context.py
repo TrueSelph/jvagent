@@ -21,6 +21,7 @@ class ToolDispatchContext:
     session_id: Optional[str] = None
     interaction_id: Optional[str] = None
     channel: Optional[str] = None
+    channel_sender: Optional[Any] = None
 
 
 # Per-task host context, bound by the native Action adapter (or transitional
@@ -106,4 +107,5 @@ def _build_context_from_visitor(
         session_id=getattr(visitor, "session_id", None),
         interaction_id=getattr(getattr(visitor, "interaction", None), "id", None),
         channel=getattr(visitor, "channel", None),
+        channel_sender=getattr(visitor, "_verified_channel_sender", None),
     )

@@ -697,3 +697,10 @@ regressions are mutation-checked. Sender provenance, provider acknowledgement,
 uncertain effects and raw-form completion claims must be resolved before native
 send admission. This adds no runtime/provider/browser qualification and reduces
 none of the nine reference blockers.
+
+Native text-adapter sender identity is now [locally qualified](2026-11-06-native-sender-identity.md):
+live-visitor facts, immutable dispatch scope and native WhatsApp refusal of
+public channel/body claims. Signed browser-origin webhook turns pass across
+restart against an owned provider stub; real TLS/Meta/jvvoice and serverless are
+not qualified. Native sends remain unadmitted pending acknowledgement and
+uncertain-effect contracts. Nine reference blockers remain.

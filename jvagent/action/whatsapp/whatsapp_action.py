@@ -17,6 +17,7 @@ from jvspatial.exceptions import DatabaseError, ValidationError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 from jvagent.harness.contracts import IdempotencyClass
+from jvagent.tooling.channel_identity import require_verified_channel_sender
 from jvagent.tooling.context import get_dispatch_context, get_tool_visitor
 from jvagent.tooling.tool_decorator import tool
 
@@ -1519,6 +1520,11 @@ class WhatsAppAction(Action):
             or not (ctx.user_id or "").strip()
         ):
             return {"ok": False, "error": error}
+        if getattr(get_tool_visitor(), "_native_execution", False):
+            try:
+                require_verified_channel_sender(channels=self._OUTBOUND_WA_CHANNELS)
+            except ValueError:
+                return {"ok": False, "error": "whatsapp_verified_sender_required"}
         return None
 
     def _template_dispatch_gate(self) -> Optional[Dict[str, Any]]:

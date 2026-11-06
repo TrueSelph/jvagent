@@ -1697,7 +1697,7 @@
         "name": "jvagent/whatsapp_action",
         "archetype": "WhatsAppAction",
         "tracked_directory_files": 27,
-        "tracked_directory_digest": "sha256:9e5d4c1712af4ae1f8c28ced1dc52b8f932bc4bec29b2113d8b236942a57a330"
+        "tracked_directory_digest": "sha256:b61f30326dd70526199377fa6ae55ca06281c6631a04ea331bf1e2d63821401f"
       },
       {
         "path": "jvagent/action/whatsapp_voice/info.yaml",

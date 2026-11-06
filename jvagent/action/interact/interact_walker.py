@@ -89,6 +89,7 @@ class InteractWalker(Walker):
     _native_task_dispatch: Any = PrivateAttr(default=None)
     _public_identity: Any = PrivateAttr(default=None)
     _public_identity_request: Any = PrivateAttr(default=None)
+    _verified_channel_sender: Any = PrivateAttr(default=None)
     agent_id: str = ""
     utterance: str = ""
     channel: str = "default"
