@@ -2591,3 +2591,19 @@ FunctionModel and actual reasoning-capable providers remain unqualified. Final
 native/host/real-PG lanes pass 665 per Python 3.11/3.12. The unchanged full
 reference report has 11 blockers, down from 12; cutover, deletion and enterprise
 qualification remain open. Parent de92d6e9 has nine green remote checks.
+
+## Existing DOCX skill and correctable shell limits — 2026-11-06
+
+[Evidence](2026-11-06-native-docx.md) adds explicit prerequisites and an optional
+locked dependency image for the existing app-local DOCX skill; all 59 scripts/
+schemas remain unchanged and no host package or executor is added. Actual browser
+failures exposed an ambiguous generator example and fatal over-limit shell
+arguments. The SOP now separates authored programs from shipped support scripts;
+public SDK tool schemas carry the host timeout ceiling and ModelRetry rejects
+invalid overrides before any effect. The same ordinary request then creates and
+validates a real DOCX; restart/re-sharing uses no bash and preserves bytes. Reload
+preserves all SDK state/accounting. Four retained turns include two pre-fix
+failures and two post-fix successes, with 12 requests, 89,366 reported tokens and
+USD 0.091162 estimated. Final native/host/real-PG lanes pass 669 per Python
+3.11/3.12. Reference format blockers fall to 10, with six skills admitted. Wider
+DOCX features, migration/cutover, deletion and enterprise gates remain open.

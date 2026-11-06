@@ -1,0 +1,887 @@
+{
+  "observed_at": "2026-11-06T19:10:49.109506+00:00",
+  "parent_revision": "git-commit:21d85ad6425188d54de128bdcaf0f482b601f03a",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-docx-smoke",
+    "backend": 8165,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "bounded_filesystem_bytes": 67067904,
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    }
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 49121,
+      "observed_at": "2026-11-06T18:53:19.377934+00:00",
+      "source_blobs": {},
+      "file_interface_loaded": true,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 50715,
+      "observed_at": "2026-11-06T18:54:27.574750+00:00",
+      "source_blobs": {
+        "jvagent/harness/native.py": "git-blob:2fa4b4a50db4b77a60fdfdb339808280b40c43e3"
+      },
+      "file_interface_loaded": true,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 51983,
+      "observed_at": "2026-11-06T18:58:47.272812+00:00",
+      "source_blobs": {
+        "jvagent/harness/native.py": "git-blob:2fa4b4a50db4b77a60fdfdb339808280b40c43e3"
+      },
+      "file_interface_loaded": true,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "tested_assets": {
+    "sop": "sha256:1331c866eff1558f5794db3e706aa2492e6e3e3894c6029737e77408ba8c4377",
+    "dockerfile": "sha256:67afc2c7a8a626f34dcc059b4d6c17066fbd1e1c9e56881eb62a10f39d6b3444",
+    "npm_lock": "sha256:9350a7a2233d96ebd2d1dbd55f04026d9911d3b174fb50bdc7be3bff09cec5b2",
+    "staged_authored_assets_unchanged": true,
+    "script_count": 59,
+    "script_manifest_digest": "sha256:33e19aeae9be332360052fd089172f856a01cd4f1c0dce1b0edd29e211c73976",
+    "script_bytes": 1099623
+  },
+  "sop_epochs": {
+    "initial": "sha256:3eed26570acf2bfe38d2d80b7160231d2b145973682685a15b5470cbadf00f28",
+    "intermediate": "sha256:c34ca5b430ac03297fa395adc519a90f76638f50f3acff08a41fd3d93e5855dc",
+    "qualified": "sha256:1331c866eff1558f5794db3e706aa2492e6e3e3894c6029737e77408ba8c4377"
+  },
+  "optional_image": {
+    "id": "sha256:ff941280acf8903cee9166d4f429b2a5d92133ef31d622c98640ce262f4a9e4c",
+    "logical_uncompressed_bytes": 319599398,
+    "os": "linux",
+    "architecture": "arm64",
+    "python_version": "3.11.16",
+    "node_version": "v22.23.4",
+    "docx_version": "9.15.2",
+    "lxml_version": "6.1.3",
+    "defusedxml_version": "0.7.1",
+    "npm_transitives_locked": true,
+    "base_host_requirements_unchanged": true
+  },
+  "acceptance": {
+    "before_model_call": true,
+    "requirements": [
+      "Real model must use official SDK shell with admitted image; no legacy executor import",
+      "Downloaded file must be a parseable DOCX ZIP with title Native Harness Pilot, marker CEDAR-48 and a three-row table naming Pydantic AI, jvspatial and In progress",
+      "Authored OOXML validator must report success before sharing",
+      "After cold restart, re-sharing must execute no bash and preserve exact artifact hash",
+      "Reload must preserve SDK state and spend without new requests"
+    ],
+    "optimization_claim": "None; measure image footprint and record unchanged host requirements"
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.2dd7af4325a8418497391154",
+      "scenario": "retained_initial_sop_failure",
+      "request_outcome": "retained_failure",
+      "run_status": "delivered",
+      "run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+      "history_source": {},
+      "usage_complete_flag": true,
+      "utterance": "Use the DOCX skill to create a short Word document named pilot-status.docx. Title: Native Harness Pilot. Include the marker CEDAR-48 in a paragraph and a table with three rows: Runtime | Pydantic AI; State | jvspatial; Qualification | In progress. Validate the actual DOCX with the authored validator, then give me a download link. Do not claim enterprise qualification.",
+      "response": "The required script to create the DOCX file (`create_doc.js`) is missing from the environment, so I cannot generate the requested Word document at this time. If you have a specific DOCX template or script, please provide it, or let me know if you'd like to try another approach.",
+      "started_at": "2026-11-06T14:47:09.277342",
+      "completed_at": "2026-11-06T14:47:42.183495",
+      "duration_seconds": 32.906153,
+      "worker_pid": "49121",
+      "sdk_digest": "sha256:9e6369e50bc89312c3e8df2cd3786d9704a51e39819bc28e72f0da79445a3225",
+      "sdk_run_count": 1,
+      "snapshot_count": 9,
+      "effects": [
+        {
+          "run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:47:37.260660Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:47:12.596640Z",
+          "tool_call_id": "call_WRMwo8vVYY8VQa2McEDTPCKb",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:49ea33a02489d8d1c3e8214ae3901049343ce47ba2d188c4a3ec5edde6a40d42"
+        },
+        {
+          "run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:47:40.151907Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:47:39.542202Z",
+          "tool_call_id": "call_y5dCx5zJjr8xmlm1gDiRHfEt",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:fc86c7fec8fb80bd575ebbf8648ddd2def7596a09d2e2f2acaf1a8828c2dd1e1"
+        }
+      ],
+      "trace": [
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.c93782334370460fab2e5f76",
+          "segment_id": "call_WRMwo8vVYY8VQa2McEDTPCKb",
+          "started_at": "2026-11-06T18:47:12.589956+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:47:12.589964+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "(no output)",
+          "message_id": "o.ResponseMessage.ca3172644f9b4edc83c2748f",
+          "segment_id": "call_WRMwo8vVYY8VQa2McEDTPCKb",
+          "started_at": "2026-11-06T18:47:37.282482+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:47:37.282489+00:00",
+          "thought_type": "tool_result"
+        },
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.79f4f5e5e7064fe59dce8e53",
+          "segment_id": "call_y5dCx5zJjr8xmlm1gDiRHfEt",
+          "started_at": "2026-11-06T18:47:39.531075+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:47:39.531081+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "[stderr]\nnode:internal/modules/cjs/loader:1433\n  throw err;\n  ^\n\nError: Cannot find module '/workspace/staged_skills/docx/scripts/create_doc.js'\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)\n    at Function._load (node:internal/modules/cjs/loader:1216:25)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v22.23.4\n\n[exit code: 1]\n[Command failed with max_file_bytes=8000000; file writes may have reached the per-file limit.]",
+          "message_id": "o.ResponseMessage.0b71a05a8e934924974229c9",
+          "segment_id": "call_y5dCx5zJjr8xmlm1gDiRHfEt",
+          "started_at": "2026-11-06T18:47:40.192105+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:47:40.192112+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:47:42.183562+00:00",
+        "total_tokens": 20151,
+        "prompt_tokens": 19956,
+        "total_cost_usd": 0.022272,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 195,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.022272,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 12800,
+        "total_duration_seconds": 5.791,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.791,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 6538,
+            "prompt_tokens": 6512,
+            "completion_tokens": 26,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.013232,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-5f16744540cd432e9e207481b2f82d69:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 6656,
+            "prompt_tokens": 6548,
+            "completion_tokens": 108,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 6400
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00436,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-5f16744540cd432e9e207481b2f82d69:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 6957,
+            "prompt_tokens": 6896,
+            "completion_tokens": 61,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 6400
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00468,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5f16744540cd432e9e207481b2f82d69",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-5f16744540cd432e9e207481b2f82d69:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.e0cca05f8ebd485381226fa2",
+      "scenario": "retained_timeout_admission_failure",
+      "request_outcome": "retained_failure",
+      "run_status": "failed",
+      "run_id": "corr-4d25d1fb29f047ceb1f6fa757e863310",
+      "history_source": {},
+      "usage_complete_flag": false,
+      "utterance": "Use the DOCX skill to create a short Word document named pilot-status.docx. Title: Native Harness Pilot. Include the marker CEDAR-48 in a paragraph and a table with three rows: Runtime | Pydantic AI; State | jvspatial; Qualification | In progress. Validate the actual DOCX with the authored validator, then give me a download link. Do not claim enterprise qualification.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "started_at": "2026-11-06T14:49:45.848158",
+      "completed_at": "2026-11-06T14:49:47.972638",
+      "duration_seconds": 2.12448,
+      "worker_pid": "49121",
+      "sdk_digest": "sha256:67b494fef16222d61fdcf3b5b1c63d4d8283d16ac6794dfdd6f462e819e66049",
+      "sdk_run_count": 1,
+      "snapshot_count": 3,
+      "effects": [],
+      "trace": [
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.1a1107f726d34f1d9e79506c",
+          "segment_id": "call_lRVQmDB0ggdGsdNCWX0Ixrel",
+          "started_at": "2026-11-06T18:49:47.847884+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:49:47.847889+00:00",
+          "thought_type": "tool_call"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:49:47.972682+00:00",
+        "total_tokens": 6612,
+        "prompt_tokens": 6579,
+        "total_cost_usd": 0.013422,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 33,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.013422,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.74,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.74,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 6612,
+            "prompt_tokens": 6579,
+            "completion_tokens": 33,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.013422,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-4d25d1fb29f047ceb1f6fa757e863310",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-4d25d1fb29f047ceb1f6fa757e863310:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.01985dc7ac3443c6a7eed809",
+      "scenario": "validated_docx_creation",
+      "request_outcome": "passed",
+      "run_status": "delivered",
+      "run_id": "corr-506c235afced485b949db47e50b37b4a",
+      "history_source": {},
+      "usage_complete_flag": true,
+      "utterance": "Use the DOCX skill to create a short Word document named pilot-status.docx. Title: Native Harness Pilot. Include the marker CEDAR-48 in a paragraph and a table with three rows: Runtime | Pydantic AI; State | jvspatial; Qualification | In progress. Validate the actual DOCX with the authored validator, then give me a download link. Do not claim enterprise qualification.",
+      "response": "Your Word document \"pilot-status.docx\" has been created, validated, and is ready for download:\n\n[Download pilot-status.docx](http://127.0.0.1:8165/api/actions/n.FileInterfaceAction.fd6371c14c474cf7ae3f320a/downloads/<capability-redacted>)\n\n- Title: Native Harness Pilot\n- Includes marker: CEDAR-48\n- Table rows:\n  - Runtime | Pydantic AI\n  - State | jvspatial\n  - Qualification | In progress\n\nNo enterprise qualification is claimed.",
+      "started_at": "2026-11-06T14:54:44.493657",
+      "completed_at": "2026-11-06T14:55:27.549953",
+      "duration_seconds": 43.056296,
+      "worker_pid": "50715",
+      "sdk_digest": "sha256:9f44435ca7fee8848aaac0697b4d82bbf9a7169fab727cddaa41d80583e98a58",
+      "sdk_run_count": 1,
+      "snapshot_count": 18,
+      "effects": [
+        {
+          "run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:55:09.671627Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:54:47.106215Z",
+          "tool_call_id": "call_8BUCQdDGckK2j2Vwkz8fdxbs",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:c98175169a2865a00d17aa18081f53104c9cbcfec3140c8137876186848aaa1a"
+        },
+        {
+          "run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:55:16.942807Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:55:16.795184Z",
+          "tool_call_id": "call_wiOhVvsdjYNPtI8mAGsBIzZO",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:142e53cd5641dfc2f8aa4440aa74d01dd90e22c0a958e5796ee86d62808bf5f0"
+        },
+        {
+          "run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:55:18.740937Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:55:18.426147Z",
+          "tool_call_id": "call_vbMzctHRq8qyGdUOgMgwDZx7",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:50c0b0dbccb3af1134d86e411c8c3b53b492deb3cf4e0aa590512339babcdde6"
+        },
+        {
+          "run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:55:22.660175Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T18:55:20.601915Z",
+          "tool_call_id": "call_Gq0pCNIzc0S3rq032Ijzz1Ac",
+          "effect_summary": "jv:mutation:script:v1",
+          "idempotency_key_digest": "sha256:bea7389faad42096661b21e248baaf009247d343aab9a59a8dc79c545bb375be"
+        },
+        {
+          "run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:55:24.785587Z",
+          "tool_name": "file_interface__share_file",
+          "started_at": "2026-11-06T18:55:24.458483Z",
+          "tool_call_id": "call_OBwCp4AahSqfgGuIgCYV46o0",
+          "effect_summary": "jv:mutation:file-share:v1",
+          "idempotency_key_digest": "sha256:1d4bee6efbcd70a3cc445b623c498d7013fc959ea4c913e4e095183882cb2b6f"
+        }
+      ],
+      "trace": [
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.1c7c43ea0e4f42a9b332b1b3",
+          "segment_id": "call_8BUCQdDGckK2j2Vwkz8fdxbs",
+          "started_at": "2026-11-06T18:54:47.095680+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:54:47.095686+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "[stdout]\ndocx available",
+          "message_id": "o.ResponseMessage.7faeebecf95d461a8434bd3e",
+          "segment_id": "call_8BUCQdDGckK2j2Vwkz8fdxbs",
+          "started_at": "2026-11-06T18:55:09.689410+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:09.689416+00:00",
+          "thought_type": "tool_result"
+        },
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.d4468a5f4ffe4fc1a14bafb4",
+          "segment_id": "call_wiOhVvsdjYNPtI8mAGsBIzZO",
+          "started_at": "2026-11-06T18:55:16.781944+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:16.781950+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "(no output)",
+          "message_id": "o.ResponseMessage.1b9baf905ee0429f90b53f78",
+          "segment_id": "call_wiOhVvsdjYNPtI8mAGsBIzZO",
+          "started_at": "2026-11-06T18:55:16.960801+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:16.960806+00:00",
+          "thought_type": "tool_result"
+        },
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.e74671ae9cd6403eb7923a22",
+          "segment_id": "call_vbMzctHRq8qyGdUOgMgwDZx7",
+          "started_at": "2026-11-06T18:55:18.408940+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:18.408945+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "(no output)",
+          "message_id": "o.ResponseMessage.b7d1ad7d4724438798b44f9f",
+          "segment_id": "call_vbMzctHRq8qyGdUOgMgwDZx7",
+          "started_at": "2026-11-06T18:55:18.776679+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:18.776684+00:00",
+          "thought_type": "tool_result"
+        },
+        {
+          "content": "code_execution__bash",
+          "message_id": "o.ResponseMessage.e8fc80fcfb9946c288cc2e66",
+          "segment_id": "call_Gq0pCNIzc0S3rq032Ijzz1Ac",
+          "started_at": "2026-11-06T18:55:20.559240+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:20.559246+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "[stdout]\n\nParagraphs: 0 \u2192 8 (+8)\nAll validations PASSED!",
+          "message_id": "o.ResponseMessage.316240a5b2f14ffc84b99e24",
+          "segment_id": "call_Gq0pCNIzc0S3rq032Ijzz1Ac",
+          "started_at": "2026-11-06T18:55:22.797893+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:22.797901+00:00",
+          "thought_type": "tool_result"
+        },
+        {
+          "content": "file_interface__share_file",
+          "message_id": "o.ResponseMessage.c86b0ab695074e4f84598f94",
+          "segment_id": "call_OBwCp4AahSqfgGuIgCYV46o0",
+          "started_at": "2026-11-06T18:55:24.412023+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:24.412029+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"pilot-status.docx\", \"filename\": \"pilot-status.docx\", \"bytes\": 9944, \"sha256\": \"024149006af63fa3930bb7bbc0e7a3160adb9faabf2293339595754fef0556ac\", \"expires_at\": \"2026-11-06T19:05:24.743142+00:00\", \"url\": \"http://127.0.0.1:8165/api/actions/n.FileInterfaceAction.fd6371c14c474cf7ae3f320a/downloads/<capability-redacted>\"}",
+          "message_id": "o.ResponseMessage.55945c2c11ff42128a1f4970",
+          "segment_id": "call_OBwCp4AahSqfgGuIgCYV46o0",
+          "started_at": "2026-11-06T18:55:24.856612+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:55:24.856616+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:55:27.550040+00:00",
+        "total_tokens": 45954,
+        "prompt_tokens": 44623,
+        "total_cost_usd": 0.04575,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 6,
+        "completion_tokens": 1331,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.04575,
+        "model_attempt_count": 6,
+        "cached_prompt_tokens": 36096,
+        "total_duration_seconds": 13.805,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 13.805,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 6642,
+            "prompt_tokens": 6604,
+            "completion_tokens": 38,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.013512,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 7727,
+            "prompt_tokens": 6656,
+            "completion_tokens": 1071,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 6528
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.012088,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 7762,
+            "prompt_tokens": 7737,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 6528
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.005882,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 7809,
+            "prompt_tokens": 7772,
+            "completion_tokens": 37,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 7680
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00432,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 4,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:4",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 7856,
+            "prompt_tokens": 7835,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 7680
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.004318,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 5,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:5",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 8158,
+            "prompt_tokens": 8019,
+            "completion_tokens": 139,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 7680
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00563,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-506c235afced485b949db47e50b37b4a",
+          "native_step_index": 6,
+          "native_receipt_key": "spend:default|run|*|corr-506c235afced485b949db47e50b37b4a:6",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.bc3033ac8d52439199d060ad",
+      "scenario": "reshare_after_restart",
+      "request_outcome": "passed",
+      "run_status": "delivered",
+      "run_id": "corr-428cfac58e9445ef98145c5e99aeaeb3",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-506c235afced485b949db47e50b37b4a"
+      },
+      "usage_complete_flag": true,
+      "utterance": "Please share the same pilot-status.docx again without regenerating it or running any scripts.",
+      "response": "Here is the same pilot-status.docx file, shared again as requested:\n\n[Download pilot-status.docx](http://127.0.0.1:8165/api/actions/n.FileInterfaceAction.fd6371c14c474cf7ae3f320a/downloads/<capability-redacted>)",
+      "started_at": "2026-11-06T14:58:56.546145",
+      "completed_at": "2026-11-06T14:59:01.655453",
+      "duration_seconds": 5.109308,
+      "worker_pid": "51983",
+      "sdk_digest": "sha256:a09e091157c43e7c88441ef9e08800b11df851c57f2a1661ba64dd4e23fb93d7",
+      "sdk_run_count": 1,
+      "snapshot_count": 6,
+      "effects": [
+        {
+          "run_id": "corr-428cfac58e9445ef98145c5e99aeaeb3",
+          "status": "completed",
+          "ended_at": "2026-11-06T18:59:00.105753Z",
+          "tool_name": "file_interface__share_file",
+          "started_at": "2026-11-06T18:58:59.968982Z",
+          "tool_call_id": "call_keIQ8LFhfSPjqdU7bQX5OJMu",
+          "effect_summary": "jv:mutation:file-share:v1",
+          "idempotency_key_digest": "sha256:445ea49884c17ef3766d233ee0edb8a87d9f5e68ff32471fbf6fb3293288659c"
+        }
+      ],
+      "trace": [
+        {
+          "content": "file_interface__share_file",
+          "message_id": "o.ResponseMessage.f71e4d485d14481692cd9547",
+          "segment_id": "call_keIQ8LFhfSPjqdU7bQX5OJMu",
+          "started_at": "2026-11-06T18:58:59.957897+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:58:59.957905+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"pilot-status.docx\", \"filename\": \"pilot-status.docx\", \"bytes\": 9944, \"sha256\": \"024149006af63fa3930bb7bbc0e7a3160adb9faabf2293339595754fef0556ac\", \"expires_at\": \"2026-11-06T19:09:00.100685+00:00\", \"url\": \"http://127.0.0.1:8165/api/actions/n.FileInterfaceAction.fd6371c14c474cf7ae3f320a/downloads/<capability-redacted>\"}",
+          "message_id": "o.ResponseMessage.d4b59737f9e34e768fe3a635",
+          "segment_id": "call_keIQ8LFhfSPjqdU7bQX5OJMu",
+          "started_at": "2026-11-06T18:59:00.127950+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:59:00.127955+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:59:01.655570+00:00",
+        "total_tokens": 16649,
+        "prompt_tokens": 16547,
+        "total_cost_usd": 0.009718,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 102,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009718,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 16128,
+        "total_duration_seconds": 2.612,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.612,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 8203,
+            "prompt_tokens": 8182,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 8064
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.004436,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-428cfac58e9445ef98145c5e99aeaeb3",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-428cfac58e9445ef98145c5e99aeaeb3:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 8446,
+            "prompt_tokens": 8365,
+            "completion_tokens": 81,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 8064
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.005282,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-428cfac58e9445ef98145c5e99aeaeb3",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-428cfac58e9445ef98145c5e99aeaeb3:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.558fe591631741d7a9f5521f",
+      "spend": {
+        "usd": "0.013422",
+        "tokens": 6612,
+        "requests": 1,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.37a04a071aa2499f9277ce50",
+      "spend": {
+        "usd": "0.055468",
+        "tokens": 62603,
+        "requests": 8,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.b8e1178b07114b84ad40954e",
+      "spend": {
+        "usd": "0.022272",
+        "tokens": 20151,
+        "requests": 3,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "artifact_inspection": {
+    "bytes": 9944,
+    "sha256": "sha256:024149006af63fa3930bb7bbc0e7a3160adb9faabf2293339595754fef0556ac",
+    "text": "Native Harness Pilot\nThis document summarizes the current status of the Native Harness Pilot. Marker: CEDAR-48.\nRuntime\nPydantic AI\nState\njvspatial\nQualification\nIn progress",
+    "table_rows": [
+      [
+        "Runtime",
+        "Pydantic AI"
+      ],
+      [
+        "State",
+        "jvspatial"
+      ],
+      [
+        "Qualification",
+        "In progress"
+      ]
+    ],
+    "zip_valid": true,
+    "download_copy_matches_original": true
+  },
+  "browser_downloads": {
+    "created_browser_fetch": {
+      "status": 200,
+      "bytes": 9944,
+      "content_type": "application/octet-stream",
+      "sha256": "sha256:024149006af63fa3930bb7bbc0e7a3160adb9faabf2293339595754fef0556ac"
+    },
+    "reshared_browser_fetch": {
+      "status": 200,
+      "bytes": 9944,
+      "content_type": "application/octet-stream",
+      "sha256": "sha256:024149006af63fa3930bb7bbc0e7a3160adb9faabf2293339595754fef0556ac"
+    },
+    "all_source_and_publication_copies_identical": true
+  },
+  "restart_initial_audit": {
+    "failed_interactions_unchanged": true,
+    "spend_unchanged": true
+  },
+  "restart_created_audit": {
+    "all_three_interactions_unchanged": true,
+    "conversation_spend_unchanged": true,
+    "sdk_run_records_unchanged": true
+  },
+  "reload_audit": {
+    "all_four_interactions_unchanged": true,
+    "sdk_run_records_unchanged": true,
+    "conversation_spend_unchanged": true
+  },
+  "visual_observation": "macOS Quick Look thumbnail: title, marker paragraph and three-row table fit without clipping on the visible page; this is not Word/LibreOffice pagination qualification.",
+  "totals": {
+    "interactions": 4,
+    "retained_request_failures": 2,
+    "passed_requests": 2,
+    "provider_requests": 12,
+    "provider_reported_tokens": 89366,
+    "estimated_cost_usd": "0.091162",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Initial missing-program and over-limit-timeout failures remain in the cohort and spending; delivered response does not mean the requested document was produced.",
+    "Positive corrected-timeout retry/no-effect proof is a deterministic SDK regression; the successful actual-model request verifies provider acceptance of the declared schema ceiling.",
+    "This qualifies bounded local DOCX creation, authored XML validation and web re-sharing, not all DOCX read/edit/comment/track-change/conversion workflows.",
+    "The optional image does not include LibreOffice or pandoc; binary uploads, malicious/large documents, other providers/architectures and production image supply-chain/deployment qualification remain open.",
+    "Quick Look is a thumbnail readback, not a full Microsoft Word rendering or page-count guarantee.",
+    "Script crash/operator recovery, capacity, remote storage/channels, retained-state cutover, rollback and old-engine deletion remain open.",
+    "Image size is logical uncompressed size, not incremental disk/download use; no general performance/footprint optimization claim is made."
+  ]
+}

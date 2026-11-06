@@ -611,3 +611,13 @@ tool activity, restart/reload and persisted usage for both settings. Positive
 reasoning display uses the SDK FunctionModel; an actual reasoning-capable
 provider/child/cancellation/channel matrix remains open. The current reference
 report has 11 blockers; this is not cutover or old-engine deletion evidence.
+
+Existing app-local DOCX: [creation qualification](2026-11-06-native-docx.md).
+Explicit script prerequisites and an optional pinned/locked dependency image use
+the existing SDK Shell and FileInterface. Browser creation, unchanged authored
+validation, byte/XML/thumbnail inspection, restart and no-script re-sharing pass.
+Two earlier failures remain in evidence; public SDK schema bounds and pre-effect
+ModelRetry address the excessive-timeout failure. Uploaded documents, general
+editing/conversion, hostile inputs, production images and interrupted-script
+recovery remain open. The unchanged reference configuration now has 10 blockers;
+this does not qualify stored-state cutover or full DOCX feature parity.

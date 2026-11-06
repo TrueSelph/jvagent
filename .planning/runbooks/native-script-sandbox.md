@@ -30,6 +30,16 @@ the admitted caller's existing file-service directory.
 Sources: `jvagent/action/code_execution/code_execution_action.py:84`,
 `jvagent/harness/script_sandbox.py:104`.
 
+The host projects its timeout ceiling into the public SDK ToolDefinition schema.
+An over-limit argument that still reaches dispatch receives a public ModelRetry
+before staging, workspace creation or an execution effect; the SDK owns the
+bounded correction turn. The command is not clamped or executed. This closes the
+observed fatal pre-dispatch ValueError path. Remove this small policy projection
+when SDK Shell exposes an equivalent host maximum with correctable validation
+and the no-effect regression passes. Sources: `jvagent/harness/native.py:263`,
+`:316`, `tests/harness/native/test_script_sandbox.py:239`. See the
+[DOCX browser finding and evidence](../plans/2026-11-06-native-docx.md).
+
 A script skill must explicitly require `CodeExecutionAction` and the
 `code_execution__bash` tool, and list that tool in `allowed-tools`. The shipped
 `library:triage` asset does so. Host AccessControl must grant the named tool;

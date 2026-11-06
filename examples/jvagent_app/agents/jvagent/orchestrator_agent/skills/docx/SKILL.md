@@ -3,6 +3,13 @@ name: docx
 description: "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
 license: Proprietary. LICENSE.txt has complete terms
 spec: claude
+requires-actions:
+  - CodeExecutionAction
+requires-tools:
+  - code_execution__bash
+allowed-tools:
+  - code_execution__bash
+  - file_interface__share_file
 ---
 
 # DOCX creation, editing, and analysis
@@ -10,6 +17,24 @@ spec: claude
 ## Overview
 
 A .docx file is a ZIP archive containing XML files.
+
+### Native sandbox prerequisites
+
+Use the configured script sandbox and its preinstalled dependencies. A reviewed
+image may provide docx-js through `NODE_PATH`; follow the dependency check in
+Creating New Documents below. If a required dependency is absent and installation
+is unavailable, report that limitation instead of claiming to have made a file.
+
+In the native sandbox, the shipped support scripts are staged at
+`staged_skills/docx/scripts/`. Use that prefix for the existing office/validation
+scripts below. `create_doc.js` is an example filename, not a shipped generator:
+write your own JavaScript program in the user's working directory using the
+docx-js API, then execute that file. Do not look for it in the staged skill or
+mistake an unwritten program for a missing dependency. Keep document paths
+relative to the user's working directory. Validate the generated
+file with `python staged_skills/docx/scripts/office/validate.py <file.docx>` before
+sharing it through `file_interface__share_file` when that service is available.
+Do not substitute plain text or rename another format to `.docx`.
 
 ## Quick Reference
 
@@ -56,17 +81,22 @@ python scripts/accept_changes.py input.docx output.docx
 
 ## Creating New Documents
 
-Generate .docx files with JavaScript, then validate. **Install `docx` *locally* in
-the directory you run the script from** (a global `-g` install is NOT on Node's
-module-resolution path, so `require('docx')` won't find it):
+Generate .docx files by writing a JavaScript program, then execute and validate
+it. First check the configured environment:
 
 ```bash
-cd <output dir> && npm install docx --no-save --silent   # creates ./node_modules/docx
-node create_doc.js                                        # run from the same dir
+node -e "require('docx'); console.log('docx available')"
 ```
 
-If the host has no network, `docx` must be pre-installed in the image; set
-`NODE_PATH` to its location instead.
+If this succeeds, skip installation. Write your own `create_doc.js` using the API
+below (for example with a shell heredoc), then run `node create_doc.js` from that
+directory. The example filename does not refer to an existing bundled script.
+
+Only if the check fails and an installer plus network access are permitted, run
+`npm install docx --no-save --silent` locally in your working directory. A global
+`-g` installation is not automatically on Node's resolution path; a preinstalled
+image can instead set `NODE_PATH`. Do not attempt network installation in an
+offline sandbox.
 
 ### Setup
 ```javascript

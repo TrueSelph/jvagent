@@ -5,6 +5,7 @@ checker. This module does not import the legacy Orchestrator or pilot engine.
 """
 
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
@@ -262,12 +263,19 @@ def build_native_agent(
         async def prepare_tools(
             self, ctx: RunContext[Any], tool_defs: list[Any]
         ) -> list[Any]:
-            return [
+            selected = [
                 tool
                 for tool in tool_defs
                 if (allow_mutations or tool.name not in mutation_names)
                 and (tool.name not in allowed or catalog.allows_tool(ctx, tool.name))
             ]
+            for index, tool in enumerate(selected):
+                if tool.name in script_names:
+                    schema = deepcopy(tool.parameters_json_schema)
+                    timeout = schema["properties"]["timeout_seconds"]
+                    timeout.update(exclusiveMinimum=0, maximum=script_sandbox.timeout)
+                    selected[index] = replace(tool, parameters_json_schema=schema)
+            return selected
 
         async def prepare_output_tools(
             self, ctx: RunContext[Any], tool_defs: list[Any]
@@ -305,7 +313,13 @@ def build_native_agent(
                     raise ModelRetry("Load an authorized script skill first")
                 if not await access_check(call.tool_name):
                     raise MutationAccessDenied("Script execution access denied")
-                script_sandbox.check_arguments(args)
+                try:
+                    script_sandbox.check_arguments(args)
+                except ValueError:
+                    raise ModelRetry(
+                        "Omit timeout_seconds or use a positive timeout no greater "
+                        f"than {script_sandbox.timeout} seconds. No command ran."
+                    ) from None
             if call.tool_name in planning_names:
                 reject_model_authority_fields(args)
                 if call.tool_name == "write_plan" and not allow_mutations:

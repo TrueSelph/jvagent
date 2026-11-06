@@ -236,6 +236,60 @@ async def test_script_workspace_is_lazy_and_denial_precedes_execution(
 
 
 @pytest.mark.asyncio
+async def test_script_timeout_refusal_is_correctable_before_any_effect() -> None:
+    profile, conversation = await bound_profile(IMAGE)
+    interaction = await Interaction.create(
+        user_id="caller",
+        session_id=conversation.session_id,
+        conversation_id=conversation.id,
+    )
+    calls = 0
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        definition = next(t for t in info.function_tools if t.name == SCRIPT_TOOL)
+        timeout = definition.parameters_json_schema["properties"]["timeout_seconds"]
+        assert timeout["maximum"] == profile.timeout
+        assert timeout["exclusiveMinimum"] == 0
+        if calls == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        SCRIPT_TOOL, {"command": "never", "timeout_seconds": 120}
+                    )
+                ]
+            )
+        assert "No command ran" in str(messages[-1])
+        return ModelResponse(parts=[TextPart("Timeout corrected without execution")])
+
+    async def allowed(name: str) -> bool:
+        return True
+
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=Path("jvagent/skills/triage").resolve(),
+        tools=[],
+        available_actions=["CodeExecutionAction"],
+        access_check=allowed,
+        instructions="Use the skill",
+        script_sandbox=profile,
+        step_store=InteractionStepStore(interaction),
+    )
+    result = await agent.run(
+        "Probe", run_id="invalid-timeout", conversation_id=conversation.session_id
+    )
+    assert result.output == "Timeout corrected without execution"
+    assert calls == 2
+    assert not interaction.native_steps.get("effects")
+    assert all(
+        not message.workspace_ref
+        for message in result.all_messages()
+        if isinstance(message, ModelResponse)
+    )
+
+
+@pytest.mark.asyncio
 async def test_official_docker_script_execution_history_and_failed_effect() -> None:
     image = os.environ.get("JVAGENT_TEST_SCRIPT_IMAGE")
     if not image:

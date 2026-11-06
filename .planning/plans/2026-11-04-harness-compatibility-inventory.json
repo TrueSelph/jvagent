@@ -2545,5 +2545,26 @@
       "Total trace retention/capacity",
       "Remaining configuration/skill/state migration, legacy/pilot deletion and release qualification"
     ]
+  },
+  "native_docx_qualification": {
+    "status": "bounded app-local creation and web re-sharing qualified; full DOCX feature migration remains open",
+    "record": "2026-11-06-native-docx.md",
+    "qualified": [
+      "Existing authored scripts/schemas staged unchanged; explicit execution prerequisites and official Skills loading",
+      "Optional pinned/locked dependency image, no base host dependency changes",
+      "SDK tool timeout schema ceiling and correctable pre-effect invalid-argument rejection",
+      "Actual GPT-4.1 browser DOCX creation, authored validator, byte/XML/thumbnail inspection, cold restart and unchanged re-sharing/reload",
+      "669 native/host/real-PostgreSQL tests per Python 3.11/3.12; current reference format report has 10 blockers"
+    ],
+    "retained_failures": [
+      "Initial SOP misinterpreted an unwritten example generator as a missing dependency",
+      "Excessive model-selected timeout previously ended the run before any command"
+    ],
+    "remaining": [
+      "Uploaded/binary documents, arbitrary editing/comments/redlining/conversion and hostile/large documents",
+      "Other providers/architectures and production image/deployment/supply-chain qualification",
+      "Interrupted script/operator recovery, capacity and remote/channel storage",
+      "Remaining configuration/state migration, rollback, old-engine deletion and enterprise release gates"
+    ]
   }
 }
