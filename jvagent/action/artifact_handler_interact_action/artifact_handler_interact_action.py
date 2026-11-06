@@ -1377,7 +1377,7 @@ class ArtifactHandlerInteractAction(InteractAction):
         return mod
 
     async def _dispatch_tool(self, func_name: str, **kwargs: Any) -> str:
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         from .vault_tool_context import VaultToolContext
 

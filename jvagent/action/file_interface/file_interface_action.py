@@ -17,8 +17,8 @@ from typing import Annotated, Optional
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
 from jvagent.harness.contracts import IdempotencyClass
+from jvagent.tooling.context import get_tool_visitor
 from jvagent.tooling.tool_decorator import tool
-from jvagent.tooling.tool_executor import get_tool_visitor
 
 logger = logging.getLogger(__name__)
 

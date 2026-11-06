@@ -47,6 +47,14 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Action context service: [2026-11-06 extraction record](2026-11-06-native-context-decoupling.md).
+Eight modular Actions remove 28 direct import sites through the old executor.
+Cold isolation, task-local caller tests, Action regressions and real MCP browser
+execution with File Interface hosted pass. This is a deletion prerequisite;
+the old engine is still present. Native file reads additionally need a corrected
+published storage dependency: the pinned 0.1.1 wheel still buffers complete streams.
+Other extension classes, migration and full old-runtime removal remain open.
+
 Approved text readback: [2026-11-06 qualification](2026-11-06-native-history-readback.md).
 The bounded subscription now restores both roles for approved legacy text and
 completed native replies in jvchat without charging or registering work. Actual

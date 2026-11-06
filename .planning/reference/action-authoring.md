@@ -9,9 +9,15 @@ Cross-refs: [`SPEC.md`](../SPEC.md) for invariants, [`GLOSSARY.md`](../GLOSSARY.
 ## 1. Decide what kind of action you need
 
 ```
-Need to wrap an LLM provider?
-└─ Subclass LanguageModelAction
-   (jvagent/action/model/language/base.py:24)
+Need to configure the harness execution model?
+└─ Configure NativeHarnessAction.model / model_settings
+   (jvagent/action/native_harness/native_harness_action.py:105)
+
+Need a new execution-model provider?
+└─ Use public Pydantic AI provider/model interfaces through the native factory
+   (jvagent/harness/native.py:20)
+   Existing LanguageModelAction transports are transitional compatibility;
+   do not add another provider execution path.
 
 Need to expose an embedding model?
 └─ Subclass BaseModelAction
@@ -564,3 +570,17 @@ not a junk-drawer `action/utils`.
 
 CI guard: `tests/action/test_action_import_guard.py`.
 Audit snapshot: [action-modularization-audit.md](action-modularization-audit.md).
+## Caller context in modular tools
+
+Import caller helpers from `jvagent.tooling.context`. Prefer the immutable
+`get_dispatch_context()` for identity. Use `require_tool_visitor()` when a
+visitor-bound native service needs the checked live visitor. The native Action
+binds this service around library execution; direct tool callers must establish
+their own host-controlled binding. A context helper is not a permission grant:
+the native adapter still checks active skill and host access. Sources:
+`jvagent/tooling/context.py:11`, `jvagent/harness/native.py:95`.
+
+Legacy imports through `jvagent.tooling.tool_executor` remain aliases during the
+transition; new Action code should not import an execution engine to obtain caller
+identity. Current scope and deletion prerequisites are in
+[the extraction record](../plans/2026-11-06-native-context-decoupling.md).

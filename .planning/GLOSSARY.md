@@ -340,3 +340,12 @@ public SDK messages, paired with an explicitly estimated historical conversation
 spend baseline. It preserves original records and does not replay old tools or
 invent provider receipts. See `jvagent/harness/history_import.py:69` and
 [the migration runbook](runbooks/native-harness-migration.md).
+
+### ToolDispatchContext
+
+The host's immutable, task-local caller/agent/session/Interaction identity for
+Action tools. Native execution binds it through `jvagent.tooling.context`; it
+does not authorize a tool independently of skill and host access policy. The
+separate compatibility visitor is mutable and only for services that require it.
+Source: `jvagent/tooling/context.py:11`. See
+[the extraction record](plans/2026-11-06-native-context-decoupling.md).

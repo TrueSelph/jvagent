@@ -13,6 +13,14 @@ from jvagent.action.native_harness import NativeHarnessAction
 from jvagent.action.leadgen.leadgen_action import LeadGenAction
 from jvagent.action.mcp.mcp_action import MCPAction
 from jvagent.action.interview import InterviewAction
+import jvagent.action.file_interface.file_interface_action
+import jvagent.action.code_execution.code_execution_action
+import jvagent.action.whatsapp.whatsapp_action
+import jvagent.action.handoff_action.handoff_action
+import jvagent.action.artifact_handler_interact_action.artifact_handler_interact_action
+import jvagent.action.skill_hub.skill_hub_action
+import jvagent.action.ui.ui_action
+import jvagent.action.vision.vision_action
 assert 'jvagent.tooling.tool_executor' not in sys.modules
 assert 'jvagent.harness.runtime' not in sys.modules
 assert 'jvagent.action.orchestrator.orchestrator_interact_action' not in sys.modules

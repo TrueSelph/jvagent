@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [approved history readback](2026-11-06-native-history-readback.md).
+Latest increment: [modular context dependency removal](2026-11-06-native-context-decoupling.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Modular Action context dependency removal
+
+The [record](2026-11-06-native-context-decoupling.md) removes 28 imports of caller
+helpers through the legacy executor across eight Action modules. The existing
+context service and old aliases retain their contracts. Expanded cold isolation
+fails on the parent and passes after replacement. A fresh PostgreSQL/browser
+GPT-4.1/MCP lookup with File Interface hosted delivers the correct room/time,
+visible tool/result/statistics, 691 reported tokens and USD 0.001652 estimated;
+native execution modules stay isolated. Both native/host/PG lanes pass 458.
+Affected Action tests pass 403/one skip on 3.12; 3.11 passes 386 plus 17 UI cases.
+The published pinned storage wheel still buffers streams; native file-read
+qualification needs a corrected dependency. Existing upstream PR #55 is merged,
+but pins and upstream worktrees are unchanged. Full migration/deletion/release
+remain open. All nine parent 7438259d checks pass; new publication gates are separate.
 
 ## Approved historical client readback
 

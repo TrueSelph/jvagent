@@ -23,8 +23,9 @@ class ToolDispatchContext:
     channel: Optional[str] = None
 
 
-# Per-task slot holding the dispatch context for the currently-running tool
-# call. Set by ``ToolExecutionEngine.dispatch`` and reset on completion.
+# Per-task host context, bound by the native Action adapter (or transitional
+# executor) and reset after execution. Modular Actions import this service
+# directly rather than importing an execution engine for caller identity.
 _dispatch_context_var: contextvars.ContextVar[Optional[ToolDispatchContext]] = (
     contextvars.ContextVar("jvagent_tool_dispatch_context", default=None)
 )
@@ -78,9 +79,9 @@ def require_tool_visitor() -> Any:
 def bind_dispatch_context(visitor: Optional[Any]) -> Iterator[None]:
     """Bind the visitor-derived dispatch context for direct tool execution.
 
-    ``ToolExecutionEngine.dispatch`` sets this automatically, but callers that
-    run ``Tool``s directly (e.g. the Orchestrator loop) must bind it so
-    context-aware tools — notably per-user MCP servers — route correctly.
+    The native Action adapter and transitional executor bind this service so
+    context-aware tools route to the admitted caller. A direct tool caller
+    must establish the same host context; a model cannot supply it.
     """
     ctx = _build_context_from_visitor(visitor)
     ctx_token = _dispatch_context_var.set(ctx)

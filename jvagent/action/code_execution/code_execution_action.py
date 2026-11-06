@@ -36,8 +36,8 @@ from jvagent.core.sandbox import (
     resolve_agent_user,
 )
 from jvagent.harness.contracts import IdempotencyClass
+from jvagent.tooling.context import get_tool_visitor
 from jvagent.tooling.tool_decorator import tool
-from jvagent.tooling.tool_executor import get_tool_visitor
 
 logger = logging.getLogger(__name__)
 
