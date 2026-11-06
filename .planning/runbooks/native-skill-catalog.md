@@ -39,11 +39,19 @@ Each directory must contain its own reviewed SKILL.md; roots are explicit and
 bounded to 32 entries. `library:research` selects the installed package asset
 portably; references to one directory cannot traverse paths or escape through
 package directory/SKILL.md symlinks (`skill_assets.py:56`). App-relative paths retain the existing containment rules.
-Directory/name mismatches, duplicate names, unsupported metadata and unavailable
-Action/tool/channel prerequisites fail admission. Every configured member must
-also pass official loader preflight before a model request is made.
+Directory/name mismatches, duplicate names and unsupported projected metadata
+fail admission. Exact channel allow/deny lists omit ineligible catalog members;
+an unavailable primary or empty eligible catalog refuses before model work.
+Eligible members must satisfy Action/tool prerequisites and official loader
+preflight. Omitted members still require full qualification before later use.
 See `jvagent/harness/skill_catalog.py:24` and
 `jvagent/harness/skill_assets.py:34`.
+
+The host applies the same channel projection before binding fresh script assets.
+Channel selection grants no host permission or authenticated adapter origin and
+does not remove previously staged user files. Forced SDK bypass, independent
+permission and real-provider browser evidence:
+[channel qualification](../plans/2026-11-06-native-channel-catalog.md).
 
 Tools are exposed only when an owning skill is active according to the public
 SDK context. Calling a hidden tool by name does not activate a skill. The SDK
@@ -70,8 +78,8 @@ See `jvagent/action/native_harness/native_harness_action.py:300`.
 
 The offline converter now maps finite `skills`/`skills_source` declarations into
 this surface, preserving declared members and app-over-library overrides. This
-is not a complete migration of the old router or stored state. Scripts, wildcard declarations, automatic library
-search, channel-specific catalog composition and custom task metadata still need
+is not a complete migration of the old router or stored state. Broader scripts,
+wildcard declarations, automatic library search, legacy channel overrides and custom task metadata still need
 their migration and compatibility evidence. Research-owned MCP evidence remains
 refused until provenance is qualified; an unrelated read-only MCP skill may share
 the same catalog. Historical graph upgrades and legacy deletion remain governed

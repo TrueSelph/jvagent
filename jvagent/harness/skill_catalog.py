@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from jvagent.harness.skill_admission import admit_skill
-from jvagent.harness.skill_assets import project_skill, projected_workspace
+from jvagent.harness.skill_assets import (
+    channel_skill_directories,
+    project_skill,
+    projected_workspace,
+)
 from jvagent.skills.output_policies import SUPPORTED_OUTPUT_CONTRACTS, output_policy
 
 
@@ -38,6 +42,9 @@ class NativeSkillCatalog:
         paths = [primary] if primary is not None else list(directories)
         if len(paths) > 32:
             raise ValueError("At most 32 skills may be configured")
+        paths = channel_skill_directories(
+            paths, channel=channel, action_bases=action_bases
+        )
         self.directories: list[Path] = []
         self.metadata: dict[str, dict[str, Any]] = {}
         self.libraries: list[Any] = []

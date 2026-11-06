@@ -10,6 +10,8 @@ async def read_app_clock(app: Any) -> str:
     if app is None:
         raise RuntimeError("App clock is unavailable")
     configured = getattr(app, "timezone", "")
+    if configured is None:  # App's declared default means server-local time.
+        configured = ""
     if not isinstance(configured, str):
         raise ValueError("App timezone is invalid")
     try:

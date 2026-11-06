@@ -2638,5 +2638,24 @@
       "retained tasks",
       "full app cutover and legacy deletion"
     ]
+  },
+  "native_channel_catalog_qualification": {
+    "evidence": "2026-11-06-native-channel-catalog.md",
+    "qualified": [
+      "exact channel projection for native finite catalog",
+      "independent SDK ownership and host permission",
+      "consistent fresh host/factory script asset selection",
+      "valid unset App timezone read with explicit offset"
+    ],
+    "actual_provider": "Seven GPT-4.1 turns, five expectations met and two failures retained; final two clock reads succeed",
+    "reference_blockers": 9,
+    "remaining": [
+      "stale-denial model history limitation",
+      "authenticated channel origin",
+      "WhatsApp external sends/delivery",
+      "prior workspace assets and channel-changing conversation reuse",
+      "legacy override/vision/lock and retained-state migration",
+      "legacy removal and enterprise qualification"
+    ]
   }
 }

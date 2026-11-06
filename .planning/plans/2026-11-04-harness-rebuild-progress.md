@@ -2679,3 +2679,23 @@ tasks and one cancelled task persist; no external contact is performed. Final
 native/host/real-PG lanes pass 722 per Python 3.11/3.12. Repeated/proactive hooks,
 custom skill tools, legacy retained tasks, remaining migration/deletion and
 enterprise qualification stay open.
+
+## Native catalog channel projection and unset clock — 2026-11-06
+
+[Qualification](2026-11-06-native-channel-catalog.md) fixes a catalog-wide
+admission failure caused by another-channel member. Exact declarative channel
+projection feeds official Skills and the host's fresh script-asset policy; SDK
+loading and independent host permissions remain authoritative. It adds no router,
+override engine or persistence schema. The actual browser read also exposed App's
+valid timezone=None being refused by the clock service; that default now works,
+with invalid falsy types still rejected.
+
+Sixteen channel cases and five clock regressions cover the confirmed gaps.
+Final native/host/real-PG/Docker/clock passes 752 per Python 3.11/3.12; migration/
+scaffold passes 181. Seven actual GPT-4.1 browser turns retain two failed
+expectations (stale model denial and pre-fix clock error), then qualify default
+clock reads in existing/fresh sessions and unchanged reload. Thirteen requests /
+7,157 reported tokens / USD 0.015844 estimated reconcile; all seven effects are
+terminal. Recovery changes one predecessor usage timestamp only. Nine reference
+blockers, authenticated channel origin/external sends, retained-state cutover,
+legacy removal and enterprise qualification remain open.

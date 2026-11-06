@@ -23,6 +23,7 @@ def bind_app(monkeypatch: Any, app: Any) -> None:
 @pytest.mark.parametrize(
     "configured,now,expected",
     [
+        (None, datetime(2026, 11, 6, 12), None),
         ("", datetime(2026, 11, 6, 12), None),
         (
             "America/New_York",
@@ -37,7 +38,7 @@ def bind_app(monkeypatch: Any, app: Any) -> None:
     ],
 )
 async def test_clock_normalizes_local_time_and_dst(
-    configured: str, now: datetime, expected: str | None, monkeypatch: Any
+    configured: str | None, now: datetime, expected: str | None, monkeypatch: Any
 ) -> None:
     bind_app(
         monkeypatch,
@@ -48,6 +49,18 @@ async def test_clock_normalizes_local_time_and_dst(
     assert datetime.fromisoformat(stamp).tzinfo is not None
     if expected:
         assert stamp == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [False, 0, [], {}])
+async def test_unset_timezone_does_not_accept_other_falsy_types(
+    configured: Any, monkeypatch: Any
+) -> None:
+    clock = AsyncMock(return_value=datetime(2026, 11, 6, 12))
+    bind_app(monkeypatch, SimpleNamespace(timezone=configured, now=clock))
+    with pytest.raises(ValueError, match="timezone is invalid"):
+        await AgentUtils().get_current_datetime()
+    clock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -408,6 +408,15 @@ class NativeHarnessAction(InteractAction):
                 )
             prompt = task_prompt(task_spec)
 
+        from jvagent.harness.skill_assets import channel_skill_directories
+
+        if skill_directory is None:
+            skill_directories = channel_skill_directories(
+                skill_directories,
+                channel=caller_channel,
+                action_bases=action_skill_bases,
+            )
+
         step_store = InteractionStepStore(interaction, agent_id=host.id)
         from jvagent.harness.recovery import (
             RECOVERY_NOTICE,

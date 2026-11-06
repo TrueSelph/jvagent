@@ -664,3 +664,16 @@ retirement lowers reference blockers to nine; signup format is admitted but host
 approval remains explicit. Trusted Python imports are not sandboxed/transitively
 pinned, no external delivery is qualified, and legacy task migration, repeated/
 branch/proactive hooks, custom skill tools and full cutover/removal remain open.
+
+## Native catalog channel selection and default clock
+
+[Evidence](2026-11-06-native-channel-catalog.md) qualifies ordinary chat alongside
+omitted channel-restricted skills, exact allow/deny policy, forced SDK bypass,
+independent host denial, consistent fresh script-asset binding and corrected
+timezone=None clock behavior. Real GPT-4.1 browser calls retain the stale-denial
+and pre-fix service failures; corrected existing/fresh-session clock results and
+reload have graph/usage comparisons. Final combined native/host/PG/Docker/clock
+lanes pass 752 per Python 3.11/3.12. This does not authenticate a caller-selected
+channel, remove old workspace files, qualify channel-changing conversations or
+external sends, or retire legacy channel overrides. Nine reference blockers,
+remaining migration/deletion and enterprise gates remain open.

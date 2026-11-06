@@ -6,7 +6,7 @@ capability loading and execution. No files are rewritten and no scripts run.
 
 import re
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -153,6 +153,39 @@ def project_skill(
         ]
     text = "---\n" + yaml.safe_dump(metadata, sort_keys=False) + "---\n" + body + "\n"
     return metadata, text
+
+
+def channel_skill_directories(
+    directories: Sequence[Path],
+    *,
+    channel: str,
+    action_bases: Mapping[str, Path] | None = None,
+) -> list[Path]:
+    """Project exact declarative channel policy before tools or scripts stage.
+
+    Channel is a routing fact, never authorization. Host permissions and caller
+    identity remain independent. This does not interpret or activate skill SOPs.
+    """
+    if not 1 <= len(directories) <= 32:
+        raise ValueError("Configure between one and 32 skills")
+    selected = []
+    names: set[str] = set()
+    for path in directories:
+        directory = path.resolve(strict=True)
+        metadata, _ = project_skill(directory, action_bases=action_bases)
+        name = metadata.get("name")
+        if not isinstance(name, str) or name != directory.name:
+            raise ValueError("Skill name must match its directory")
+        if name in names:
+            raise ValueError("Duplicate configured skill names")
+        names.add(name)
+        allowed = metadata.get("allowed-channels", [])
+        denied = metadata.get("denied-channels", [])
+        if channel not in denied and (not allowed or channel in allowed):
+            selected.append(directory)
+    if not selected:
+        raise ValueError("Skill is unavailable on this channel")
+    return selected
 
 
 def projected_workspace(directory: Path, document: str) -> Any:
