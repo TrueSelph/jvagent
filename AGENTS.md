@@ -56,6 +56,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Navigate the design docs** | [`.planning/README.md`](.planning/README.md) (folder index) |
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **v2.0 Harness Excellence** | [`.planning/ROADMAP.md`](.planning/ROADMAP.md) · [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md) · [`docs/HARNESS_EXCELLENCE_PLAN.md`](docs/HARNESS_EXCELLENCE_PLAN.md) |
+| **Check tracked Action/skill coverage** | [Source inventory and its separate qualification boundary](.planning/runbooks/harness-asset-coverage.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
 | **Choose a deployment pattern** (Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
@@ -207,6 +208,7 @@ pytest tests/                  # or the affected slice(s) at minimum
   require full strict typing across the tree.
 - **Use `attribute(...)` for all persisted Node fields.** Plain class attributes are not persisted.
 - **Add a test slice** in `tests/action/{name}/` or `tests/{subsystem}/` for any new behavior.
+- **Keep tracked asset coverage current.** Action/skill/declaration or companion changes require regenerating and reviewing [the tracked inventory](.planning/plans/2026-11-06-harness-tracked-assets.json). The pre-commit coverage hook checks drift; it does not grant runtime qualification. See [the runbook](.planning/runbooks/harness-asset-coverage.md).
 - **Run the commit gate above** (`pre-commit run --all-files` + `pytest`) before every commit and before claiming a change is done.
 - **Cite file:line** in commit messages and PR descriptions when fixing bugs — `core/app.py:124` beats "fixed the App singleton".
 

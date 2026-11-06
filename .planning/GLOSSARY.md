@@ -416,3 +416,12 @@ or parallel execution with ordered events. JV validates the library-owned type
 and delegates scheduling to its public context manager. It is not an exact
 numeric concurrency quota or distributed capacity guarantee. Source:
 [`native.py:635`](../jvagent/harness/native.py:635).
+
+### Tracked asset inventory
+
+A read-only source listing of Git-tracked Action manifests, SKILL.md files,
+agent declarations and companion-content bindings. It includes app-local and
+fixture scope. Matching the reviewed listing proves coverage, not runtime
+admission, compatibility or deletion approval. See the
+[coverage contract](runbooks/harness-asset-coverage.md) and
+[`harness_asset_inventory.py:91`](../scripts/harness_asset_inventory.py:91).

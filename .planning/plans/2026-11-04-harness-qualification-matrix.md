@@ -1,10 +1,13 @@
 # Native rebuild compatibility and qualification gates
 
 [Machine-readable migration inventory](2026-11-04-harness-compatibility-inventory.json)
-contains all 58 pre-rebuild Action manifests, 22 skill assets (including embedded
-Action skills/examples), and 91 persisted Orchestrator settings with source lines.
-The native_harness and pageindex_read Actions and delegate skill are additional
-to that baseline. Dispositions are proposed engineering decisions; every integration still needs conformance proof.
+originally listed the package-only baseline: 58 Action manifests, 22 skill/SOP
+assets and 91 persisted Orchestrator settings. It omitted the app-local Action,
+twelve app-local skills and two fixtures. The [reconciliation](2026-11-06-harness-asset-coverage.md)
+and [checked current snapshot](2026-11-06-harness-tracked-assets.json) now cover
+61 tracked Action manifests, 38 SKILL.md files and both agent declarations,
+including renamed/new/removed paths. Dispositions are proposed engineering
+decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
 ## Qualification status

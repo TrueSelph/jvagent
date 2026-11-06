@@ -2607,3 +2607,16 @@ failures and two post-fix successes, with 12 requests, 89,366 reported tokens an
 USD 0.091162 estimated. Final native/host/real-PG lanes pass 669 per Python
 3.11/3.12. Reference format blockers fall to 10, with six skills admitted. Wider
 DOCX features, migration/cutover, deletion and enterprise gates remain open.
+
+## Complete tracked asset coverage — 2026-11-06
+
+[Reconciliation](2026-11-06-harness-asset-coverage.md) corrects the original
+package-only inventory: it omitted one app-local Action, twelve app-local skills
+and two fixtures. The current checked snapshot covers 61 Action manifests,
+38 SKILL.md files and both agent declarations, with tracked companion digests.
+The baseline/current handoff path delta is recorded without assuming contract
+equivalence or reverting earlier edits. A read-only Git-based scanner, local hook
+and eleven source/Git regressions prevent silent coverage drift. Source discovery is
+not runtime qualification or deletion approval; no harness runtime changes or new
+model/browser coverage are claimed. App-local consumer/extension and handoff
+compatibility remain explicit cutover work alongside the ten reference blockers.

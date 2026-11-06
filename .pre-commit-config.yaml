@@ -61,6 +61,12 @@ repos:
           - types-requests==2.32.0.20240914
   - repo: local
     hooks:
+      - id: harness-asset-coverage
+        name: Tracked harness asset coverage
+        entry: python3 scripts/harness_asset_inventory.py --check .planning/plans/2026-11-06-harness-tracked-assets.json
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: pytest
         name: pytest
         entry: pytest

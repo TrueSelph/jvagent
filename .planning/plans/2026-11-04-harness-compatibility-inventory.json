@@ -2566,5 +2566,24 @@
       "Interrupted script/operator recovery, capacity and remote/channel storage",
       "Remaining configuration/state migration, rollback, old-engine deletion and enterprise release gates"
     ]
+  },
+  "tracked_asset_coverage_reconciliation": {
+    "record": "2026-11-06-harness-asset-coverage.md",
+    "snapshot": "2026-11-06-harness-tracked-assets.json",
+    "reconciliation": "2026-11-06-harness-asset-reconciliation.json",
+    "baseline_omitted_action_manifests": 1,
+    "baseline_omitted_skills": 14,
+    "removed_tracked_assets_since_baseline": {
+      "action_manifests": [
+        "jvagent/action/handoff_interact_action/info.yaml"
+      ],
+      "skills": []
+    },
+    "current_totals": {
+      "skills": 38,
+      "action_manifests": 61,
+      "agent_declarations": 2
+    },
+    "qualification": "Original arrays are the historical package-only subset; complete tracked coverage is in the linked snapshot. Coverage is not compatibility approval."
   }
 }

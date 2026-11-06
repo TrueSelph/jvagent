@@ -1,0 +1,1857 @@
+{
+  "schema": "jvagent.tracked-harness-assets.v1",
+  "scope": "Git-tracked working-tree declarations and companions; untracked deployments are not covered",
+  "qualification": "Source coverage only; no SDK preflight, execution or compatibility approval",
+  "totals": {
+    "skills": 38,
+    "action_manifests": 61,
+    "agent_declarations": 2
+  },
+  "assets": {
+    "skills": [
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/example_leadgen/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:de520833cf56e3e747f2a4ae534cdbf995da6212648c97a0855cf829d1497128",
+        "name": "example_leadgen",
+        "spec": null,
+        "extends": "action:jvagent/leadgen",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [],
+          "requires-actions": [
+            "LeadGenAction",
+            "MCPAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "always-active",
+          "description",
+          "extends",
+          "leadgen",
+          "name",
+          "requires-actions",
+          "tags"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:f180519b75e318d99231b5347fd90d7d19043885a2bef97ea459817ac27201ef"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_faq/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:e16688bc71a4c0b9b0798b1f3b52cfa00f1cfce9f6fab47b722a76cd03e45d72",
+        "name": "product_faq",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "storefront__faq"
+          ],
+          "requires-actions": [
+            "StorefrontAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_inquiry_leads/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:e342e973c6ce9fd6ce2d0430adac37da8dba85138db6d7b552d8389a9c64d060",
+        "name": "product_inquiry_leads",
+        "spec": null,
+        "extends": "action:jvagent/leadgen",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [],
+          "requires-actions": [
+            "LeadGenAction",
+            "MCPAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "always-active",
+          "description",
+          "extends",
+          "leadgen",
+          "name",
+          "requires-actions",
+          "tags"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:0cae47fb9b18add0667c4332aa7f730cb2a36bd09af604ba75aa025028c01257"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_search/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:d87f8c2d9c5d70856051d43b09523ae0a5341fc5fc3e7fba8721a32d1d2a64ac",
+        "name": "product_search",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "storefront__search_products"
+          ],
+          "requires-actions": [
+            "StorefrontAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/render_ui/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:bff4632caa130b04d7337d0c7b51ee6e364f52378b611678945050816a22c14e",
+        "name": "render_ui",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "ui__render"
+          ],
+          "requires-actions": [
+            "UiAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "always-active",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/docx/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:1331c866eff1558f5794db3e706aa2492e6e3e3894c6029737e77408ba8c4377",
+        "name": "docx",
+        "spec": "claude",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "code_execution__bash",
+            "file_interface__share_file"
+          ],
+          "requires-tools": [
+            "code_execution__bash"
+          ],
+          "requires-actions": [
+            "CodeExecutionAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "license",
+          "name",
+          "requires-actions",
+          "requires-tools",
+          "spec"
+        ],
+        "tracked_directory_files": 60,
+        "tracked_directory_digest": "sha256:3ffbcfe41f1c636e03b952fbecd3264d3a0c90a5a2332ccf39284456853bcb86"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:c01c9525ed8374b0a78210363ea3b31195c35a05abf370ed18c2b1da6077ece9",
+        "name": "signup_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "description",
+          "extends",
+          "interview",
+          "lock-companions",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:5c82a32b44bfa115fce2280997c9e5c00281f70dd3ae42bf45390160674d93a8"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/smoke_frontmatter/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:c18cdde707a9c92430f2124c5221eb6e2ff634615a6fcba4791c9a6e45089c34",
+        "name": "smoke_frontmatter",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": true,
+        "policy_fields": {
+          "allowed_tools": [
+            "file_interface__list_directory",
+            "file_interface__read_file"
+          ],
+          "requires_actions": [
+            "FileInterfaceAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed_tools",
+          "description",
+          "name",
+          "requires_actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:0bad7d2dbdae7c4cd39b6cddb018f9782ea853445d4d033ee7d0d0089d9b1034",
+        "name": "web-lookup",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "web_search__search",
+            "web_fetch__fetch"
+          ],
+          "requires-actions": [
+            "SerperWebSearchAction",
+            "WebFetchAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_flows/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:15cd3f8daacfe294b4302202217e53079a4fcfde486ac26378c76e119d7cde5c",
+        "name": "whatsapp_flows",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "whatsapp__list_flows",
+            "whatsapp__send_flow"
+          ],
+          "requires-actions": [
+            "WhatsAppAction"
+          ],
+          "allowed-channels": [
+            "whatsapp",
+            "whatsapp_call"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-channels",
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_service_flows/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:f6bff3b39cab95c11e247eee846f292b83bcc69fec0a019535c449b80449bd87",
+        "name": "whatsapp_service_flows",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "whatsapp__send_flow"
+          ],
+          "requires-actions": [
+            "WhatsAppAction"
+          ],
+          "allowed-channels": [
+            "whatsapp",
+            "whatsapp_call"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-channels",
+          "allowed-tools",
+          "always-active",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_templates/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:b087cc9f926637231619f77d6fb1fbfb75cb9b9545b15fb80d6c3d91a7951638",
+        "name": "whatsapp_templates",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "whatsapp__list_templates",
+            "whatsapp__send_template"
+          ],
+          "requires-actions": [
+            "WhatsAppAction"
+          ],
+          "allowed-channels": [
+            "whatsapp",
+            "whatsapp_call"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-channels",
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/action/interview/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:129ee2572909fd212f8458e739e7601b930db3d0daa6c6922e7aea53ea48987a",
+        "name": "interview_base",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "interview__set_fields",
+            "interview__skip_field",
+            "interview__field_unavailable",
+            "interview__next_field",
+            "interview__get_status",
+            "interview__review",
+            "interview__complete",
+            "interview__cancel",
+            "interview__reset"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "task-lock"
+        ],
+        "tracked_directory_files": 37,
+        "tracked_directory_digest": "sha256:77d60e8b4f909f33fd2a0594b2007443fc4c86a8af2d28bfbdb1e80554edbeb1"
+      },
+      {
+        "path": "jvagent/action/interview/examples/example_account_gating/example_booking_interview/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:fd656ad92a149216910247005bf7e2a1d85096d757384ee2fd5900e1971ce09d",
+        "name": "example_booking_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "description",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "requires-tasks",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/action/interview/examples/example_account_gating/example_signin_interview/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:da9e7717f9fda3340288120898efc81054ccdc504b42761b3417ca381565bca0",
+        "name": "example_signin_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "description",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/action/interview/examples/example_for_each_interview/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:726b9d87765bf83a6c23f7a40c4365661990d1f8e1976381e17a0a003d52acd2",
+        "name": "example_for_each_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "description",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:3e8d3d9c0079c49f49244096ff444b8a503ac37ecae7bb7567e75499f67204e5"
+      },
+      {
+        "path": "jvagent/action/interview/examples/example_interview/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:9558256ad5e802454ba922c9067af39ccfe23533f5f074ab994db8dde2408948",
+        "name": "example_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "example_interview__send_followup_reminder"
+          ],
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:06e00c782f3787fd87a7b4196c1e1637dd8f5083d335f93d3c1367e0d7ef5d3e"
+      },
+      {
+        "path": "jvagent/action/interview/native_skill/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:66be970033035ac4d1a533ee092db78d11c1efbc2530afb42e0742c8d11daedb",
+        "name": "native-interview",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "interview__start",
+            "interview__set_fields",
+            "interview__skip_field",
+            "interview__field_unavailable",
+            "interview__next_field",
+            "interview__get_status",
+            "interview__review",
+            "interview__complete",
+            "interview__cancel",
+            "interview__reset",
+            "interview__set_items",
+            "interview__set_item_fields"
+          ],
+          "requires-tools": [
+            "interview__start"
+          ],
+          "requires-actions": [
+            "InterviewAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "requires-tools"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/action/leadgen/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:02e3de03fbdf06772cddb2ebf5290d7c09ba6f60de0b6997c5362690386cf6cd",
+        "name": "leadgen_base",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "leadgen__capture",
+            "leadgen__retrieve",
+            "leadgen__status",
+            "leadgen__sync"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "always-active",
+          "description",
+          "name"
+        ],
+        "tracked_directory_files": 19,
+        "tracked_directory_digest": "sha256:ff9b29b07262029bac9d32948eb86c7bc5a45b12ed045d57e4224b311b2037ce"
+      },
+      {
+        "path": "jvagent/action/leadgen/examples/example_leadgen/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:019976d27a37192f030568a838d61931c83a8e5a8e502b35ac2752c71cd261c3",
+        "name": "example_leadgen",
+        "spec": null,
+        "extends": "action:jvagent/leadgen",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [],
+          "requires-actions": [
+            "LeadGenAction",
+            "MCPAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "always-active",
+          "description",
+          "extends",
+          "leadgen",
+          "name",
+          "requires-actions",
+          "tags"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:89714a80c625b1bf8973052f8d5e9b7720e8c4bb0b653d3a5d86ce9a9598f16b"
+      },
+      {
+        "path": "jvagent/skills/answer/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:f1dee8e5b5ca91aa2985c6decddde03a36758072fb1025580035648dabd3eb0c",
+        "name": "answer",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "pageindex__search",
+            "web_search__search",
+            "web_fetch__fetch"
+          ],
+          "requires-actions": [
+            "PageIndexAction",
+            "SerperWebSearchAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "tags",
+          "version"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/artifact_handler/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:7b9bf33ef29f01d43dc4b732d71d7949d98d03ab3a2baae8870bde42e298695c",
+        "name": "artifact_handler",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "artifact_handler__ingest_document",
+            "artifact_handler__list_my_documents",
+            "artifact_handler__delete_document",
+            "artifact_handler__check_ingest_status",
+            "artifact_handler__check_pending_attachments",
+            "pageindex__search"
+          ],
+          "requires-actions": [
+            "PageIndexAction",
+            "AccessControlAction",
+            "ArtifactHandlerInteractAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:164391465a2d83ad7d161c3d5f6d8de9a8171234c815ecd7f90ba9b0ebaddf70"
+      },
+      {
+        "path": "jvagent/skills/delegate/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:639ab7e35232e3548c3f4f5c5c9f10e4b016ae667bdbe2700ec28d3b2ab42168",
+        "name": "delegate",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "delegate_task"
+          ],
+          "requires-tools": [
+            "delegate_task"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-tools",
+          "version"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/google/google_calendar/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:ece6358700420e1b1bf66558e02336e2016366d623d8d55b1a5139eba1da324c",
+        "name": "google_calendar",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "calendar__list_events",
+            "calendar__create_event",
+            "calendar__delete_event"
+          ],
+          "requires-actions": [
+            "GoogleCalendarAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/google/google_drive/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:9043f77b9bb99a8087ac500acf5fb6c9419a8eb0a29e47064f374ab49b8f8456",
+        "name": "google_drive",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "google_drive__list_files",
+            "google_drive__upload_file",
+            "google_drive__get_file_metadata",
+            "google_drive__get_shared_drive_metadata",
+            "google_drive__get_media",
+            "google_drive__share_file",
+            "google_drive__delete_file"
+          ],
+          "requires-actions": [
+            "GoogleDriveAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/google/google_gmail/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:c0022c974acf2814ce8110bb0c3f96462fba29bb28fcb48d704ecb01c37eb746",
+        "name": "google_gmail",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "gmail__send_email",
+            "gmail__list_messages",
+            "gmail__get_message",
+            "gmail__mark_read",
+            "gmail__get_profile"
+          ],
+          "requires-actions": [
+            "GoogleGmailAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/google/google_sheets/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:c1ca020f4364df634ee74c9c42918e567e3d11cf4eceeb9f275cde59e0660f62",
+        "name": "google_sheets",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "google_sheets__read_spreadsheet",
+            "google_sheets__update_spreadsheet",
+            "google_sheets__append_spreadsheet",
+            "google_sheets__create_spreadsheet",
+            "google_sheets__delete_spreadsheet",
+            "google_sheets__create_worksheet",
+            "google_sheets__update_worksheet",
+            "google_sheets__delete_worksheet",
+            "google_sheets__merge_cells",
+            "google_sheets__unmerge_cells",
+            "google_sheets__format_cells",
+            "google_sheets__last_filled_row",
+            "google_sheets__batch_clear",
+            "google_sheets__share_spreadsheet"
+          ],
+          "requires-actions": [
+            "GoogleSheetsAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/knowledge_ingest/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:4eaa741cdb3399fbd394eb71d2391d850e546b6df6fe39e10ad56da79c78d241",
+        "name": "knowledge_ingest",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "web_fetch__fetch",
+            "web_search__search",
+            "pageindex__assimilate",
+            "pageindex__list"
+          ],
+          "requires-actions": [
+            "WebFetchAction",
+            "PageIndexAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "tags",
+          "version"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:5f472e1ca530c78083d6761590d3a162fc248ddb2b5cb5fa9174e105f901e8ba"
+      },
+      {
+        "path": "jvagent/skills/microsoft/excel/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:e4fbc5772bd11a054865938804e5fc4986efbdd92f3c0c979d38b2f6e83e8e40",
+        "name": "excel",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "excel__read_spreadsheet",
+            "excel__update_spreadsheet",
+            "excel__append_spreadsheet",
+            "excel__create_spreadsheet",
+            "excel__delete_spreadsheet",
+            "excel__create_worksheet",
+            "excel__update_worksheet",
+            "excel__delete_worksheet",
+            "excel__batch_clear",
+            "excel__share_spreadsheet"
+          ],
+          "requires-actions": [
+            "MicrosoftExcelAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/microsoft/onedrive/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:2a40a67391fddfa94b85d4ae5276497d0aff3ed77845f1c6703ac4a74f65e840",
+        "name": "onedrive",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "onedrive__list_files",
+            "onedrive__upload_file",
+            "onedrive__share_file",
+            "onedrive__delete_file"
+          ],
+          "requires-actions": [
+            "MicrosoftOneDriveAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/microsoft/outlook_calendar/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:959223ebd30d1588700dd85f0d0a1183342cb67a463fd57efd8459e8e899d9b1",
+        "name": "outlook_calendar",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "outlook_calendar__list_events",
+            "outlook_calendar__create_event",
+            "outlook_calendar__delete_event"
+          ],
+          "requires-actions": [
+            "MicrosoftOutlookCalendarAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/microsoft/outlook_mail/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:a8aa4c7db284c467a60bba4393030c371cc052f187369107fff4f39d60ec5a9c",
+        "name": "outlook_mail",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "outlook__send_email",
+            "outlook__list_messages",
+            "outlook__list_inbox_messages",
+            "outlook__get_message",
+            "outlook__mark_read",
+            "outlook__get_profile"
+          ],
+          "requires-actions": [
+            "MicrosoftOutlookMailAction",
+            "MCPAction",
+            "MCPOAuthAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/pageindex-search-with-references/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:99c13aa0fe85a4dc7af6ecbe6ad2766ee2d5bca15c9cc4aee7a9e5c64e66f4de",
+        "name": "pageindex-search-with-references",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "pageindex__search"
+          ],
+          "requires-actions": [
+            "PageIndexAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "jvagent/skills/pdf-generation/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:7c22f04162f71c5e088bd536ce75c41877119ae278b93d410c84f3f89fddb917",
+        "name": "pdf-generation",
+        "spec": "claude",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "code_execution__bash",
+            "file_interface__share_file"
+          ],
+          "requires-tools": [
+            "code_execution__bash"
+          ],
+          "requires-actions": [
+            "CodeExecutionAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "license",
+          "metadata",
+          "name",
+          "requires-actions",
+          "requires-tools",
+          "spec"
+        ],
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:a4cf8ed544a9ec57a94c32ee8bd6a63d4a9074b1533a23c03e6ed8e7804467e1"
+      },
+      {
+        "path": "jvagent/skills/research/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:d1d4384c1858b0734e063f57524d7706cea6700e3e16fb2bb54e0669a6eeaf0c",
+        "name": "research",
+        "spec": null,
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "web_search__search",
+            "web_fetch__fetch"
+          ],
+          "requires-actions": [
+            "SerperWebSearchAction",
+            "WebFetchAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "output-contract",
+          "requires-actions",
+          "tags",
+          "version"
+        ],
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:912fc2d2819e4e0aaf2fbfa28ceecc6fe0e5d8d688596aec09482e373e622f91"
+      },
+      {
+        "path": "jvagent/skills/triage/SKILL.md",
+        "scope": "package",
+        "sha256": "sha256:d77a26627ed81d2a9d494f1566456b5cfbd803858e3b3229f59f074bc7c4a59e",
+        "name": "triage",
+        "spec": "claude",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "code_execution__bash"
+          ],
+          "requires-tools": [
+            "code_execution__bash"
+          ],
+          "requires-actions": [
+            "CodeExecutionAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "license",
+          "metadata",
+          "name",
+          "requires-actions",
+          "requires-tools",
+          "spec"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:b5f5b0cb5f4f7286e46b83d2cdd2800f6a402f226d01da0e0a5139db739232d5"
+      },
+      {
+        "path": "tests/action/interview/fixtures/skills/onboarding_interview/SKILL.md",
+        "scope": "test-fixture",
+        "sha256": "sha256:32d070199a243ead61f84c113b771c4c54791e8721679d41513ef267dcac2ab8",
+        "name": "onboarding_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "onboarding_interview__process_id_card",
+            "onboarding_interview__send_otp"
+          ],
+          "disabled-tools": [
+            "interview__cancel"
+          ],
+          "requires-actions": [
+            "InterviewAction",
+            "ZoonAPIAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "disabled-tools",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:f39eae4bab1ec81e91643e8981e4667c7db2cf6d08f25bf08e26c7b708da94ed"
+      },
+      {
+        "path": "tests/action/interview/fixtures/skills/pre_alert_interview/SKILL.md",
+        "scope": "test-fixture",
+        "sha256": "sha256:ad8ee506896ceb338111aca71b76b37a691baa6c5209e10c823c98c58a48574f",
+        "name": "pre_alert_interview",
+        "spec": "jv",
+        "extends": "action:jvagent/interview",
+        "byte_order_mark": false,
+        "policy_fields": {
+          "requires-actions": [
+            "InterviewAction",
+            "ZoonAPIAction"
+          ]
+        },
+        "metadata_keys": [
+          "description",
+          "extends",
+          "interview",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags",
+          "task-lock"
+        ],
+        "tracked_directory_files": 1,
+        "tracked_directory_digest": "sha256:aa17e6a965dccfba4100dbbe45189f5ec71a2d890d7e0235b9fca7f5902542b4"
+      }
+    ],
+    "action_manifests": [
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/actions/contrib/storefront/info.yaml",
+        "scope": "app-example",
+        "sha256": "sha256:6c5985a0ebbc16b650f173bf2a5601af0d41e3b4850c3cbe2803a5bbdc1d3543",
+        "name": "contrib/storefront",
+        "archetype": "StorefrontAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:469b93e4358cbf73aef06dcdc37ca48dffeb076a5fa8ab1e130c9cfdc79e2451"
+      },
+      {
+        "path": "jvagent/action/access_control/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:2455e1b05b041a54524997c13868a3c17fb6b0db72d093394b37d14969803b5f",
+        "name": "jvagent/access_control_action",
+        "archetype": "AccessControlAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:81d58a59aa18aa02e114210595ed60195a66a440ce2c65dbd0dab5da3d1604ed"
+      },
+      {
+        "path": "jvagent/action/agent_utils/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:3d512a5195c6ccc74474e5070c7c29e55df2ad2044be168c09dff3811d6e54fe",
+        "name": "jvagent/agent_utils",
+        "archetype": "AgentUtils",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:0d306ad0e8780dc0bdb24cc4228777bd1b32dd4cfdd719146ec4c8db5e80f98d"
+      },
+      {
+        "path": "jvagent/action/artifact_handler_interact_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:9c490e6cb8ac492201c81d6867dcbfb0ec66a24e68efe5316ecac0099d3599d1",
+        "name": "jvagent/artifact_handler_interact_action",
+        "archetype": "ArtifactHandlerInteractAction",
+        "tracked_directory_files": 9,
+        "tracked_directory_digest": "sha256:d3f058398c753e7329bfd1813cd23793e9cbc0bbaae363ab811a4e73827705a4"
+      },
+      {
+        "path": "jvagent/action/avatar_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:351a1c975fd561d8833a28c7cb1a3a54dceb4da5f44e2d91273bcb2ec7679d6d",
+        "name": "jvagent/avatar_action",
+        "archetype": "AvatarAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:1899e66da1612bfe9443b5ff714905c1ef17b9bcdeedbc32fabec5e7c6d4266c"
+      },
+      {
+        "path": "jvagent/action/code_execution/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:62a5c244ce78be9fe5bbe7690b1f71e7a46f04bd56a2d89e4fb74282a8b1a9ca",
+        "name": "jvagent/code_execution",
+        "archetype": "CodeExecutionAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:40b1d18148169e9c915fcf560f140162af1cd5bd4accb8b7a26e7da1e2c8354f"
+      },
+      {
+        "path": "jvagent/action/email_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:1f90685d6879a8a7c4436d6b4f55bec2732fb3c471655b8d88ac1798f390584d",
+        "name": "jvagent/email_action",
+        "archetype": "EmailAction",
+        "tracked_directory_files": 25,
+        "tracked_directory_digest": "sha256:2594c17531ba3a49ebcb82e812cd75b4a80367bf6c320618d2663cb1b6186f8c"
+      },
+      {
+        "path": "jvagent/action/facebook_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:25308cddc55ad1820a7244bd9f323f0b1d03a1d2ceda1678bd7917e34cf16932",
+        "name": "jvagent/facebook_action",
+        "archetype": "FacebookAction",
+        "tracked_directory_files": 15,
+        "tracked_directory_digest": "sha256:02c284bcbaf7ebcbd99da5374660c11659373d78548226dc6775f5597f5b21af"
+      },
+      {
+        "path": "jvagent/action/file_interface/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:3dfb7c954623ad0856b9f56b3bfc7f1093af4d00cce3eca8089dd638c2b2832d",
+        "name": "jvagent/file_interface",
+        "archetype": "FileInterfaceAction",
+        "tracked_directory_files": 5,
+        "tracked_directory_digest": "sha256:6cccb343dc7b495d5296d646417028b021c2ff9e4d3ff1e7a7e7f697dc455184"
+      },
+      {
+        "path": "jvagent/action/google/google_calendar_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:3bf2b60280fded7e77c57fe2aaf4527269ce83ac4cdaf7609d11c643afed2bb5",
+        "name": "jvagent/google_calendar_action",
+        "archetype": "GoogleCalendarAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:dcb4b299ff6fe45350c86673ada6c78554e491f1baa79a39a9ed02e37f6dc959"
+      },
+      {
+        "path": "jvagent/action/google/google_docs_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:dde87680f129482df725d6dec9720c1207a2baa810d8947180622ec9f7ba8f0b",
+        "name": "jvagent/google_docs_action",
+        "archetype": "GoogleDocsAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:f85030461beb566427e7700866f7ec32c0a18ac9201675d94b34289e836545f9"
+      },
+      {
+        "path": "jvagent/action/google/google_drive_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:20ce3509513c5ad5775d380367ea4b265fa480eddef948aeadc9739f4af7d638",
+        "name": "jvagent/google_drive_action",
+        "archetype": "GoogleDriveAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:36ef784edbe2bdf7db2a1065961d9410e449450e7ea1779cf7f2481f11bcc682"
+      },
+      {
+        "path": "jvagent/action/google/google_gmail_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:ceaae448f26d5485b50ebb487d14cdc40809b6c2d765f10b7eedc66f2e1b3220",
+        "name": "jvagent/google_gmail_action",
+        "archetype": "GoogleGmailAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:890e5b8f8e1ab168fc20cdbc31b73ef54121f519f19303a2a2a350043f7670c6"
+      },
+      {
+        "path": "jvagent/action/google/google_sheets_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:a0393b021dff6f00b425ceb74404408c01433d0868f58144aac8c9e8598d46c8",
+        "name": "jvagent/google_sheets_action",
+        "archetype": "GoogleSheetsAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:39bd3f8675ab7074ac36e95797c14894af9636db9cee73f39efe671d3a12741e"
+      },
+      {
+        "path": "jvagent/action/handoff_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:8a6a825eb4d82d8b832b52dbb38fc2375a0a190693345941b57919906d366466",
+        "name": "jvagent/handoff_action",
+        "archetype": "HandoffAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:5f8d9c9a8c9b5b7cac0cafa61eff1edcb4f618f960126708e6463daadf78deaa"
+      },
+      {
+        "path": "jvagent/action/interview/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:377f0a4d2710436e881d6cdcd36a22d004e84484c93a699edebf1007c892de2a",
+        "name": "jvagent/interview",
+        "archetype": "InterviewAction",
+        "tracked_directory_files": 37,
+        "tracked_directory_digest": "sha256:bd4fe6baf3e01a0fb7fc43eaa324e901aeb65ac91a25fa7a123600f610da6c2c"
+      },
+      {
+        "path": "jvagent/action/intro/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:564a79eea6ada91c326ed53e4d44686f67d5a418cd06b1f1b0931f554ec0108e",
+        "name": "jvagent/intro_interact_action",
+        "archetype": "IntroInteractAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:1f53c59c6e160931fbe0aac2e8302077800dc3b388939b7cc42288c4613fade2"
+      },
+      {
+        "path": "jvagent/action/leadgen/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:7e0f2f6665a3f25b27f9e962246b7d48b724bfff9e48a5881b9326fbf847074b",
+        "name": "jvagent/leadgen",
+        "archetype": "LeadGenAction",
+        "tracked_directory_files": 19,
+        "tracked_directory_digest": "sha256:e39e595dbe9fbc9a43eed0cd7aa79f33b9fd88f04527d023c43b9b42748b7ad1"
+      },
+      {
+        "path": "jvagent/action/mcp/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:556282e31e4399046a4d081db544a51a5012f7437e0d3a087c7b08473037def0",
+        "name": "jvagent/mcp",
+        "archetype": "MCPAction",
+        "tracked_directory_files": 8,
+        "tracked_directory_digest": "sha256:9dfa2c723158af61a01b3a091ad15fdad7dd39ab7e4f9cde67f8e426aafb2963"
+      },
+      {
+        "path": "jvagent/action/mcp_oauth/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:c7e662950af0eedd604ed2d4f6c5f508e7d8d14a1245f6f2ed0e0bbcb50c455f",
+        "name": "jvagent/mcp_oauth",
+        "archetype": "MCPOAuthAction",
+        "tracked_directory_files": 8,
+        "tracked_directory_digest": "sha256:5071e9a1657a37d9330af66bbb2c754d070ce9e669e4507e6f89b8b5f093bade"
+      },
+      {
+        "path": "jvagent/action/microsoft/microsoft_excel_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:d4443084e98a71c70bd0f6ba06e226df164308fe4e11537a48d6f78234434186",
+        "name": "jvagent/microsoft_excel_action",
+        "archetype": "MicrosoftExcelAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:cfe284efc72aab19ba12127763f594f2507259d9b3a5eff83b66375cf28c304a"
+      },
+      {
+        "path": "jvagent/action/microsoft/microsoft_onedrive_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:2ab80a2454ccdf003256819a30e406bf2192eff8fcae3c00fdb21b518f202992",
+        "name": "jvagent/microsoft_onedrive_action",
+        "archetype": "MicrosoftOneDriveAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:32c18e2ec453d88fdd2e15b28731c4bcbff691de08f500003e65c20479911c42"
+      },
+      {
+        "path": "jvagent/action/microsoft/microsoft_outlook_calendar_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:68e7e71cd2174b45a38dcfea5b1d8d43e4a3f81c443a6be7bf2e6f5e9d44de84",
+        "name": "jvagent/microsoft_outlook_calendar_action",
+        "archetype": "MicrosoftOutlookCalendarAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:22ea43f5ff3002ca5b68f1d2540d9a816c8fa2c7ff84b2bf015e5429f34b89cb"
+      },
+      {
+        "path": "jvagent/action/microsoft/microsoft_outlook_mail_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:742ba11ff7a3a231f23c49dcacafe88de238648b9b4e74b8c5303464b840abcd",
+        "name": "jvagent/microsoft_outlook_mail_action",
+        "archetype": "MicrosoftOutlookMailAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:b37de25539ecbceeed0da51af274cab6a45e6b37dd0b18bf464e3970fe256b0f"
+      },
+      {
+        "path": "jvagent/action/model/embedding/generic/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:0cae7ede4cba37089879129e17eea0512228e92f31a25a972a29395ce3308ff7",
+        "name": "jvagent/generic_embedding",
+        "archetype": "GenericEmbeddingModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:b7a42ce1e278ebbcfbb00faffcc0d47cfad73417adbca4bf6dbd78afc149db86"
+      },
+      {
+        "path": "jvagent/action/model/embedding/huggingface/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:c2c9b638f1ac2f0c8a6efb8ac3669560a23a546826ff0e9227f1d84d70f35c87",
+        "name": "jvagent/huggingface_embedding",
+        "archetype": "HuggingFaceEmbeddingModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:3681a9ca021b9f28ea7b8e1aca809a4b8410bd95bfd6d5685a34acf564ab5291"
+      },
+      {
+        "path": "jvagent/action/model/embedding/ollama/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:54477f3dff28d4f45ca6de8bd815997a210b37ec1db310c078398f284435f2f4",
+        "name": "jvagent/ollama_embedding",
+        "archetype": "OllamaEmbeddingModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:4464534282d245ff409dbaa9543112feb98e1077e5edd2ca4d3556982becaad2"
+      },
+      {
+        "path": "jvagent/action/model/embedding/openai/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:ac5e7ef035c0aa0d977b075813c8d0daa087e79236d550ffb41f7dbf6a4b5831",
+        "name": "jvagent/openai_embedding",
+        "archetype": "OpenAIEmbeddingModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:a709c6d9fb5641645f977515ffdf8def39586c240c4ccd5cedb316f923114872"
+      },
+      {
+        "path": "jvagent/action/model/embedding/openrouter/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:e6ae35ccbf4ea92067cd7144f8bf1ed345e55f25ad7fa85b19fe4e5db7200557",
+        "name": "jvagent/openrouter_embedding",
+        "archetype": "OpenRouterEmbeddingModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:d525cf82ca780ec2a9aa97c7cf601f49f1560b4af84514c247a8264906755eee"
+      },
+      {
+        "path": "jvagent/action/model/language/anthropic/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:f28af61c7e125653730b478262126c0fa51d53f096ccd2dac21adac85c002db8",
+        "name": "jvagent/anthropic_lm",
+        "archetype": "AnthropicLanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:2c0c28828a0b03d4ffed30147d7dc0f662067db9d33dd64b6f7f752b5355192d"
+      },
+      {
+        "path": "jvagent/action/model/language/groq/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:1c52288b7357ad05237ce89f993827d7aa728cb135bfff7d9560cf0728630499",
+        "name": "jvagent/groq_lm",
+        "archetype": "GroqLanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:de09f28f20140af39461083fcb5f4702804a182c6e8dfd6e6e1cdf6a3833261b"
+      },
+      {
+        "path": "jvagent/action/model/language/litellm/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:541fe7d7af629a3cc7c87c1425658019d32f221165806f3f4123d3e9b1b9b706",
+        "name": "jvagent/litellm_lm",
+        "archetype": "LiteLLMLanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:acc39b0110163507247b96f390417052fe469fe04ba764fd5079338d09c974b8"
+      },
+      {
+        "path": "jvagent/action/model/language/ollama/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:f0b8bd05d88c26eeaa50a77278c961f1ae530310ea9f5c9153098b25674fdca2",
+        "name": "jvagent/ollama_lm",
+        "archetype": "OllamaLanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:c565d3003a28076211301c1ee240ebb1402e60f3e44b65beca34ff3b47f019bf"
+      },
+      {
+        "path": "jvagent/action/model/language/openai/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:4a032daf3adedd57037dc37157447eaf7cff13bb45171b5a5fb9cdde5da5f3ad",
+        "name": "jvagent/openai_lm",
+        "archetype": "OpenAILanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:c95b42628f644a12e953914d2d443610f8d41ac7de518edb9a545f4de1370c08"
+      },
+      {
+        "path": "jvagent/action/model/language/openrouter/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:d38b687539264ab5b72508dd9636017c93cac8082e6ed02ae341869dc6ad6a11",
+        "name": "jvagent/openrouter_lm",
+        "archetype": "OpenRouterLanguageModelAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:ce69434acab9fae933220aaf73e84aaf1612b3f8036a1e529fd14533e99f9af0"
+      },
+      {
+        "path": "jvagent/action/native_harness/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:6df3a7180927a5cd04c33d20bd755ecb9a84c87a775f09b05c9df68a2190825f",
+        "name": "jvagent/native_harness",
+        "archetype": "NativeHarnessAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:5299ff740ba70e28b71a8c86b1e1ecd7bb7d803b9dccb3c0c0af42fcead21e4e"
+      },
+      {
+        "path": "jvagent/action/orchestrator/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:33599f4c3e81bb9b9f6fd9a8b719b84341e89aff8ff376f645cebacdb1548cb5",
+        "name": "jvagent/orchestrator",
+        "archetype": "OrchestratorInteractAction",
+        "tracked_directory_files": 32,
+        "tracked_directory_digest": "sha256:3a09e66b9885fd063026b799ee38a977a8af36ff862c75b9ed794bab90dfc215"
+      },
+      {
+        "path": "jvagent/action/page_context/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:37b2dd10dba6e509d9bca1d904ec97954e9147255632067727362ba78cd7af4d",
+        "name": "jvagent/page_context",
+        "archetype": "PageContextInteractAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:43f407ae06a89339a51ce55ee7d30b2e65ad5cc4f6351b111ac000f8adf3bcc9"
+      },
+      {
+        "path": "jvagent/action/pageindex/pageindex_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:218e7779e2f85d02795d4083fa7acf1c421ac53cc22065e4f90b573ed234d057",
+        "name": "jvagent/pageindex_action",
+        "archetype": "PageIndexAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:0c631a883468cfbdc9a7b6b91059223094a0c1cbedeebc4d33fdde8c3dec097d"
+      },
+      {
+        "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:21b1ea32d2b86fd2714f817f747b0ba5cc5ad557f8276d421457d8e7bbe75028",
+        "name": "jvagent/pageindex_google_drive_sync_action",
+        "archetype": "PageIndexGoogleDriveSyncAction",
+        "tracked_directory_files": 7,
+        "tracked_directory_digest": "sha256:578aa9b06922fae9d16c98c9d5fa862b0be83774fa2b77c86e69eec15d26a947"
+      },
+      {
+        "path": "jvagent/action/pageindex_read/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:d660f70ddec4cfdf512baf5a2338d811b672598d657fdfb96123afc37837880e",
+        "name": "jvagent/pageindex_read",
+        "archetype": "PageIndexReadAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:aa341198985ddc3001a3b9848ead7c7cdf2c5a77549fdfa78d9af1542304bc7b"
+      },
+      {
+        "path": "jvagent/action/postiz_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:9076687dbda89f02f316ee8f0fc7abaf178dd3623c39656cf94a9d226f0ad425",
+        "name": "jvagent/postiz_action",
+        "archetype": "PostizAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:4e3dbd9fb9061ade1abb47730edecf89cf7948a73d22c3b835bfb5f953931aea"
+      },
+      {
+        "path": "jvagent/action/reply/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:16fb981705bcc82a3ed88ff35788af5a283f49f55464c723adbc1676ecf6523a",
+        "name": "jvagent/reply",
+        "archetype": "ReplyAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:72d60574c624916356e557bd0562337892cae257eacfc0a148e6765098545e9e"
+      },
+      {
+        "path": "jvagent/action/sentdm_broadcast/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:68b72022d2e784137681c5563a393660fba960789e7d39f506c8e9ac173e9b16",
+        "name": "jvagent/sentdm_broadcast_action",
+        "archetype": "SentDMBroadcastAction",
+        "tracked_directory_files": 12,
+        "tracked_directory_digest": "sha256:0269cc9aec03a8233427f680deab60a35c63191c24c218ff217418d966b49957"
+      },
+      {
+        "path": "jvagent/action/skill_hub/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:fe1771dc408b5eaac490db5b8722701f12373fc7e249fe43483d2cfb836daf71",
+        "name": "jvagent/skill_hub",
+        "archetype": "SkillHubAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:d184b22d254adcc0c6d715d1b1a39dbb891a76fb29d1e702a3533e19aa7e438b"
+      },
+      {
+        "path": "jvagent/action/stt_action/deepgram/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:fc5f3858bb595de9ba4a8ca58c748c1de098644c292a5c1abda180c50ca0e87b",
+        "name": "jvagent/deepgram_stt",
+        "archetype": "DeepgramSTTAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:f884edaa11549baf93da433aefa81f5c131b38c68afbad03bab55861f29df7fd"
+      },
+      {
+        "path": "jvagent/action/suggestions/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:b3fac1f354e48bb356ed7284a66a982ddba10e74f14c22c99a4eafb4dcf2a085",
+        "name": "jvagent/suggestions",
+        "archetype": "SuggestionsInteractAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:ef2dc518a1c19567c3029f0cefe777b4955ec2afca5ca3901610b1a6e09fcd4a"
+      },
+      {
+        "path": "jvagent/action/task_creation_interact_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:59182ec115b828e235c322a466814beaadab294a1463f803c318009f3dc60d3c",
+        "name": "jvagent/task_creation_interact_action",
+        "archetype": "TaskCreationInteractAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:978bdba674a5db2a0826518dcd8af7f895895116fa02a2edcf9ed1d27932ca4f"
+      },
+      {
+        "path": "jvagent/action/task_monitor/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:af2230230c6c7fb310393597d6f00a27bd4507269485839ec3405d39e20a86fd",
+        "name": "jvagent/task_monitor",
+        "archetype": "TaskMonitor",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:28c710e58be626f0d69dc5b74fd9fb81a9f5e892fb1c31db56001dbf22212378"
+      },
+      {
+        "path": "jvagent/action/task_trigger_interact_action/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:ae9aca82bd2c916c166e2262c96ec767b71e67234ff005b958ab40ee5b718850",
+        "name": "jvagent/task_trigger_interact_action",
+        "archetype": "TaskTriggerInteractAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:61d92e2f8adef7d91a7ce8d6ad33e4eceb9d689bafe6d6c0195f67dd47e85200"
+      },
+      {
+        "path": "jvagent/action/tts_action/elevenlabs/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:c7e19ebf26f4c63025100efbe84b2451db7f4d640f617378555d9a8d7639519a",
+        "name": "jvagent/elevenlabs_tts",
+        "archetype": "ElevenLabsTTSAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:0486050f24c4817cc8ed221ff8a0c3e70e31641e69f5b52a96cc037a0140ca6f"
+      },
+      {
+        "path": "jvagent/action/ui/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:fb2b4b601c2f1184d26ada729348949dd8d063cfc33f2438e01e5605f4204fec",
+        "name": "jvagent/ui",
+        "archetype": "UiAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:2cdd710c32941803a1cec2e0a4286a817223372fbed07e10bfd4da73751eacc0"
+      },
+      {
+        "path": "jvagent/action/vectorstore/typesense/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:0a863d1ef2f79584be563340195b52fb0b0bb01433047bbe8de8fb5263c422dc",
+        "name": "jvagent/typesense_vectorstore",
+        "archetype": "TypesenseVectorStore",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:954434849b904b8dfed4244d303b1cdb4ff4baf00e40858e45eef0937090a3ee"
+      },
+      {
+        "path": "jvagent/action/video_generation/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:ccced21ed353a8460450ec76988b1928e3eec13f3d5eeec6f25e867500af3c01",
+        "name": "jvagent/heygen_video_action",
+        "archetype": "HeygenVideoAction",
+        "tracked_directory_files": 3,
+        "tracked_directory_digest": "sha256:9a53dec557ebe91cd205c480b329d99a9aff035edbb7fd7d9d6dca02191b0a1b"
+      },
+      {
+        "path": "jvagent/action/vision/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:cd6fbd239343778155f9a2e6e7021e4ddd31eee047ed89e5cf4a931682a29316",
+        "name": "jvagent/vision",
+        "archetype": "VisionAction",
+        "tracked_directory_files": 4,
+        "tracked_directory_digest": "sha256:e41874458c47e19fa7f159721137606450594e8063a8c5340c2359d2026ead84"
+      },
+      {
+        "path": "jvagent/action/web_fetch/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:bbdff012a1ad88666954dae14c015c95b28a61f69ce941f00c6b6494f97e2f24",
+        "name": "jvagent/web_fetch",
+        "archetype": "WebFetchAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:0fe897259657bd1278dd0a4576d4fce2e1098d977bea777587ed6bff2adccb51"
+      },
+      {
+        "path": "jvagent/action/web_search/brave/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:b8f842503d5085bf38973da7ad38e8922c696c5860c26c85978e28868347af65",
+        "name": "jvagent/brave_web_search",
+        "archetype": "BraveWebSearchAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:bfae15f90934ff99c0efe8cb46db939f5f26774faf739d69b21dfd673f53bb2d"
+      },
+      {
+        "path": "jvagent/action/web_search/serpapi/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:336ff95c9f53c9a14ac80213955413086aaa062ba192e1b308dc515a3adcab0a",
+        "name": "jvagent/serpapi_web_search",
+        "archetype": "SerpAPIWebSearchAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:06c6024b2416b3b3efce2315d86573caf03b9edf406c92b71ba20fda775f69e2"
+      },
+      {
+        "path": "jvagent/action/web_search/serper/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:ed4b410ee3b566f8126ceccef385d45547afe92790d9a768df7c80d2c887adc2",
+        "name": "jvagent/serper_web_search",
+        "archetype": "SerperWebSearchAction",
+        "tracked_directory_files": 2,
+        "tracked_directory_digest": "sha256:c830f2383a9066970fe85a70a2c7af1c3bee2fad4c0f80a2dcfb7bdb13931a34"
+      },
+      {
+        "path": "jvagent/action/whatsapp/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:872bb5e676d6295f30b29c159a1ef1b10bbee1107c4dfdfe134fb5b82c35d27b",
+        "name": "jvagent/whatsapp_action",
+        "archetype": "WhatsAppAction",
+        "tracked_directory_files": 27,
+        "tracked_directory_digest": "sha256:9e5d4c1712af4ae1f8c28ced1dc52b8f932bc4bec29b2113d8b236942a57a330"
+      },
+      {
+        "path": "jvagent/action/whatsapp_voice/info.yaml",
+        "scope": "package",
+        "sha256": "sha256:65948b0fa361df441fde43f07ef6b13e11a57af9ec505f9509b84671f1050bc0",
+        "name": "jvagent/whatsapp_voice_action",
+        "archetype": "WhatsAppVoiceAction",
+        "tracked_directory_files": 6,
+        "tracked_directory_digest": "sha256:921b76536535d8ba89d63d4d7fddf1a369dc0fef7adff8aa1aa13c76a11e6f0c"
+      }
+    ],
+    "agent_declarations": [
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/agent.yaml",
+        "scope": "app-example",
+        "sha256": "sha256:10f3e1a8cdb7b380d486d556e4ce0b80a3b5cc58334964ad2c34a5a8f705f9f8",
+        "agent": "jvagent/leadgen_agent",
+        "action_names": [
+          "jvagent/orchestrator",
+          "jvagent/leadgen",
+          "contrib/storefront",
+          "jvagent/page_context",
+          "jvagent/ui",
+          "jvagent/suggestions",
+          "jvagent/intro_interact_action",
+          "jvagent/mcp",
+          "jvagent/reply",
+          "jvagent/openai_lm",
+          "jvagent/litellm_lm",
+          "jvagent/vision",
+          "jvagent/deepgram_stt",
+          "jvagent/elevenlabs_tts"
+        ],
+        "execution_declarations": [
+          {
+            "action": "jvagent/orchestrator",
+            "setting_names": [
+              "enabled",
+              "lock_active_flow",
+              "model",
+              "model_action_type",
+              "model_temperature",
+              "pinned_tools",
+              "skills",
+              "skills_source",
+              "system_prompt_extra",
+              "vision"
+            ],
+            "skill_names": [
+              "product_inquiry_leads",
+              "product_faq",
+              "product_search",
+              "example_leadgen"
+            ],
+            "skill_directory": null,
+            "skill_directories": null
+          }
+        ],
+        "tracked_directory_files": 11,
+        "tracked_directory_digest": "sha256:20b769c0c3ced1d09c06d16c483771e6a24201ad1c4cf060e447c7c2f777afbc"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",
+        "scope": "app-example",
+        "sha256": "sha256:4a84450f53dfdcc1b606e55f79f59eea61b2e0cc5ed5e1e9058104eb2b15c437",
+        "agent": "jvagent/orchestrator_agent",
+        "action_names": [
+          "jvagent/orchestrator",
+          "jvagent/mcp",
+          "jvagent/serper_web_search",
+          "jvagent/pageindex_action",
+          "jvagent/web_fetch",
+          "jvagent/vision",
+          "jvagent/code_execution",
+          "jvagent/file_interface",
+          "jvagent/skill_hub",
+          "jvagent/intro_interact_action",
+          "jvagent/openai_lm",
+          "jvagent/ollama_lm",
+          "jvagent/litellm_lm",
+          "jvagent/reply",
+          "jvagent/interview",
+          "jvagent/whatsapp_action",
+          "jvagent/whatsapp_voice_action",
+          "jvagent/elevenlabs_tts"
+        ],
+        "execution_declarations": [
+          {
+            "action": "jvagent/orchestrator",
+            "setting_names": [
+              "ack_interval_ms",
+              "ack_on_first_tool_call",
+              "ack_statements",
+              "activation_budget",
+              "block_raw_tool_invocation",
+              "channel_overrides",
+              "enable_transient_ack",
+              "enabled",
+              "first_emit_timeout_ms",
+              "history_limit",
+              "lean_presurface_k",
+              "lean_tool_threshold",
+              "light_model",
+              "light_model_action_type",
+              "light_model_max_tokens",
+              "light_model_temperature",
+              "lock_active_flow",
+              "max_concurrent_tools",
+              "max_duration_seconds",
+              "max_statement_length",
+              "model",
+              "model_action_type",
+              "model_max_tokens",
+              "model_temperature",
+              "pilot_max_model_requests",
+              "pilot_max_output_tokens",
+              "pilot_max_runtime_seconds",
+              "pilot_max_tool_calls",
+              "pilot_max_total_tokens",
+              "pinned_tools",
+              "planning",
+              "skill_only_tools",
+              "skills",
+              "skills_source",
+              "stream_internal_progress",
+              "stream_reasoning_trace",
+              "system_prompt_extra",
+              "tool_call_timeout",
+              "tool_servers",
+              "tool_tier",
+              "vision",
+              "with_event"
+            ],
+            "skill_names": [
+              "web-lookup",
+              "research",
+              "answer",
+              "pdf-generation",
+              "triage",
+              "docx",
+              "signup_interview",
+              "whatsapp_templates",
+              "whatsapp_flows",
+              "whatsapp_service_flows",
+              "smoke_frontmatter"
+            ],
+            "skill_directory": null,
+            "skill_directories": null
+          }
+        ],
+        "tracked_directory_files": 69,
+        "tracked_directory_digest": "sha256:49338d0270d25a59254d26ddd12350ce63b38426271b5ed9d87bb0292e46f1af"
+      }
+    ]
+  }
+}
