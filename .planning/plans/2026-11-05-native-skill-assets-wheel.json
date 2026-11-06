@@ -1,0 +1,9 @@
+{
+  "installed_origin": "/private/tmp/jv-canonical-clean-installed/jvagent/__init__.py",
+  "official_skill_name": "pageindex-search-with-references",
+  "old_asset_absent": true,
+  "wheel_digest": "sha256:058f4da95ddb5f819c2bf5e82011d0b971a1a6ae21190486fcddefb95d6535d7",
+  "dependency_environment": "existing qualified native Python 3.11; wheel installed into isolated target without deps",
+  "working_directory": "/private/tmp",
+  "initial_dirty_build_rejected": true
+}

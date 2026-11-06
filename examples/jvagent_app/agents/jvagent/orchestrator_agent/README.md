@@ -59,7 +59,7 @@ intro_interact_action runs BEFORE the executive (always_execute sidecar)
 
 This agent enables the new substrate so you can exercise both specs:
 
-- **JV skills** (`web_lookup`, `research`, `answer`) — SOPs that reference action
+- **JV skills** (`web-lookup`, `research`, `answer`) — SOPs that reference action
   tools already on the surface; `use_skill` surfaces those tools.
 - **Claude skills** (`pdf-generation`, `triage`, `spec: claude`) — standard
   folders whose bundled scripts run in **`jvagent/code_execution`**. Activation
@@ -81,7 +81,7 @@ the script reports the missing dependency.
 
 ## Notes
 
-- **Skill placement (ADR-0023):** all agent skills live under `skills/` — JV SOPs (`web_lookup`), interviews (`signup_interview`), and Claude bundles (`docx`). Library skills come from `jvagent/skills/`. Base action SOPs (e.g. `interview/SKILL.md`) are extends targets only, not skill folders. Configure exposure via `skills_source` and `skills` in `agent.yaml`.
+- **Skill placement (ADR-0023):** all agent skills live under `skills/` — JV SOPs (`web-lookup`), interviews (`signup_interview`), and Claude bundles (`docx`). Library skills come from `jvagent/skills/`. Base action SOPs (e.g. `interview/SKILL.md`) are extends targets only, not skill folders. Configure exposure via `skills_source` and `skills` in `agent.yaml`.
 - `jvagent/pageindex_action` provides the internal knowledge base (`pageindex__search/assimilate/list/delete`). Ingest documents first (`pageindex__assimilate`), then the `answer` skill searches them before falling back to the web. PageIndex auto-installs its pip deps (litellm, pdf libs) on first load.
 - The signup interview (`skills/signup_interview/` + `jvagent/interview`) is the demo multi-turn flow: frontmatter `interview:` contract, custom rules in `SKILL.md` body, standard procedure composed via `extends: action:jvagent/interview`. Copy the skill folder pattern for other structured interviews.
 - This agent occupies weight `-200` as the single pattern orchestrator; it runs fine beside other agents in the same app.

@@ -1,3 +1,9 @@
+> Native execution uses public Pydantic AI and official Harness Skills. Follow
+> [native catalog authoring](../../.planning/runbooks/native-skill-catalog.md).
+> The Orchestrator-specific execution descriptions below are transitional legacy
+> reference, not permission to add another skill interpreter. See the
+> [explicit asset name migrations](../../.planning/plans/2026-11-05-native-skill-assets.md).
+
 # Skills Standard — two specs
 
 A `jvagent` skill is a folder with a `SKILL.md` (YAML frontmatter + a Markdown

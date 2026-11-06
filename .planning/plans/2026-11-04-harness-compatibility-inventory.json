@@ -2355,5 +2355,14 @@
       "legacy implementation/profile/dependency deletion",
       "broader compatibility, comparison, security and deployment gates"
     ]
+  },
+  "native_skill_asset_migration_increment": {
+    "evidence": "2026-11-05-native-skill-assets.md",
+    "name_migrations": {
+      "pageindex_search_with_references": "pageindex-search-with-references",
+      "web_lookup": "web-lookup"
+    },
+    "reference_blocked_requirements": 18,
+    "scope": "Two SOP assets; explicit caller updates required; scripts and other unsupported skill policies remain blocked. Historical baseline inventory retained."
   }
 }

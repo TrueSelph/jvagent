@@ -1,5 +1,5 @@
 ---
-name: web_lookup
+name: web-lookup
 description: Look up a person, company, or current fact on the public web and summarize what's found.
 spec: jv
 requires-actions:

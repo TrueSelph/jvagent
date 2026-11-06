@@ -60,3 +60,11 @@ their migration and compatibility evidence. Research-owned MCP evidence remains
 refused until provenance is qualified; an unrelated read-only MCP skill may share
 the same catalog. Historical graph upgrades and legacy deletion remain governed
 by the [execution plan](../plans/2026-11-04-harness-rebuild-execution.md).
+
+## Migrated shipped SOP names
+
+The reusable retrieval skill is `library:pageindex-search-with-references` and
+the reference app's public lookup skill is `web-lookup`. Existing underscore
+IDs and paths need explicit declaration updates; no automatic alias or runtime
+rewriting is installed. Copied/custom skill assets remain unchanged. See the
+[asset migration and browser evidence](../plans/2026-11-05-native-skill-assets.md).

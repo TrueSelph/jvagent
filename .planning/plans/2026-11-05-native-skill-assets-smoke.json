@@ -1,0 +1,455 @@
+{
+  "parent_revision": "git-commit:18f58561a0ee9d9db182ef36f2888403849a8d17",
+  "observed_at": "2026-11-06T03:21:44.982372+00:00",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-canonical-skills-smoke",
+    "database": "jvagent_native_canonical_skills_20261105",
+    "backend_port": 8143,
+    "ui_port": 3136,
+    "browser_page": 39,
+    "index_backend": "isolated JsonDB",
+    "collections": [
+      "canonical-public",
+      "other-tenant"
+    ],
+    "no_execution_patch": true
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.5f10990a8fc74521bf1781a5",
+      "utterance": "From our internal Cedar Staff Handbook, when does training open, in which room, and what is the booking code? Search the internal documents and cite the result. Do not search the public web.",
+      "response": "I don\u2019t have access to your internal Cedar Staff Handbook or any internal documents. My capabilities are limited to public information and web searches, and I cannot access private or internal company resources.\n\nIf you need information from your internal handbook, please consult your company\u2019s internal documentation portal or contact your HR or training coordinator directly. If you can provide the relevant section or text, I can help summarize or clarify it for you.",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 2488,
+          "output_tokens": 85
+        },
+        "output": "I don\u2019t have access to your internal Cedar Staff Handbook or any internal documents. My capabilities are limited to public information and web searches, and I cannot access private or internal company resources.\n\nIf you need information from your internal handbook, please consult your company\u2019s internal documentation portal or contact your HR or training coordinator directly. If you can provide the relevant section or text, I can help summarize or clarify it for you.",
+        "run_id": "corr-344a6ca12de54519934bc891879a35cc",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T03:16:19.354229+00:00",
+                "total_tokens": 2573,
+                "prompt_tokens": 2488,
+                "total_cost_usd": 0.005656,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 85,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005656,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.984,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.984,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-344a6ca12de54519934bc891879a35cc"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-0dad78bb31b64e828f640ddcab02e529"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T03:16:19.379504+00:00",
+        "total_tokens": 2573,
+        "prompt_tokens": 2488,
+        "total_cost_usd": 0.005656,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 85,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005656,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.984,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.984,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T23:16:15.662618",
+      "completed_at": "2026-11-05T23:16:19.379450",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 4,
+        "snapshots": 3
+      },
+      "snapshot_digest": "sha256:2f254fc1360f6b5589db4b32949785d8bbddea1f316764f4e04df3329cc55651",
+      "tool_calls": [
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"web-lookup\"}"
+        },
+        {
+          "name": "web_search__search",
+          "arguments": "{\"query\":\"Python official description site:python.org/about/\"}"
+        },
+        {
+          "name": "web_fetch__fetch",
+          "arguments": "{\"url\":\"https://www.python.org/about/\"}"
+        }
+      ],
+      "foreign_document_marker_in_snapshot": false,
+      "persisted_seconds": 3.716832
+    },
+    {
+      "id": "n.Interaction.6bb5bffc6ffb4e0ba277b520",
+      "utterance": "Use the web lookup skill to find Python's official description on python.org/about/. Search the web, read that page, and give me two sentences with the source link.",
+      "response": "Python is a powerful, fast, and open-source programming language that is friendly and easy to learn, making it popular among both beginners and experienced developers. It runs everywhere, plays well with others, and is freely usable and distributable, even for commercial use.  \nSource: [python.org/about/](https://www.python.org/about/)",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 4432,
+          "output_tokens": 142
+        },
+        "output": "Python is a powerful, fast, and open-source programming language that is friendly and easy to learn, making it popular among both beginners and experienced developers. It runs everywhere, plays well with others, and is freely usable and distributable, even for commercial use.  \nSource: [python.org/about/](https://www.python.org/about/)",
+        "run_id": "corr-0dad78bb31b64e828f640ddcab02e529",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T03:14:32.587531+00:00",
+                "total_tokens": 4574,
+                "prompt_tokens": 4432,
+                "total_cost_usd": 0.008464,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 142,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.008464,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 1024,
+                "total_duration_seconds": 6.378,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 6.378,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-0dad78bb31b64e828f640ddcab02e529"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T03:14:32.621619+00:00",
+        "total_tokens": 4574,
+        "prompt_tokens": 4432,
+        "total_cost_usd": 0.008464,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 142,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.008464,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 1024,
+        "total_duration_seconds": 6.378,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 6.378,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T23:14:21.375647",
+      "completed_at": "2026-11-05T23:14:32.621558",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 16,
+        "effects": 3,
+        "snapshots": 12
+      },
+      "snapshot_digest": "sha256:4678a6235d356066fcf4f5c375c838263b0ffa442f6e6f44c36318d41ca305f3",
+      "tool_calls": [
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"web-lookup\"}"
+        },
+        {
+          "name": "web_search__search",
+          "arguments": "{\"query\":\"Python official description site:python.org/about/\"}"
+        },
+        {
+          "name": "web_fetch__fetch",
+          "arguments": "{\"url\":\"https://www.python.org/about/\"}"
+        }
+      ],
+      "foreign_document_marker_in_snapshot": false,
+      "persisted_seconds": 11.245911
+    },
+    {
+      "id": "n.Interaction.d7b48ff081654faeb71dd282",
+      "utterance": "Use the pageindex-search-with-references skill to retrieve the Cedar Staff Handbook. What is the training opening date, room, and booking code? Cite the handbook. Do not search the public web.",
+      "response": "Training opens on 21 November 2026 in the Orchid room. The booking code is CEDAR-83, as stated in the Cedar Staff Handbook[1].\n\nReferences:\n[1] Cedar Staff Handbook",
+      "native_run": {
+        "usage": {
+          "requests": 3,
+          "input_tokens": 11099,
+          "output_tokens": 101
+        },
+        "output": "Training opens on 21 November 2026 in the Orchid room. The booking code is CEDAR-83, as stated in the Cedar Staff Handbook[1].\n\nReferences:\n[1] Cedar Staff Handbook",
+        "run_id": "corr-2ce498de07bc4611b959d781018cb4e7",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T03:18:12.458114+00:00",
+                "total_tokens": 11200,
+                "prompt_tokens": 11099,
+                "total_cost_usd": 0.013022,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 3,
+                "completion_tokens": 101,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.013022,
+                "model_attempt_count": 3,
+                "cached_prompt_tokens": 6656,
+                "total_duration_seconds": 2.933,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.933,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-2ce498de07bc4611b959d781018cb4e7"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-344a6ca12de54519934bc891879a35cc"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T03:18:12.506360+00:00",
+        "total_tokens": 11200,
+        "prompt_tokens": 11099,
+        "total_cost_usd": 0.013022,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 101,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.013022,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 6656,
+        "total_duration_seconds": 2.933,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.933,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T23:18:08.029893",
+      "completed_at": "2026-11-05T23:18:12.506306",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 12,
+        "effects": 2,
+        "snapshots": 9
+      },
+      "snapshot_digest": "sha256:f8283fb7fd1cf633cc5b68bebdb2e40cb17f0200bd21c1636acfcb964b328962",
+      "tool_calls": [
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"web-lookup\"}"
+        },
+        {
+          "name": "web_search__search",
+          "arguments": "{\"query\":\"Python official description site:python.org/about/\"}"
+        },
+        {
+          "name": "web_fetch__fetch",
+          "arguments": "{\"url\":\"https://www.python.org/about/\"}"
+        },
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"pageindex-search-with-references\"}"
+        },
+        {
+          "name": "pageindex__search",
+          "arguments": "{\"query\":\"training opening date, room, and booking code\",\"doc_name\":\"Cedar Staff Handbook\"}"
+        }
+      ],
+      "foreign_document_marker_in_snapshot": false,
+      "persisted_seconds": 4.476413
+    }
+  ],
+  "conversation_accounting": [
+    {
+      "id": "n.Conversation.b62f18a8243c4154a21b4613",
+      "tasks": [],
+      "budget_counters": {
+        "default|conversation|*|sess_201de21c0b1d4079": {
+          "spent": {
+            "usd": "0.027142",
+            "tokens": 18347,
+            "requests": 8,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 8,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-0dad78bb31b64e828f640ddcab02e529": {
+          "spent": {
+            "usd": "0.008464",
+            "tokens": 4574,
+            "requests": 4,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 4,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-2ce498de07bc4611b959d781018cb4e7": {
+          "spent": {
+            "usd": "0.013022",
+            "tokens": 11200,
+            "requests": 3,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 3,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-344a6ca12de54519934bc891879a35cc": {
+          "spent": {
+            "usd": "0.005656",
+            "tokens": 2573,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ],
+  "graph_entities": {
+    "Root": 1,
+    "Agents": 1,
+    "App": 1,
+    "User": 1,
+    "Agent": 1,
+    "Actions": 1,
+    "Memory": 1,
+    "Interaction": 3,
+    "NativeHarnessAction": 1,
+    "SerperWebSearchAction": 1,
+    "ConversationHealthState": 1,
+    "WebFetchAction": 1,
+    "PageIndexReadAction": 1,
+    "ReplyAction": 1,
+    "Conversation": 1
+  },
+  "legacy_execution_nodes": [],
+  "module_observation": {
+    "python_executable": "/private/tmp/jvagent-unified-test-311/bin/python",
+    "jvagent_origin": "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/__init__.py",
+    "source_blobs": {
+      "jvagent/cli/harness_migrate.py": "git-blob:1a3b6ea5fe8eae0c695c5a558e7bee06a4d2ba73",
+      "jvagent/cli/harness_migration_skills.py": "git-blob:62a260934a1509418c83c6617396d6b6a57db20b",
+      "jvagent/skills/research/SKILL.md": "git-blob:a8cae08b85b5c87be42f34a204f90d0e1a4c810e",
+      "jvagent/skills/pageindex-search-with-references/SKILL.md": "git-blob:d1f71db055c74c581c093c3554c3dce12d51d169",
+      "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md": "git-blob:827ba5b1ac245bb6b82ba2f146e64ba1d121cffb",
+      "jvagent/action/web_search/serper/serper.py": "git-blob:3a07b8ce58a16e9278d3bab05e31ee91331de6dc",
+      "jvagent/cli/main.py": "git-blob:478df3e3ae6dbb42f46e24c7de78b0802130002e",
+      "jvagent/harness/skill_assets.py": "git-blob:a8ab2c6e91407a61b23747a401b87826fe77ce26",
+      "pyproject.toml": "git-blob:eeaa539bcb6ba38d9117cf461e9c00ceca16447a",
+      "uv.lock": "git-blob:5bce62c019de0ec10819d0e8a425c90e03abd843",
+      "jvagent/cli/server.py": "git-blob:a3b18dc5ed131f1d7a4d4157bf1fe5ed6395869c",
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:ea0e0f68e4cc33f9f6237d63d8a5b975e9ca9ad2",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:38c5146f341e7d67112e151ab72dec18a2187964",
+      "jvagent/core/task_dispatch.py": "git-blob:3d354440470af6e5c1a8c3471661358983a3658e",
+      "jvagent/core/app.py": "git-blob:234ac33a77cc8c37f9c43b49cc835faee77bf4f6",
+      "jvagent/action/reply/endpoints.py": "git-blob:3e6587a381dd8cbbbbda46096a68fe09277ea74d",
+      "jvagent/action/reply/reply_action.py": "git-blob:d36ce5ce301ad52a3b2b74895f02cd0c001b92ca",
+      "jvagent/action/response/response_bus.py": "git-blob:55b7f4aff61041aec3d469aed5ed03f3f0995842",
+      "jvagent/action/response/streaming.py": "git-blob:2f21bc5ea1438264f6c18abb28791f20c45f13cc",
+      "jvagent/action/response/native_replay.py": "git-blob:7552ec6a2432c860bfcf2e047ce2720d24038f8d",
+      "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+      "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+      "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+      "jvchat/src/lib/channelMessages.ts": "git-blob:4349931d03b12ce4675814ddc4f84e86f033aeb9",
+      "jvchat/src/lib/threadMessages.ts": "git-blob:8b885c78d888afaf15089611618f607f88da65f8",
+      "jvchat/src/lib/messageObservability.ts": "git-blob:42f8da47d9f982eb0255058d32f166b9bf8588f8",
+      "jvchat/src/components/assistant-ui/message-stats.tsx": "git-blob:bff76ac6f6e76c9fb452d9fae9baf7b9fe68ac3a",
+      "jvagent/action/task_monitor/task_monitor.py": "git-blob:d0f60fda9a8ec92a108ff1cd19e2f35e6e479c40",
+      "jvagent/action/task_monitor/finalize.py": "git-blob:fa26ff72734306780d447825bfdf34924b92f191",
+      "jvagent/action/interact/interact_walker.py": "git-blob:0d3eef8a3bd41030b5900dd2aa305fbf854c1f81",
+      "jvagent/action/interview/native_repeats.py": "git-blob:ae5f03478ffec03963cf9056ffb01f379c7b5def",
+      "jvagent/action/interview/for_each.py": "git-blob:10f1740f26caa5fd456b975d7ff9c305ba73ac03",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+      "jvagent/harness/skill_catalog.py": "git-blob:386e20152777b231248a9b62cd376b1891f7e23a",
+      "jvagent/harness/mcp.py": "git-blob:1e24c92737448967965c37c35f51ad4574467144",
+      "tests/harness/native/test_skill_catalog.py": "git-blob:ae4b0fef0d1894a77720ce47dccaac281794a555",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:8a90f0197e3b4dcdfbe9d7645806a0b51f3055a8",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:d656ef8762f09b0e10742f294c8726084c062d2f",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:f50813bff7bca6d6e2fc80d35cb00ab8ac977332"
+    },
+    "process_id": 41049,
+    "observed_at": "2026-11-06T03:17:48.500928+00:00",
+    "modules": [],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-06T03:21:44.783862+00:00"
+  },
+  "source_blobs": {
+    "jvagent/skills/pageindex-search-with-references/SKILL.md": "git-blob:d1f71db055c74c581c093c3554c3dce12d51d169",
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md": "git-blob:827ba5b1ac245bb6b82ba2f146e64ba1d121cffb",
+    "tests/harness/native/test_shipped_skills.py": "git-blob:47be218f70d7ff7e07a779260bfb1fc0f7f96bc2"
+  }
+}

@@ -47,6 +47,15 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Canonical SOP assets: [migration record](2026-11-05-native-skill-assets.md).
+The reference web lookup and reusable PageIndex retrieval skill use canonical
+names; explicit caller updates are required. Actual GPT-4.1 web search/fetch and
+populated direct retrieval pass with visible tools, citations and persisted
+usage. A stale-configuration refusal and offline retry are retained. The current
+reference report has 18 blockers. Clean-source installed wheel loading passes;
+remaining scripts/policies, private/channel combinations and legacy deletion
+remain open.
+
 Finite configuration migration: [rehearsal](2026-11-05-native-config-cutover.md).
 App/library declarations preserve their finite skill sets and override precedence,
 with public official format and JV policy projection checks. Known typed engine

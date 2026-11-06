@@ -285,7 +285,7 @@ actions:
       # (fnmatch patterns ok); use "-all" for every discovered skill.
       skills_source: both
       skills:
-        - web_lookup      # app-local JV skill (agents/.../skills/)
+        - web-lookup      # app-local JV skill (agents/.../skills/)
         - research        # library JV skill (jvagent/skills/)
         - answer          # library JV skill — internal-first RAG cascade
         - pdf-generation  # library CLAUDE skill — renders a PDF via code_execution

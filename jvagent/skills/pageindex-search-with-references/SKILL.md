@@ -1,5 +1,5 @@
 ---
-name: pageindex_search_with_references
+name: pageindex-search-with-references
 description: >-
   Search the internal knowledge base with PageIndex and format responses with proper citations and a Sources section containing clickable links to the original documents. Use for policies, documentation, FAQs, and general knowledge base questions - not live catalog/inventory SKU lookup or real-time database queries.
 requires-actions:
@@ -40,7 +40,7 @@ Typical triggers: "what are your hours", "how do I pay", "return policy", "where
 
 ## Activation
 
-Call `use_skill` with `skill_name: "pageindex_search_with_references"` before calling `pageindex__search`. Always pass `include_references: true` on `pageindex__search` calls so source citations are included. You have no independent knowledge of the internal policies or documents — every fact must come from search results returned this turn.
+Once these instructions are loaded, use `pageindex__search` for retrieval. Reference inclusion and retrieval strategy are configured by the host Action, not tool-call arguments. You have no independent knowledge of the internal policies or documents — every fact must come from search results returned this turn.
 
 ## First action
 
@@ -48,10 +48,10 @@ Short or vague queries from the user (e.g., "hours?", "how to pay?") are weak re
 
 1. Infer the target topic (e.g., payments, shipping, returns, support, locations).
 2. Rephrase into a concrete, descriptive `query` string optimized for keyword/vector search (e.g. "store opening hours opening times", "accepted payment methods billing policies", "return exchange policy refund terms").
-3. As your **first tool call**, run `pageindex__search` with `include_references: true` and the rephrased query. Set `doc_name` to the specific document if the document scope is known.
+3. As your **first tool call**, run `pageindex__search` with the rephrased query. Set `doc_name` to the specific document if the document scope is known.
 4. Synthesize a direct answer from the retrieved excerpts. Each result is tagged with a reference number `[N]` and followed by a references block listing cited sources. Cite `[N]` inline when you use a fact from an excerpt, and list only the references you actually cited at the end of your response. Re-issue search only with a **refined** query — never repeat an identical search. At most **two** searches per turn (second pass only if the first is empty or off-topic).
 
-Prefer `strategy: tree_search` for natural-language policy/FAQ questions. If results are thin, try one second search with a narrower/broader rephrase or `strategy: direct` before stating a coverage gap.
+If results are thin, try one second search with a narrower or broader rephrase before stating a coverage gap. Do not request another retrieval strategy or bypass the host's configured retrieval and access policy.
 
 ## Response shape
 

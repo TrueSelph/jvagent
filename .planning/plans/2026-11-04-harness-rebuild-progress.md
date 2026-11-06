@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [finite catalog/configuration cutover](2026-11-05-native-config-cutover.md).
+Latest increment: [canonical shipped SOP assets](2026-11-05-native-skill-assets.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Canonical shipped SOP migration
+
+The public web lookup example and reusable PageIndex retrieval SOP now use
+official-loader compatible names. The retrieval SOP no longer requests legacy
+activation or unsupported strategy/reference arguments. No interpreter, alias
+engine or dependency was added. Actual GPT-4.1 browser web search/fetch and
+populated PageIndex lookup pass; the latter returns the correct handbook facts
+and citation without the foreign collection marker in its persisted context.
+A stale fixture merge refusal and offline fetch are retained rather than hidden.
+110 focused asset/native/CLI/read-profile cases pass on each Python 3.11/3.12.
+The reference assessment now has 18 blocked requirements. Historical state
+migration, remaining skills/policies, release cutover and engine deletion remain
+open; exact-head publication/CI gates are separate.
 
 ## Finite configuration catalogs and explicit retirement
 
