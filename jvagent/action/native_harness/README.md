@@ -5,6 +5,10 @@ a deployment. This remains an explicit development path, not a completed release
 migration. See the [execution contract](../../../.planning/plans/2026-11-04-harness-rebuild-execution.md)
 and [qualification record](../../../.planning/plans/2026-11-04-harness-rebuild-progress.md).
 
+`publish_reasoning` optionally publishes completed provider reasoning text through
+the existing thought channel. It defaults to false and does not change model
+reasoning settings or tool visibility. See [the visibility contract](../../../.planning/runbooks/native-reasoning.md).
+
 Use one native execution Action and one worker. Declared Redis/Dynamo conversation
 ownership and non-single `WEB_CONCURRENCY` / `UVICORN_WORKERS` are refused until
 native distributed fencing is qualified ([guard](../../core/execution_owner.py:23)).

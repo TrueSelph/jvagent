@@ -99,6 +99,25 @@ def change(app: Path, **settings: Any) -> None:
     source(app).write_text(yaml.safe_dump(document))
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_reasoning_visibility_is_explicitly_preserved(app: Path, enabled: bool) -> None:
+    change(app, stream_reasoning_trace=enabled)
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and not report["blockers"]
+    assert candidate["actions"][0]["context"]["publish_reasoning"] is enabled
+    assert report["mappings"]["stream_reasoning_trace"] == "publish_reasoning"
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize("invalid", [0, 1, "true", None, [], {}])
+def test_reasoning_visibility_rejects_coercion(app: Path, invalid: Any) -> None:
+    change(app, stream_reasoning_trace=invalid)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert "stream_reasoning_trace requires a boolean" in report["blockers"]
+
+
 @pytest.mark.parametrize("tier", ["minimal", "standard", "full"])
 def test_tool_tier_becomes_explicit_clock_service(app: Path, tier: str) -> None:
     change(app, tool_tier=tier)

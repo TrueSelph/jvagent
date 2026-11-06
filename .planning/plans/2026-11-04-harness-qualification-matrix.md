@@ -602,3 +602,12 @@ SDK bytes; this is serialized size, not a general performance claim. Final nativ
 host/real-PG lanes pass 652 per Python 3.11/3.12. Quotas/GC, orphan reconciliation,
 large/hostile files, rollback export, broader deployment/provider evaluation and
 remaining migration/deletion/release gates stay open. Reference blockers remain 12.
+
+Native reasoning presentation: [visibility qualification](2026-11-06-native-reasoning.md).
+The old boolean setting maps explicitly to a default-off public SDK event
+projection. Tool events are independent; signatures/opaque fields and unfinished
+parts are excluded. Actual GPT-4.1 browser calls qualify absent-reasoning behavior,
+tool activity, restart/reload and persisted usage for both settings. Positive
+reasoning display uses the SDK FunctionModel; an actual reasoning-capable
+provider/child/cancellation/channel matrix remains open. The current reference
+report has 11 blockers; this is not cutover or old-engine deletion evidence.

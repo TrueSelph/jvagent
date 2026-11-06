@@ -26,6 +26,67 @@ _MAX_CANCELLATION_WRITES = 16
 _pending_cancellation_writes: set[asyncio.Task[Any]] = set()
 
 
+async def publish_native_event(
+    visitor: Any,
+    interaction: Any,
+    ctx: Any,
+    event: Any,
+    *,
+    publish_reasoning: bool,
+    proactive: bool = False,
+) -> None:
+    """Project completed public SDK content without provider signatures."""
+    from pydantic_ai.messages import (
+        FunctionToolCallEvent,
+        FunctionToolResultEvent,
+        PartEndEvent,
+        ThinkingPart,
+    )
+
+    metadata: dict[str, Any] = {
+        "is_proactive": proactive,
+        "native_run_id": ctx.run_id,
+        "native_agent_name": ctx.agent.name if ctx.agent is not None else None,
+    }
+    if isinstance(event, PartEndEvent) and isinstance(event.part, ThinkingPart):
+        if not publish_reasoning or not event.part.content.strip():
+            return
+        phase = "reasoning"
+        content = event.part.content[:8000]
+        segment_id = None  # The bus assigns an ID; part indices repeat per request.
+        metadata["native_reasoning_source"] = "provider"
+        metadata["truncated"] = len(event.part.content) > 8000
+    elif isinstance(event, (FunctionToolCallEvent, FunctionToolResultEvent)):
+        part = event.part
+        metadata["tool_name"] = part.tool_name
+        segment_id = part.tool_call_id
+        if isinstance(event, FunctionToolCallEvent):
+            phase = "tool_call"
+            metadata["tool_args"] = part.args_as_dict()
+            content = part.tool_name
+        else:
+            phase = "tool_result"
+            content = str(part.content)[:8000]
+            metadata["tool_result"] = content
+    else:
+        return
+    bus = getattr(visitor, "response_bus", None)
+    if bus is not None:
+        await bus.publish(
+            session_id=visitor.session_id,
+            content=content,
+            channel=getattr(visitor, "channel", "default"),
+            category="thought",
+            thought_type=phase,
+            segment_id=segment_id,
+            transient=True,
+            interaction=interaction,
+            interaction_id=interaction.id,
+            user_id=visitor.user_id,
+            metadata=metadata,
+        )
+
+
 def delivery_metadata(visitor: Any, interaction: Any, model: str) -> dict[str, Any]:
     """Public numeric receipt for both foreground and unsolicited delivery."""
     usage = interaction.compute_usage()
@@ -115,6 +176,7 @@ class NativeHarnessAction(InteractAction):
     skill_directories: list[str] = attribute(default_factory=list)
     delegates: list[dict[str, Any]] = attribute(default_factory=list)
     planning: bool = attribute(default=False)
+    publish_reasoning: bool = attribute(default=False)
     instructions: str = attribute(default="Help the user using the available skill.")
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
@@ -141,6 +203,8 @@ class NativeHarnessAction(InteractAction):
         validate_tool_execution_mode(self.tool_execution_mode)
         if not isinstance(self.planning, bool):
             raise ValueError("planning must be a boolean")
+        if type(self.publish_reasoning) is not bool:
+            raise ValueError("publish_reasoning must be a boolean")
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
@@ -275,52 +339,20 @@ class NativeHarnessAction(InteractAction):
                 channel=caller_channel,
             )
 
-        async def events(ctx: Any, stream: Any) -> None:
-            from pydantic_ai.messages import (
-                FunctionToolCallEvent,
-                FunctionToolResultEvent,
-            )
+        publish_reasoning = getattr(self, "publish_reasoning", False)
+        if type(publish_reasoning) is not bool:
+            raise ValueError("publish_reasoning must be a boolean")
 
+        async def events(ctx: Any, stream: Any) -> None:
             async for event in stream:
-                if not isinstance(
-                    event, (FunctionToolCallEvent, FunctionToolResultEvent)
-                ):
-                    continue
-                part = event.part
-                phase = (
-                    "tool_call"
-                    if isinstance(event, FunctionToolCallEvent)
-                    else "tool_result"
+                await publish_native_event(
+                    visitor,
+                    interaction,
+                    ctx,
+                    event,
+                    publish_reasoning=publish_reasoning,
+                    proactive=task_spec is not None,
                 )
-                metadata: dict[str, Any] = {
-                    "tool_name": part.tool_name,
-                    "is_proactive": task_spec is not None,
-                    "native_run_id": ctx.run_id,
-                    "native_agent_name": (
-                        ctx.agent.name if ctx.agent is not None else None
-                    ),
-                }
-                if phase == "tool_call":
-                    metadata["tool_args"] = part.args_as_dict()
-                    content = part.tool_name
-                else:
-                    content = str(part.content)[:8000]
-                    metadata["tool_result"] = content
-                bus = getattr(visitor, "response_bus", None)
-                if bus is not None:
-                    await bus.publish(
-                        session_id=visitor.session_id,
-                        content=content,
-                        channel=getattr(visitor, "channel", "default"),
-                        category="thought",
-                        thought_type=phase,
-                        segment_id=part.tool_call_id,
-                        transient=True,
-                        interaction=interaction,
-                        interaction_id=interaction.id,
-                        user_id=visitor.user_id,
-                        metadata=metadata,
-                    )
 
         from jvagent.core.task_dispatch import (
             native_task_spec,

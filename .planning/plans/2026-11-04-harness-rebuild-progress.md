@@ -2577,3 +2577,17 @@ SDK bytes; this is serialized size, not a general performance claim. Final nativ
 host/real-PG lanes pass 652 per Python 3.11/3.12. Quotas/GC, orphan reconciliation,
 large/hostile files, rollback export, broader deployment/provider evaluation and
 remaining migration/deletion/release gates stay open. Reference blockers remain 12.
+
+## Native reasoning visibility migration — 2026-11-06
+
+[Evidence](2026-11-06-native-reasoning.md) maps the literal legacy visibility
+setting to default-off native presentation. Public SDK completed ThinkingPart
+content uses the existing response bus; signatures/opaque metadata, unfinished
+parts and final-answer text are excluded. Tool activity is independent. Real
+GPT-4.1 browser calls with both settings, cold restart and unchanged reload
+reconcile four requests, 1,794 reported tokens and USD 0.004152 estimated. GPT-4.1
+emits no reasoning text; positive display/interruption cases use the public SDK
+FunctionModel and actual reasoning-capable providers remain unqualified. Final
+native/host/real-PG lanes pass 665 per Python 3.11/3.12. The unchanged full
+reference report has 11 blockers, down from 12; cutover, deletion and enterprise
+qualification remain open. Parent de92d6e9 has nine green remote checks.

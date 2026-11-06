@@ -229,6 +229,7 @@ _KNOWN = (
         "model_temperature",
         "model_max_tokens",
         "system_prompt_extra",
+        "stream_reasoning_trace",
         "skill_runtime",
         "pilot_skill",
         "pilot_max_model_requests",
@@ -479,6 +480,15 @@ def plan_harness_migration(
     target: dict[str, Any] = {
         k: copy.deepcopy(context[k]) for k in _DIRECT if k in context
     }
+    if "stream_reasoning_trace" in context:
+        if type(context["stream_reasoning_trace"]) is not bool:
+            blockers.append("stream_reasoning_trace requires a boolean")
+        else:
+            target["publish_reasoning"] = context["stream_reasoning_trace"]
+            report["mappings"]["stream_reasoning_trace"] = "publish_reasoning"
+            report["required_review"].append(
+                "Only completed provider-supplied reasoning text is published when enabled; models without it emit no reasoning text. Provider signatures and opaque metadata are not published."
+            )
     width = context.get("max_concurrent_tools", 1)
     if type(width) is not int or width not in (0, 1):
         blockers.append(
