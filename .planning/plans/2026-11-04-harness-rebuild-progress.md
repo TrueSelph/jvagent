@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [modular context dependency removal](2026-11-06-native-context-decoupling.md).
+Latest increment: [published storage dependency qualification](2026-11-06-spatial024-qualification.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Published jvspatial 0.2.4 qualification
+
+The [record](2026-11-06-spatial024-qualification.md) qualifies fresh native and
+transitional installs, both 458-case real-PG native lanes, full suites (5136/4969
+passes in distinct profiles), and a noneditable installed-wheel browser upgrade
+of a cloned 0.1.1 graph. Old history restores without execution; a fresh GPT-4.1
+MCP turn delivers the correct result with 899 reported tokens/USD 0.002068
+estimated. Original Interactions and source graph nodes/edges remain unchanged;
+restart/cache-loss restores both turns without additional spend. The new storage
+contract fails the old whole-file buffering behavior and passes on both supported
+Python versions. Three pins, native CI, lock and current guidance move together.
+Native File Interface reads and broader migration/deletion remain open. Parent
+9a6b2226 has nine green checks; final publication gates are separate.
 
 ## Modular Action context dependency removal
 

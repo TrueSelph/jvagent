@@ -32,7 +32,7 @@ runtime until migration gates pass.
 
 A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-integration.md)'s object-spatial graph framework.
 
-**jvspatial security compatibility:** keep `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` on the same published jvspatial version (`0.1.1`), and verify a fresh install when updating the pin. jvspatial rejects undeclared instance attributes on entity subclasses: declare persisted fields with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr`. See [the integration reference](.planning/reference/jvspatial-integration.md) and [action authoring](.planning/reference/action-authoring.md).
+**jvspatial security compatibility:** keep `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` on the same published jvspatial version (`0.2.4`), and verify a fresh install when updating the pin. jvspatial rejects undeclared instance attributes on entity subclasses: declare persisted fields with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr`. See [the integration reference](.planning/reference/jvspatial-integration.md) and [action authoring](.planning/reference/action-authoring.md).
 
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).

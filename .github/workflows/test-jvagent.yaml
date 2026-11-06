@@ -95,7 +95,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install native harness and test dependencies
         # Prove the general test and native dependency profiles resolve together.
-        run: python -m pip install -e '.[test,native-harness,native-mcp,pydantic-pilot]' 'jvspatial[postgres]==0.1.1'
+        run: python -m pip install -e '.[test,native-harness,native-mcp,pydantic-pilot]' 'jvspatial[postgres]==0.2.4'
       - name: Install declared read-tool profile dependencies
         # Exercise this Action without adding its dependencies to harness core
         # or installing the full PageIndex manifest's legacy model transport.
