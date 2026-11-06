@@ -12,7 +12,7 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Gate | Current evidence | Remaining work |
 |---|---|---|
 | Dependency/Python | Fresh 3.11/3.12 native installs, core 2.66.0/Harness 0.66.0/jvspatial 0.2.4; dependency checks, full native/transitional suites and noneditable-wheel retained-graph browser upgrade pass; see dated records | Other platforms/deployments, supply-chain review and legacy transport retirement; new-head CI remains separate |
-| Native execution | 464 native/host/real-PG cases per Python 3.11/3.12; actual GPT-4.1 conversation, skills, research, MCP, bounded file reads and recorded failure/recovery cohorts | Repeated representative workloads, broader providers and remaining compatibility classes |
+| Native execution | 478 native/host/real-PG cases per Python 3.11/3.12; actual GPT-4.1 conversation, skills, research, MCP, bounded file reads and recorded failure/recovery cohorts | Repeated representative workloads, broader providers and remaining compatibility classes |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure/restart follow-ups; bounded host cancellation cleanup; actual cancelled-stream unknown usage and blocked follow-ups | Broader storage-I/O deadlines, abandoned-worker ownership, effect/write reconciliation, operator tooling, blocking-adapter and outage settlement |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | Single-worker PostgreSQL/checkpoint retry and restart readback now recorded; in-transaction death, outage and multi-worker fencing remain open |
@@ -21,7 +21,7 @@ No automatic migration tool or deletion authorization is inferred from a categor
 | Research | Run-isolated evidence, mutation-checked reuse/concurrency regressions, canonical fetch excerpts and two-task GPT-4.1 browser success | Quality evaluation, publisher freshness and research efficiency |
 | Compatibility | Named inventory, explicit admission, direct PageIndex, bounded foreground skill delegation, and reviewed visitor-bound LeadGen status with allow/deny/restart and unchanged-profile readback; plain-stdio MCP read success/error and cleanup | Interviews/flows, scripts, MCP HTTP/auth/filesystem scope/delegation/writes, proactive work, background/remote delegation, child crash recovery, general answer/delegation citation quality, channels |
 | Browser client | Actual GPT-4.1 delegation/follow-up; two-tab reload convergence and stale-edit browser proof; tool activity/usage persist; one POST on validation failure; clean npm install and 121 UI tests | Live cross-tab updates and conflict/deletion cases, historical transcript/receipt backfill, cache failures, native timing, uncertain-outcome reconciliation, channel matrix |
-| Simplification | Evidence code moved out of pilot | One execution path, old prompts/settings/providers removed after migration |
+| Simplification | Native host/module probes exclude old execution modules; modular context imports are decoupled; SDK mutation adaptation replaces the conversation-specific factory branch | Ship one execution path and remove old engines/prompts/settings/providers after migration; no measured overall optimization claim |
 | Signed host policy | Administrator auth-required actual-provider success; nonce/server-run binding; nine UI and one nonstreaming validation rejections before execution; regression catches nonempty-policy downgrade; see [evidence](2026-11-05-native-host-context.md) | Member/foreign bearer/session, popup/actual-provider embed/cancellation, public-auth defaults/migration and distributed recovery remain open |
 | Shared host | Native local admission/publication bypass legacy runtime; server correlation binds SDK/effects/reply; real browser success/error/restart cohort and module probe; deterministic signed-context, embed cancellation and fast-reply regressions | Actual-provider signed host/embed/popup/member/cancellation matrix; native durable cursor replay, distributed ownership, interview execution and final legacy deletion remain unqualified; see [results](2026-11-05-shared-host-results.md) |
 
@@ -58,6 +58,14 @@ full-suite and real browser retained-state upgrade evidence. The
 host-bound read adapter and its narrower local-storage qualification. Scripts,
 writes, live S3, other extension classes, migration and full old-runtime removal
 remain open.
+
+Native local writes: [2026-11-06 qualification](2026-11-06-native-file-write.md).
+Explicit named grants, source-byte limits, SDK-owned mutation facts and local
+readback are qualified. An actual kill after physical write leaves the SDK effect
+started; follow-up does not repeat the write or call a model. Fresh sessions still
+work. Direct and cross-response identity regressions preserve terminal effect
+facts. This closes a local failure barrier, not operator reconciliation, generic
+external effects, automatic exactly-once behavior or overall release qualification.
 
 Approved text readback: [2026-11-06 qualification](2026-11-06-native-history-readback.md).
 The bounded subscription now restores both roles for approved legacy text and

@@ -10,6 +10,7 @@ so a tool cannot escape the ``<agent_id>/<user_id>/`` sandbox.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from dataclasses import replace
@@ -21,6 +22,7 @@ from jvspatial.storage.exceptions import StorageError
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
 from jvagent.harness.contracts import IdempotencyClass
+from jvagent.harness.mutation_tools import NativeMutationTool
 from jvagent.tooling.context import get_tool_visitor, require_tool_visitor
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import tool
@@ -30,16 +32,30 @@ logger = logging.getLogger(__name__)
 _NO_CONTEXT = "(no execution context)"
 
 
+class FileWriteTool(NativeMutationTool):
+    """Reviewed local text write; failures never imply rollback."""
+
+    effect_summary = "jv:mutation:file-write:v1"
+
+
 class FileInterfaceAction(Action):
     """Sandboxed per-user file I/O tools backed by the jvspatial file interface."""
 
     native_read_max_bytes: int = attribute(default=262_144)
+    native_write_max_bytes: int = attribute(default=262_144)
 
     async def get_native_tools(self) -> list[Tool]:
-        """Expose only the reviewed bounded read; preserve other legacy tools."""
+        """Expose bounded reads and an explicitly authorized, journaled local write."""
         limit = self.native_read_max_bytes
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("native_read_max_bytes must be a positive integer")
+        write_limit = self.native_write_max_bytes
+        if (
+            isinstance(write_limit, bool)
+            or not isinstance(write_limit, int)
+            or write_limit <= 0
+        ):
+            raise ValueError("native_write_max_bytes must be a positive integer")
         original = next(
             tool
             for tool in await self.get_tools()
@@ -70,6 +86,35 @@ class FileInterfaceAction(Action):
             require_tool_visitor()
             return json.dumps(result)
 
+        async def write(*, visitor: Any, path: str, content: str) -> str:
+            if visitor is not require_tool_visitor():
+                raise ValueError("File write requires the admitted host visitor")
+            try:
+                await _core.write_bounded_text_file(
+                    visitor, path, content, max_bytes=write_limit
+                )
+                require_tool_visitor()
+                observed = await _core.read_bounded_text_file(
+                    visitor, path, max_bytes=write_limit
+                )
+                if observed != content:
+                    raise RuntimeError("File write acknowledgement mismatch")
+            except (ValueError, OSError, StorageError):
+                raise RuntimeError("File write requires reconciliation") from None
+            require_tool_visitor()
+            data = content.encode("utf-8")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "path": path,
+                    "bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+
+        legacy_write = next(
+            t for t in await self.get_tools() if t.name == "file_interface__write_file"
+        )
         return [
             replace(
                 original,
@@ -82,7 +127,20 @@ class FileInterfaceAction(Action):
                     f"counts. Full/tail reads above {limit} bytes fail explicitly; "
                     "head may finish early. No directory creation or discovery is needed."
                 ),
-            )
+            ),
+            FileWriteTool(
+                name=legacy_write.name,
+                description=(
+                    f"Write UTF-8 text at an explicit caller sandbox path, up to {write_limit} bytes. "
+                    "Requires a named host permission. Returns verified bytes/digest; failures need operator reconciliation."
+                ),
+                parameters_schema=legacy_write.parameters_schema,
+                execute=write,
+                binds_visitor=True,
+                effect_class="write",
+                idempotency_class=IdempotencyClass.NON_RETRYABLE,
+                requires_tool_permission=True,
+            ),
         ]
 
     @tool(name="file_interface__describe_write_workspace")

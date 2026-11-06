@@ -363,8 +363,9 @@ The multitenant sandbox `spec: claude` skills run their bundled scripts in. Surf
 ### `jvagent/file_interface` (FileInterfaceAction) & `jvagent/skill_hub` (SkillHubAction)
 
 `file_interface` retains its existing file-I/O tools for transitional callers.
-Native execution exposes only `file_interface__read_file` through the reviewed
-host-bound adapter (`jvagent/action/file_interface/file_interface_action.py:38`).
+Native execution exposes `file_interface__read_file` and the reviewed local text
+write `file_interface__write_file` through host-bound adapters
+(`jvagent/action/file_interface/file_interface_action.py:47`).
 Set `native_read_max_bytes` on this Action to a positive integer (default 262144).
 Full/tail reads above the limit fail explicitly; head may finish earlier. Storage
 consumption is bounded by that allowance plus one chunk of at most 8192 bytes to
@@ -372,6 +373,17 @@ detect overflow. Model arguments cannot change the budget. The native read does
 not provision directories. Local storage is re-scoped to the caller's directory
 before using the public provider (`jvagent/action/file_interface/_core.py:162`).
 See [qualification and limitations](../plans/2026-11-06-native-file-read.md).
+
+`native_write_max_bytes` defaults to 262144 and must be positive. The native text
+write additionally requires an enabled/enforcing AccessControlAction with an
+explicit granting entry at `permissions.<channel>.tools.file_interface__write_file`;
+an absent or unnamed policy denies, even when the general Action rule permits.
+The skill must also allow the tool. See [AccessControl rules](../../jvagent/action/access_control/README.md).
+The SDK records the mutation before I/O; local readback must match the submitted
+UTF-8 text before acknowledgement (`file_interface_action.py:89`, `_core.py:256`).
+This is not an exactly-once remote write guarantee. Interrupted/failed writes
+require operator reconciliation; binary writes and other providers are not
+admitted by this adapter. See [write qualification](../plans/2026-11-06-native-file-write.md).
 
 `skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/
 `install_skill`/`list_installed`/`remove_skill`) for transitional callers and needs

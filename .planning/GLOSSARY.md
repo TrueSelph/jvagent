@@ -73,6 +73,15 @@ jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent
 ### `NativeCaller`
 Admission identity `(agent_id, user_id, session_id)`. Host scopes map to `session_id` outside jvagent. Source: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py). See ADR-0054.
 
+### Native mutation tool
+A reviewed JV domain write declared with `NativeMutationTool`; the official SDK
+owns dispatch and effect persistence. The host adapter binds the caller and
+annotates the SDK effect before I/O. This declaration is neither a sandbox nor
+automatic retry/rollback permission. Failed or interrupted mutations require
+reconciliation. Source: [`mutation_tools.py:25`](../jvagent/harness/mutation_tools.py:25),
+[`native.py:115`](../jvagent/harness/native.py:115). The existing conversation-write
+marker is retained for historical records; new markers use `jv:mutation:`.
+
 ### `HarnessRuntime`
 Store-backed harness runtime: snapshots, TurnRun journal, invocation ledger, outbox, session leases, traces, skill staging. Share a `HarnessStore` for two-worker tests. Source: [`jvagent/harness/runtime.py`](../jvagent/harness/runtime.py).
 

@@ -53,11 +53,12 @@ def build_native_agent(
     from pydantic_ai.exceptions import ModelRetry
     from pydantic_ai_harness import Skills
 
-    from jvagent.harness.conversation_tools import (
-        CONVERSATION_EFFECT,
-        ConversationMutationTool,
-    )
     from jvagent.harness.model_settings import validate_model_settings
+    from jvagent.harness.mutation_tools import (
+        MutationAccessDenied,
+        NativeMutationTool,
+        is_mutation_effect,
+    )
     from jvagent.harness.skill_assets import project_skill, projected_workspace
 
     settings = validate_model_settings(model_settings)
@@ -99,34 +100,33 @@ def build_native_agent(
                 and await access_check(original.access_label or original.name)
             )
             if not permitted:
-                if isinstance(original, ConversationMutationTool):
-                    raise PermissionError("Conversation mutation access denied")
+                if isinstance(original, NativeMutationTool):
+                    raise MutationAccessDenied("Mutation access denied")
                 raise ModelRetry("Action access denied")
             call_arguments = dict(arguments)
             if original.binds_visitor:
                 from jvagent.tooling.context import require_tool_visitor
 
                 call_arguments["visitor"] = require_tool_visitor()
-            if isinstance(original, ConversationMutationTool):
+            if isinstance(original, NativeMutationTool):
                 from pydantic_ai.exceptions import ToolRetryError
                 from pydantic_ai_harness.step_persistence import annotate_tool_effect
 
                 await annotate_tool_effect(
-                    step_store, ctx, effect_summary=CONVERSATION_EFFECT
+                    step_store,
+                    ctx,
+                    effect_summary=original.effect_summary,
+                    idempotency_key=f"{ctx.run_id}/{ctx.tool_call_id}",
                 )
                 effect = await step_store.get_tool_effect(
                     run_id=ctx.run_id, tool_call_id=ctx.tool_call_id
                 )
-                if effect is None or effect.effect_summary != CONVERSATION_EFFECT:
-                    raise RuntimeError(
-                        "Conversation mutation lacks an SDK effect record"
-                    )
+                if effect is None or effect.effect_summary != original.effect_summary:
+                    raise RuntimeError("Mutation lacks an SDK effect record")
                 try:
                     result = await original.call(**call_arguments)
                 except (ModelRetry, ToolRetryError) as error:
-                    raise RuntimeError(
-                        "Conversation mutation requires reconciliation"
-                    ) from error
+                    raise RuntimeError("Mutation requires reconciliation") from error
             else:
                 result = await original.call(**call_arguments)
             if result.is_error:
@@ -177,12 +177,15 @@ def build_native_agent(
     for tool in tools:
         if tool.name not in allowed:
             continue
-        mutation = isinstance(tool, ConversationMutationTool)
-        if mutation and (
-            tool.effect_class != "write" or not tool.binds_visitor or step_store is None
+        mutation = isinstance(tool, NativeMutationTool)
+        if isinstance(tool, NativeMutationTool) and (
+            tool.effect_class != "write"
+            or not tool.binds_visitor
+            or step_store is None
+            or not is_mutation_effect(tool.effect_summary)
         ):
             raise ValueError(
-                "Conversation mutations require visitor scope and SDK persistence"
+                "Mutations require visitor scope, a declared effect and SDK persistence"
             )
         if (tool.effect_class != "read" and not mutation) or tool.terminal:
             raise ValueError(
@@ -381,9 +384,7 @@ def build_native_agent(
                 skill_directory=Path(entry.skill_directory),
                 action_skill_bases=action_skill_bases,
                 tools=[
-                    tool
-                    for tool in tools
-                    if not isinstance(tool, ConversationMutationTool)
+                    tool for tool in tools if not isinstance(tool, NativeMutationTool)
                 ],
                 toolsets=toolsets,
                 access_check=access_check,

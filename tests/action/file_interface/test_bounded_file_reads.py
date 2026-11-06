@@ -198,3 +198,27 @@ async def test_invalid_line_limits_do_not_degrade_to_full_read(
     write_file(storage, b"content")
     with pytest.raises(ValueError):
         await _core.read_bounded_text_file(caller(), "note.txt", max_bytes=32, **limits)
+
+
+@pytest.mark.asyncio
+async def test_bounded_write_checks_utf8_bytes_before_creating_workspace(
+    storage: Any,
+) -> None:
+    with pytest.raises(ValueError, match="byte limit"):
+        await _core.write_bounded_text_file(caller(), "note.txt", "€€", max_bytes=4)
+    assert list(storage.root_dir.iterdir()) == []
+    await _core.write_bounded_text_file(caller(), "note.txt", "éé", max_bytes=4)
+    assert await _core.read_bounded_text_file(caller(), "note.txt", max_bytes=4) == "éé"
+
+
+@pytest.mark.asyncio
+async def test_native_write_cannot_follow_cross_user_link(storage: Any) -> None:
+    foreign = write_file(storage, b"foreign", user="bob")
+    own = write_file(storage, b"own")
+    own.unlink()
+    own.symlink_to(foreign)
+    with pytest.raises(ValueError, match="sandbox"):
+        await _core.write_bounded_text_file(
+            caller(), "note.txt", "changed", max_bytes=32
+        )
+    assert foreign.read_bytes() == b"foreign"

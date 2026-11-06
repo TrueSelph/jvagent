@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native bounded file read](2026-11-06-native-file-read.md).
+Latest increment: [native local write and effect identity](2026-11-06-native-file-write.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,24 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native local write and effect identity
+
+The [record](2026-11-06-native-file-write.md) generalizes the existing SDK mutation
+adapter and retains the conversation-write marker. A bounded local text write
+requires a named host permission, SDK annotation before I/O and verified readback.
+Four regressions reproduce terminal effect replacement; an isolated old-store SDK
+case physically repeats a cross-response call ID. The repaired store refuses it
+before the second body and retains mutation facts. Actual GPT-4.1 browser/SQL
+proof covers successful write, live denial, repaired denial notice, kill after
+physical write with a still-started effect, blocked follow-up with no model/write,
+and a successful fresh session. Completed-write cache restoration changes no
+state or files. Seven observed receipts total 3831 reported tokens/USD 0.009210
+estimated; the crashed run remains unfinalized and requires operator action.
+Native/host/real-PG suites pass 478 per Python 3.11/3.12. No new loop, database or
+dependency is added. Operator reconciliation/resumption, other effects/providers,
+migration/deletion and enterprise release remain open. Parent 77eb1ef4 has nine
+green checks; new publication gates are separate.
 
 ## Native bounded file read
 

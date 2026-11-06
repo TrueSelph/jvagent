@@ -524,6 +524,7 @@ class NativeHarnessAction(InteractAction):
                 )
                 from jvagent.harness.accounting import recover_native_usage
                 from jvagent.harness.contracts import OutputTokenLimitReached
+                from jvagent.harness.mutation_tools import MutationAccessDenied
 
                 await recover_native_usage(interaction, run_id=run_id, model=self.model)
                 interaction.native_run = {
@@ -535,6 +536,8 @@ class NativeHarnessAction(InteractAction):
                 }
                 if isinstance(exc, OutputTokenLimitReached):
                     interaction.native_run["reason"] = "output_token_limit"
+                elif isinstance(exc, MutationAccessDenied):
+                    interaction.native_run["reason"] = "mutation_access_denied"
                 await interaction.save()
                 from pydantic_ai.exceptions import (
                     ModelAuthenticationError,
@@ -542,7 +545,11 @@ class NativeHarnessAction(InteractAction):
                 )
                 from pydantic_ai_harness.spend import SpendLimitExceeded
 
-                if isinstance(exc, ModelAuthenticationError):
+                if isinstance(exc, MutationAccessDenied):
+                    message = (
+                        "Your current permissions do not allow that write operation."
+                    )
+                elif isinstance(exc, ModelAuthenticationError):
                     message = "The model provider rejected its API credentials. Please update the configured key."
                 elif isinstance(exc, OutputTokenLimitReached):
                     message = "The model reached its reply token limit before finishing. Increase the per-request output limit in agent settings or ask for a shorter answer."

@@ -463,6 +463,19 @@ uses `sequential=True` for this case (`jvagent/harness/native.py:75`); it does n
 serialize independent users or provide a distributed lock. Host scope must
 remain unchanged (`jvagent/tooling/context.py:50`).
 
+Reviewed native writes can declare a [native mutation tool](../GLOSSARY.md#native-mutation-tool)
+through `get_native_tools()`. Set a stable effect summary, `effect_class="write"`
+and `binds_visitor=True`; domain code must enforce scope and acknowledge its
+actual write. The factory uses public SDK `annotate_tool_effect` before dispatch,
+then verifies the record. It excludes these tools from delegated children and
+refuses writes without SDK persistence (`jvagent/harness/native.py:115`, `:181`).
+Failed mutations cannot recover from a pre-write input snapshot; markers and
+terminal effect identities are retained (`jvagent/harness/recovery.py:209`,
+`jvagent/harness/step_store.py:63`). The declaration grants no automatic replay
+or generic external-write qualification. The bounded local File Interface write
+also requires a named host tool permission; see its
+[qualification and remaining operator gate](../plans/2026-11-06-native-file-write.md).
+
 Only LeadGen's `leadgen__status` has been reviewed in this visitor-bound cohort
 (`jvagent/action/leadgen/tools.py:136`). Status reads an unsaved view of current
 requirements without creating or migrating a profile

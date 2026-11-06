@@ -56,16 +56,18 @@
       "name": "jvagent/file_interface",
       "archetype": "FileInterfaceAction",
       "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
-      "qualification": "partial: native bounded local read; other tools remain unqualified",
-      "evidence": "2026-11-06-native-file-read.md",
+      "qualification": "partial: bounded local native read and explicitly granted text write; interrupted writes block replay",
+      "evidence": "2026-11-06-native-file-write.md",
       "native_tools": [
-        "file_interface__read_file"
+        "file_interface__read_file",
+        "file_interface__write_file"
       ],
       "remaining": [
+        "operator write-effect reconciliation/resumption",
         "live S3",
         "directory discovery",
-        "writes and scripts",
-        "skill workflow migration",
+        "binary writes and other file operations",
+        "scripts and skill workflow migration",
         "atomic hostile-filesystem race protection",
         "hard storage worker cancellation deadline"
       ]

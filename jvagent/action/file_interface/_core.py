@@ -189,18 +189,7 @@ async def read_bounded_text_file(
     fi = await _get_file_interface(visitor)
     key = storage_key_for_path(agent_id, user_id, path)
     if isinstance(fi, LocalFileInterface):
-        # Scope the public provider itself to this user's physical directory;
-        # its symlink checks must not stop at the shared application root.
-        user_root = fi.root_dir / resolve_user_sandbox_relpath(agent_id, user_id)
-        if user_root.resolve() != user_root:
-            raise ValueError("User sandbox cannot be a symbolic link")
-        if not user_root.is_dir():
-            raise FileNotFoundError(path)
-        if not (user_root / path).resolve().is_relative_to(user_root):
-            raise ValueError("File escapes the user sandbox")
-        fi = LocalFileInterface(
-            root_dir=str(user_root), validator=fi.validator, create_root=False
-        )
+        fi = _local_user_storage(fi, agent_id, user_id, path)
         key = path
     stream = fi.stream_file(key, chunk_size=min(8192, max_bytes + 1))
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
@@ -244,6 +233,46 @@ async def read_bounded_text_file(
         if (head or tail)
         else text
     )
+
+
+def _local_user_storage(
+    fi: Any, agent_id: str, user_id: str, path: str, *, create_root: bool = False
+) -> Any:
+    """Scope the public local provider to the caller's physical directory."""
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
+    user_root = fi.root_dir / resolve_user_sandbox_relpath(agent_id, user_id)
+    if user_root.resolve() != user_root:
+        raise ValueError("User sandbox cannot be a symbolic link")
+    if not create_root and not user_root.is_dir():
+        raise FileNotFoundError(path)
+    if not (user_root / path).resolve().is_relative_to(user_root):
+        raise ValueError("File escapes the user sandbox")
+    return LocalFileInterface(
+        root_dir=str(user_root), validator=fi.validator, create_root=create_root
+    )
+
+
+async def write_bounded_text_file(
+    visitor: Any, path: str, content: str, *, max_bytes: int
+) -> None:
+    """Write bounded UTF-8 through the public local provider; caller journals effects."""
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
+    path = validate_relative_path(path)
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        raise ValueError("Write byte limit must be a positive integer")
+    if not isinstance(content, str) or len(content) > max_bytes:
+        raise ValueError("File content exceeds the write byte limit")
+    data = content.encode("utf-8")
+    if len(data) > max_bytes:
+        raise ValueError("File content exceeds the write byte limit")
+    agent_id, user_id = await resolve_agent_user(visitor)
+    fi = await _get_file_interface(visitor)
+    if not isinstance(fi, LocalFileInterface):
+        raise ValueError("Native writes require the qualified local provider")
+    scoped = _local_user_storage(fi, agent_id, user_id, path, create_root=True)
+    await scoped.save_file(path, data)
 
 
 async def write_text_file(visitor: Any, path: str, content: str) -> None:

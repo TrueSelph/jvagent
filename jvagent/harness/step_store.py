@@ -60,6 +60,34 @@ class InteractionStepStore:
                         await self._persist()
                         return
                     raise ValueError("Native run identity is already registered")
+            if key == "effects":
+                prior = next(
+                    (
+                        v
+                        for v in values
+                        if v.get("run_id") == record.run_id
+                        and v.get("tool_call_id") == record.tool_call_id
+                    ),
+                    None,
+                )
+                if prior is not None:
+                    if prior == encoded:
+                        await self._persist()
+                        return
+                    if (
+                        prior.get("status") != "started"
+                        or prior.get("tool_name") != record.tool_name
+                    ):
+                        raise ValueError(
+                            "Native tool effect identity or terminal state is immutable"
+                        )
+                    for field in ("effect_summary", "idempotency_key"):
+                        if prior.get(field) is not None and prior[field] != encoded.get(
+                            field
+                        ):
+                            raise ValueError(
+                                "Native tool effect annotations are immutable"
+                            )
             if identity is not None:
                 values = [
                     value

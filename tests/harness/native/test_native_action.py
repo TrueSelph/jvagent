@@ -53,6 +53,7 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         ("intent_write_failed", True),
         ("settlement_write_failed", True),
         ("pre_registration_failure", True),
+        ("mutation_denied", True),
     ],
 )
 async def test_native_receipt_precedes_delivery(
@@ -93,6 +94,14 @@ async def test_native_receipt_precedes_delivery(
             "run_native_agent",
             AsyncMock(side_effect=ValueError("private provider credential detail")),
         )
+    if delivered == "mutation_denied":
+        from jvagent.harness.mutation_tools import MutationAccessDenied
+
+        monkeypatch.setattr(
+            module,
+            "run_native_agent",
+            AsyncMock(side_effect=MutationAccessDenied("private policy detail")),
+        )
     if not settled:
         monkeypatch.setattr(
             module, "persist_cancelled_receipt", AsyncMock(return_value=False)
@@ -128,7 +137,7 @@ async def test_native_receipt_precedes_delivery(
     async def publish(text: str, **kwargs: Any) -> bool:
         published.append(text)
         assert kwargs["message_id"].startswith("o.ResponseMessage.")
-        if delivered == "pre_registration_failure":
+        if delivered in {"pre_registration_failure", "mutation_denied"}:
             assert saved[-1]["status"] == "failed"
             return True
         assert saved[-1]["status"] == "pending_delivery"
@@ -175,7 +184,15 @@ async def test_native_receipt_precedes_delivery(
         correlation_id="corr-server-owned",
         _host_system_context="Trusted host policy",
     )
-    if delivered == "pre_registration_failure":
+    if delivered == "mutation_denied":
+        await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1]["failure_type"] == "MutationAccessDenied"
+        assert saved[-1]["reason"] == "mutation_access_denied"
+        assert published == [
+            "Your current permissions do not allow that write operation."
+        ]
+        assert "private policy detail" not in str(saved) + str(published) + caplog.text
+    elif delivered == "pre_registration_failure":
         await NativeHarnessAction.execute(facade, visitor)
         assert saved[-1]["failure_type"] == "ValueError"
         assert "native_execution_failed" in caplog.text
