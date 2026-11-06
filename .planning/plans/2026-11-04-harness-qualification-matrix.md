@@ -32,6 +32,11 @@ its result through the browser. One SIGTERM with a parked reader exited in
 single-worker closed-loop timer and idle-SSE drain cases only; active effects,
 blocking shutdown hooks and distributed deployment remain open.
 
+Offline migration global-flag integration is separately qualified in
+[the guard record](2026-11-05-native-migration-flags.md): purge/update/source/merge
+combinations refuse before global processing; four actual CLI invocations leave
+the graph/source unchanged, followed by a successful real model/browser lookup.
+
 Latest configuration migration qualification: [rehearsal](2026-11-05-native-migration.md).
 Offline dry run/new-file candidate, explicit unknown-setting blockers, portable
 skill paths and preserved public SDK pilot ceilings are implemented. A fresh

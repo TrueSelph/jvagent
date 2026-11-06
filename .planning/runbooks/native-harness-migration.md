@@ -16,6 +16,9 @@ jvagent path/to/app harness-migrate --agent namespace/bot --skill answer \
   --output /private/staging/bot-native.yaml
 ```
 
+Global `--purge`, `--update`, `--source` and `--merge` combinations are refused
+before mutation processing, regardless of flag order
+([`main.py:176`](../../jvagent/cli/main.py#L176)).
 Without `--output`, nothing is written. With it, only a new candidate file is
 created, with mode 0600; existing files and symlinks are refused. The source YAML,
 skills, environment files and graph are not rewritten. Reports omit setting values;

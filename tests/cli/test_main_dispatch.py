@@ -3,6 +3,7 @@
 import sys
 from contextlib import ExitStack
 from importlib import import_module
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -213,3 +214,46 @@ class TestMainDispatch:
                 main()
 
             assert exc.value.code == 1
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["harness-migrate", "--purge", "--yes"],
+        ["--purge", "--yes", "harness-migrate"],
+        ["run", "--purge", "harness-migrate", "--yes"],
+        ["harness-migrate", "--update"],
+        ["--update", "--source", "--yes", "harness-migrate"],
+        ["harness-migrate", "--merge"],
+        ["--update", "--merge", "harness-migrate"],
+        ["harness-migrate", "--source"],
+    ],
+)
+def test_migration_refuses_mutations_before_global_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JVSPATIAL_ENVIRONMENT", "development")
+    monkeypatch.setattr(
+        sys, "argv", ["jvagent", *flags, "--agent", "demo/bot", "--skill", "answer"]
+    )
+    patches = _main_patches(
+        purge_app_data=patch.object(CLI_MAIN, "purge_app_data"),
+        run_server=patch.object(CLI_MAIN, "run_server"),
+        bootstrap_only=patch.object(CLI_MAIN, "bootstrap_only"),
+        migrate_handler=patch(
+            "jvagent.cli.harness_migrate.handle_harness_migrate", return_value=0
+        ),
+    )
+    with ExitStack() as stack:
+        mocks = {k: stack.enter_context(v) for k, v in patches.items()}
+        with pytest.raises(SystemExit) as exc:
+            CLI_MAIN.main()
+        assert exc.value.code == 2
+        for name in (
+            "purge_app_data",
+            "run_server",
+            "bootstrap_only",
+            "migrate_handler",
+        ):
+            mocks[name].assert_not_called()

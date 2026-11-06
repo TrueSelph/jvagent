@@ -2242,6 +2242,10 @@
       "default native cutover",
       "legacy/pilot code and dependency deletion",
       "upgrade/rollback and release gates"
-    ]
+    ],
+    "global_flag_guard": {
+      "evidence": "2026-11-05-native-migration-flags.md",
+      "status": "rejects graph mutation flags before global processing; actual graph digest unchanged; subsequent model browser lookup succeeds"
+    }
   }
 }

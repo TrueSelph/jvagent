@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [configuration migration rehearsal](2026-11-05-native-migration.md).
+Latest increment: [offline migration flag guard](2026-11-05-native-migration-flags.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,18 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Offline CLI mutation-flag guard
+
+Integration review found that global purge processing preceded the new offline
+migration handler. The CLI now refuses purge/update/source/merge combinations
+before they can act, while preserving other commands' behavior. CLI suites pass
+101 cases per Python 3.11/3.12; isolated removal fails six regression cases.
+Four actual refused invocations leave all 15 disposable graph nodes and source
+YAML identical. A subsequent real GPT-4.1/MCP browser lookup returns the correct
+result with 747 reported tokens over two requests, USD 0.001764 estimated,
+and persisted delivered state. Full publication gates are separate. Historical
+migration/cutover/deletion remain open; this corrects the parent CLI integration.
 
 ## Offline native configuration candidate
 
