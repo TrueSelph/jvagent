@@ -12,12 +12,17 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import Annotated, Optional
+from dataclasses import replace
+from typing import Annotated, Any, Optional
+
+from jvspatial.core.annotations import attribute
+from jvspatial.storage.exceptions import StorageError
 
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
 from jvagent.harness.contracts import IdempotencyClass
-from jvagent.tooling.context import get_tool_visitor
+from jvagent.tooling.context import get_tool_visitor, require_tool_visitor
+from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
@@ -27,6 +32,58 @@ _NO_CONTEXT = "(no execution context)"
 
 class FileInterfaceAction(Action):
     """Sandboxed per-user file I/O tools backed by the jvspatial file interface."""
+
+    native_read_max_bytes: int = attribute(default=262_144)
+
+    async def get_native_tools(self) -> list[Tool]:
+        """Expose only the reviewed bounded read; preserve other legacy tools."""
+        limit = self.native_read_max_bytes
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("native_read_max_bytes must be a positive integer")
+        original = next(
+            tool
+            for tool in await self.get_tools()
+            if tool.name == "file_interface__read_file"
+        )
+
+        async def read(
+            *,
+            visitor: Any,
+            path: str,
+            head: Optional[int] = None,
+            tail: Optional[int] = None,
+        ) -> str:
+            if visitor is not require_tool_visitor():
+                raise ValueError("File read requires the admitted host visitor")
+            try:
+                content = await _core.read_bounded_text_file(
+                    visitor, path, head=head, tail=tail, max_bytes=limit
+                )
+                result = {"ok": True, "path": path, "content": content}
+            except (ValueError, OSError, StorageError):
+                # Provider errors can contain host paths or bucket details.
+                result = {
+                    "ok": False,
+                    "error": "File unavailable, unsafe path, invalid line limits, or read byte limit exceeded",
+                    "max_bytes": limit,
+                }
+            require_tool_visitor()
+            return json.dumps(result)
+
+        return [
+            replace(
+                original,
+                execute=read,
+                binds_visitor=True,
+                effect_class="read",
+                description=(
+                    "Read UTF-8 text at an explicit path relative to the current "
+                    "agent/user sandbox. Optional head or tail selects positive line "
+                    f"counts. Full/tail reads above {limit} bytes fail explicitly; "
+                    "head may finish early. No directory creation or discovery is needed."
+                ),
+            )
+        ]
 
     @tool(name="file_interface__describe_write_workspace")
     async def _t_describe_write_workspace(self) -> str:

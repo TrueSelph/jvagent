@@ -159,6 +159,93 @@ async def read_text_file(
     return text
 
 
+async def read_bounded_text_file(
+    visitor: Any,
+    path: str,
+    *,
+    max_bytes: int,
+    head: Optional[int] = None,
+    tail: Optional[int] = None,
+) -> str:
+    """Read a bounded UTF-8 file, or an early head, without provisioning storage.
+
+    Oversized full/tail reads fail explicitly; they never return a truncated
+    file as complete. One extra chunk distinguishes exact-limit EOF. Providers
+    must honor their public incremental stream contract.
+    """
+    import codecs
+
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
+    path = validate_relative_path(path)
+    for name, value in (("max_bytes", max_bytes), ("head", head), ("tail", tail)):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        ):
+            raise ValueError(f"{name} must be a positive integer")
+    if max_bytes is None or (head is not None and tail is not None):
+        raise ValueError("Specify a byte limit and at most one of head or tail")
+    agent_id, user_id = await resolve_agent_user(visitor)
+    fi = await _get_file_interface(visitor)
+    key = storage_key_for_path(agent_id, user_id, path)
+    if isinstance(fi, LocalFileInterface):
+        # Scope the public provider itself to this user's physical directory;
+        # its symlink checks must not stop at the shared application root.
+        user_root = fi.root_dir / resolve_user_sandbox_relpath(agent_id, user_id)
+        if user_root.resolve() != user_root:
+            raise ValueError("User sandbox cannot be a symbolic link")
+        if not user_root.is_dir():
+            raise FileNotFoundError(path)
+        if not (user_root / path).resolve().is_relative_to(user_root):
+            raise ValueError("File escapes the user sandbox")
+        fi = LocalFileInterface(
+            root_dir=str(user_root), validator=fi.validator, create_root=False
+        )
+        key = path
+    stream = fi.stream_file(key, chunk_size=min(8192, max_bytes + 1))
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    text = ""
+    consumed = 0
+    endings = (
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        "\x85",
+        "\u2028",
+        "\u2029",
+    )
+    try:
+        async for chunk in stream:
+            consumed += len(chunk)
+            if consumed > max_bytes:
+                # A head may finish within this last chunk, but never include
+                # the over-limit byte in its returned prefix.
+                chunk = chunk[: len(chunk) - (consumed - max_bytes)]
+            text += decoder.decode(chunk)
+            if head is not None:
+                lines = text.splitlines(keepends=True)
+                if len(lines) >= head and (
+                    len(lines) > head
+                    or (lines[-1].endswith(endings) and not text.endswith("\r"))
+                ):
+                    return "".join(lines[:head])
+            if consumed > max_bytes:
+                raise ValueError(f"File exceeds the {max_bytes} byte limit")
+        text += decoder.decode(b"", final=True)
+    finally:
+        await stream.aclose()
+    lines = text.splitlines(keepends=True)
+    return (
+        "".join(lines[:head] if head is not None else lines[-tail:])
+        if (head or tail)
+        else text
+    )
+
+
 async def write_text_file(visitor: Any, path: str, content: str) -> None:
     """Write UTF-8 text to *path* (relative to user sandbox)."""
     path = validate_relative_path(path)

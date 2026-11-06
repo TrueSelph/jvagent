@@ -11,8 +11,8 @@ No automatic migration tool or deletion authorization is inferred from a categor
 
 | Gate | Current evidence | Remaining work |
 |---|---|---|
-| Dependency/Python | Clean Python 3.11.15/3.12.15 installs, pinned native pair and declared read-tool profiles; 93 qualification packages, dependency checks pass | All nine remote checks passed at 6de0ff72; current increment requires its own remote checks; artifact build; retire conflicting LiteLLM test dependency |
-| Native execution | 179 native/profile/WebFetch cases plus separate ingress/memory regressions; GPT-4.1 browser chat, follow-up, existing answer skill, research and failed-run usage | Repeated workloads and broader providers |
+| Dependency/Python | Fresh 3.11/3.12 native installs, core 2.66.0/Harness 0.66.0/jvspatial 0.2.4; dependency checks, full native/transitional suites and noneditable-wheel retained-graph browser upgrade pass; see dated records | Other platforms/deployments, supply-chain review and legacy transport retirement; new-head CI remains separate |
+| Native execution | 464 native/host/real-PG cases per Python 3.11/3.12; actual GPT-4.1 conversation, skills, research, MCP, bounded file reads and recorded failure/recovery cohorts | Repeated representative workloads, broader providers and remaining compatibility classes |
 | Context | Official summarization, recent-tail retention, persisted compaction receipts and summary spend/request-limit regressions and GPT-4.1 browser recall after compaction/process restart | Long-session evaluation, context-window/provider matrix, oversized current requests and snapshot retention |
 | Recovery admission | Public frontier capture and tree inspection, scoped input-only recovery, immutable registration, real GPT-4.1 budget failure/restart follow-ups; bounded host cancellation cleanup; actual cancelled-stream unknown usage and blocked follow-ups | Broader storage-I/O deadlines, abandoned-worker ownership, effect/write reconciliation, operator tooling, blocking-adapter and outage settlement |
 | Storage | Typed official snapshots survive fresh JSON context and abrupt worker exit; step/spend/receipt writes verified with deferred batching both on and off | Single-worker PostgreSQL/checkpoint retry and restart readback now recorded; in-transaction death, outage and multi-worker fencing remain open |
@@ -51,9 +51,13 @@ Action context service: [2026-11-06 extraction record](2026-11-06-native-context
 Eight modular Actions remove 28 direct import sites through the old executor.
 Cold isolation, task-local caller tests, Action regressions and real MCP browser
 execution with File Interface hosted pass. This is a deletion prerequisite;
-the old engine is still present. Native file reads additionally need a corrected
-published storage dependency: the pinned 0.1.1 wheel still buffers complete streams.
-Other extension classes, migration and full old-runtime removal remain open.
+the old engine is still present. The [published dependency qualification](2026-11-06-spatial024-qualification.md)
+supersedes the old 0.1.1 buffering blocker: 0.2.4 is pinned with fresh-install,
+full-suite and real browser retained-state upgrade evidence. The
+[native file-read record](2026-11-06-native-file-read.md) tracks the bounded,
+host-bound read adapter and its narrower local-storage qualification. Scripts,
+writes, live S3, other extension classes, migration and full old-runtime removal
+remain open.
 
 Approved text readback: [2026-11-06 qualification](2026-11-06-native-history-readback.md).
 The bounded subscription now restores both roles for approved legacy text and

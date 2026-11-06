@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [published storage dependency qualification](2026-11-06-spatial024-qualification.md).
+Latest increment: [native bounded file read](2026-11-06-native-file-read.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native bounded file read
+
+The [record](2026-11-06-native-file-read.md) qualifies the existing file-read
+name/schema through a host-bound read-only native adapter. Public storage streams
+bound consumption; oversized full/tail reads fail explicitly, head can finish
+early, and reads do not provision directories. Local provider scope is narrowed
+to the caller directory. Four actual GPT-4.1 browser turns show correct head
+reads, oversized-read refusal, cross-user symlink refusal and post-restart
+continuation. Eight requests reconcile to 4664 reported tokens/USD 0.010276
+estimated; cache-loss restore changes no state/spend and old records remain exact.
+Both native/host/real-PG lanes pass 464; focused cases pass 24 per Python version.
+Writes/scripts, live S3 and hostile OS symlink races remain open, alongside full
+migration/deletion/release. Parent 9f387cb6 has all nine checks green; final new-head
+publication gates are separate.
 
 ## Published jvspatial 0.2.4 qualification
 
