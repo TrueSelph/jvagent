@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [cumulative output-limit qualification](2026-11-05-native-limit.md).
+Latest increment: [native multi-skill catalog](2026-11-05-native-catalog.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,22 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Official native skill catalog
+
+An explicit skill_directories list now composes official Skills with SDK-owned
+loading and live host checks on skill-owned Action/MCP tools. A browser-discovered
+research obligation leak into a later greeting was corrected without altering
+SDK loading history. Final actual GPT-4.1 sequence delivers greeting, MCP lookup,
+cited research, ordinary follow-up and fresh research in one conversation.
+Five final turns use 12 requests, 19073 reported tokens, USD 0.027334 estimated;
+whole round retains the initial failure: eight of nine turns delivered, 22
+requests, 31127 tokens, USD 0.044074 estimated. Fresh SQL reconciles spending,
+with zero reserves. Native/host/real-PG suites pass 394 cases on each Python
+3.11/3.12. Activation/output guard mutations fail their regressions. All nine
+parent b2e4fd30 checks pass; final publication/new-head CI remain separate.
+The old selectors, 31 reference migration blockers, graph upgrades, default
+cutover and legacy deletion remain open. No optimization claim is made.
 
 ## Actual output-limit failure and live settings retry
 

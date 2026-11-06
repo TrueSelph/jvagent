@@ -1,4 +1,4 @@
-"""Native-library composition for one explicitly selected JV skill.
+"""Native-library composition for JV skills and modular Action tools.
 
 Development entrypoint only: callers establish identity and provide an access
 checker. This module does not import the legacy Orchestrator or pilot engine.
@@ -11,8 +11,7 @@ from jvagent.harness.contracts import (
     OutputTokenLimitReached,
     reject_model_authority_fields,
 )
-from jvagent.harness.skill_admission import admit_skill
-from jvagent.skills.output_policies import SUPPORTED_OUTPUT_CONTRACTS, output_policy
+from jvagent.harness.skill_catalog import NativeSkillCatalog
 from jvagent.tooling.tool import Tool as JVTool
 
 AccessCheck = Callable[[str], Awaitable[bool]]
@@ -21,7 +20,8 @@ AccessCheck = Callable[[str], Awaitable[bool]]
 def build_native_agent(
     model: Any,
     *,
-    skill_directory: Path,
+    skill_directory: Path | None = None,
+    skill_directories: Sequence[Path] = (),
     tools: Sequence[JVTool],
     toolsets: Sequence[Any] = (),
     action_skill_bases: Mapping[str, Path] | None = None,
@@ -48,7 +48,7 @@ def build_native_agent(
     Mutations require SDK persistence and host visitor scope. Other writes, flows
     and external effects require separate compatibility qualification.
     """
-    from pydantic_ai import Agent, RunContext, Tool
+    from pydantic_ai import Agent, RunContext, Tool, ToolOutput
     from pydantic_ai.capabilities import AbstractCapability, LocalWorkspace
     from pydantic_ai.exceptions import ModelRetry
     from pydantic_ai_harness import Skills
@@ -69,32 +69,28 @@ def build_native_agent(
             raise ValueError("Context limits must be positive integers")
     if context_keep_tokens >= context_max_tokens:
         raise ValueError("Context retention must be smaller than its trigger")
-    directory = skill_directory.resolve(strict=True)
-    projected_metadata, document = project_skill(
-        directory, action_bases=action_skill_bases
-    )
-    metadata = admit_skill(
-        directory,
-        metadata=projected_metadata,
+    catalog = NativeSkillCatalog(
+        primary=skill_directory,
+        directories=skill_directories,
+        action_bases=action_skill_bases,
         available_actions=available_actions,
         available_tools=[tool.name for tool in tools]
         + [name for toolset in toolsets for name in toolset.declared_names]
         + (["delegate_task"] if delegates else []),
         channel=channel,
-        supported_output_contracts=SUPPORTED_OUTPUT_CONTRACTS,
     )
-    if metadata["name"] != directory.name:
-        raise ValueError(
-            "Skill name must match its directory for official Skills loading"
-        )
-    policy = output_policy(metadata.get("output-contract", ""))
-    allowed = metadata.get("allowed-tools", [])
+    directory = catalog.directories[0]
+    policy = catalog.policy
+    allowed = catalog.allowed_names
     if len({tool.name for tool in tools}) != len(tools):
         raise ValueError("Duplicate Action tool names")
 
     def adapt(original: JVTool) -> Any:
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
             reject_model_authority_fields(arguments)
+            if not catalog.allows_tool(ctx, original.name):
+                raise ModelRetry("Load an authorized skill before calling this tool")
+            catalog.note_tool(ctx, original.name, arguments)
             # Bind the checked name in the closure, never in model arguments.
             permitted = (
                 await tool_access_check(original)
@@ -135,7 +131,7 @@ def build_native_agent(
                 result = await original.call(**call_arguments)
             if result.is_error:
                 raise ModelRetry(result.content)
-            if policy is not None:
+            if policy is not None and catalog.requires_output_contract():
                 return await policy.observe(original.name, arguments, result)
             return str(result.content)
 
@@ -163,11 +159,17 @@ def build_native_agent(
     if len(declared) != len(set(declared)):
         raise ValueError("Duplicate Action tool names")
     selected_toolsets = [
-        toolset.for_skill(allowed, access_check)
+        toolset.for_skill(allowed, access_check, skill_check=catalog.allows_tool)
         for toolset in toolsets
         if toolset.declared_names.intersection(allowed)
     ]
-    if policy is not None and selected_toolsets:
+    if policy is not None and any(
+        toolset.declared_names.intersection(
+            catalog.metadata[name].get("allowed-tools", [])
+        )
+        for name in catalog.contract_owners
+        for toolset in selected_toolsets
+    ):
         raise ValueError(
             "MCP evidence output contracts require provenance qualification"
         )
@@ -194,12 +196,8 @@ def build_native_agent(
             ".", include=[path.name], workspace=projected_workspace(path, asset)
         )
 
-    selected_library = Skills(
-        ".",
-        include=[directory.name],
-        workspace=projected_workspace(directory, document),
-    )
-    skill_libraries = [selected_library]
+    skill_libraries = list(catalog.libraries)
+    preflight_children: list[Any] = []
 
     class SelectedSkill(AbstractCapability[Any]):
         """Materialize an explicitly configured skill using the library lifecycle."""
@@ -207,23 +205,49 @@ def build_native_agent(
         id = "jv_selected_skill"
 
         async def wrap_run(self, ctx: RunContext[Any], *, handler: Any) -> Any:
-            if policy is None:
-                return await handler()
-            with policy.run_scope():
+            with catalog.run_scope():
                 return await handler()
 
         async def before_run(self, ctx: RunContext[Any]) -> None:
-            # A configured child must be usable before the parent spends on
-            # choosing it. Skills intentionally skips invalid files; inspect its
-            # public catalog instead of duplicating the library's specification.
-            for library in skill_libraries:
-                catalog = await library.load()
-                if len(catalog.skills) != 1 or not catalog.skills[0].model_invocable:
-                    raise ValueError(
-                        "Configured skill is not model-invocable: "
-                        + "; ".join(item.message for item in catalog.skipped)
+            await catalog.preflight()
+            for library in preflight_children:
+                child_catalog = await library.load()
+                if (
+                    len(child_catalog.skills) != 1
+                    or not child_catalog.skills[0].model_invocable
+                ):
+                    raise ValueError("Configured skill is not model-invocable: child")
+            if catalog.primary is not None:
+                ctx.load_capability(catalog.primary)
+
+        async def prepare_tools(
+            self, ctx: RunContext[Any], tool_defs: list[Any]
+        ) -> list[Any]:
+            return [
+                tool
+                for tool in tool_defs
+                if tool.name not in allowed or catalog.allows_tool(ctx, tool.name)
+            ]
+
+        async def prepare_output_tools(
+            self, ctx: RunContext[Any], tool_defs: list[Any]
+        ) -> list[Any]:
+            if catalog.primary is not None or catalog.requires_output_contract():
+                return tool_defs
+            return []
+
+        async def after_output_process(
+            self, ctx: RunContext[Any], *, output_context: Any, output: Any
+        ) -> Any:
+            if catalog.primary is None and catalog.requires_output_contract():
+                if (
+                    output_context.tool_call is None
+                    or output_context.tool_call.tool_name != "finish"
+                ):
+                    raise ModelRetry(
+                        "The loaded research skill requires its grounded finish output"
                     )
-            ctx.load_capability(metadata["name"])
+            return output
 
         async def before_tool_execute(
             self,
@@ -233,6 +257,11 @@ def build_native_agent(
             tool_def: Any,
             args: dict[str, Any],
         ) -> dict[str, Any]:
+            if call.tool_name in allowed and not catalog.allows_tool(
+                ctx, call.tool_name
+            ):
+                raise ModelRetry("Load an authorized skill before calling this tool")
+            catalog.note_tool(ctx, call.tool_name, args)
             if call.tool_name == "delegate_task" and not await access_check(
                 "delegate_task"
             ):
@@ -313,7 +342,7 @@ def build_native_agent(
 
     capabilities = [
         LocalWorkspace(directory.parent, read_only=True),
-        selected_library,
+        *skill_libraries,
         SelectedSkill(),
         # A failed summary is not an attempted parent request. Run compaction
         # before StepPersistence journals the parent's model-request start.
@@ -344,7 +373,7 @@ def build_native_agent(
             raise ValueError("delegate_task is reserved for official SubAgents")
         children = []
         for entry in definitions:
-            skill_libraries.append(
+            preflight_children.append(
                 skill_library(Path(entry.skill_directory).resolve(strict=True))
             )
             child = build_native_agent(
@@ -394,7 +423,11 @@ def build_native_agent(
         model,
         instructions=instructions,
         model_settings=settings,
-        output_type=policy.finish if policy is not None else str,
+        output_type=(
+            [str, ToolOutput(policy.finish, name="finish")]
+            if policy is not None and catalog.primary is None
+            else policy.finish if policy is not None else str
+        ),
         tools=admitted,
         toolsets=selected_toolsets,
         capabilities=capabilities,

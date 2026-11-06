@@ -104,6 +104,7 @@ class NativeHarnessAction(InteractAction):
     model: str = attribute(default="openai:gpt-4.1")
     model_settings: dict[str, Any] = attribute(default_factory=dict)
     skill_directory: str = attribute(default="")
+    skill_directories: list[str] = attribute(default_factory=list)
     delegates: list[dict[str, Any]] = attribute(default_factory=list)
     instructions: str = attribute(default="Help the user using the available skill.")
     max_run_cost_usd: str = attribute(default="2.00")
@@ -287,12 +288,33 @@ class NativeHarnessAction(InteractAction):
         task_spec = native_task_spec(visitor)
         from jvagent.harness.skill_assets import resolve_skill_directory
 
-        skill_directory = resolve_skill_directory(self.skill_directory)
+        configured_catalog = getattr(self, "skill_directories", [])
+        if self.skill_directory and configured_catalog:
+            raise ValueError("Configure one primary skill or an explicit skill catalog")
+        skill_directory = (
+            resolve_skill_directory(self.skill_directory)
+            if self.skill_directory
+            else None
+        )
+        skill_directories = [
+            resolve_skill_directory(path) for path in configured_catalog
+        ]
         prompt = getattr(visitor, "utterance", "")
         if task_spec is not None:
             from jvagent.harness.skill_assets import project_skill
 
-            skill_directory = task_skill_directory(skill_directory, task_spec)
+            if skill_directory is None:
+                matches = [
+                    path for path in skill_directories if path.name == task_spec.skill
+                ]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "Catalog tasks require one explicitly configured skill"
+                    )
+                skill_directory = matches[0]
+                skill_directories = []
+            else:
+                skill_directory = task_skill_directory(skill_directory, task_spec)
             metadata, _ = project_skill(
                 skill_directory, action_bases=action_skill_bases
             )
@@ -311,6 +333,7 @@ class NativeHarnessAction(InteractAction):
             self.model,
             model_settings=self.model_settings,
             skill_directory=skill_directory,
+            skill_directories=skill_directories,
             action_skill_bases=action_skill_bases,
             delegates=self.delegates,
             conversation_id=visitor.session_id,

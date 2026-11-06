@@ -130,6 +130,15 @@ Server-minted HS256 JWT that authorizes resuming one web `Conversation` on the p
 ### Skill
 A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure (`find_skill` / `use_skill`, [`jvagent/action/orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)). A skill is *judgment over capability* — distinct from `Action`s. Two specs (ADR-0017), set by a `spec` frontmatter key: **JV** (`spec: jv`, default) coordinates existing action/IA tools by `namespace__tool` name (no code); **Claude** (`spec: claude`) is a standard Anthropic Agent Skills folder whose bundled `scripts/` the model runs via the `code_execution__bash` substrate, staged into the caller's per-user sandbox. See [`adr/0017-two-skill-specs-code-execution-substrate.md`](adr/0017-two-skill-specs-code-execution-substrate.md), [`adr/0011-skills-two-kinds.md`](adr/0011-skills-two-kinds.md), and [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
+### Native skill catalog
+An explicit `NativeHarnessAction.skill_directories` list offered through official
+Pydantic AI Harness Skills. The library owns deferred loading and persisted
+activation; JV enforces authored tool ownership and current host access, with
+output obligations scoped to a run's skill invocation. The singular
+`skill_directory` remains an explicitly loaded primary skill. Source:
+[`skill_catalog.py:24`](../jvagent/harness/skill_catalog.py#L24).
+See [the catalog runbook](runbooks/native-skill-catalog.md).
+
 ### Compiled skill contract (pilot proposal)
 An immutable, validated binding of an existing skill's SOP, Action dependencies,
 tool schemas, lifecycle bindings, state/output models, and limits. Proposed in

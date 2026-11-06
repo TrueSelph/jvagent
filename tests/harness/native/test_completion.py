@@ -92,12 +92,12 @@ async def test_length_limit_stops_output_function_before_it_runs(
 
     from pydantic_ai.messages import ToolCallPart
 
-    from jvagent.harness import native
+    from jvagent.harness import skill_catalog
 
     skill = tmp_path / "conversation"
     skill.mkdir()
     (skill / "SKILL.md").write_text(
-        "---\nname: conversation\ndescription: Converse\nallowed-tools: []\n---\nAnswer briefly.\n"
+        "---\nname: conversation\ndescription: Converse\noutput-contract: evidence_required\nallowed-tools: []\n---\nAnswer briefly.\n"
     )
     called = []
 
@@ -106,7 +106,7 @@ async def test_length_limit_stops_output_function_before_it_runs(
         return "must not process incomplete output"
 
     monkeypatch.setattr(
-        native,
+        skill_catalog,
         "output_policy",
         lambda name: SimpleNamespace(finish=finish, run_scope=nullcontext),
     )

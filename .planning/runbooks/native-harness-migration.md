@@ -34,6 +34,12 @@ custom legacy prompts, gearing, fallback and channel controls. Translate their
 intent to skills or native capabilities explicitly before removing them. One
 installed skill must be selected; this does not migrate the entire old router.
 
+Native runtime also supports an explicit multi-skill catalog through
+`skill_directories`; see [catalog configuration and policy](native-skill-catalog.md).
+The offline converter still emits one selected skill. Do not treat catalog
+runtime support as proof that `skills`/`skills_source` or historical router
+state has been migrated.
+
 Unmapped controls and provider policy are checked in
 [`harness_migrate.py:154`](../../jvagent/cli/harness_migrate.py#L154).
 

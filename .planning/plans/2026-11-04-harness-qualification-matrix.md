@@ -47,6 +47,14 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native multi-skill runtime: [catalog record](2026-11-05-native-catalog.md).
+Official deferred loading and JV active-skill/host-access checks pass actual
+GPT-4.1 chat/MCP/research/greeting/research browser flows and fresh PostgreSQL
+accounting. The initial research-to-greeting failure is retained and fixed through
+current-run invocation scope. Scheduled catalog tasks have FunctionModel/real-PG
+qualification; actual-provider timer execution remains open. This does not close
+old selector/name/script/channel or persisted graph migration, nor legacy deletion.
+
 Actual cumulative output-limit qualification: [budget record](2026-11-05-native-limit.md).
 An OpenAI response crossing the SDK allowance retains a priced usage receipt
 and failed outcome; an administrator allowance update permits explicit native/MCP

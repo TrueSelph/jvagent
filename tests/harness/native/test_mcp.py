@@ -38,12 +38,13 @@ def host(user: str) -> Any:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_mode", [False, True])
 @pytest.mark.parametrize(
     "reference,permitted",
     [("REHEARSAL-47", True), ("absent", True), ("REHEARSAL-47", False)],
 )
 async def test_native_mcp_transport_and_policy(
-    tmp_path: Path, reference: str, permitted: bool
+    tmp_path: Path, reference: str, permitted: bool, catalog_mode: bool
 ) -> None:
     action = MCPAction(
         sandbox_mode=False,
@@ -84,7 +85,12 @@ async def test_native_mcp_transport_and_policy(
             assert "mcp_records__misleading_write" not in {
                 t.name for t in info.function_tools
             }
-            if count == 1:
+            if catalog_mode and count == 1:
+                assert NAME not in {t.name for t in info.function_tools}
+                return ModelResponse(
+                    parts=[ToolCallPart("load_capability", {"id": "records"})]
+                )
+            if count == (2 if catalog_mode else 1):
                 return ModelResponse(
                     parts=[ToolCallPart(NAME, {"reference": reference})]
                 )
@@ -108,7 +114,8 @@ async def test_native_mcp_transport_and_policy(
         store = InteractionStepStore(interaction)
         agent = build_native_agent(
             FunctionModel(respond),
-            skill_directory=directory,
+            skill_directory=None if catalog_mode else directory,
+            skill_directories=[directory] if catalog_mode else [],
             tools=[],
             step_store=store,
             toolsets=toolsets,
@@ -119,7 +126,12 @@ async def test_native_mcp_transport_and_policy(
             result = await agent.run("Read the record.")
         assert result.output == "verified"
         assert checked == [NAME]
-        effects = interaction.native_steps["effects"]
+        all_effects = interaction.native_steps["effects"]
+        assert len(all_effects) == (2 if catalog_mode else 1)
+        if catalog_mode:
+            assert all_effects[0]["tool_name"] == "load_capability"
+            assert all_effects[0]["status"] == "completed"
+        effects = [effect for effect in all_effects if effect["tool_name"] == NAME]
         assert len(effects) == 1
         assert effects[0]["status"] == (
             "completed" if permitted and reference == "REHEARSAL-47" else "failed"

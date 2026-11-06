@@ -23,6 +23,7 @@ from jvagent.memory.task_store import TaskStore
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_mode", [False, True])
 @pytest.mark.parametrize("deferred", [False, True])
 @pytest.mark.parametrize("failure", [False, True, "unqualified_pin", "cancel"])
 async def test_native_task_sdk_output_and_failure_do_not_replay(
@@ -30,6 +31,7 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
     monkeypatch: pytest.MonkeyPatch,
     failure: bool | str,
     deferred: bool,
+    catalog_mode: bool,
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
 
@@ -98,7 +100,12 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
         get_responder=AsyncMock(return_value=ReplyAction()),
         model="openai:gpt-4.1",
         model_settings={},
-        skill_directory=str(tmp_path / "conversation"),
+        skill_directory="" if catalog_mode else str(tmp_path / "conversation"),
+        skill_directories=(
+            [str(tmp_path / "conversation"), str(tmp_path / "summary")]
+            if catalog_mode
+            else []
+        ),
         delegates=[],
         instructions="Follow host policy.",
         context_max_tokens=32000,

@@ -1,0 +1,54 @@
+{
+  "observed_at": "2026-11-06T01:46:59.049Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n2 conversations\n\nNATIVE-CATALOG-CHECK: FINAL Please research that Python page again now. Fetch it afresh and provide one sourced finding about its description of Python, with a current source citation.\n\nNATIVE-CATALOG-CHECK: Thanks. Now just say good night, without doing any further research.\n\nLogout\nNA\nNative Catalog Qualification\nAGENT\nsession ID\ntoken\n1 tool call\nUsed tool: load_capability\n\nHello! How can I help you today?\n\ngpt-4.1-2025-04-14 · 2 attempts · 580 tokens · 2.0s · 13.7 tok/s\n\nNATIVE-CATALOG-CHECK: FINAL Look up REHEARSAL-47 and tell me its room and start time.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 3 attempts · 1.5k tokens · 3.1s · 20.7 tok/s\n\nNATIVE-CATALOG-CHECK: FINAL Research https://www.python.org/doc/essays/blurb/ and give one sourced finding about how Python is described. Use the research skill and cite the fetched page.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: web_fetch__fetch\n\nPython is an interpreted, object-oriented, high-level programming language with dynamic semantics.\n\nPython is described as an interpreted, object-oriented, high-level programming language with dynamic semantics. Source 1, observed 2026-11-06 01:44 UTC\ngpt-4.1-2025-04-14 · 3 attempts · 4.7k tokens · 3.8s · 54.1 tok/s\n\nNATIVE-CATALOG-CHECK: FINAL Thanks. Now just say good night, without doing any further research.\n\nGood night!\n\ngpt-4.1-2025-04-14 · 1 attempt · 2.4k tokens · 828ms · 6.0 tok/s\n\nNATIVE-CATALOG-CHECK: FINAL Please research that Python page again now. Fetch it afresh and provide one sourced finding about its description of Python, with a current source citation.\n\n1 tool call\nUsed tool: web_fetch__fetch\n\nPython is an interpreted, object-oriented, high-level programming language with dynamic semantics.\n\nPython is described as an interpreted, object-oriented, high-level programming language with dynamic semantics. Source 1, observed 2026-11-06 01:46 UTC\ngpt-4.1-2025-04-14 · 3 attempts · 9.9k tokens · 5.8s · 45.4 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "resources": [
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 6357.5,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 5079.5,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 6347.4000000059605,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 3277.699999988079,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 4345,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 4854.4000000059605,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 6175.299999982119,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 2259.0999999940395,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 8201.40000000596,
+      "initiator": "fetch"
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

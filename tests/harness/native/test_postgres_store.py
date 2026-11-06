@@ -272,6 +272,7 @@ async def test_native_repeated_item_records_and_task_persist(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("catalog_mode", [False, True])
 @pytest.mark.parametrize("deferred", [False, True])
 @pytest.mark.parametrize("failure", [False, True, "cancel"])
 async def test_native_proactive_outcome_persists_without_retry(
@@ -280,6 +281,7 @@ async def test_native_proactive_outcome_persists_without_retry(
     monkeypatch: pytest.MonkeyPatch,
     deferred: bool,
     failure: bool | str,
+    catalog_mode: bool,
 ) -> None:
     from tests.harness.native.test_proactive import (
         test_native_task_sdk_output_and_failure_do_not_replay,
@@ -287,7 +289,7 @@ async def test_native_proactive_outcome_persists_without_retry(
 
     monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
     await test_native_task_sdk_output_and_failure_do_not_replay(
-        tmp_path, monkeypatch, failure, deferred
+        tmp_path, monkeypatch, failure, deferred, catalog_mode
     )
     rows = await postgres_scope.database.find("node", {"entity": "Conversation"})
     assert rows[0]["context"]["tasks"][0]["status"] == (

@@ -55,6 +55,7 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/reference/action-authoring.md`](.planning/reference/action-authoring.md) |
+| **Configure native skills** | [`.planning/runbooks/native-skill-catalog.md`](.planning/runbooks/native-skill-catalog.md) · [configuration migration](.planning/runbooks/native-harness-migration.md) |
 | **Thin harness principle** (platform-wide) | [`docs/thin-harness.md`](docs/thin-harness.md) |
 | **Build / extend an interview skill** | [`docs/thin-harness.md`](docs/thin-harness.md) + [`jvagent/action/interview/docs/thin-harness.md`](jvagent/action/interview/docs/thin-harness.md) (profile) + [`jvagent/action/interview/AGENTS.md`](jvagent/action/interview/AGENTS.md) |
 | **See every existing action** | [`.planning/reference/actions-catalog.md`](.planning/reference/actions-catalog.md) |

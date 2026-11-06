@@ -21,14 +21,20 @@ class ReviewedMCPToolset(WrapperToolset[Any]):
     declared_names: frozenset[str]
     allowed_names: frozenset[str] = frozenset()
     access_check: Callable[[str], Awaitable[bool]] | None = None
+    skill_check: Callable[[Any, str], bool] | None = None
 
     def for_skill(
-        self, allowed: Iterable[str], access_check: Callable[[str], Awaitable[bool]]
+        self,
+        allowed: Iterable[str],
+        access_check: Callable[[str], Awaitable[bool]],
+        *,
+        skill_check: Callable[[Any, str], bool] | None = None,
     ) -> "ReviewedMCPToolset":
         return replace(
             self,
             allowed_names=self.declared_names.intersection(allowed),
             access_check=access_check,
+            skill_check=skill_check,
         )
 
     async def get_tools(self, ctx: RunContext[Any]) -> dict[str, ToolsetTool[Any]]:
@@ -55,6 +61,7 @@ class ReviewedMCPToolset(WrapperToolset[Any]):
         reject_model_authority_fields(tool_args)
         if (
             name not in self.allowed_names
+            or (self.skill_check is not None and not self.skill_check(ctx, name))
             or self.access_check is None
             or not await self.access_check(name)
         ):

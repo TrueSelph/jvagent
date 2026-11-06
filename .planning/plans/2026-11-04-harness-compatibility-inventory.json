@@ -2247,5 +2247,24 @@
       "evidence": "2026-11-05-native-migration-flags.md",
       "status": "rejects graph mutation flags before global processing; actual graph digest unchanged; subsequent model browser lookup succeeds"
     }
+  },
+  "native_skill_catalog_qualification": {
+    "evidence": "2026-11-05-native-catalog.md",
+    "scope": "explicit native runtime catalog; not legacy skills/source or graph migration",
+    "qualified": [
+      "official deferred discovery/loading with all-member preflight",
+      "active owning skill plus independent host tool permission",
+      "MCP read/error/deny lifecycle in catalog mode",
+      "research structured output scoped to current invocation without old-history greeting leakage",
+      "run-scoped research obligation across child hook tasks and context loss",
+      "catalog scheduled tasks select only an explicit configured skill; real PostgreSQL success/failure/cancellation records"
+    ],
+    "remaining": [
+      "legacy skills/skills_source and wildcard/name/asset migration",
+      "channel-specific catalog composition",
+      "scripts and external write qualification",
+      "full comparison and default native cutover",
+      "historical-state migration and legacy engine deletion"
+    ]
   }
 }
