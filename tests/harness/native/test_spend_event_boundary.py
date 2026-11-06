@@ -120,3 +120,119 @@ async def test_output_limit_keeps_spend_before_terminal_snapshot(
     persisted = (await Interaction.find({"id": interaction.id}))[0]
     assert persisted.usage["total_tokens"] == 15
     assert persisted.usage["unknown_cost_call_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_exhausted_budget_has_no_provider_attempt_or_unknown_bill(
+    tmp_path: Path,
+) -> None:
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+    from pydantic_ai_harness.spend import SpendEntry, SpendLimitExceeded, SpendLimits
+
+    from jvagent.harness.accounting import recover_native_usage
+    from jvagent.harness.spend_store import native_budgets
+
+    directory = tmp_path / "answer"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: answer\ndescription: Answer\n---\nAnswer.\n"
+    )
+    conversation = await Conversation.create(user_id="caller", session_id="exhausted")
+    interaction = await Interaction.create(
+        utterance="Answer",
+        user_id="caller",
+        conversation_id=conversation.id,
+        session_id=conversation.session_id,
+    )
+    interaction.native_run = {"run_id": "preflight", "status": "running"}
+    model_calls = []
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        model_calls.append(1)
+        raise AssertionError("Budget refusal must happen before provider admission")
+
+    model = FunctionModel(respond, model_name="gpt-4.1")
+    spend = ConversationSpendStore(conversation)
+    statuses = await SpendLimits(store=spend, budgets=native_budgets("2", ".4")).status(
+        RunContext(
+            deps=None,
+            model=model,
+            usage=RunUsage(),
+            run_id="preflight",
+            conversation_id=conversation.session_id,
+        )
+    )
+    await spend.add_many(
+        [
+            SpendEntry(
+                key=s.key,
+                usd=Decimal(".5"),
+                ttl=s.budget.ttl,
+                token="conservative-reserve",
+            )
+            for s in statuses
+            if s.budget.window == "conversation"
+        ]
+    )
+
+    async def allowed(name: str) -> bool:
+        return True
+
+    store = InteractionStepStore(interaction)
+    agent = build_native_agent(
+        model,
+        skill_directory=directory,
+        tools=[],
+        access_check=allowed,
+        instructions="Answer",
+        step_store=store,
+        spend_store=spend,
+        spend_observer=NativeSpendRecorder(interaction, lock=store.lock),
+        max_conversation_cost_usd=".4",
+    )
+    with pytest.raises(SpendLimitExceeded):
+        await run_native_agent(
+            agent, "Answer", conversation_id=conversation.session_id, run_id="preflight"
+        )
+    interaction.native_run["status"] = "failed"
+    await recover_native_usage(interaction, run_id="preflight", model="gpt-4.1")
+    assert model_calls == []
+    assert (
+        sum(
+            e.kind == "model_request_started"
+            for e in await store.list_events(run_id="preflight")
+        )
+        == 1
+    )
+    assert interaction.usage["unknown_cost_call_count"] == 0
+    assert interaction.usage["model_attempt_count"] == 0
+
+    from jvagent.harness.recovery import history_for_new_turn
+
+    prepared = await history_for_new_turn(
+        interaction,
+        conversation_id=conversation.id,
+        user_id="caller",
+        session_id=conversation.session_id,
+    )
+    assert prepared.messages and prepared.source["frontier"] == "accepted_input"
+    from jvagent.harness.accounting import project_native_usage
+
+    for field, value in [
+        ("native_run_id", "foreign"),
+        ("native_step_index", 999),
+        ("native_request_started_at", "foreign"),
+        ("native_refusal_origin", "untrusted"),
+    ]:
+        projected = await project_native_usage(
+            interaction, run_id="preflight", model="gpt-4.1"
+        )
+        refusal = next(
+            e
+            for e in projected.observability_metrics
+            if e["event_type"] == "model_preflight_refusal"
+        )
+        refusal["data"][field] = value
+        await recover_native_usage(projected, run_id="preflight", model="gpt-4.1")
+        assert projected.usage["unknown_cost_call_count"] == 1

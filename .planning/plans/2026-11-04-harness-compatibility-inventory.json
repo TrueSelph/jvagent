@@ -56,14 +56,13 @@
       "name": "jvagent/file_interface",
       "archetype": "FileInterfaceAction",
       "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
-      "qualification": "partial: bounded local native read, explicitly granted text write and operator-verified single local write continuation",
-      "evidence": "2026-11-06-native-effect-recovery.md",
+      "qualification": "partial: bounded local native reads, granted text writes and verified single-write continuation with known or explicitly reserved unknown billing",
+      "evidence": "2026-11-06-native-effect-reserve.md",
       "native_tools": [
         "file_interface__read_file",
         "file_interface__write_file"
       ],
       "remaining": [
-        "unknown billing with write effects",
         "other write/effect classes and distributed ownership",
         "live S3",
         "directory discovery",
@@ -2395,6 +2394,24 @@
       "multiple/external/child/background effects",
       "distributed fencing",
       "distinct restored-result UI label",
+      "migration/deletion and enterprise release"
+    ]
+  },
+  "native_effect_billing_reserve_increment": {
+    "evidence": "2026-11-06-native-effect-reserve.md",
+    "qualified": [
+      "read-only SDK usage inspection",
+      "independent idempotent budget reserve and effect approval",
+      "stopped local write with unknown request: actual crash/browser/restart no replay",
+      "SDK preflight refusal preserves input without false unknown billing",
+      "live local policy updates invalidate Action caches before reload",
+      "completed-cache restoration leaves state and spend unchanged"
+    ],
+    "remaining": [
+      "provider invoice correction",
+      "abandoned old snapshots",
+      "multiple/external/child/background effects",
+      "distributed policy and fencing",
       "migration/deletion and enterprise release"
     ]
   }

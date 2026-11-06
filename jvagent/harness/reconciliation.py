@@ -27,7 +27,8 @@ def recovery_digest(interaction: Any) -> str:
         "metrics": [
             m
             for m in interaction.observability_metrics
-            if m.get("event_type") in {"model_call", "model_attempt"}
+            if m.get("event_type")
+            in {"model_call", "model_attempt", "model_preflight_refusal"}
         ],
     }
     encoded = json.dumps(
@@ -85,7 +86,8 @@ async def reserve_unknown_usage(
         or usd <= 0
         or usd > Decimal("999999.999999")
         or usd != usd.quantize(Decimal("0.000001"))
-        or interaction.native_run.get("status") not in {"failed", "cancelled"}
+        or interaction.native_run.get("status")
+        not in {"failed", "cancelled", "running"}
         or not interaction.native_run.get("run_id")
         or not actor
         or not evidence
@@ -95,7 +97,19 @@ async def reserve_unknown_usage(
         or interaction.session_id != conversation.session_id
     ):
         raise ValueError("Invalid uncertainty reserve or conversation scope")
+    current = recovery_digest(interaction)
+    prior = interaction.native_run.get("usage_reserve")
+    accepted_digest = current
+    if prior and prior.get("digest") == current:
+        accepted_digest = prior.get("approval_digest", current)
+    if digest not in {current, accepted_digest}:
+        raise ValueError("Execution facts changed; inspect again before approval")
+    effect_projection = None
     try:
+        if interaction.native_run.get("status") == "running":
+            raise NativeHistoryError(
+                "Running execution requires stopped-owner verification"
+            )
         await history_for_new_turn(
             interaction,
             conversation_id=conversation.id,
@@ -104,12 +118,32 @@ async def reserve_unknown_usage(
         )
     except NativeHistoryError as error:
         if str(error) != "Previous provider usage requires reconciliation":
-            raise ValueError(
-                "Execution/effects are not eligible for a usage reserve"
-            ) from error
-    current = recovery_digest(interaction)
-    if digest != current:
-        raise ValueError("Execution facts changed; inspect again before approval")
+            from jvagent.harness.accounting import project_native_usage
+            from jvagent.harness.effect_recovery import inspect_effect_recovery
+
+            try:
+                # Reserve authority never grants effect replay/continuation. The
+                # separate effect approval must reverify the resource afterward.
+                await inspect_effect_recovery(interaction, conversation)
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                raise ValueError(
+                    "Execution/effects are not eligible for a usage reserve"
+                ) from error
+            effect_projection = await project_native_usage(
+                interaction, run_id=interaction.native_run["run_id"], model="unknown"
+            )
+    approval_digest = prior.get("approval_digest", digest) if prior else digest
+    if effect_projection is not None:
+        if not effect_projection.usage.get("unknown_cost_call_count"):
+            raise ValueError("No unknown provider usage needs a reserve")
+        # The explicit POST journals missing observations from SDK facts before
+        # budgeting. Original SDK checkpoints/effects/status are never rewritten.
+        interaction.observability_metrics = effect_projection.observability_metrics
+        interaction.compute_usage()
+        await interaction.save()
+        await flush_deferred_entities(interaction, strict=True)
+        current = recovery_digest(interaction)
+    digest = current
     prior = interaction.native_run.get("usage_reserve")
     proposal = {
         "version": RESERVE_VERSION,
@@ -120,6 +154,8 @@ async def reserve_unknown_usage(
         "reason": reason,
         "unknown_calls": interaction.usage.get("unknown_cost_call_count", 0),
     }
+    if prior and "approval_digest" in prior or approval_digest != digest:
+        proposal["approval_digest"] = approval_digest
     if prior:
         if any(prior.get(k) != v for k, v in proposal.items()):
             raise ValueError("An existing reserve cannot be replaced")

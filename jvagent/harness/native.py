@@ -358,18 +358,34 @@ def build_native_agent(
             )
         )
     if spend_store is not None:
+        from pydantic_ai.capabilities import Hooks
         from pydantic_ai_harness.spend import SpendLimits
 
         from jvagent.harness.spend_store import native_budgets
 
-        run_services.append(
-            SpendLimits(
-                store=spend_store,
-                on_unpriced="raise",
-                on_spend=spend_observer.record if spend_observer is not None else None,
-                budgets=native_budgets(max_run_cost_usd, max_conversation_cost_usd),
-            )
+        spend_limits = SpendLimits(
+            store=spend_store,
+            on_unpriced="raise",
+            on_spend=spend_observer.record if spend_observer is not None else None,
+            budgets=native_budgets(max_run_cost_usd, max_conversation_cost_usd),
         )
+
+        async def budget_admission(ctx: Any, request_context: Any) -> Any:
+            from pydantic_ai_harness.spend import SpendLimitExceeded
+
+            try:
+                return await spend_limits.before_model_request(ctx, request_context)
+            except SpendLimitExceeded:
+                if spend_observer is not None and step_store is not None:
+                    await spend_observer.record_preflight_refusal(ctx, store=step_store)
+                raise
+
+        # Keep the SDK input checkpoint/start event. Its innermost budget hook
+        # cannot mark a refusal as pre-provider; reuse that public hook here and
+        # journal the observed refusal through existing host telemetry. Remove
+        # when upstream distinguishes admission refusals in persisted events.
+        run_services.append(Hooks(before_model_request=budget_admission))
+        run_services.append(spend_limits)
     from pydantic_ai_harness.compaction import SummarizingCompaction
 
     capabilities = [

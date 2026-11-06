@@ -368,3 +368,11 @@ stopped owner, immutable graph/resource scope and known model receipts; its firs
 resumed turn is read-only. Sources:
 [`effect_recovery.py:48`](../jvagent/harness/effect_recovery.py:48),
 [`native.py:98`](../jvagent/harness/native.py:98).
+
+### Model preflight refusal
+
+An observed refusal from the official SDK spend-admission hook before provider
+execution. Host telemetry binds it to an exact SDK run/step/request-start boundary;
+the original SDK checkpoint/event stays intact. It is neither a paid model receipt
+nor an unknown-billing attempt. Source:
+[`accounting.py:56`](../jvagent/harness/accounting.py:56).

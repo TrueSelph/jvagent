@@ -28,7 +28,9 @@ from jvagent.memory.interaction import Interaction
 from jvagent.tooling.context import bind_dispatch_context
 
 
-async def interrupted(tmp_path: Path, monkeypatch: Any) -> Any:
+async def interrupted(
+    tmp_path: Path, monkeypatch: Any, *, during_provider: bool = False
+) -> Any:
     conversation = Conversation(user_id="caller", session_id="session")
     await conversation.save()
     interaction = Interaction(
@@ -63,11 +65,18 @@ async def interrupted(tmp_path: Path, monkeypatch: Any) -> Any:
     async def write(*args: Any, **kwargs: Any) -> None:
         bodies.append(1)
         await original(*args, **kwargs)
-        raise asyncio.CancelledError()
+        if not during_provider:
+            raise asyncio.CancelledError()
 
     monkeypatch.setattr(_core, "write_bounded_text_file", write)
 
+    requests = 0
+
     def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal requests
+        requests += 1
+        if during_provider and requests > 1:
+            raise asyncio.CancelledError()
         return ModelResponse(
             parts=[
                 ToolCallPart(
@@ -313,3 +322,224 @@ async def test_failed_approval_flush_retains_only_prepared_decision(
             conversation=fixture.conversation,
         )
     assert fixture.bodies == [1]
+
+
+@pytest.mark.asyncio
+async def test_unknown_billing_reserve_and_effect_approval_are_independent(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from pydantic_ai.models.test import TestModel
+
+    from jvagent.harness.reconciliation import (
+        has_usage_reserve,
+        recovery_digest,
+        reserve_unknown_usage,
+    )
+
+    fixture = await interrupted(tmp_path, monkeypatch, during_provider=True)
+    original_steps = copy.deepcopy(fixture.interaction.native_steps)
+    original_metrics = copy.deepcopy(fixture.interaction.observability_metrics)
+    inspected = await effect_recovery.inspect_effect_recovery(
+        fixture.interaction, fixture.conversation
+    )
+    assert (
+        inspected.facts["usage"]["unknown_cost_call_count"] == 1
+        and not inspected.usage_ready
+    )
+    assert fixture.interaction.observability_metrics == original_metrics
+    approval = dict(
+        digest=inspected.facts["digest"],
+        actor="admin",
+        evidence="File verified",
+        reason="Continue",
+    )
+    with pytest.raises(ValueError, match="budget reserve"):
+        await effect_recovery.approve_effect_recovery(
+            fixture.interaction, fixture.conversation, **approval
+        )
+    initial_digest = recovery_digest(fixture.interaction)
+    options = dict(
+        digest=initial_digest,
+        usd=Decimal("0.5"),
+        actor="admin",
+        evidence="Conservative allowance",
+        reason="Unknown billing",
+        model=TestModel(),
+        run_limit="2",
+        conversation_limit="20",
+    )
+    receipt = await reserve_unknown_usage(
+        fixture.interaction, fixture.conversation, **options
+    )
+    assert (
+        receipt["status"] == "applied" and receipt["approval_digest"] == initial_digest
+    )
+    assert receipt["digest"] == recovery_digest(fixture.interaction) != initial_digest
+    assert (
+        has_usage_reserve(fixture.interaction)
+        and fixture.interaction.usage["unknown_cost_call_count"] == 1
+    )
+    assert fixture.interaction.native_steps == original_steps and fixture.bodies == [1]
+    assert receipt == await reserve_unknown_usage(
+        fixture.interaction, fixture.conversation, **options
+    )
+    assert receipt == await reserve_unknown_usage(
+        fixture.interaction,
+        fixture.conversation,
+        **{**options, "digest": receipt["digest"]},
+    )
+    assert all(
+        Decimal(v["spent"]["usd"]) == Decimal("0.5")
+        for v in fixture.conversation.native_spend.values()
+    )
+    # Paying a reserve alone never grants effect continuation.
+    with pytest.raises(NativeHistoryError):
+        await history_for_new_turn(
+            fixture.interaction,
+            conversation_id=fixture.conversation.id,
+            user_id="caller",
+            session_id="session",
+            conversation=fixture.conversation,
+        )
+    fresh_inspection = await effect_recovery.inspect_effect_recovery(
+        fixture.interaction, fixture.conversation
+    )
+    assert (
+        fresh_inspection.usage_ready
+        and fresh_inspection.facts["digest"] != inspected.facts["digest"]
+    )
+    with pytest.raises(ValueError, match="facts changed"):
+        await effect_recovery.approve_effect_recovery(
+            fixture.interaction, fixture.conversation, **approval
+        )
+    await effect_recovery.approve_effect_recovery(
+        fixture.interaction,
+        fixture.conversation,
+        **{**approval, "digest": fresh_inspection.facts["digest"]},
+    )
+    history = await history_for_new_turn(
+        fixture.interaction,
+        conversation_id=fixture.conversation.id,
+        user_id="caller",
+        session_id="session",
+        conversation=fixture.conversation,
+    )
+    assert (
+        history.source["frontier"] == "operator_verified_effect"
+        and not history.deferred
+    )
+    assert fixture.interaction.native_steps == original_steps and fixture.bodies == [1]
+    # Altering the billed decision invalidates the separate effect approval.
+    fixture.interaction.native_run["usage_reserve"]["usd"] = "0.6"
+    with pytest.raises(NativeHistoryError):
+        await history_for_new_turn(
+            fixture.interaction,
+            conversation_id=fixture.conversation.id,
+            user_id="caller",
+            session_id="session",
+            conversation=fixture.conversation,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", ["live-owner", "changed-file", "journal-flush", "changed-facts"]
+)
+async def test_effect_billing_reserve_cannot_bypass_recovery_admission(
+    tmp_path: Path, monkeypatch: Any, failure: str
+) -> None:
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai_harness.step_persistence import StepEvent
+
+    from jvagent.harness import reconciliation
+
+    fixture = await interrupted(tmp_path, monkeypatch, during_provider=True)
+    digest = reconciliation.recovery_digest(fixture.interaction)
+    if failure == "live-owner":
+
+        def refuse(metadata: Any) -> None:
+            raise ValueError("Prior worker is active")
+
+        monkeypatch.setattr(effect_recovery, "require_dead_native_owner", refuse)
+    if failure == "changed-file":
+        fixture.path.write_text("not the intended file")
+    if failure == "journal-flush":
+        monkeypatch.setattr(
+            reconciliation,
+            "flush_deferred_entities",
+            AsyncMock(side_effect=OSError("Journal not durable")),
+        )
+    if failure == "changed-facts":
+        await InteractionStepStore(fixture.interaction).append_event(
+            StepEvent(run_id="interrupted", kind="run_failed", step_index=99)
+        )
+    with pytest.raises((ValueError, OSError)):
+        await reconciliation.reserve_unknown_usage(
+            fixture.interaction,
+            fixture.conversation,
+            digest=digest,
+            usd=Decimal("0.5"),
+            actor="admin",
+            evidence="Conservative reserve",
+            reason="Unknown billing",
+            model=TestModel(),
+            run_limit="2",
+            conversation_limit="20",
+        )
+    assert (
+        fixture.conversation.native_spend == {}
+        and not fixture.interaction.native_run.get("usage_reserve")
+    )
+    assert fixture.bodies == [1]
+
+
+@pytest.mark.asyncio
+async def test_effect_reserve_ack_failure_retries_original_digest_once(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from pydantic_ai.models.test import TestModel
+
+    from jvagent.harness.reconciliation import recovery_digest, reserve_unknown_usage
+
+    fixture = await interrupted(tmp_path, monkeypatch, during_provider=True)
+    original = Interaction.save
+    failed = False
+
+    async def save(self: Interaction, *args: Any, **kwargs: Any) -> Any:
+        nonlocal failed
+        if (
+            self.id == fixture.interaction.id
+            and self.native_run.get("usage_reserve", {}).get("status") == "applied"
+            and not failed
+        ):
+            failed = True
+            raise OSError("Acknowledgement lost after debit")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Interaction, "save", save)
+    options = dict(
+        digest=recovery_digest(fixture.interaction),
+        usd=Decimal("0.5"),
+        actor="admin",
+        evidence="Conservative allowance",
+        reason="Unknown interrupted billing",
+        model=TestModel(),
+        run_limit="2",
+        conversation_limit="20",
+    )
+    with pytest.raises(OSError, match="after debit"):
+        await reserve_unknown_usage(
+            fixture.interaction, fixture.conversation, **options
+        )
+    fresh = (await Interaction.find({"id": fixture.interaction.id}))[0]
+    assert fresh.native_run["usage_reserve"]["status"] == "prepared"
+    receipt = await reserve_unknown_usage(fresh, fixture.conversation, **options)
+    assert (
+        receipt["status"] == "applied"
+        and receipt["approval_digest"] == options["digest"]
+    )
+    assert all(
+        Decimal(value["spent"]["usd"]) == Decimal("0.5")
+        for value in fixture.conversation.native_spend.values()
+    )
+    assert fixture.bodies == [1] and not fresh.native_run.get("effect_recovery")

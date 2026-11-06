@@ -5,7 +5,6 @@ here. Original SDK facts remain intact; an approval authorizes a fresh read-only
 turn supplied with a separately verified result through DeferredToolResults.
 """
 
-import copy
 import hashlib
 import json
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ from pydantic_ai_harness.step_persistence.recovery import inspect_recovery
 
 from jvagent.core.execution_owner import require_dead_native_owner
 from jvagent.harness.mutation_tools import NativeMutationTool, is_mutation_effect
-from jvagent.harness.reconciliation import recovery_digest
+from jvagent.harness.reconciliation import has_usage_reserve, recovery_digest
 from jvagent.harness.step_store import InteractionStepStore
 
 EFFECT_RECOVERY_VERSION = "verified-mutation-recovery-v1"
@@ -38,6 +37,7 @@ class EffectInspection:
     facts: dict[str, Any]
     messages: list[ModelMessage]
     deferred: DeferredToolResults | None
+    usage_ready: bool = True
 
 
 def _digest(value: Any) -> str:
@@ -49,8 +49,7 @@ async def inspect_effect_recovery(
     interaction: Any, conversation: Any
 ) -> EffectInspection:
     """Caller holds the conversation lock; only a stopped local owner is eligible."""
-    from jvagent.harness.accounting import recover_native_usage
-    from jvagent.memory.interaction import Interaction
+    from jvagent.harness.accounting import project_native_usage
 
     if (
         interaction.conversation_id != conversation.id
@@ -190,17 +189,9 @@ async def inspect_effect_recovery(
         or result.tools is not None
     ):
         raise ValueError("Recovery cannot supply extra prompts or tool grants")
-    # Projection is isolated: inspection never edits original receipts or usage.
-    clone: Any = SimpleNamespace(
-        native_steps=copy.deepcopy(interaction.native_steps),
-        native_run=copy.deepcopy(interaction.native_run),
-        observability_metrics=copy.deepcopy(interaction.observability_metrics),
-        usage={},
-    )
-    clone.compute_usage = lambda: Interaction.compute_usage(clone)
-    await recover_native_usage(clone, run_id=identity, model="unknown")
-    if clone.usage.get("unknown_cost_call_count"):
-        raise ValueError("Provider usage uncertainty requires reconciliation first")
+    clone = await project_native_usage(interaction, run_id=identity, model="unknown")
+    unknown = clone.usage.get("unknown_cost_call_count", 0)
+    usage_ready = not unknown or has_usage_reserve(clone)
     facts = {
         "version": EFFECT_RECOVERY_VERSION,
         "interaction_id": interaction.id,
@@ -225,11 +216,15 @@ async def inspect_effect_recovery(
             )
         },
     }
+    if unknown:
+        facts["usage_reserve"] = (
+            clone.native_run.get("usage_reserve") if usage_ready else None
+        )
     facts["digest"] = _digest(facts)
     deferred = (
         DeferredToolResults(calls={effect.tool_call_id: result}) if pending else None
     )
-    return EffectInspection(facts, history, deferred)
+    return EffectInspection(facts, history, deferred, usage_ready)
 
 
 async def approve_effect_recovery(
@@ -243,6 +238,8 @@ async def approve_effect_recovery(
 ) -> dict[str, Any]:
     """Persist intent and approval; never execute or alter the original effect."""
     inspected = await inspect_effect_recovery(interaction, conversation)
+    if not inspected.usage_ready:
+        raise ValueError("Provider usage uncertainty requires a budget reserve first")
     if not actor or not evidence or not reason or digest != inspected.facts["digest"]:
         raise ValueError("Recovery facts changed or approval is incomplete")
     proposal = {
@@ -289,6 +286,8 @@ async def approved_effect_history(
     ):
         raise ValueError("A durable operator approval is required")
     inspected = await inspect_effect_recovery(interaction, conversation)
+    if not inspected.usage_ready:
+        raise ValueError("Provider usage uncertainty requires a budget reserve first")
     if (
         receipt.get("digest") != inspected.facts["digest"]
         or receipt.get("facts") != inspected.facts

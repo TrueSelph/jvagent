@@ -2421,3 +2421,15 @@ SDK facts remain unchanged, and an ordinary subsequent write succeeds. Native/PG
 suites pass 485 per Python 3.11/3.12. Unknown billing with effects, broader writes,
 distributed fencing, UI recovery labelling, migration/deletion and release remain
 open. No second execution engine, state store or dependency was added.
+
+## Local write plus unknown billing — 2026-11-06
+
+[Evidence](2026-11-06-native-effect-reserve.md) combines the existing idempotent
+budget reserve with independent effect verification and SDK continuation. Actual
+crash/restart/browser/SQL proof retains unknown usage, original SDK/file facts,
+blocked inputs and shared debits. Real smoke exposed false preflight billing and
+stale Action settings; SDK-hook telemetry and existing Action-cache invalidation
+repair them, with parent-revision failing regressions. Final live budget refusal
+retains input, makes zero attempts/unknowns, and permits a later write after the
+limit is restored. Native/PG suites pass 492 per Python 3.11/3.12. Broader effects,
+invoice correction, deployment, migration/removal and enterprise gates remain open.

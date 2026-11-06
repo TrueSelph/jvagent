@@ -53,6 +53,46 @@ class NativeSpendRecorder:
         finally:
             self.context.reset(token)
 
+    async def record_preflight_refusal(self, ctx: Any, *, store: Any) -> None:
+        """Record an observed SDK budget refusal before provider admission.
+
+        Harness 0.66 journals request start before its innermost budget check.
+        Preserve that SDK checkpoint; this scoped host observation distinguishes
+        the known refusal from an actually unreported provider attempt. Remove
+        when the SDK persists this distinction itself.
+        """
+        events = await store.list_events(run_id=ctx.run_id)
+        started = next(
+            (
+                e
+                for e in reversed(events)
+                if e.kind == "model_request_started" and e.step_index == ctx.run_step
+            ),
+            None,
+        )
+        if started is None:
+            raise ValueError("Preflight refusal has no matching SDK request boundary")
+        data = {
+            "native_run_id": ctx.run_id,
+            "native_step_index": ctx.run_step,
+            "native_request_started_at": started.timestamp.isoformat(),
+            "native_refusal_origin": "sdk_spend_admission_v1",
+            "provider_admitted": False,
+            "reason": "spend_limit_exceeded",
+        }
+        async with self.lock:
+            if not any(
+                item.get("event_type") == "model_preflight_refusal"
+                and item.get("data") == data
+                for item in self.interaction.observability_metrics
+            ):
+                self.interaction.observability_metrics = [
+                    *self.interaction.observability_metrics,
+                    {"event_type": "model_preflight_refusal", "data": data},
+                ]
+            await self.interaction.save()
+            await flush_deferred_entities(self.interaction, strict=True)
+
     async def record(self, event: Any) -> None:
         ctx = self.context.get()
         statuses = [status for status in event.budgets if status.budget.window == "run"]
@@ -198,6 +238,28 @@ def record_native_usage(
     return count
 
 
+async def project_native_usage(interaction: Any, *, run_id: str, model: str) -> Any:
+    """Read SDK facts into an isolated reporting projection; never save or charge."""
+    import copy
+    from types import SimpleNamespace
+
+    from jvagent.memory.interaction import Interaction
+
+    projected: Any = SimpleNamespace(
+        **{
+            name: getattr(interaction, name, None)
+            for name in ("id", "conversation_id", "user_id", "session_id")
+        },
+        native_steps=copy.deepcopy(interaction.native_steps),
+        native_run=copy.deepcopy(interaction.native_run),
+        observability_metrics=copy.deepcopy(interaction.observability_metrics),
+        usage={},
+    )
+    projected.compute_usage = lambda: Interaction.compute_usage(projected)
+    await recover_native_usage(projected, run_id=run_id, model=model)
+    return projected
+
+
 async def recover_native_usage(interaction: Any, *, run_id: str, model: str) -> None:
     """Settle this run and its recorded descendants without charging other runs."""
     from jvagent.harness.step_store import InteractionStepStore
@@ -241,6 +303,19 @@ async def _recover_run_usage(interaction: Any, *, run_id: str, model: str) -> No
             status=interaction.native_run.get("status"),
             live=live,
             receipts=receipts,
+            refusals={
+                (
+                    item["data"].get("native_step_index"),
+                    item["data"].get("native_request_started_at"),
+                )
+                for item in metrics
+                if item.get("event_type") == "model_preflight_refusal"
+                and item.get("data", {}).get("native_run_id") == run_id
+                and item["data"].get("native_refusal_origin")
+                == "sdk_spend_admission_v1"
+                and item["data"].get("provider_admitted") is False
+                and item["data"].get("reason") == "spend_limit_exceeded"
+            },
         )
     )
     interaction.observability_metrics = metrics
@@ -254,6 +329,7 @@ def _request_attempts(
     status: str | None,
     live: list[dict[str, Any]],
     receipts: int,
+    refusals: set[tuple[Any, Any]],
 ) -> list[dict[str, Any]]:
     """Project official request boundaries, never schedule or infer HTTP retries.
 
@@ -267,6 +343,8 @@ def _request_attempts(
     terminal = any(event.kind == "run_failed" for event in events)
     for event in events:
         if event.kind == "model_request_started":
+            if (event.step_index, event.timestamp.isoformat()) in refusals:
+                continue
             known = event.step_index in covered if live else len(attempts) < receipts
             covered.discard(event.step_index)
             data = {

@@ -483,3 +483,15 @@ cache restoration have browser/SQL proof. Native/PG suites pass 485 per Python
 3.11/3.12. This supersedes the local single-write operator-continuation gap only.
 Unknown billing plus effects, other effect classes, distributed ownership,
 recovery-specific UI labelling, migration/removal and enterprise gates remain open.
+
+## Local effect plus billing uncertainty — 2026-11-06
+
+[Qualification](2026-11-06-native-effect-reserve.md) combines stopped-owner local
+write verification with the existing budget reserve. Reserve-only continuation
+stays blocked; separate effect approval and restart permit explicit read-only
+continuation. SDK facts/files/unknown receipts remain intact and reserves debit
+once. Actual smoke also closes false preflight unknown billing and stale local
+Action-cache policy updates, including accepted-input retry and a subsequent
+write. Native/PG suites pass 492 per Python version. Invoice correction, old failed
+snapshot migration, general effects, distributed policy, migration/removal and
+release qualification remain open; no overall optimization claim follows.
