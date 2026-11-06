@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native SDK scripts and shared user files](2026-11-06-native-user-files.md).
+Latest increment: [authenticated Messenger user isolation](2026-11-06-native-user-scope.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,19 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Authenticated Messenger user isolation
+
+At published `e1455848`, all nine remote checks pass. A fresh graph/filesystem
+and actual GPT-4.1 Messenger embed qualify separate admin/member script mounts,
+cross-user file absence, a script-created host symlink refused by FileInterface,
+canonical verified identity despite an observed foreign user claim, live `bash…`
+progress and transcript reload without execution/spend. Eleven turns include two
+anonymous fixture mistakes; 26 requests/33,713 reported tokens/USD 0.052192 estimated
+reconcile. The host supplies bearer authentication before the unchanged iframe
+bundle loads; this does not implement member login UX. No runtime source changes.
+The [record](2026-11-06-native-user-scope.md) bounds the closed local isolation gate;
+capacity, script recovery, deployment, migration/deletion and enterprise gates remain.
 
 ## Native local write and effect identity
 

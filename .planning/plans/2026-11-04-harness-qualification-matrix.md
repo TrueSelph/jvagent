@@ -47,6 +47,16 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native scripts and existing user files: [storage qualification](2026-11-06-native-user-files.md)
+and [authenticated embed isolation](2026-11-06-native-user-scope.md). Public SDK
+Docker/Shell share the existing per-user store with physical-root policy binding.
+Actual admin/member Messenger calls verify separate mounts, cross-user file and
+symlink refusal, verified caller precedence, live progress and reload/accounting.
+This supersedes the broad open-script item only for the bounded local profile.
+Script-effect recovery, user capacity, lifecycle, artifact delivery and broader
+deployment/migration/removal remain open. The disposable host supplies bearer
+authentication; ordinary-member client login is not implemented by that fixture.
+
 Action context service: [2026-11-06 extraction record](2026-11-06-native-context-decoupling.md).
 Eight modular Actions remove 28 direct import sites through the old executor.
 Cold isolation, task-local caller tests, Action regressions and real MCP browser
