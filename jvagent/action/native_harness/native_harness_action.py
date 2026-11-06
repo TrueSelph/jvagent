@@ -12,6 +12,12 @@ from jvspatial import flush_deferred_entities
 from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
+from jvagent.harness.inputs import (
+    INPUT_NOTICE,
+    NativeInputError,
+    native_user_prompt,
+    validate_input_media_types,
+)
 from jvagent.harness.native import build_native_agent, run_native_agent
 from jvagent.tooling.access import is_tool_allowed
 
@@ -104,6 +110,7 @@ class NativeHarnessAction(InteractAction):
 
     model: str = attribute(default="openai:gpt-4.1")
     model_settings: dict[str, Any] = attribute(default_factory=dict)
+    input_media_types: list[str] = attribute(default_factory=list)
     skill_directory: str = attribute(default="")
     skill_directories: list[str] = attribute(default_factory=list)
     delegates: list[dict[str, Any]] = attribute(default_factory=list)
@@ -130,6 +137,7 @@ class NativeHarnessAction(InteractAction):
 
         require_native_local_ownership()
         validate_model_settings(self.model_settings)
+        validate_input_media_types(self.input_media_types)
         validate_tool_execution_mode(self.tool_execution_mode)
         if not isinstance(self.planning, bool):
             raise ValueError("planning must be a boolean")
@@ -138,7 +146,7 @@ class NativeHarnessAction(InteractAction):
         """Run through the library and publish through the configured responder."""
         try:
             await NativeHarnessAction._execute(self, visitor)
-        except Exception:
+        except Exception as error:
             interaction = getattr(visitor, "interaction", None)
             if (
                 interaction is None
@@ -150,10 +158,18 @@ class NativeHarnessAction(InteractAction):
             if responder is None:
                 raise
             logging.getLogger(__name__).exception("native_admission_failed")
-            interaction.native_run = {"status": "blocked", "reason": "admission_failed"}
+            input_error = isinstance(error, NativeInputError)
+            interaction.native_run = {
+                "status": "blocked",
+                "reason": "invalid_input" if input_error else "admission_failed",
+            }
             await interaction.save()
             if not await responder.publish(
-                "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
+                (
+                    INPUT_NOTICE
+                    if input_error
+                    else "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation."
+                ),
                 visitor=visitor,
                 metadata=delivery_metadata(
                     visitor, interaction, getattr(self, "model", "unknown")
@@ -327,7 +343,11 @@ class NativeHarnessAction(InteractAction):
         skill_directories = [
             resolve_skill_directory(path) for path in configured_catalog
         ]
-        prompt = getattr(visitor, "utterance", "")
+        prompt = native_user_prompt(
+            getattr(visitor, "utterance", ""),
+            getattr(visitor, "data", None),
+            allowed_media_types=getattr(self, "input_media_types", []),
+        )
         if task_spec is not None:
             from jvagent.harness.skill_assets import project_skill
 
@@ -443,6 +463,25 @@ class NativeHarnessAction(InteractAction):
                         else None
                     ),
                     getattr(visitor, "_host_system_context", None),
+                    "Host attachment input policy: "
+                    + (", ".join(getattr(self, "input_media_types", [])) or "none")
+                    + ". Files outside this MIME list cannot be accepted.",
+                    "Image uploads: "
+                    + (
+                        "enabled"
+                        if any(
+                            m.startswith("image/")
+                            for m in getattr(self, "input_media_types", [])
+                        )
+                        else "disabled"
+                    )
+                    + ". PDF uploads: "
+                    + (
+                        "enabled"
+                        if "application/pdf" in getattr(self, "input_media_types", [])
+                        else "disabled"
+                    )
+                    + ". Do not suggest uploads in a disabled format.",
                 )
                 if part
             ),

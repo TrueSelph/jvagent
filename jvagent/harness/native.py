@@ -590,7 +590,7 @@ def build_native_agent(
 
 async def run_native_agent(
     agent: Any,
-    question: str,
+    question: str | Sequence[Any],
     *,
     conversation_id: str,
     run_id: str,

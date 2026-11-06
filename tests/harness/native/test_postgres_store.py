@@ -87,6 +87,48 @@ class PostgresScope:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("deferred", [False, True])
+async def test_multimodal_bytes_survive_fresh_postgres_context(
+    postgres_scope: PostgresScope, tmp_path: Path, monkeypatch: Any, deferred: bool
+) -> None:
+    from pydantic_ai.messages import BinaryContent, UserPromptPart
+    from pydantic_ai_harness.step_persistence import continue_run
+
+    from tests.harness.native.test_inputs import (
+        test_sdk_multimodal_checkpoint_and_followup,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_sdk_multimodal_checkpoint_and_followup(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 1
+    fresh_database = PostgresDB(
+        dsn=postgres_scope.dsn,
+        schema_name=postgres_scope.schema,
+        min_size=1,
+        max_size=2,
+    )
+    try:
+        set_default_context(GraphContext(database=fresh_database))
+        loaded = await Interaction.get(rows[0]["id"])
+        messages = await continue_run(
+            InteractionStepStore(loaded), run_id=loaded.native_run["run_id"]
+        )
+        binary = [
+            item
+            for message in messages
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+            for item in part.content
+            if isinstance(item, BinaryContent)
+        ]
+        assert len(binary) == 1 and binary[0].data == b"\x89PNG\r\n\xff"
+    finally:
+        set_default_context(GraphContext(database=postgres_scope.database))
+        await fresh_database.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
 async def test_interview_cleanup_retains_durable_host_replay_protection(
     postgres_scope: PostgresScope,
     monkeypatch: pytest.MonkeyPatch,

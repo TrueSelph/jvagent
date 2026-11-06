@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("pydantic_ai_harness")
 
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.messages import BinaryContent, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 from jvagent.action.native_harness import NativeHarnessAction
@@ -42,6 +42,7 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("attached", [False, True])
 @pytest.mark.parametrize(
     "delivered,settled",
     [
@@ -57,7 +58,11 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
     ],
 )
 async def test_native_receipt_precedes_delivery(
-    monkeypatch: Any, delivered: bool | str | None, settled: bool, caplog: Any
+    monkeypatch: Any,
+    delivered: bool | str | None,
+    settled: bool,
+    caplog: Any,
+    attached: bool,
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
 
@@ -66,6 +71,18 @@ async def test_native_receipt_precedes_delivery(
 
         assert get_tool_visitor() is visitor
         assert get_dispatch_context().user_id == "user"
+        content = next(
+            part.content
+            for part in messages[-1].parts
+            if isinstance(part, UserPromptPart)
+        )
+        if attached:
+            assert content[0] == "hello"
+            assert content[1] == "Attached file: sample.png"
+            assert isinstance(content[2], BinaryContent)
+            assert content[2].data == b"\x89PNG\r\n"
+        else:
+            assert content == "hello"
         if delivered == "cancel_before_delivery":
             raise asyncio.CancelledError()
         yield "ok"
@@ -81,7 +98,12 @@ async def test_native_receipt_precedes_delivery(
     original_tool = Tool("visitor_status", "Scoped status", effect_class="read")
 
     def factory(*args: Any, **kwargs: Any) -> Any:
-        assert kwargs["instructions"] == "Trusted host policy"
+        assert kwargs["instructions"] == (
+            "Trusted host policy\n\nHost attachment input policy: image/png. "
+            "Files outside this MIME list cannot be accepted."
+            "\n\nImage uploads: enabled. PDF uploads: disabled. "
+            "Do not suggest uploads in a disabled format."
+        )
         assert kwargs["model_settings"] == {"temperature": 0.0, "max_tokens": 8192}
         assert kwargs["tools"][0].binds_visitor is True
         assert original_tool.binds_visitor is None
@@ -165,6 +187,7 @@ async def test_native_receipt_precedes_delivery(
         max_conversation_cost_usd="20",
         model="test",
         model_settings={"temperature": 0.0, "max_tokens": 8192},
+        input_media_types=["image/png"],
         skill_directory=".",
         delegates=[],
         instructions="",
@@ -182,6 +205,19 @@ async def test_native_receipt_precedes_delivery(
         user_id="user",
         session_id="session",
         utterance="hello",
+        data=(
+            {
+                "image_urls": [
+                    {
+                        "base64": "iVBORw0K",
+                        "mime_type": "image/png",
+                        "filename": "sample.png",
+                    }
+                ]
+            }
+            if attached
+            else {}
+        ),
         channel="web",
         correlation_id="corr-server-owned",
         _host_system_context="Trusted host policy",

@@ -2489,5 +2489,27 @@
       "distributed recovery, security/deployment and evaluation",
       "legacy/pilot execution removal and full release qualification"
     ]
+  },
+  "native_multimodal_input_qualification": {
+    "status": "local native inline PNG/PDF/text admission qualified to recorded scope",
+    "record": "2026-11-06-native-inputs.md",
+    "qualified": [
+      "public SDK BinaryContent/user text from existing envelopes",
+      "explicit server MIME policy, strict whole-set validation and bounded count/bytes",
+      "actual browser/model mixed input and cold restart with persisted exact binary hashes",
+      "zero-attempt input-policy refusal and final corrected capability communication",
+      "623 native/host/real-PG tests per Python 3.11/3.12"
+    ],
+    "retained_failures": [
+      "false image-enabled claim without attachment",
+      "intermediate suggestion to upload an image as text/plain"
+    ],
+    "remaining": [
+      "official media offloading/retention and binary compaction qualification",
+      "same-session rejected-input recovery",
+      "other formats/providers, remote/channel media and clients",
+      "full legacy vision flag/artifact/caller migration",
+      "full retained-state migration, distributed recovery, security/deployment, evaluation and legacy deletion"
+    ]
   }
 }

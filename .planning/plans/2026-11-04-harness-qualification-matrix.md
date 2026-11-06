@@ -574,3 +574,17 @@ per Python 3.11/3.12; affected slices pass 239 each. Reference migration has 12
 blockers, down from 13. Broader schemas/providers, retained-state cutover,
 distributed recovery, security/deployment, evaluation and legacy deletion remain
 open; this does not qualify the whole release.
+
+## Native multimodal input — 2026-11-06
+
+[Qualification](2026-11-06-native-inputs.md) closes silent attachment loss by
+projecting admitted existing envelopes into public SDK BinaryContent/user text.
+Explicit MIME admission defaults to none; invalid sets refuse before model work.
+Actual GPT-4.1 browser PNG/PDF/text reads, cold-restart recall of previously
+unanswered details, live policy refusal, final mixed input and unchanged reload
+have persisted byte/accounting evidence. Two misleading capability statements
+remain recorded failures; explicit host facts repair the final policy response.
+Native/host/real-PG lanes pass 623 per Python 3.11/3.12. Large media offloading,
+retention/compaction, same-session invalid-input recovery, remote/channel media,
+other providers and full legacy vision migration remain open. The reference
+profile remains at 12 blockers; migration/deletion and enterprise gates stay open.

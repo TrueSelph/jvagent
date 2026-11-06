@@ -24,6 +24,14 @@ Sources: `jvagent/action/native_harness/native_harness_action.py:121`,
 
 ---
 
+### Native attachment input
+
+`NativeHarnessAction.input_media_types` is an explicit MIME allowlist, default
+`[]`. Client data cannot widen it. See [native attachment settings and bounds](../runbooks/native-attachments.md)
+for supported envelopes, provider scope, refusals and remaining limitations.
+Sources: `jvagent/action/native_harness/native_harness_action.py:114`,
+`jvagent/harness/inputs.py:37`.
+
 ## 2. Core environment variables
 
 | Var | Default | Effect |
