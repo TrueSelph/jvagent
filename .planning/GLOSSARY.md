@@ -323,3 +323,10 @@ See `jvagent/action/response/native_replay.py:9` and
 A new YAML declaration proposed by the offline `harness-migrate` command. It
 does not modify source configuration, migrate graph state or certify runtime
 compatibility. See [the migration runbook](runbooks/native-harness-migration.md).
+
+### Retained-state preflight
+
+Offline inspection of an operator-supplied Conversation/Interaction snapshot
+that separates verified retained receipts from the historical ledger and flags
+unresolved work. It never grants cutover authority or writes graph state. See
+[the migration runbook](runbooks/native-harness-migration.md).

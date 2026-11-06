@@ -47,6 +47,12 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Retained-state preflight: [inspection record](2026-11-05-native-state-preflight.md).
+An optional offline snapshot check separates historical ledger/verified receipts
+and flags unknown accounting, scope and task/effect/delivery state before a
+configuration candidate can be emitted. Actual prior benchmark data remains
+unchanged and blocked; no typed-history import or graph apply is implemented.
+
 Canonical SOP assets: [migration record](2026-11-05-native-skill-assets.md).
 The reference web lookup and reusable PageIndex retrieval skill use canonical
 names; explicit caller updates are required. Actual GPT-4.1 web search/fetch and

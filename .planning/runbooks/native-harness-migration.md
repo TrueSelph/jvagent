@@ -111,3 +111,37 @@ Latest finite-catalog/retirement rehearsal and current reference blockers:
 The CLI may emit environment-loading logs before its JSON report; use the returned
 Python planner mapping for direct structured integration or separate the logging
 prefix when capturing CLI stdout. Candidate YAML is written separately and privately.
+
+## Retained-state preflight
+
+An optional offline state check complements the configuration plan:
+
+```bash
+jvagent path/to/app harness-migrate --agent namespace/bot \
+  --state-snapshot /private/staging/conversation.json
+```
+
+The input is a private JSON object with exactly `conversation` (one persisted
+jvspatial Conversation row) and `interactions` (its retained Interaction rows).
+Each row uses the existing `{id, entity, context}` envelope. Capture from the
+intended graph under operator-controlled quiescence; do not publish the raw
+snapshot or paste it into chat. It may contain transcript, credentials/capability
+state and prompts. The tool does not connect to the graph, acquire a lock, verify
+live ownership, reconstruct graph edges or approve a migration.
+
+Snapshots are bounded to 2 MB and 64 retained Interactions. Duplicate JSON keys,
+nonfinite constants, malformed/scope-mismatched rows and ambiguous accounting
+are refused or reported as blockers. Reports contain a source digest, aggregate
+verified receipts, observed/unverified model-event counts and a distinct legacy
+ledger total. Missing/invalid receipts and zero estimates do not become free
+usage. The ledger is not relabelled as a provider invoice. Historical/pruned
+usage still needs reconciliation. Only explicitly typed per-call cost records
+with reviewed source markers qualify for the verified receipt subtotal; other
+old shapes require a separate migration rather than current-price reinterpretation.
+
+State blockers also prevent writing the YAML candidate. With no blockers, state
+status is still `review_required` and `cutover_authorized` is always false. A
+configuration-only invocation can still produce its candidate without a snapshot.
+This does not add an apply operation or change native admission, which continues
+to refuse unqualified legacy history. See the
+[preflight implementation and evidence](../plans/2026-11-05-native-state-preflight.md).

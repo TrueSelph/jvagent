@@ -84,7 +84,7 @@ FLAGS (apply to default + bootstrap):
 4. **`load_app_env(app_root)` runs first** ([`main.py:130`](main.py)). Anything reading env vars before this is incorrect.
 5. **`set_app_root(app_root)` must run before any node lookup** ([`main.py:134`](main.py)). Cache/config keys depend on it.
 6. **`_set_db_env_from_config(app_root)` ([`main.py:150`](main.py))** translates app.yaml DB stanza into env vars jvspatial reads. Must precede any DB call.
-7. **`harness-migrate` is offline and configuration-only.** Preserve source files and graph state, redact setting values in reports, refuse unknown controls and output overwrites. See [the migration runbook](../../.planning/runbooks/native-harness-migration.md).
+7. **`harness-migrate` is offline and configuration-only.** Preserve source files and graph state, redact setting values in reports, refuse unknown controls and output overwrites. Optional `--state-snapshot` reads only an operator-supplied private JSON snapshot; it never authorizes or applies state cutover. See [the migration runbook](../../.planning/runbooks/native-harness-migration.md).
 
 ---
 

@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [canonical shipped SOP assets](2026-11-05-native-skill-assets.md).
+Latest increment: [retained-state preflight](2026-11-05-native-state-preflight.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Retained-state migration preflight
+
+The offline compiler can inspect a private retained-state snapshot alongside
+configuration. It preserves the legacy ledger separately from verified per-call
+receipts, flags missing/false-zero accounting, foreign scope, nonterminal tasks,
+effects/delivery uncertainty and mixed native history, and refuses a candidate
+when state is blocked. Even a clean inspection grants no cutover authorization.
+Actual prior benchmark readback found five retained turns/seven unverified model
+events with a USD 0.031304 historical ledger; source data remains unchanged.
+A subsequent actual GPT-4.1 browser read returns the handbook facts/citation:
+two calls, 8949 reported tokens and USD 0.005712 estimated. Configuration and
+state apply, typed history import, lifetime spend reconciliation, rollback and
+legacy engine deletion remain open. This is a necessary preflight, not a migrated
+conversation or a replacement for those gates.
 
 ## Canonical shipped SOP migration
 

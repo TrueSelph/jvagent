@@ -498,11 +498,26 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
         help="Explicit installed skill; repeat for a finite catalog",
     )
     parser.add_argument("--output", help="New candidate YAML file; never overwrites")
+    parser.add_argument(
+        "--state-snapshot",
+        help="Private retained-state JSON snapshot; offline preflight only",
+    )
     options = parser.parse_args(args)
     try:
         report, candidate = plan_harness_migration(
             Path(app_root), options.agent, skill=options.skill
         )
+        if options.state_snapshot:
+            from jvagent.cli.harness_migration_state import inspect_state_snapshot
+
+            state = inspect_state_snapshot(Path(options.state_snapshot))
+            report["state_preflight"] = state
+            if state["blockers"]:
+                report["blockers"].append(
+                    "Retained state requires reconciliation before configuration cutover"
+                )
+                report["status"] = "blocked"
+                candidate = None
         if options.output and candidate is not None:
             output = Path(options.output).expanduser().absolute()
             fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

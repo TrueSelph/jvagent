@@ -550,3 +550,46 @@ def test_skill_format_preflight_does_not_discard_unsupported_jv_policy(
     report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
     assert report["status"] == "blocked" and candidate is None
     assert "private-group" not in json.dumps(report)
+
+
+def test_state_snapshot_blocker_prevents_candidate_without_exposing_source(
+    app: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from tests.cli.test_harness_migration_state import state_snapshot
+
+    data = state_snapshot()
+    data["conversation"]["context"]["context"] = {}
+    state = tmp_path / "private-state.json"
+    state.write_text(json.dumps(data))
+    output = tmp_path / "candidate.yaml"
+    assert (
+        handle_harness_migrate(
+            [
+                "--agent",
+                "demo/bot",
+                "--skill",
+                "answer",
+                "--state-snapshot",
+                str(state),
+                "--output",
+                str(output),
+            ],
+            str(app),
+        )
+        == 2
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "blocked" and not output.exists()
+    assert "missing_lifetime_spend_baseline" in result["state_preflight"]["blockers"]
+    assert "private user message" not in json.dumps(result)
+
+
+def test_state_snapshot_is_a_flag_value_not_an_app_directory(tmp_path: Path) -> None:
+    directory = tmp_path / "private-state-directory"
+    directory.mkdir()
+    app_root, args = _first_app_root_path(
+        ["harness-migrate", "--state-snapshot", str(directory), "--agent", "demo/bot"],
+        DISPATCH,
+    )
+    assert app_root is None
+    assert args[2] == str(directory)

@@ -55,7 +55,9 @@ DISPATCH = frozenset(
         "harness-migrate",
     }
 )
-_VALUE_FLAGS = frozenset({"--dir", "--agent", "--skill", "--output"})
+_VALUE_FLAGS = frozenset(
+    {"--dir", "--agent", "--skill", "--output", "--state-snapshot"}
+)
 
 
 def _first_app_root_path(
