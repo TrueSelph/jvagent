@@ -427,7 +427,6 @@ def test_source_selection_does_not_leak_app_override_into_library_mode(
         ("pinned_tools", ["write__save"]),
         ("vision", True),
         ("lock_active_flow", True),
-        ("planning", True),
         ("tool_call_timeout", 30),
     ],
 )
@@ -593,3 +592,27 @@ def test_state_snapshot_is_a_flag_value_not_an_app_directory(tmp_path: Path) -> 
     )
     assert app_root is None
     assert args[2] == str(directory)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_planning_maps_to_official_capability_without_legacy_state_claim(
+    app: Path, enabled: bool
+) -> None:
+    change(app, planning=enabled)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None
+    assert candidate["actions"][0]["context"]["planning"] is enabled
+    assert report["mappings"]["planning"] == "planning"
+    if enabled:
+        assert any(
+            "retained legacy plan tasks" in text for text in report["required_review"]
+        )
+
+
+@pytest.mark.parametrize("value", [1, "true", {}, None])
+def test_planning_migration_rejects_untyped_controls(app: Path, value: Any) -> None:
+    change(app, planning=value)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and any(
+        "planning requires a boolean" in text for text in report["blockers"]
+    )

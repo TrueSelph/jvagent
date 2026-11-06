@@ -39,7 +39,7 @@ _REVIEWED_CONSUMERS = {
     "jvagent/serper_web_search",
     "jvagent/pageindex_read",
 }
-_DIRECT = {"enabled", "weight", "description"}
+_DIRECT = {"enabled", "weight", "description", "planning"}
 _LIMITS = {
     "activation_budget": ("max_requests", 20),
     "max_duration_seconds": ("timeout_seconds", 180.0),
@@ -67,7 +67,6 @@ _EMPTY = {
     "skill_only_tools": list,
     "channel_overrides": dict,
     "vision": bool,
-    "planning": bool,
     "lock_active_flow": bool,
     "with_event": bool,
     "tool_call_timeout": float,
@@ -285,6 +284,13 @@ def plan_harness_migration(
     mode = context.get("skill_runtime", "legacy")
     if not isinstance(mode, str) or mode not in {"legacy", "capability_pilot"}:
         blockers.append("Unknown execution driver")
+    if "planning" in context:
+        if type(context["planning"]) is not bool:
+            blockers.append("planning requires a boolean native capability declaration")
+        elif context["planning"]:
+            report["required_review"].append(
+                "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
+            )
     _retire_controls(context, report, mode)
     if mode == "capability_pilot":
         for key in ("activation_budget", "max_duration_seconds"):

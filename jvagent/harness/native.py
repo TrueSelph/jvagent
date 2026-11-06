@@ -42,6 +42,7 @@ def build_native_agent(
     context_keep_tokens: int = 16_000,
     model_settings: dict[str, Any] | None = None,
     allow_mutations: bool = True,
+    plan_store: Any = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -73,12 +74,17 @@ def build_native_agent(
             raise ValueError("Context limits must be positive integers")
     if context_keep_tokens >= context_max_tokens:
         raise ValueError("Context retention must be smaller than its trigger")
+    planning_names = {"write_plan", "read_plan"} if plan_store is not None else set()
+    if any(tool.name in planning_names for tool in tools) or any(
+        toolset.declared_names.intersection(planning_names) for toolset in toolsets
+    ):
+        raise ValueError("Planning tool names are reserved for the official capability")
     catalog = NativeSkillCatalog(
         primary=skill_directory,
         directories=skill_directories,
         action_bases=action_skill_bases,
         available_actions=available_actions,
-        available_tools=[tool.name for tool in tools]
+        available_tools=[*planning_names, *(tool.name for tool in tools)]
         + [name for toolset in toolsets for name in toolset.declared_names]
         + (["delegate_task"] if delegates else []),
         channel=channel,
@@ -91,7 +97,7 @@ def build_native_agent(
 
     mutation_names = {
         tool.name for tool in tools if isinstance(tool, NativeMutationTool)
-    }
+    } | ({"write_plan"} if plan_store is not None else set())
 
     def adapt(original: JVTool) -> Any:
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
@@ -231,6 +237,8 @@ def build_native_agent(
                 return await handler()
 
         async def before_run(self, ctx: RunContext[Any]) -> None:
+            if plan_store is not None and not await access_check("read_plan"):
+                raise PermissionError("Planning access denied")
             await catalog.preflight()
             for library in preflight_children:
                 child_catalog = await library.load()
@@ -280,6 +288,14 @@ def build_native_agent(
             tool_def: Any,
             args: dict[str, Any],
         ) -> dict[str, Any]:
+            if call.tool_name in planning_names:
+                reject_model_authority_fields(args)
+                if call.tool_name == "write_plan" and not allow_mutations:
+                    raise MutationAccessDenied("Recovery continuation is read-only")
+                if not await access_check(call.tool_name):
+                    if call.tool_name == "write_plan":
+                        raise MutationAccessDenied("Planning access denied")
+                    raise ModelRetry("Planning access denied")
             if call.tool_name in allowed and not catalog.allows_tool(
                 ctx, call.tool_name
             ):
@@ -404,6 +420,44 @@ def build_native_agent(
         ),
         *run_services,
     ]
+    if plan_store is not None:
+        if step_store is None:
+            raise ValueError(
+                "Persistent planning requires official SDK step persistence"
+            )
+        from pydantic_ai.capabilities import Hooks
+        from pydantic_ai_harness.planning import Planning
+        from pydantic_ai_harness.step_persistence import annotate_tool_effect
+
+        async def plan_intent(ctx: Any, *, call: Any, tool_def: Any, args: Any) -> Any:
+            if call.tool_name == "write_plan":
+                await annotate_tool_effect(
+                    step_store,
+                    ctx,
+                    effect_summary="jv:mutation:plan:v1",
+                    idempotency_key=f"{ctx.run_id}/{call.tool_call_id}",
+                )
+                effect = await step_store.get_tool_effect(
+                    run_id=ctx.run_id, tool_call_id=call.tool_call_id
+                )
+                if (
+                    effect is None
+                    or effect.status != "started"
+                    or effect.effect_summary != "jv:mutation:plan:v1"
+                ):
+                    raise RuntimeError("Plan write lacks its SDK mutation record")
+            return args
+
+        capabilities.extend(
+            [
+                Planning(
+                    store=plan_store,
+                    tools=["write_plan", "read_plan"],
+                    id="jv_planning",
+                ),
+                Hooks(before_tool_execute=plan_intent),
+            ]
+        )
     if delegates:
         if len(delegates) > 16:
             raise ValueError("At most 16 named delegates may be configured")

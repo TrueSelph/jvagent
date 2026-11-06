@@ -495,3 +495,14 @@ Action-cache policy updates, including accepted-input retry and a subsequent
 write. Native/PG suites pass 492 per Python version. Invoice correction, old failed
 snapshot migration, general effects, distributed policy, migration/removal and
 release qualification remain open; no overall optimization claim follows.
+
+## Official SDK planning — 2026-11-06
+
+[Qualification](2026-11-06-native-planning.md): actual provider-backed creation,
+restart and ID-preserving update, separate Action write, named permission denial,
+accepted-input read, new-conversation isolation and completed-cache restoration.
+Strict graph scope/schema/size and SDK mutation journaling have adversarial
+regressions; 508 native/PG tests pass per Python 3.11/3.12. This qualifies the
+optional root write_plan/read_plan surface and fresh configuration conversion.
+It does not migrate retained legacy plan tasks or qualify uncertain-plan operator
+reconciliation, child/background/distributed planning, engine deletion or release.

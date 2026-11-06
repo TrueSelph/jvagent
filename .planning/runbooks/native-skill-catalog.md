@@ -1,5 +1,14 @@
 # Native skill catalog
 
+Optional `context.planning: true` enables the official SDK `write_plan` and
+`read_plan` tools with a scoped graph-backed [native plan](../GLOSSARY.md#native-plan).
+Keep host permissions explicit; skill metadata does not authorize plan writes.
+This root-run checklist does not schedule or execute its listed work, replace
+domain tasks, or import retained legacy plans. See the
+[qualification and migration boundary](../plans/2026-11-06-native-planning.md).
+Sources: `jvagent/harness/native.py:423`,
+`jvagent/action/native_harness/native_harness_action.py:376`.
+
 Use an explicit catalog when an agent needs multiple skills. The official
 [Skills capability](https://pydantic.dev/docs/ai/harness/skills/) owns discovery,
 validation, deferred instruction loading and capability activation. JV translates

@@ -107,6 +107,7 @@ class NativeHarnessAction(InteractAction):
     skill_directory: str = attribute(default="")
     skill_directories: list[str] = attribute(default_factory=list)
     delegates: list[dict[str, Any]] = attribute(default_factory=list)
+    planning: bool = attribute(default=False)
     instructions: str = attribute(default="Help the user using the available skill.")
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
@@ -125,6 +126,8 @@ class NativeHarnessAction(InteractAction):
 
         require_native_local_ownership()
         validate_model_settings(self.model_settings)
+        if not isinstance(self.planning, bool):
+            raise ValueError("planning must be a boolean")
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
@@ -218,6 +221,7 @@ class NativeHarnessAction(InteractAction):
             return await is_tool_allowed(
                 host,
                 label=label,
+                tool_name=label,
                 user_id=caller_user_id,
                 channel=caller_channel,
             )
@@ -368,8 +372,24 @@ class NativeHarnessAction(InteractAction):
         recovery_read_only = (
             history_source.get("frontier") == "operator_verified_effect"
         )
+        spend_store = ConversationSpendStore(conversation)
+        plan_store = None
+        planning = getattr(self, "planning", False)
+        if not isinstance(planning, bool):
+            raise ValueError("planning must be a boolean")
+        if planning:
+            from jvagent.harness.plan_store import ConversationPlanStore
+
+            plan_store = ConversationPlanStore(
+                conversation,
+                agent_id=host.id,
+                user_id=caller_user_id,
+                session_id=visitor.session_id,
+                lock=spend_store.lock,
+            )
         agent = build_native_agent(
             self.model,
+            plan_store=plan_store,
             allow_mutations=not recovery_read_only,
             model_settings=self.model_settings,
             skill_directory=skill_directory,
@@ -399,7 +419,7 @@ class NativeHarnessAction(InteractAction):
             spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
             context_max_tokens=self.context_max_tokens,
             context_keep_tokens=self.context_keep_tokens,
-            spend_store=ConversationSpendStore(conversation),
+            spend_store=spend_store,
             max_run_cost_usd=self.max_run_cost_usd,
             max_conversation_cost_usd=self.max_conversation_cost_usd,
             available_actions=sorted(

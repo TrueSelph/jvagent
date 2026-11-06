@@ -2433,3 +2433,16 @@ repair them, with parent-revision failing regressions. Final live budget refusal
 retains input, makes zero attempts/unknowns, and permits a later write after the
 limit is restored. Native/PG suites pass 492 per Python 3.11/3.12. Broader effects,
 invoice correction, deployment, migration/removal and enterprise gates remain open.
+
+## Official SDK planning — 2026-11-06
+
+[Record](2026-11-06-native-planning.md): optional official Planning replaces
+native generic planner responsibilities, with a bounded scoped public PlanStore
+on the existing graph, named permissions and SDK mutation effects. Seven actual
+GPT-4.1 browser turns qualify restart/update, existing Action write, refusal,
+accepted-input read, empty-conversation isolation and zero-spend cache restore.
+All 16 requests reconcile: 23,490 reported tokens, $0.026664 estimated cost.
+Native/PG suites pass 508 per Python 3.11/3.12. Configuration mapping reduces the
+reference app from 18 to 17 blockers; it still cannot cut over. Retained legacy
+plans/tasks, uncertain-plan operator reconciliation, other compatibility classes,
+distributed deployment, engine deletion and enterprise gates remain open.

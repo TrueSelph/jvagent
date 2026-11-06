@@ -858,10 +858,10 @@
     {
       "name": "planning",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:921",
-      "disposition": "Replace generic behavior with official optional capability",
-      "migration_implemented": false,
-      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
-      "migration_evidence": "2026-11-05-native-config-cutover.md"
+      "disposition": "Replace generic behavior with official optional Planning capability and public graph-backed PlanStore",
+      "migration_implemented": true,
+      "migration_status": "Boolean configuration and fresh graph qualified; retained legacy plan/task state not migrated",
+      "migration_evidence": "2026-11-06-native-planning.md"
     },
     {
       "name": "planning_heavy_first_tick",
@@ -2413,6 +2413,25 @@
       "multiple/external/child/background effects",
       "distributed policy and fencing",
       "migration/deletion and enterprise release"
+    ]
+  },
+  "native_planning_increment": {
+    "evidence": "2026-11-06-native-planning.md",
+    "reference_blocked_requirements": 17,
+    "reference_report": "2026-11-06-native-planning-reference-blockers.json",
+    "qualified": [
+      "Official Planning write_plan/read_plan on graph-backed public PlanStore",
+      "Strict scoped canonical bounded plan storage and shared spend lock",
+      "Named AccessControl and SDK mutation effects",
+      "Actual GPT-4.1 restart/update, Action write, denial, conversation isolation and zero-spend cache restore",
+      "Boolean configuration migration from legacy source before fresh bootstrap"
+    ],
+    "remaining": [
+      "Retained legacy plan/task state and old tool grammar migration",
+      "Operator reconciliation of uncertain plan writes",
+      "Other active reference-app blockers",
+      "Child/background/distributed planning and broader deployment",
+      "Legacy planner and engine deletion; full release qualification"
     ]
   }
 }

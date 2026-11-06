@@ -4,6 +4,14 @@ Single-source definitions for terms used throughout jvagent. Whenever a defined 
 
 ---
 
+### Native plan
+Conversation-scoped checklist edited by official Harness `Planning` tools and
+persisted through JV's public `PlanStore` adapter. Its statuses are authored
+progress indications, not verified domain completion, permissions or scheduled
+TaskStore work. Sources: `jvagent/harness/native.py:423`,
+`jvagent/harness/plan_store.py:11`. See the
+[qualification boundary](plans/2026-11-06-native-planning.md).
+
 ### Action
 Pluggable component that extends an agent. Subclass of jvspatial `Node`. Source: [`jvagent/action/base.py:49`](../jvagent/action/base.py). Has lifecycle hooks (`on_register`, `on_enable`, etc.), attribute config, optional endpoints, optional tools (via `get_tools()`) for the agentic loop. Lives in a directory under `jvagent/action/{namespace}/{action_name}/`. See [`action-authoring.md`](reference/action-authoring.md).
 

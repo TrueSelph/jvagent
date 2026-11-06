@@ -223,6 +223,13 @@ transcript messages. Multi-worker migration, active task/
 effect transfer, prepared-source conflict repair and released-artifact rollback
 are separate open gates. This operation does not authorize legacy engine deletion.
 
+The converter maps strict boolean `planning` into official SDK planning;
+`planning: true` requires explicit review of retained legacy plan/task state.
+This is configuration mapping, not stored-task conversion or an alias for the
+old `plan`/`update_plan` tools. See the
+[fresh-graph rehearsal](../plans/2026-11-06-native-planning.md) and
+`jvagent/cli/harness_migrate.py:287`.
+
 Preserve the configured SDK workspace during supported upgrades. Persisted native
 messages reference that workspace; copying the graph to another application path
 does not authorize rebinding it. The current native profile has no workspace

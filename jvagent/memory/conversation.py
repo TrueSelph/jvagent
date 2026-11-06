@@ -116,6 +116,11 @@ class Conversation(DeferredSaveMixin, Node):
         default_factory=dict,
         description="Official Harness spend counters and replay tokens",
     )
+    native_plan: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Caller-scoped official Harness Planning state",
+    )
     native_history_import: Dict[str, Any] = attribute(
         default_factory=dict,
         protected=True,
@@ -365,6 +370,7 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_id = fresh.last_interaction_id
         self.last_interaction_at = fresh.last_interaction_at
         self.native_spend = fresh.native_spend
+        object.__setattr__(self, "native_plan", fresh.native_plan)
         object.__setattr__(self, "native_history_import", fresh.native_history_import)
 
         from jvagent.core.app import App
