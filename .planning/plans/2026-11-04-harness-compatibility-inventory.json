@@ -2657,5 +2657,23 @@
       "legacy override/vision/lock and retained-state migration",
       "legacy removal and enterprise qualification"
     ]
+  },
+  "native_callback_transport_qualification": {
+    "evidence": "2026-11-06-native-callback-transport.md",
+    "qualified": [
+      "HTTPX public request-extension transport",
+      "validated IP and original Host/SNI with no redirects",
+      "off-loop DNS and safe module/HTTPX summary logs",
+      "actual SDK-journaled synthetic HTTPS echo and independent named denial"
+    ],
+    "actual_provider": "Four GPT-4.1 turns, two real HTTPS echoes, history-only recall and denied write; all expected outcomes meet criteria",
+    "reference_blockers": 9,
+    "remaining": [
+      "durable background scheduling, callback delivery acknowledgement and idempotency",
+      "uncertain external effects and recovery",
+      "hard DNS worker deadlines and queue capacity",
+      "userinfo/IDNA/customer endpoints and full transport DEBUG log qualification",
+      "retained-state cutover, legacy removal and enterprise release"
+    ]
   }
 }

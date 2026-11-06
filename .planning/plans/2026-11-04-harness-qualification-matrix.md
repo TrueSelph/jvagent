@@ -677,3 +677,16 @@ lanes pass 752 per Python 3.11/3.12. This does not authenticate a caller-selecte
 channel, remove old workspace files, qualify channel-changing conversations or
 external sends, or retire legacy channel overrides. Nine reference blockers,
 remaining migration/deletion and enterprise gates remain open.
+
+## Callback HTTP transport
+
+[Transport evidence](2026-11-06-native-callback-transport.md) closes the real
+HTTPX request-construction failure, unsafe callback URL/error logging, synchronous
+DNS event-loop blocking and callable-filter import incompatibility. Existing SDK
+mutation adapters execute a fixed synthetic public HTTPS echo in an isolated app;
+actual Host/SNI/IP observations, terminal effects, spend, denied write, restart
+history read and reload comparisons are recorded. Final combined native/host/PG/
+Docker/clock/callback lanes pass 784 per Python 3.11/3.12. This does not establish
+durable background callback dispatch, delivery reconciliation, retry/idempotency,
+uncertain-write recovery, hard DNS worker bounds or customer endpoint qualification.
+The nine reference blockers and remaining migration/deletion/release gates stay open.

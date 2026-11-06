@@ -2699,3 +2699,22 @@ clock reads in existing/fresh sessions and unchanged reload. Thirteen requests /
 terminal. Recovery changes one predecessor usage timestamp only. Nine reference
 blockers, authenticated channel origin/external sends, retained-state cutover,
 legacy removal and enterprise qualification remain open.
+
+## Callback transport compatibility and safe logging — 2026-11-06
+
+[Qualification](2026-11-06-native-callback-transport.md) fixes the unsupported
+HTTPX send(extensions=...) call by attaching extensions to request construction.
+IP pinning, original Host/SNI and redirect refusal remain explicit. DNS runs off
+the event loop; module error and task-local HTTPX summary logs exclude callback
+credentials/paths/queries. Existing callable logger filters remain compatible.
+This is a transport service correction, not a callback execution/retry engine.
+
+Four actual GPT-4.1 browser turns include two real HTTPS synthetic-marker echoes,
+cold restart/history-only acknowledgement, named write denial without another
+POST, final-source permission restoration and unchanged reload. All three effects
+settle with matching terminal events. Six model requests / 2,745 reported tokens /
+USD 0.006096 estimated reconcile, no unknown usage. Final native/host/real-PG/
+Docker/clock/callback lanes pass 784 per Python 3.11/3.12. Durable background
+callback scheduling/acknowledgement/idempotency, unknown writes/recovery, hard DNS
+worker bounds and customer endpoints remain open. Reference blockers remain nine;
+retained-state cutover, legacy removal and enterprise qualification are unfinished.
