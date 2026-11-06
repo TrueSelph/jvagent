@@ -330,3 +330,11 @@ Offline inspection of an operator-supplied Conversation/Interaction snapshot
 that separates verified retained receipts from the historical ledger and flags
 unresolved work. It never grants cutover authority or writes graph state. See
 [the migration runbook](runbooks/native-harness-migration.md).
+
+### Published-text import
+
+An operator-approved projection of completed historical user/assistant text into
+public SDK messages, paired with an explicitly estimated historical conversation
+spend baseline. It preserves original records and does not replay old tools or
+invent provider receipts. See `jvagent/harness/history_import.py:69` and
+[the migration runbook](runbooks/native-harness-migration.md).

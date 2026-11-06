@@ -131,11 +131,13 @@ async def _run_lease_heartbeat(
                 )
                 if remaining <= 0:
                     raise TimeoutError("lease renewal safety deadline reached")
-            renewed = (
-                await renew()
-                if remaining is None
-                else await asyncio.wait_for(renew(), timeout=remaining)
-            )
+            if remaining is None:
+                renewed = await renew()
+            else:
+                # Keep renewal in this task: wait_for can lose cancellation
+                # racing a completed child result on supported Python 3.11.
+                async with asyncio.timeout(remaining):
+                    renewed = await renew()
             if renewed is False:
                 logger.error("distributed lease lost for %s", conversation_id)
                 if owner_task is not None and not owner_task.done():

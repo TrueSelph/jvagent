@@ -382,6 +382,7 @@ class NativeHarnessAction(InteractAction):
                 conversation_id=conversation.id,
                 user_id=visitor.user_id,
                 session_id=visitor.session_id,
+                conversation=conversation,
             )
         except NativeHistoryError:
             interaction.native_run = {

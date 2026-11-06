@@ -43,6 +43,7 @@ FORBIDDEN_AUTHORITY_KEYS = frozenset(
         "effect_key",
         "logical_step_key",
         "work_execution_context",
+        "native_history_import",
     }
 )
 

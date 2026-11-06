@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [retained-state preflight](2026-11-05-native-state-preflight.md).
+Latest increment: [approved published-text import](2026-11-06-native-history-import.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -11,6 +11,15 @@ are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
 
 ## Retained-state migration preflight
+
+Superseding applied subset: the [2026-11-06 record](2026-11-06-native-history-import.md)
+qualifies operator-approved ordinary published-text history and a marked estimated
+spend baseline on an actual legacy clone. GPT-4.1 browser recall succeeds after
+backend restart; 16 legacy records remain unchanged. Pre-execution rollback and
+post-execution refusal pass. Native/host/real-PG suites pass 443 on both Python
+3.11/3.12. Historical UI backfill, task/effect/mixed-state migration, artifact rollback,
+full cutover and old-engine deletion remain open. Parent afa0427d has all nine
+remote checks green; the new milestone requires its own publication gates.
 
 The offline compiler can inspect a private retained-state snapshot alongside
 configuration. It preserves the legacy ledger separately from verified per-call

@@ -1,0 +1,152 @@
+{
+  "restart_duplicate": {
+    "status": 200,
+    "receipt": {
+      "actor": "o.User.5853585ffa054d278a5862c9",
+      "digest": "sha256:7c60656ce269797168360f444d460af036337ba7c2fcbe33948de05cba1d6bf1",
+      "reason": "Conservative historical spend estimate and frozen published text import; preserve original records and unknown cost provenance.",
+      "status": "applied",
+      "user_id": "o.User.5853585ffa054d278a5862c9",
+      "version": "published-text-import-v1",
+      "baseline": {
+        "usd": "0.05",
+        "tokens": 15133,
+        "requests": 7,
+        "estimated": true
+      },
+      "evidence": "Reviewed cloned real-model benchmark: seven retained calls, legacy ledger 0.031304, published text-only reply/use_skill traces.",
+      "budget_key": "default|conversation|*|sess_45c2d961da974964",
+      "created_at": "2026-11-06T04:46:48.668000+00:00",
+      "session_id": "sess_45c2d961da974964",
+      "frontier_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+      "model_events": 7,
+      "counter_digest": "sha256:0b64cd0c341da02aec3e32a49fafdad08a7d6c6335c2a4ed5a0c0cabc3f6ee6d",
+      "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+      "interaction_ids": [
+        "n.Interaction.5d53bffe926b4952aa3f26e1",
+        "n.Interaction.152222674e654a43a31ab18d",
+        "n.Interaction.cfdac9b5f4be44b3961d5920",
+        "n.Interaction.4921a6c6b5764991baada442",
+        "n.Interaction.67a7811ed2b34d0d862f104a"
+      ],
+      "messages_digest": "sha256:d194a6f2bf64c989a00655396eb59197117852f754faff6e17fffe6c5736e3a5",
+      "legacy_ledger_usd": "0.031304",
+      "naive_timestamp_zone": "UTC",
+      "operator_frontier_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+      "reported_tokens_minimum": 15133
+    }
+  },
+  "rollback_cases": {
+    "mainRollback": {
+      "status": 422
+    },
+    "inspection": {
+      "status": 200,
+      "result": {
+        "conversation_id": "n.Conversation.1adc6b371d364a5bb746147c",
+        "user_id": "o.User.5853585ffa054d278a5862c9",
+        "session_id": "sess_809524662d0047b9",
+        "naive_timestamp_zone": "UTC",
+        "digest": "sha256:6f87355f1cdafe26da968076e19ebc8fcdc8302b485fd390ab3eb3a0a4a5893d",
+        "frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "operator_frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "interaction_ids": [
+          "n.Interaction.d99e43e8223c46919012a527",
+          "n.Interaction.70c8f2a3bcc74da4bccd3f41",
+          "n.Interaction.c6982b5a4e274ec8ac61d0c8",
+          "n.Interaction.0b5d4e0075734d7eb6ac0212",
+          "n.Interaction.b2e58223cf28442989d22224"
+        ],
+        "model_events": 8,
+        "reported_tokens_minimum": 17161,
+        "legacy_ledger_usd": "0.035402",
+        "messages_digest": "sha256:f643d15fbff6b73c6e23d0bf612e054f8e13f4046f98313c1d267dcba7eb7cdd"
+      }
+    },
+    "apply": {
+      "status": 200
+    },
+    "duplicate": {
+      "status": 200
+    },
+    "rollback": {
+      "status": 200,
+      "result": {
+        "actor": "o.User.5853585ffa054d278a5862c9",
+        "digest": "sha256:6f87355f1cdafe26da968076e19ebc8fcdc8302b485fd390ab3eb3a0a4a5893d",
+        "reason": "Rehearse pre-execution rollback without replaying legacy tools or spending.",
+        "status": "rolled_back",
+        "user_id": "o.User.5853585ffa054d278a5862c9",
+        "version": "published-text-import-v1",
+        "baseline": {
+          "usd": "0.05",
+          "tokens": 17161,
+          "requests": 8,
+          "estimated": true
+        },
+        "evidence": "Reviewed second cloned legacy plain-text conversation and retained model event/ledger facts.",
+        "budget_key": "default|conversation|*|sess_809524662d0047b9",
+        "created_at": "2026-11-06T04:57:37.007621+00:00",
+        "session_id": "sess_809524662d0047b9",
+        "frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "model_events": 8,
+        "counter_digest": "sha256:2001e6f47b12c8ddd5b49f26ae696e93cf5cc9d17d98cf6b01dc5fc4268da971",
+        "conversation_id": "n.Conversation.1adc6b371d364a5bb746147c",
+        "interaction_ids": [
+          "n.Interaction.d99e43e8223c46919012a527",
+          "n.Interaction.70c8f2a3bcc74da4bccd3f41",
+          "n.Interaction.c6982b5a4e274ec8ac61d0c8",
+          "n.Interaction.0b5d4e0075734d7eb6ac0212",
+          "n.Interaction.b2e58223cf28442989d22224"
+        ],
+        "messages_digest": "sha256:f643d15fbff6b73c6e23d0bf612e054f8e13f4046f98313c1d267dcba7eb7cdd",
+        "legacy_ledger_usd": "0.035402",
+        "naive_timestamp_zone": "UTC",
+        "operator_frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "reported_tokens_minimum": 17161,
+        "rollback_actor": "o.User.5853585ffa054d278a5862c9",
+        "rolled_back_at": "2026-11-06T04:57:37.086425+00:00"
+      }
+    },
+    "duplicateRollback": {
+      "status": 200
+    }
+  },
+  "authorization": {
+    "memberLogin": 200,
+    "member": {
+      "browserError": "TypeError: Failed to fetch",
+      "serverStatus": "inspect backend access log"
+    },
+    "anonymous": {
+      "browserError": "TypeError: Failed to fetch",
+      "serverStatus": "inspect backend access log"
+    },
+    "adminForgedActor": {
+      "status": 422,
+      "body": {
+        "detail": [
+          {
+            "type": "extra_forbidden",
+            "loc": [
+              "body",
+              "approval",
+              "actor"
+            ],
+            "msg": "Extra inputs are not permitted",
+            "input": "forged"
+          }
+        ]
+      }
+    }
+  },
+  "earlier_probes": {
+    "naive_timestamp_policy_missing": 422,
+    "malformed_actor": 422,
+    "boolean_tokens": 422,
+    "baseline_below_ledger": 422,
+    "stale_digest": 422,
+    "source": "backend access log and prior browser operator probes; performed before formatter-only restart"
+  },
+  "auth_denial_observability": "jvspatial auth middleware returned HTTP 403/401 in backend logs; missing CORS headers made those denials unreadable to cross-origin browser fetch."
+}

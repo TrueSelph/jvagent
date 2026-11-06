@@ -116,6 +116,11 @@ class Conversation(DeferredSaveMixin, Node):
         default_factory=dict,
         description="Official Harness spend counters and replay tokens",
     )
+    native_history_import: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Operator-approved immutable historical text and spend-import receipt",
+    )
     interaction_limit: int = attribute(
         default=0,
         description="Maximum number of interactions to keep (0 = disabled, no pruning)",
@@ -360,6 +365,7 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_id = fresh.last_interaction_id
         self.last_interaction_at = fresh.last_interaction_at
         self.native_spend = fresh.native_spend
+        object.__setattr__(self, "native_history_import", fresh.native_history_import)
 
         from jvagent.core.app import App
 

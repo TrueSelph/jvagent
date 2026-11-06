@@ -145,3 +145,77 @@ configuration-only invocation can still produce its candidate without a snapshot
 This does not add an apply operation or change native admission, which continues
 to refuse unqualified legacy history. See the
 [preflight implementation and evidence](../plans/2026-11-05-native-state-preflight.md).
+
+## Administrator-approved published-text import
+
+The separate live operator API now supports a restricted historical cohort. It
+does not make the offline compiler apply state. Rehearse on an isolated clone
+first, retain the original graph/configuration/artifact and review every refusal.
+See [actual browser/SQL evidence](../plans/2026-11-06-native-history-import.md).
+
+All paths below are relative to the server API prefix (normally `/api`), require
+an authenticated administrator and use the installed native Action ID plus a
+historical Interaction belonging to its Agent. Operator identity is established
+by the server. These routes are not model tools. Source:
+`jvagent/action/native_harness/endpoints.py:29`, `:181`.
+
+1. GET `/actions/{action_id}/native-history/{interaction_id}` to inspect current
+   facts under the conversation lock. If timestamps have no timezone, resolve
+   their meaning explicitly. Only an approved UTC interpretation is currently
+   supported, via `?naive_timestamp_zone=UTC`. Do not select UTC to bypass an
+   unresolved timezone. Inspect returns digests, counts, owner/session scope and
+   the distinct old ledger, without transcript content.
+2. Reconcile any pruned/missing usage independently. Choose a conservative USD
+   estimate at least as large as the retained ledger, tokens at least the reported
+   minimum and requests at least the observed model events. The API cannot prove
+   lifetime accounting completeness or invoice costs. Zero dollars with observed
+   requests is refused. Source: `jvagent/harness/history_import.py:387`.
+3. POST `/actions/{action_id}/native-history/{interaction_id}/apply` with the
+   exact digest and an `approval` wrapper. Example shape, using values from your
+   reviewed inspection rather than the illustrative numbers:
+
+   ```json
+   {
+     "approval": {
+       "digest": "sha256:<64 lowercase hexadecimal characters>",
+       "usd": "0.05",
+       "tokens": 15133,
+       "requests": 7,
+       "naive_timestamp_zone": "UTC",
+       "evidence": "Operator-controlled source and accounting review reference",
+       "reason": "Approved ordinary text import with estimated historical spend"
+     }
+   }
+   ```
+
+   Omit naive_timestamp_zone when source timestamps are already timezone-aware.
+   Do not send actor, transcript, receipt authority or provider credentials.
+   If interrupted, retry the identical approval; prepared intent and the official
+   spend marker prevent duplicate debits. Changed source/approval requires separate
+   operator reconciliation rather than replacement. Source:
+   `jvagent/harness/history_import.py:387`.
+4. Exercise an actual-model continuation in the browser. Read back the new native
+   result, history source and shared spend total; retain all original records.
+   The migration imports only canonical user/assistant text. Original system
+   instructions, old tool calls and provider metadata are not imported or replayed.
+   Source: `jvagent/harness/history_import.py:516`.
+5. Before any new execution or spend, POST
+   `/actions/{action_id}/native-history/{interaction_id}/rollback` with
+   `{"approval":{"digest":"sha256:<approved digest>"}}` if the import must be
+   withdrawn. This restores the originally empty native counter and preserves an
+   audit receipt. Duplicate rollback is idempotent. New execution, changed
+   counters, reapplication after rollback and whole-artifact rollback require
+   separate handling. Source: `jvagent/harness/history_import.py:576`.
+
+Admission currently requires completed default-channel ordinary text, settled
+reply delivery, no task/domain context or existing native spend, at most 64 legacy
+turns and no effects beyond reviewed reply/use_skill traces. Up to 32 qualified
+nonexecuting notices can follow the legacy frontier. Malformed, mixed or unqualified
+state fails closed; do not purge it to force adoption. Source:
+`jvagent/harness/history_import.py:69`.
+
+Cold-browser conversation discovery and historical transcript backfill remain
+unqualified. The actual rehearsal selected an existing session by a local index
+entry without writing transcript messages. Multi-worker migration, active task/
+effect transfer, prepared-source conflict repair and released-artifact rollback
+are separate open gates. This operation does not authorize legacy engine deletion.

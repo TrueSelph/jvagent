@@ -47,6 +47,15 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Applied historical subset: [published-text import](2026-11-06-native-history-import.md).
+An admin-bound approval supplies ordinary retained text and an explicitly estimated
+conversation spend baseline through public SDK types. Actual GPT-4.1 browser recall,
+restart durability, SQL preservation and pre-execution rollback pass. Native/host/
+real-PG suites pass 443 on each supported Python version. The preflight paragraphs
+below describe the earlier increment; typed import now exists for this restricted
+cohort only. Task/effect/mixed/pruned history, UI backfill, artifact rollback,
+distributed migration, remaining compatibility and legacy deletion remain open.
+
 Retained-state preflight: [inspection record](2026-11-05-native-state-preflight.md).
 An optional offline snapshot check separates historical ledger/verified receipts
 and flags unknown accounting, scope and task/effect/delivery state before a

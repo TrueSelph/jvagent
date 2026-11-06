@@ -63,6 +63,35 @@ async def test_heartbeat_survives_a_failed_renew():
     assert len(calls) >= 3
 
 
+async def test_heartbeat_preserves_cancel_at_successful_renewal() -> None:
+    """A simultaneous renewal result must not swallow the host's cancellation."""
+    calls = 0
+
+    async def renew() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            heartbeat.cancel()
+        return True
+
+    heartbeat = asyncio.create_task(
+        dcl._run_lease_heartbeat(
+            renew, interval=0.001, conversation_id="cancel-at-renewal", ttl=1.0
+        )
+    )
+    try:
+        done, _ = await asyncio.wait({heartbeat}, timeout=0.1)
+        assert heartbeat in done, "renewal swallowed heartbeat cancellation"
+        assert heartbeat.cancelled()
+        assert calls == 1
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
 async def _run_owner_with_heartbeat(
     renew: Callable[[], Awaitable[bool | None]],
     *,

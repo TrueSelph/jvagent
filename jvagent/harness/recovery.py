@@ -1,5 +1,6 @@
 """Host admission for a fresh user turn, never automatic execution replay."""
 
+from datetime import timezone
 from typing import Any
 
 from pydantic_ai.messages import (
@@ -24,18 +25,51 @@ class NativeHistoryError(RuntimeError):
 
 
 async def history_for_new_turn(
-    previous: Any, *, conversation_id: str, user_id: str, session_id: str
+    previous: Any,
+    *,
+    conversation_id: str,
+    user_id: str,
+    session_id: str,
+    conversation: Any = None,
 ) -> tuple[list[ModelMessage], dict[str, Any]]:
     """Recover SDK history, then project only confirmed nonexecuting notices."""
+    approval = (
+        getattr(conversation, "native_history_import", {})
+        if conversation is not None
+        else {}
+    )
+    if not isinstance(approval, dict):
+        raise NativeHistoryError("Historical import receipt is malformed")
     root, notices = await resolve_history_predecessor(
         previous,
         conversation_id=conversation_id,
         user_id=user_id,
         session_id=session_id,
+        allow_legacy_root=bool(approval),
+        legacy_naive_utc=approval.get("naive_timestamp_zone") == "UTC",
     )
-    messages, run_source = await _history_for_run(
-        root, conversation_id=conversation_id, user_id=user_id, session_id=session_id
-    )
+    if root is not None and not root.native_run:
+        from jvagent.harness.history_import import imported_history
+
+        try:
+            if (
+                conversation.id != conversation_id
+                or conversation.user_id != user_id
+                or conversation.session_id != session_id
+            ):
+                raise ValueError("Historical import scope mismatch")
+            messages, run_source = await imported_history(conversation, root)
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            raise NativeHistoryError(
+                "Historical import requires reconciliation"
+            ) from None
+    else:
+        messages, run_source = await _history_for_run(
+            root,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            session_id=session_id,
+        )
     source: dict[str, Any] = dict(run_source)
     for item in notices:
         messages.extend(
@@ -50,18 +84,28 @@ async def history_for_new_turn(
 
 
 async def resolve_history_predecessor(
-    previous: Any, *, conversation_id: str, user_id: str, session_id: str
+    previous: Any,
+    *,
+    conversation_id: str,
+    user_id: str,
+    session_id: str,
+    allow_legacy_root: bool = False,
+    legacy_naive_utc: bool = False,
 ) -> tuple[Any, list[Any]]:
     """Read a bounded host-notice chain; never skip execution or repair edges."""
     notices: list[Any] = []
     seen: set[str] = set()
     while previous is not None:
-        if not previous.native_run:
+        if not previous.native_run and not allow_legacy_root:
             raise NativeHistoryError(
                 "Previous interaction lacks qualified native history"
             )
         if previous.conversation_id != conversation_id or previous.user_id != user_id:
             raise NativeHistoryError("Native history belongs to another caller")
+        if not previous.native_run:
+            if previous.session_id != session_id:
+                raise NativeHistoryError("Legacy history belongs to another session")
+            break
         run = previous.native_run
         if run.get("status") != "blocked":
             break
@@ -89,7 +133,19 @@ async def resolve_history_predecessor(
         ):
             raise NativeHistoryError("Blocked notice chain has no matching predecessor")
         try:
-            if predecessor.started_at > previous.started_at:
+            started, later = predecessor.started_at, previous.started_at
+            if legacy_naive_utc and not predecessor.native_run:
+                started = (
+                    started.replace(tzinfo=timezone.utc)
+                    if started.tzinfo is None
+                    else started
+                )
+                later = (
+                    later.replace(tzinfo=timezone.utc)
+                    if later.tzinfo is None
+                    else later
+                )
+            if started > later:
                 raise NativeHistoryError("Blocked notice chain has invalid chronology")
         except TypeError as error:
             raise NativeHistoryError(
