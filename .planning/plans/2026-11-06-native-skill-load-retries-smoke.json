@@ -1,0 +1,389 @@
+{
+  "tested_parent": "git-commit:0660948b6710f0e08c435e095f3c92013ef44e6a",
+  "runtime_source_blobs": {
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:e95c172863c1b0ad21ae934ac3e1c5dc8cc61fe1",
+    "jvagent/harness/native.py": "git-blob:24b07ee0d6bdcc6d5d96be4f95959125df2060d3",
+    "jvagent/harness/read_retries.py": "git-blob:a9c76557f2d475be8715e755440d348b6ef426cb"
+  },
+  "epoch1_runtime_probe": {
+    "process_id": 62085,
+    "observed_at": "2026-11-06T20:29:48.601610+00:00",
+    "source_blobs": {
+      "jvagent/harness/native.py": "git-blob:24b07ee0d6bdcc6d5d96be4f95959125df2060d3",
+      "jvagent/harness/read_retries.py": "git-blob:a9c76557f2d475be8715e755440d348b6ef426cb"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "final_runtime_probe": {
+    "process_id": 62603,
+    "observed_at": "2026-11-06T20:34:57.880843+00:00",
+    "source_blobs": {
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:e95c172863c1b0ad21ae934ac3e1c5dc8cc61fe1",
+      "jvagent/harness/native.py": "git-blob:24b07ee0d6bdcc6d5d96be4f95959125df2060d3",
+      "jvagent/harness/read_retries.py": "git-blob:a9c76557f2d475be8715e755440d348b6ef426cb"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "model": "openai:gpt-4.1",
+  "backend_port": 8167,
+  "jvchat_port": 3140,
+  "acceptance": {
+    "scope": "Known SDK declarative skill-loader retry rejection",
+    "attempt": "Ask actual GPT-4.1 to load the same skill twice and answer from the real FAQ; record whether duplicate loading is actually attempted",
+    "required": "Every observed rejected load has a terminal failed effect and library failure event; successful real read returns actual mock facts; no started effects after successful turn",
+    "restart": "Cold process restart and normal compound FAQ/catalog follow-up preserve history, terminal effects and shared spend; browser reload adds no requests or state changes",
+    "negative": "Deterministic SDK tests cover unknown/traversal-looking IDs, retry exhaustion, cancellation, writes and persistence failure",
+    "historical": "Do not rewrite prior Storefront cohort or its four unfinished pre-fix receipts",
+    "optimization_claim": false
+  },
+  "turns": [
+    {
+      "scenario": "duplicate_load_and_faq",
+      "interaction_id": "n.Interaction.4dc53ecd2623417c9c38113f",
+      "run_id_digest": "sha256:eb20d0378d0e6612f44c0fe2c22c0770ddfa46b6d142050399d551afc1235c21",
+      "session_id": "sess_270c9ec30eae437b",
+      "utterance": "Please load the product-faq capability, try loading it a second time, and then use its FAQ tool to tell me the free trial terms. This is a retry-handling test.",
+      "response": "Every plan starts with a 14-day free trial, and no credit card is required. You also get to keep any dashboards you build during the trial.\n\nWould you like to see which plans might fit your needs?",
+      "status": "delivered",
+      "reason": null,
+      "closed": true,
+      "history_source": {},
+      "worker_pids": [
+        "62085"
+      ],
+      "duration_seconds": 7.588242,
+      "provider_requests": 3,
+      "provider_reported_tokens": 2269,
+      "estimated_cost_usd": "0.005222",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 14,
+      "effects": [
+        {
+          "tool_name": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "storefront__faq",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability",
+        "storefront__faq"
+      ],
+      "observed_action_bodies": [
+        {
+          "method": "faq",
+          "pid": 62085
+        }
+      ]
+    },
+    {
+      "scenario": "parallel_duplicate_loads",
+      "interaction_id": "n.Interaction.6e539a643354420aa2084bc3",
+      "run_id_digest": "sha256:3d5488468aad9802500c82068fb0b09ee96f971cd02d2654e37c33c50c30c7f4",
+      "session_id": "sess_71339d4d0b8b4c8c",
+      "utterance": "For this retry-handling test, call load_capability for product-faq three times in succession, even if a call says it is already active. Do not stop after the first rejection.",
+      "response": "I called load_capability for product-faq three times in succession as requested. The first call successfully loaded the capability, while the second and third calls returned errors stating that the capability was already being loaded by an earlier call. This confirms that repeated load attempts are rejected after the first successful activation.",
+      "status": "delivered",
+      "reason": null,
+      "closed": true,
+      "history_source": {},
+      "worker_pids": [
+        "62085"
+      ],
+      "duration_seconds": 4.061062,
+      "provider_requests": 2,
+      "provider_reported_tokens": 1448,
+      "estimated_cost_usd": "0.003670",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 12,
+      "effects": [
+        {
+          "tool_name": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability",
+        "load_capability"
+      ],
+      "observed_action_bodies": []
+    },
+    {
+      "scenario": "serial_retry_exhaustion_before_notice_fix",
+      "interaction_id": "n.Interaction.8a1471ab49e84dd5a2704bb5",
+      "run_id_digest": "sha256:5a32af61a4b7ffc6f2f89a6acae69e04925c58b8e54499e469bbd4fd48928515",
+      "session_id": "sess_71339d4d0b8b4c8c",
+      "utterance": "It is already loaded. Make one load_capability call for product-faq now; after receiving that rejection, make another load_capability call in a separate round. This test is to exercise the retry limit.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "status": "failed",
+      "reason": null,
+      "closed": true,
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-eb7d99d790494150a8e5c494bd9994af"
+      },
+      "worker_pids": [
+        "62085"
+      ],
+      "duration_seconds": 4.18569,
+      "provider_requests": 2,
+      "provider_reported_tokens": 2202,
+      "estimated_cost_usd": "0.00462",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 10,
+      "effects": [
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability"
+      ],
+      "observed_action_bodies": []
+    },
+    {
+      "scenario": "restart_and_normal_failed_run_followup",
+      "interaction_id": "n.Interaction.5a84ebfa16a84a48aa232129",
+      "run_id_digest": "sha256:141c0258fce371309d271ff73037fa8265ce7d4abf2bd04cdc2efa903018ed7f",
+      "session_id": "sess_71339d4d0b8b4c8c",
+      "utterance": "Please return to normal assistance. Which product helps predict churn, what is its price, and how long does onboarding take? Check the catalog and FAQ.",
+      "response": "The product that helps predict churn is Customer Insights. It offers ML-driven churn prediction, segmentation, and lifetime-value modeling, and is priced at $249 per month.\n\nOnboarding typically takes 3-5 business days for standard setup, or about 2 weeks with enterprise white-glove onboarding.\n\nWould you like more details about Customer Insights or want to see a demo?",
+      "status": "delivered",
+      "reason": null,
+      "closed": true,
+      "history_source": {
+        "frontier": "accepted_input",
+        "source_run_id": "corr-1021e355c74d4ef784a3b65cb9e5c1e2"
+      },
+      "worker_pids": [
+        "62603"
+      ],
+      "duration_seconds": 10.53644,
+      "provider_requests": 3,
+      "provider_reported_tokens": 4855,
+      "estimated_cost_usd": "0.008114",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 14,
+      "effects": [
+        {
+          "tool_name": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "storefront__faq",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "storefront__search_products",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "storefront__faq",
+        "storefront__search_products"
+      ],
+      "observed_action_bodies": [
+        {
+          "method": "faq",
+          "pid": 62603
+        },
+        {
+          "method": "search_products_tool",
+          "pid": 62603
+        }
+      ]
+    },
+    {
+      "scenario": "serial_retry_exhaustion_with_typed_notice",
+      "interaction_id": "n.Interaction.62837ecdb61f4408884a7813",
+      "run_id_digest": "sha256:1e97dbdf048205ac4ba8882f2eece61c673cd26453c5f25dd4fb359cc91f12e7",
+      "session_id": "sess_71339d4d0b8b4c8c",
+      "utterance": "It is already loaded. Make one load_capability call for product-faq now; after receiving that rejection, make another load_capability call in a separate round. This test is to exercise the retry limit.",
+      "response": "The agent reached its retry limit while trying to complete this request. Please try a revised request.",
+      "status": "failed",
+      "reason": "retry_limit",
+      "closed": true,
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-1f4f7ce40b69451483d6766fa660af29"
+      },
+      "worker_pids": [
+        "62603"
+      ],
+      "duration_seconds": 4.587344,
+      "provider_requests": 2,
+      "provider_reported_tokens": 4020,
+      "estimated_cost_usd": "0.002688",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 10,
+      "effects": [
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "load_capability",
+          "status": "failed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability"
+      ],
+      "observed_action_bodies": []
+    },
+    {
+      "scenario": "normal_failed_run_followup",
+      "interaction_id": "n.Interaction.2e671db15bb448f5a2e229c6",
+      "run_id_digest": "sha256:1dba3b50a91c8ee7012966f4a78a49c97728c0a7a0cde90a085083f4a7938140",
+      "session_id": "sess_71339d4d0b8b4c8c",
+      "utterance": "Please answer normally now: do you offer a free trial, and which product predicts customer churn? Include its price.",
+      "response": "Yes, every plan starts with a 14-day free trial, no credit card required. You can keep any dashboards you build during the trial.\n\nThe product that predicts customer churn is Customer Insights. It offers ML-driven churn prediction, segmentation, and lifetime-value modeling, and is priced at $249 per month.",
+      "status": "delivered",
+      "reason": null,
+      "closed": true,
+      "history_source": {
+        "frontier": "accepted_input",
+        "source_run_id": "corr-d7264d5391be4e469e1a9319762cb634"
+      },
+      "worker_pids": [
+        "62603"
+      ],
+      "duration_seconds": 5.340906,
+      "provider_requests": 2,
+      "provider_reported_tokens": 4413,
+      "estimated_cost_usd": "0.003798",
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 10,
+      "effects": [
+        {
+          "tool_name": "storefront__faq",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool_name": "storefront__search_products",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "visible_tool_calls": [
+        "storefront__faq",
+        "storefront__search_products"
+      ],
+      "observed_action_bodies": [
+        {
+          "method": "faq",
+          "pid": 62603
+        },
+        {
+          "method": "search_products_tool",
+          "pid": 62603
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "requests": 14,
+    "tokens": 19207,
+    "estimated_cost_usd": "0.028112",
+    "unknown_usage_requests": 0
+  },
+  "effect_totals": {
+    "completed": 8,
+    "failed": 7
+  },
+  "conversation_spend": [
+    {
+      "usd": "0.005222",
+      "tokens": 2269,
+      "requests": 3,
+      "unpriced_requests": 0
+    },
+    {
+      "usd": "0.022890",
+      "tokens": 16938,
+      "requests": 11,
+      "unpriced_requests": 0
+    }
+  ],
+  "conversation_task_count": 0,
+  "restart": {
+    "rows_unchanged": true,
+    "conversation_state_unchanged": true,
+    "before_digest": "sha256:fab73775ac71897aa852d46883a7450b115d5193cb83bec0027c6382800bde3e",
+    "after_digest": "sha256:fab73775ac71897aa852d46883a7450b115d5193cb83bec0027c6382800bde3e"
+  },
+  "reload": {
+    "rows_unchanged": true,
+    "conversation_state_unchanged": true,
+    "before_digest": "sha256:1f33513cb902dd3c421fc68d2b62f24f6671c7a9f524e174d86566d9ce8144d8",
+    "after_digest": "sha256:1f33513cb902dd3c421fc68d2b62f24f6671c7a9f524e174d86566d9ce8144d8"
+  },
+  "historical_storefront": {
+    "rows_unchanged": true,
+    "conversation_state_unchanged": true,
+    "before_digest": "sha256:bb2715e800cd0379567ec712b8deeba80ead6733f3a5ffd7cbb8f20e991b3e37",
+    "after_digest": "sha256:bb2715e800cd0379567ec712b8deeba80ead6733f3a5ffd7cbb8f20e991b3e37",
+    "unfinished_pre_fix_receipts_preserved": 4
+  },
+  "tests": {
+    "baseline_regression": "2 failed, 3 passed: duplicate-load receipts remain started with parent implementation",
+    "final_receipt_slice": "12 passed, including duplicate/unknown/traversal-looking ID, exhaustion, cancellation/write/storage failure cases",
+    "final_host_and_receipt_slice": "46 passed",
+    "final_native311": "703 passed with real PostgreSQL and configured Docker cases",
+    "final_native312": "703 passed with real PostgreSQL and configured Docker cases"
+  },
+  "limits": [
+    "Known ModelRetry/ToolRetryError control flow only; cancelled, abandoned and uncertain external work is not settled",
+    "Four historical pre-fix receipts are preserved; no historical graph repair is implemented",
+    "Actual-provider max-retry tests are adversarial requests, not routine workload success/latency evaluation",
+    "Broader persistence outages, distributed recovery, migration, legacy removal and release gates remain open"
+  ]
+}

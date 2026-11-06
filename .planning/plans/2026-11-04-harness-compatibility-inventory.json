@@ -2603,5 +2603,18 @@
     "legacy_tool_names_and_results_preserved": true,
     "provider_gap_adapter": "jvagent/harness/native_model.py:7; remove after same cohort passes upstream default",
     "open_recovery_finding": "Four pre-fix duplicate capability-load receipts remain started; no silent reconciliation"
+  },
+  "native_skill_load_retry_qualification": {
+    "record": "2026-11-06-native-skill-load-retries.md",
+    "evidence": "2026-11-06-native-skill-load-retries-smoke.json",
+    "closed_scope": "Known declarative SDK loader retry rejections receive terminal public SDK failed effects/events; local read-only accepted-input follow-up qualified",
+    "host_failure_reason": "retry_limit, from typed public SDK cause chain",
+    "actual_browser_requests": 14,
+    "provider_reported_tokens": 19207,
+    "estimated_cost_usd": "0.028112",
+    "historical_storefront_graph_unchanged": true,
+    "historical_unfinished_receipts_preserved": 4,
+    "final_native_tests_per_python": 703,
+    "enterprise_qualification": false
   }
 }

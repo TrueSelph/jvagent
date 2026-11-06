@@ -55,6 +55,9 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         ("settlement_write_failed", True),
         ("pre_registration_failure", True),
         ("mutation_denied", True),
+        ("retry_limit", True),
+        ("wrapped_retry_limit", True),
+        ("protocol_error", True),
     ],
 )
 async def test_native_receipt_precedes_delivery(
@@ -124,6 +127,32 @@ async def test_native_receipt_precedes_delivery(
             "run_native_agent",
             AsyncMock(side_effect=MutationAccessDenied("private policy detail")),
         )
+    if delivered in {"retry_limit", "wrapped_retry_limit", "protocol_error"}:
+        from pydantic_ai.exceptions import (
+            ModelRetry,
+            ToolRetryError,
+            UnexpectedModelBehavior,
+        )
+        from pydantic_ai.messages import ToolReturnPart
+
+        error = UnexpectedModelBehavior("private SDK retry detail")
+        error.__cause__ = (
+            ToolRetryError(
+                ToolReturnPart(
+                    tool_name="lookup",
+                    content="private tool argument detail",
+                    tool_call_id="call",
+                    outcome="retried",
+                )
+            )
+            if delivered == "wrapped_retry_limit"
+            else (
+                ValueError("private protocol detail")
+                if delivered == "protocol_error"
+                else ModelRetry("private tool argument detail")
+            )
+        )
+        monkeypatch.setattr(module, "run_native_agent", AsyncMock(side_effect=error))
     if not settled:
         monkeypatch.setattr(
             module, "persist_cancelled_receipt", AsyncMock(return_value=False)
@@ -159,7 +188,13 @@ async def test_native_receipt_precedes_delivery(
     async def publish(text: str, **kwargs: Any) -> bool:
         published.append(text)
         assert kwargs["message_id"].startswith("o.ResponseMessage.")
-        if delivered in {"pre_registration_failure", "mutation_denied"}:
+        if delivered in {
+            "pre_registration_failure",
+            "mutation_denied",
+            "retry_limit",
+            "wrapped_retry_limit",
+            "protocol_error",
+        }:
             assert saved[-1]["status"] == "failed"
             return True
         assert saved[-1]["status"] == "pending_delivery"
@@ -222,7 +257,29 @@ async def test_native_receipt_precedes_delivery(
         correlation_id="corr-server-owned",
         _host_system_context="Trusted host policy",
     )
-    if delivered == "mutation_denied":
+    if delivered == "protocol_error":
+        await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1].get("reason") != "retry_limit"
+        assert published == [
+            "The model request could not complete. Please check the service configuration."
+        ]
+        assert (
+            "private protocol detail" not in str(saved) + str(published) + caplog.text
+        )
+    elif delivered in {"retry_limit", "wrapped_retry_limit"}:
+        await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1]["reason"] == "retry_limit"
+        assert published == [
+            "The agent reached its retry limit while trying to complete this request. Please try a revised request."
+        ]
+        assert (
+            "private SDK retry detail" not in str(saved) + str(published) + caplog.text
+        )
+        assert (
+            "private tool argument detail"
+            not in str(saved) + str(published) + caplog.text
+        )
+    elif delivered == "mutation_denied":
         await NativeHarnessAction.execute(facade, visitor)
         assert saved[-1]["failure_type"] == "MutationAccessDenied"
         assert saved[-1]["reason"] == "mutation_access_denied"

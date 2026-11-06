@@ -664,9 +664,21 @@ class NativeHarnessAction(InteractAction):
                     type(exc).__name__,
                     failure_origin,
                 )
+                from pydantic_ai.exceptions import (
+                    ModelAuthenticationError,
+                    ModelRetry,
+                    ToolRetryError,
+                    UnexpectedModelBehavior,
+                    UsageLimitExceeded,
+                )
+
                 from jvagent.harness.accounting import recover_native_usage
                 from jvagent.harness.contracts import OutputTokenLimitReached
                 from jvagent.harness.mutation_tools import MutationAccessDenied
+
+                retry_limit = isinstance(exc, UnexpectedModelBehavior) and isinstance(
+                    exc.__cause__, (ModelRetry, ToolRetryError)
+                )
 
                 await recover_native_usage(interaction, run_id=run_id, model=self.model)
                 interaction.native_run = {
@@ -680,11 +692,9 @@ class NativeHarnessAction(InteractAction):
                     interaction.native_run["reason"] = "output_token_limit"
                 elif isinstance(exc, MutationAccessDenied):
                     interaction.native_run["reason"] = "mutation_access_denied"
+                elif retry_limit:
+                    interaction.native_run["reason"] = "retry_limit"
                 await interaction.save()
-                from pydantic_ai.exceptions import (
-                    ModelAuthenticationError,
-                    UsageLimitExceeded,
-                )
                 from pydantic_ai_harness.spend import SpendLimitExceeded
 
                 if isinstance(exc, MutationAccessDenied):
@@ -697,6 +707,8 @@ class NativeHarnessAction(InteractAction):
                     message = "The model reached its reply token limit before finishing. Increase the per-request output limit in agent settings or ask for a shorter answer."
                 elif isinstance(exc, (UsageLimitExceeded, SpendLimitExceeded)):
                     message = "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request."
+                elif retry_limit:
+                    message = "The agent reached its retry limit while trying to complete this request. Please try a revised request."
                 else:
                     message = "The model request could not complete. Please check the service configuration."
                 await responder.publish(

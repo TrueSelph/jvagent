@@ -637,3 +637,15 @@ unresolved in retained failed sessions; no automatic recovery is inferred.
 The latest configured Python 3.12 native/host/real-PG lane passes 688; Python 3.11
 passes 682 plus the six optional Docker cases in its configured affected slice.
 See the dated record for superseding counts and precise scope.
+
+## Known declarative SDK loader retries
+
+The [retry receipt record](2026-11-06-native-skill-load-retries.md) supersedes the
+Storefront finding for newly rejected loader attempts only. Public SDK terminal
+failure facts and typed retry-limit notices are tested with actual GPT-4.1; local
+ordinary follow-ups after exhaustion and cold restart use accepted-input recovery.
+All fifteen cohort effects settle with matching events and reconciled spend.
+Earlier four unfinished Storefront receipts are preserved unchanged; historical
+repair, unknown external effects and distributed recovery remain open. Final
+native/host/real-PostgreSQL lanes pass 703 on each Python 3.11/3.12. No reduction
+in the ten reference configuration blockers or legacy removal is claimed.

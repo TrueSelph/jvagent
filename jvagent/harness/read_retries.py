@@ -8,11 +8,14 @@ from pydantic_ai.exceptions import ToolRetryError
 
 
 class ReadRetryReceipts(AbstractCapability[Any]):
-    """Close known read attempts; never retry tools or infer write rollback.
+    """Close known read/skill-load retries; never infer write rollback.
 
     Harness 0.66 StepPersistence starts an effect before execution, but core 2.66
     excludes retry control flow from on_tool_execute_error. Remove this adapter
     when upstream terminalizes these records; retain the protocol regressions.
+    The native factory also admits its official declarative Skills loader: an
+    explicit retry rejection is known failure, not abandoned external work.
+    Cancellation and storage failures still propagate without settlement.
     """
 
     def __init__(self, persistence: Any, read_names: frozenset[str]) -> None:

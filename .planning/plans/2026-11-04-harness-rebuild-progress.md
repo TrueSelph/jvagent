@@ -2640,3 +2640,20 @@ receipts remain an explicit recovery finding. Full LeadGen app cutover, handoff
 contract equivalence, remaining migration, legacy deletion and enterprise gates
 remain open. The ten reference-agent blockers are not reduced by this separate
 app-local qualification.
+
+## Known SDK skill-load retry receipts — 2026-11-06
+
+[Qualification](2026-11-06-native-skill-load-retries.md) reproduces the unfinished
+loader receipt in successful and exhausted runs. The existing retry-receipt
+adapter now invokes the public SDK failure hook for known declarative loader
+rejections; writes, cancellation and persistence failures remain excluded. Typed
+SDK retry exhaustion now records a specific reason and useful UI notice, with
+private-detail and unrelated-cause regressions. Six actual GPT-4.1 browser turns
+cover duplicate/parallel loads, serial exhaustion, cold restart, ordinary failed-run
+follow-ups and unchanged reload. Fifteen effects are terminal with exactly one
+matching event; fourteen requests, 19,207 reported tokens and USD 0.028112 estimated
+reconcile, zero unknown usage. Native/host/real-PG passes 703 on each Python
+3.11/3.12 with configured Docker cases. The historical Storefront graph remains
+byte-equivalent, including its four pre-fix receipts; historical repair is not
+claimed. Distributed/uncertain-work recovery, remaining compatibility, migration,
+legacy deletion and release gates remain open.

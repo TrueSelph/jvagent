@@ -399,11 +399,13 @@ def build_native_agent(
                     tool.name
                     for tool in tools
                     if tool.name in allowed and tool.effect_class == "read"
-                ).union(
+                )
+                .union(
                     name
                     for toolset in selected_toolsets
                     for name in toolset.allowed_names
-                ),
+                )
+                .union({"load_capability"}),
             )
         )
     if spend_store is not None:
