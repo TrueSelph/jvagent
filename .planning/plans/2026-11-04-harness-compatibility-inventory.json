@@ -1731,7 +1731,10 @@
           ]
         }
       },
-      "disposition": "preserve-assets-review-execution"
+      "disposition": "preserve-assets-review-execution",
+      "migrated_path": "jvagent/skills/pdf-generation/SKILL.md",
+      "qualification": "partial: native official loading, reviewed local WeasyPrint image, actual browser PDF/download, restart/re-share and immutable readback",
+      "qualification_evidence": "2026-11-06-native-pdf.md"
     },
     {
       "path": "jvagent/skills/research/SKILL.md",

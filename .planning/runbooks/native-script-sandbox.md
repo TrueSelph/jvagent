@@ -11,10 +11,15 @@ The existing CodeExecution Action can declare a reviewed native container image:
     max_output_bytes: 64000
 ```
 
-Use an actual reviewed image digest, not the placeholder or a mutable tag. The
+Use an actual reviewed repository digest or full local `sha256:...` image ID,
+not the placeholder, a short ID or a mutable tag. The
 image needs Python for the shipped triage script. This profile is optional and
 does not qualify production script execution or existing artifact interoperability.
 See the [qualification record and remaining gates](../plans/2026-11-06-native-script-sandbox.md).
+
+The optional [PDF skill profile](native-pdf.md) qualifies one local rendering
+and web-download workflow with its own reviewed image; it does not qualify all
+script dependencies or artifact services.
 
 `CodeExecutionAction.get_native_script_sandbox` declares the service; official
 Harness `DockerSandbox` and `Shell` own execution. The public renamed toolset

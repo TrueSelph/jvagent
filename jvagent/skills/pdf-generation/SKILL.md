@@ -7,11 +7,14 @@ description: >-
 spec: claude
 allowed-tools:
   - code_execution__bash
+  - file_interface__share_file
 requires-actions:
   - CodeExecutionAction
+requires-tools:
+  - code_execution__bash
 license: Apache-2.0
 metadata:
-  version: "3"
+  version: "4"
   tags:
     - pdf
     - document
@@ -51,8 +54,10 @@ load the document into your context, so it stays fast and deterministic.
 
 3. **Confirm and hand off.** The PDF now lives in the user's workspace
    (`output/report.pdf`) and is retrievable through the file tools. Tell the user
-   where it is. To share it elsewhere (email, Drive), call the relevant action
-   tool with that path — this skill only renders.
+   where it is. If a download link is requested and `file_interface__share_file`
+   is available, call it with the actual output path and return its issued URL.
+   Never invent a link or expose a raw storage path as a URL. Email/Drive delivery
+   requires the separately configured and authorized integration.
 
 ## Notes
 

@@ -22,7 +22,7 @@ class NativeScriptSandbox(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    image: str = Field(pattern=r"^[^\s]+@sha256:[0-9a-f]{64}$")
+    image: str = Field(pattern=r"^(?:[^\s]+@)?sha256:[0-9a-f]{64}$")
     timeout: float = Field(default=60, gt=0, le=120, allow_inf_nan=False)
     max_output_chars: int = Field(default=64_000, ge=256, le=64_000, strict=True)
     _asset_snapshot: dict[str, bytes] | None = PrivateAttr(default=None)

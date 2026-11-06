@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native artifact downloads](2026-11-06-native-artifact-downloads.md).
+Latest increment: [native PDF skill](2026-11-06-native-pdf.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,20 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native PDF skill
+
+The canonical `pdf-generation` folder and explicit script prerequisite now pass
+official skill admission. The unchanged renderer runs in an optional reviewed
+image; full local image IDs are admitted alongside repository digests. Actual
+GPT-4.1/jvchat creates and downloads a one-page PDF with verified text and visual
+inspection, then re-shares it after restart without rendering. Two turns/six
+requests/7,865 reported tokens/USD 0.012622 estimated reconcile; reload is
+read-only. Both native/host/real-PG lanes pass 561. Clean wheel asset inspection
+passes after a dirty local build exposed stale duplicate assets. The
+[record](2026-11-06-native-pdf.md) bounds this single renderer profile; remaining
+compatibility, recovery, migration/deletion and enterprise gates stay open.
+Published parent 675a5ba3 has all nine checks green; new-head gates are separate.
 
 ## Native artifact downloads
 

@@ -47,6 +47,14 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native PDF: [qualification](2026-11-06-native-pdf.md). Canonical skill folder,
+explicit script prerequisite, unchanged renderer and optional reviewed image
+deliver an actual one-page PDF through SDK bash and FileInterface. Restart,
+re-share without rendering, byte/content/visual checks and unchanged reload pass.
+Only the local WeasyPrint route is qualified; other engines/formats, long/hostile
+documents, operator recovery, production image/deployment and legacy removal
+remain open.
+
 Native local artifact delivery: [qualification](2026-11-06-native-artifact-downloads.md).
 Existing FileInterface and same-graph URLProxy create immutable bounded snapshots
 outside user/script mounts. Actual model/browser tests cover binary/text bytes,

@@ -299,7 +299,7 @@ python staged_skills/<skill>/scripts/render_pdf.py --input doc.md --output outpu
 On activation the orchestrator stages the folder at `staged_skills/<name>/` inside the
 caller's per-user sandbox and tells the model where to run it. Anything a script
 writes lands in that user's slice and is visible to the file tools. See
-[`pdf_generation`](pdf_generation), [`triage`](triage), [`research`](research),
+[`pdf-generation`](pdf-generation), [`triage`](triage), [`research`](research),
 [`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
 write-file detour), and [`artifact_handler`](artifact_handler) (private
 document ingest via jvforge / PageIndex) for working examples.
