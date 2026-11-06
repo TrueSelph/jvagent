@@ -18,6 +18,9 @@ from jvagent.core.app import App
 from jvagent.core.sandbox import (
     absolute_under_files_root,
     is_local_file_interface,
+)
+from jvagent.core.sandbox import local_user_storage as _local_user_storage
+from jvagent.core.sandbox import (
     provision_sandbox_dir,
     resolve_agent_user,
     resolve_sandbox_root,
@@ -232,24 +235,6 @@ async def read_bounded_text_file(
         "".join(lines[:head] if head is not None else lines[-tail:])
         if (head or tail)
         else text
-    )
-
-
-def _local_user_storage(
-    fi: Any, agent_id: str, user_id: str, path: str, *, create_root: bool = False
-) -> Any:
-    """Scope the public local provider to the caller's physical directory."""
-    from jvspatial.storage.interfaces.local import LocalFileInterface
-
-    user_root = fi.root_dir / resolve_user_sandbox_relpath(agent_id, user_id)
-    if user_root.resolve() != user_root:
-        raise ValueError("User sandbox cannot be a symbolic link")
-    if not create_root and not user_root.is_dir():
-        raise FileNotFoundError(path)
-    if not (user_root / path).resolve().is_relative_to(user_root):
-        raise ValueError("File escapes the user sandbox")
-    return LocalFileInterface(
-        root_dir=str(user_root), validator=fi.validator, create_root=create_root
     )
 
 

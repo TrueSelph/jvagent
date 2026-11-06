@@ -54,9 +54,17 @@ def test_turn_cache_is_contextvar_not_module_dict():
     assert turn_cache.get_turn_cache() is None
 
 
-def test_memory_locks_are_in_process():
+@pytest.mark.asyncio
+async def test_memory_locks_coordinate_only_the_local_manager() -> None:
     mgr = lock_manager.get_conversation_lock_manager()
-    assert isinstance(mgr._locks, dict)
+    assert lock_manager.get_conversation_lock_manager() is mgr
+    first = await mgr.acquire("characterization:conversation")
+    other = await lock_manager.MemoryLockManager().acquire(
+        "characterization:conversation"
+    )
+    assert await mgr.acquire("characterization:conversation") is first
+    async with first:
+        assert not other.locked()
 
 
 def test_streaming_dedup_exists_as_replay_regression():

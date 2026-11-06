@@ -1,10 +1,13 @@
 """Native scripts use SDK workspaces, with host scope and mutation policy."""
 
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
+import pytest_asyncio
 
 pytest.importorskip("pydantic_ai_harness")
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
@@ -18,6 +21,50 @@ from jvagent.harness.step_store import InteractionStepStore
 from jvagent.memory.interaction import Interaction
 
 IMAGE = "python@sha256:" + "0" * 64
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clean_test_file_roots(monkeypatch: Any) -> Any:
+    """Remove only roots successfully created by this test's helper."""
+    import sys
+
+    original = bound_profile
+    roots: list[Path] = []
+
+    async def tracked(*args: Any, **kwargs: Any) -> Any:
+        profile, conversation = await original(*args, **kwargs)
+        roots.append(profile._files.root)
+        return profile, conversation
+
+    monkeypatch.setattr(sys.modules[__name__], "bound_profile", tracked)
+    yield
+    for root in roots:
+        shutil.rmtree(root)
+
+
+async def bound_profile(image: str, root: Path | None = None) -> tuple[Any, Any]:
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
+    from tests.harness.native.test_planning import stores
+
+    if root is None:
+        configured = os.environ.get("JVAGENT_TEST_SCRIPT_ROOT")
+        if not configured:
+            pytest.skip("set JVAGENT_TEST_SCRIPT_ROOT to a bounded host file store")
+        root = Path(configured)
+    conversation, plan, spend = await stores()
+    profile = NativeScriptSandbox(image=image)
+    assets = profile.assets([Path("jvagent/skills/triage").resolve()])
+    await profile.bind_policy(
+        conversation,
+        agent_id=plan.scope["agent_id"],
+        user_id="caller",
+        session_id=conversation.session_id,
+        lock=spend.lock,
+        assets=assets,
+        file_interface=LocalFileInterface(root_dir=str(root)),
+    )
+    return profile, conversation
 
 
 @pytest.mark.parametrize(
@@ -82,8 +129,18 @@ def test_script_assets_cannot_escape_through_symlinks(
 
 
 @pytest.mark.asyncio
-async def test_script_workspace_cannot_adopt_changed_caller_or_policy() -> None:
+async def test_script_workspace_cannot_adopt_changed_caller_or_policy(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from types import SimpleNamespace
+
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
     from tests.harness.native.test_planning import stores
+
+    monkeypatch.setattr(
+        os, "statvfs", lambda path: SimpleNamespace(f_blocks=64, f_frsize=1024 * 1024)
+    )
 
     conversation, plan, spend = await stores()
     profile = NativeScriptSandbox(image=IMAGE)
@@ -93,6 +150,7 @@ async def test_script_workspace_cannot_adopt_changed_caller_or_policy() -> None:
         session_id=conversation.session_id,
         lock=spend.lock,
         assets={},
+        file_interface=LocalFileInterface(root_dir=str(tmp_path)),
     )
     await profile.bind_policy(conversation, **scope)
     original = dict(conversation.native_script_policy)
@@ -119,10 +177,11 @@ async def test_script_workspace_is_lazy_and_denial_precedes_execution(
     image = os.environ.get("JVAGENT_TEST_SCRIPT_IMAGE")
     if not image:
         pytest.skip("set JVAGENT_TEST_SCRIPT_IMAGE to a reviewed local image digest")
+    profile, conversation = await bound_profile(image)
     interaction = await Interaction.create(
         user_id="caller",
-        session_id="lazy",
-        conversation_id="conversation",
+        session_id=conversation.session_id,
+        conversation_id=conversation.id,
         utterance=mode,
     )
 
@@ -152,20 +211,22 @@ async def test_script_workspace_is_lazy_and_denial_precedes_execution(
         available_actions=["CodeExecutionAction"],
         access_check=denied,
         instructions="Use the skill",
-        script_sandbox=NativeScriptSandbox(image=image),
+        script_sandbox=profile,
         step_store=InteractionStepStore(interaction),
         allow_mutations=mode != "read-only",
     )
     if mode == "denied":
         with pytest.raises(PermissionError):
-            await agent.run("Run", run_id="lazy-script", conversation_id="lazy")
+            await agent.run(
+                "Run", run_id="lazy-script", conversation_id=conversation.session_id
+            )
         assert not any(
             e["tool_name"] == SCRIPT_TOOL
             for e in interaction.native_steps.get("effects", [])
         )
     else:
         result = await agent.run(
-            "Say hello", run_id="lazy-script", conversation_id="lazy"
+            "Say hello", run_id="lazy-script", conversation_id=conversation.session_id
         )
         assert all(
             not message.workspace_ref
@@ -179,7 +240,7 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
     image = os.environ.get("JVAGENT_TEST_SCRIPT_IMAGE")
     if not image:
         pytest.skip("set JVAGENT_TEST_SCRIPT_IMAGE to a reviewed local image digest")
-    profile = NativeScriptSandbox(image=image)
+    profile, conversation = await bound_profile(image)
     directory = Path("jvagent/skills/triage").resolve()
     calls = 0
     outputs: list[str] = []
@@ -213,8 +274,8 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
     async def interaction() -> Interaction:
         return await Interaction.create(
             user_id="caller",
-            session_id="scripts",
-            conversation_id="conversation",
+            session_id=conversation.session_id,
+            conversation_id=conversation.id,
             utterance="rank",
         )
 
@@ -231,7 +292,9 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
             script_sandbox=profile,
             step_store=InteractionStepStore(first),
         )
-        result = await agent.run("Rank", run_id="script-run", conversation_id="scripts")
+        result = await agent.run(
+            "Rank", run_id="script-run", conversation_id=conversation.session_id
+        )
         refs.update(
             m.workspace_ref
             for m in result.all_messages()
@@ -257,9 +320,9 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
         ):
             await history_for_new_turn(
                 first,
-                conversation_id="conversation",
+                conversation_id=conversation.id,
                 user_id="caller",
-                session_id="scripts",
+                session_id=conversation.session_id,
             )
 
         def read(messages: Any, info: Any) -> ModelResponse:
@@ -283,6 +346,12 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
             return ModelResponse(parts=[TextPart("preserved")])
 
         second = await interaction()
+        # A non-root SDK command must also work after tmpfs mounts are rebuilt.
+        subprocess.run(
+            ["docker", "stop", "--timeout", "3", next(iter(refs)).id],
+            check=True,
+            capture_output=True,
+        )
         next_agent = build_native_agent(
             FunctionModel(read),
             skill_directory=directory,
@@ -290,13 +359,13 @@ async def test_official_docker_script_execution_history_and_failed_effect() -> N
             available_actions=["CodeExecutionAction"],
             access_check=allowed,
             instructions="Read the file",
-            script_sandbox=NativeScriptSandbox(image=image),
+            script_sandbox=profile,
             step_store=InteractionStepStore(second),
         )
         continued = await next_agent.run(
             "Read",
             run_id="script-next",
-            conversation_id="scripts",
+            conversation_id=conversation.session_id,
             message_history=result.all_messages(),
         )
         assert continued.output == "preserved"
@@ -320,7 +389,7 @@ async def test_parallel_sdk_commands_share_one_complete_script_stage(
     image = os.environ.get("JVAGENT_TEST_SCRIPT_IMAGE")
     if not image:
         pytest.skip("set JVAGENT_TEST_SCRIPT_IMAGE to a reviewed local image digest")
-    profile = NativeScriptSandbox(image=image)
+    profile, conversation = await bound_profile(image)
     path = "staged_skills/triage/scripts/prioritize.py"
     writes: list[str] = []
     original = Workspace.write_bytes
@@ -360,8 +429,8 @@ async def test_parallel_sdk_commands_share_one_complete_script_stage(
 
     interaction = await Interaction.create(
         user_id="caller",
-        session_id="parallel",
-        conversation_id="conversation",
+        session_id=conversation.session_id,
+        conversation_id=conversation.id,
         utterance="rank",
     )
     agent = build_native_agent(
@@ -375,7 +444,7 @@ async def test_parallel_sdk_commands_share_one_complete_script_stage(
         step_store=InteractionStepStore(interaction),
     )
     result = await agent.run(
-        "Rank", run_id="parallel-script", conversation_id="parallel"
+        "Rank", run_id="parallel-script", conversation_id=conversation.session_id
     )
     try:
         assert writes == [path]

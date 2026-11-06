@@ -20,7 +20,8 @@ See the [qualification record and remaining gates](../plans/2026-11-06-native-sc
 Harness `DockerSandbox` and `Shell` own execution. The public renamed toolset
 preserves `code_execution__bash(command=...)`; SDK output replaces the old
 executor's formatting. The SDK also exposes optional `timeout_seconds`, bounded
-by host policy. There are no background shell tools or host filesystem mounts.
+by host policy. There are no background shell tools. The only host bind mount is
+the admitted caller's existing file-service directory.
 Sources: `jvagent/action/code_execution/code_execution_action.py:84`,
 `jvagent/harness/script_sandbox.py:104`.
 
@@ -34,9 +35,9 @@ settings; it never invokes the legacy subprocess executor. Sources:
 `jvagent/action/native_harness/native_harness_action.py:234`,
 `jvagent/harness/script_sandbox.py:32`.
 
-The fixed development preset uses uid 65534, a read-only root filesystem,
+The fixed development preset uses the non-root POSIX server's uid/gid, a read-only root filesystem,
 dropped capabilities, no-new-privileges, no outbound network, 512 MiB memory,
-one CPU, 128 processes, bounded workspace/tmp tmpfs and an 8 MB SDK per-file
+one CPU, 128 processes, bounded temporary storage and an 8 MB SDK per-file
 limit. It is deliberately separate from the old subprocess resource controls.
 Custom old controls require explicit migration; they are not silently ignored.
 Source: `jvagent/harness/script_sandbox.py:136`.
@@ -57,14 +58,29 @@ profile has no approved script-effect reconciliation operation. Read-only
 recovery and delegated children do not receive shell execution. Sources:
 `jvagent/harness/native.py:294`, `:445`, `:529`.
 
-**Storage boundary:** backend-process restart can reuse the SDK container.
-Stopping/recreating that container or restarting Docker can lose tmpfs files.
-This workspace is conversation-scoped and is not the existing per-user host
-FileInterface storage. Artifact export, persistent bounded storage, container
-lifecycle/quotas and broader deployment qualification must close before this
-profile can replace the old script/file service. Do not purge old user files or
-rewrite existing SDK workspace refs to force a cutover. Source:
-`jvagent/harness/script_sandbox.py:140`.
+**Storage boundary:** enable application local file storage on an actually
+host-bounded filesystem of at most 64 MiB. An ordinary large disk with only a
+configured upload limit does not qualify. This is a shared filesystem ceiling,
+not a reserved quota for each user. Scripts and FileInterface share the existing
+`<agent>/<user>` directory across conversations. The SDK mounts only that leaf;
+the app, parent store and credentials are not mounted. The graph binds the
+physical root identity; changed mounts, image or assets require explicit migration.
+Sources: `jvagent/harness/script_files.py:32`,
+`jvagent/core/sandbox.py:147`, `jvagent/harness/script_sandbox.py:170`.
+
+The public Docker arguments explicitly mount the SDK process-control tmpfs with
+mode 1777. With pinned Harness 0.66.0, its shorthand mount can reset to root-owned
+0755 after container restart, preventing non-root execution. This is a narrow
+upstream-gap configuration adapter; remove the explicit mount after an upstream
+fix passes the stopped-container regression. It does not replace SDK execution,
+timeout or cancellation. Source: `jvagent/harness/script_sandbox.py:151`.
+
+Published V1 conversation policies are refused rather than silently rebound.
+Do not purge old user files or rewrite SDK refs to force cutover. Container cleanup,
+aggregate capacity, destroyed-ref operator recovery, artifact delivery, S3 and
+deployment qualification remain open. File durability does not imply an uncertain
+script is safe to repeat. Sources: `jvagent/harness/script_sandbox.py:209`,
+`jvagent/harness/script_files.py:99`.
 
 The converter reports missing image/resource policy as a blocker and preserves
 existing declarations. A configuration candidate alone is not runtime approval.

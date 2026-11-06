@@ -27,6 +27,8 @@ class NativeScriptSandbox(BaseModel):
     max_output_chars: int = Field(default=64_000, ge=256, le=64_000, strict=True)
     _asset_snapshot: dict[str, bytes] | None = PrivateAttr(default=None)
     _asset_directories: tuple[Path, ...] | None = PrivateAttr(default=None)
+    _files: Any = PrivateAttr(default=None)
+    _session_id: str | None = PrivateAttr(default=None)
 
     @classmethod
     def from_action_context(cls, context: dict[str, Any]) -> "NativeScriptSandbox":
@@ -102,6 +104,8 @@ class NativeScriptSandbox(BaseModel):
         return dict(assets)
 
     def capabilities(self, assets: dict[str, bytes]) -> list[Any]:
+        if self._files is None:
+            raise ValueError("Scripts require an admitted user file storage binding")
         from pydantic_ai.capabilities import Hooks
         from pydantic_ai_harness import DockerSandbox, Shell
 
@@ -117,6 +121,8 @@ class NativeScriptSandbox(BaseModel):
                 return args
             async with stage_lock:
                 if ctx.run_id not in staged_runs:
+                    if ctx.conversation_id != self._session_id:
+                        raise ValueError("Script workspace belongs to another session")
                     if ctx.workspace is None:
                         raise ValueError(
                             "Scripts require the official Docker workspace"
@@ -127,8 +133,7 @@ class NativeScriptSandbox(BaseModel):
                     ref = ctx.workspace.ref
                     if ref is None or ref.provider != "docker":
                         raise ValueError("Scripts cannot execute in a host workspace")
-                    for name, content in assets.items():
-                        await ctx.workspace.write_bytes(name, content)
+                    await self._files.stage(ctx.workspace, assets)
                     staged_runs.add(ctx.run_id)
             return args
 
@@ -136,7 +141,7 @@ class NativeScriptSandbox(BaseModel):
             DockerSandbox(
                 image=self.image,
                 allow_internet_access=False,
-                env={},
+                env={"HOME": "/tmp"},
                 docker_args=(
                     "--read-only",
                     "--cap-drop=ALL",
@@ -144,8 +149,11 @@ class NativeScriptSandbox(BaseModel):
                     "--memory=512m",
                     "--cpus=1",
                     "--pids-limit=128",
-                    "--user=65534:65534",
-                    "--tmpfs=/workspace:rw,nosuid,nodev,size=64m,mode=1777",
+                    # Explicit mount mode survives Docker restart; the SDK's
+                    # shorthand tmpfs otherwise resets its PID directory to 0755.
+                    "--mount=type=tmpfs,dst=/run/pydantic-ai,tmpfs-mode=1777",
+                    f"--user={self._files.facts['uid']}:{self._files.facts['gid']}",
+                    self._files.mount_argument,
                     "--tmpfs=/tmp:rw,nosuid,nodev,size=16m,mode=1777",
                 ),
             ),
@@ -169,6 +177,7 @@ class NativeScriptSandbox(BaseModel):
         session_id: str,
         lock: Any,
         assets: dict[str, bytes],
+        file_interface: Any = None,
     ) -> None:
         """An existing SDK workspace cannot silently adopt changed host policy."""
         from jvspatial import flush_deferred_entities
@@ -176,7 +185,7 @@ class NativeScriptSandbox(BaseModel):
         from jvagent.memory.conversation import Conversation
 
         policy = {
-            "version": "sdk-docker-script-v1",
+            "version": "sdk-docker-user-files-v2",
             "agent_id": agent_id,
             "user_id": user_id,
             "session_id": session_id,
@@ -200,10 +209,35 @@ class NativeScriptSandbox(BaseModel):
             if owner is None or owner.id != agent_id:
                 raise ValueError("Script workspace belongs to another agent")
             prior = rows[0].native_script_policy
-            if not isinstance(prior, dict) or (prior and prior != policy):
+            if not isinstance(prior, dict) or (
+                prior
+                and (
+                    set(prior) != set(policy) | {"storage"}
+                    or {k: v for k, v in prior.items() if k != "storage"} != policy
+                )
+            ):
                 raise ValueError(
                     "Script workspace policy changed; explicit migration or a new conversation is required"
+                )
+            if file_interface is None:
+                from jvagent.core.app import App
+
+                app = await App.get()
+                if app is None or not app.file_storage_enabled:
+                    raise ValueError("Scripts require enabled application file storage")
+                file_interface = await app.get_file_interface()
+            from jvagent.harness.script_files import NativeScriptFiles
+
+            files = await NativeScriptFiles.admit(
+                file_interface, agent_id=agent_id, user_id=user_id, image=self.image
+            )
+            policy["storage"] = files.facts
+            if prior and prior != policy:
+                raise ValueError(
+                    "Script storage identity changed; explicit migration is required"
                 )
             object.__setattr__(conversation, "native_script_policy", policy)
             await conversation.save()
             await flush_deferred_entities(conversation, strict=True)
+            self._files = files
+            self._session_id = session_id

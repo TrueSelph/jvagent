@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native local write and effect identity](2026-11-06-native-file-write.md).
+Latest increment: [native SDK scripts and shared user files](2026-11-06-native-user-files.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
