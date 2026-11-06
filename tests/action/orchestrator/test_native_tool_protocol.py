@@ -10,7 +10,10 @@ original structured-JSON-in-text contract byte for byte.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, List
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -562,6 +565,15 @@ async def test_loop_replays_a_native_transcript_across_ticks(
     from jvagent.action.reply.reply_action import ReplyAction
 
     ex = make_orchestrator(actions=[ReplyAction()])
+    app = SimpleNamespace(
+        timezone="UTC",
+        now=AsyncMock(return_value=datetime(2026, 11, 6, tzinfo=timezone.utc)),
+    )
+
+    async def get_app(self: Any) -> Any:
+        return app
+
+    monkeypatch.setattr(type(ex), "get_app", get_app)
     fake = _FakeModelAction(
         [
             ModelActionResult(
@@ -591,7 +603,8 @@ async def test_loop_replays_a_native_transcript_across_ticks(
     assert assistant["tool_calls"][0]["id"] == "call_dt"
     assert assistant["tool_calls"][0]["function"]["name"] == "get_current_datetime"
     assert tool_msg["tool_call_id"] == "call_dt"
-    assert "ISO 8601" in tool_msg["content"]
+    assert "2026-11-06T00:00:00+00:00" in tool_msg["content"]
+    app.now.assert_awaited()
 
 
 @pytest.mark.asyncio

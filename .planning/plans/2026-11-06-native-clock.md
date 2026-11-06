@@ -89,3 +89,13 @@ schemas/providers, custom extensions, retained-state migration, reasoning policy
 channel/vision/flow compatibility, distributed recovery, security/deployment,
 evaluation and final legacy deletion remain open. No overall performance or
 enterprise qualification is claimed.
+
+The first full pre-push run refused publication: 5,037 passed, 60 skipped and two
+legacy clock fixtures failed because they supplied an opaque object or missing
+App while expecting the removed fallback. Their fixtures now bind a deterministic
+UTC App clock and assert its exact timestamp through both the wrapper and native
+legacy transcript. A separate missing-App test asserts explicit refusal. The
+46-case affected catalog/protocol slice passes; runtime code and the tested
+browser cohort are unchanged. The full pre-push must pass before publication.
+Sources: `tests/action/orchestrator/test_catalog_and_tools.py:144`,
+`tests/action/orchestrator/test_native_tool_protocol.py:560`.

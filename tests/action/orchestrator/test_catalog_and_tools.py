@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 from jvagent.action.orchestrator.catalog import (
     build_catalog_tools,
     build_skill_meta_tools,
@@ -137,11 +141,26 @@ async def test_wrap_action_tool_explicit_terminal_kwarg_still_wins():
     assert st.terminal is True
 
 
-async def test_core_datetime_tool_runs():
-    tools = build_core_tools(action=object())
+async def test_core_datetime_tool_runs() -> None:
+    app = SimpleNamespace(
+        timezone="UTC",
+        now=AsyncMock(return_value=datetime(2026, 11, 6, tzinfo=timezone.utc)),
+    )
+    tools = build_core_tools(
+        action=SimpleNamespace(get_app=AsyncMock(return_value=app))
+    )
     assert [t.name for t in tools] == ["get_current_datetime"]
     out = await tools[0].run({})
-    assert "ISO 8601" in out and "Timezone" in out
+    assert "2026-11-06T00:00:00+00:00" in out and "Timezone: UTC" in out
+    app.now.assert_awaited_once()
+
+
+async def test_core_datetime_tool_refuses_missing_app() -> None:
+    tools = build_core_tools(
+        action=SimpleNamespace(get_app=AsyncMock(return_value=None))
+    )
+    out = await tools[0].run({})
+    assert out == "(datetime error: App clock is unavailable)"
 
 
 async def test_catalog_find_and_load_promotes_visibility():
