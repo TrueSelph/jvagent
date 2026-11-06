@@ -40,7 +40,7 @@ async def test_use_skill_mid_loop_minimal_prep(
 ):
     """Model-driven use_skill on tick 1 — prep is runtime gate only."""
     signup = SkillDoc(
-        name="signup_interview",
+        name="signup-interview",
         description="JVAgent training signup.",
         body="SOP: set_fields, next_field, reply.",
         requires_tools=(
@@ -77,7 +77,7 @@ async def test_use_skill_mid_loop_minimal_prep(
         {
             "action": "tool",
             "tool": "use_skill",
-            "args": {"name": "signup_interview"},
+            "args": {"name": "signup-interview"},
         },
         {"action": "tool", "tool": "reply", "args": {}},
     ]
@@ -146,7 +146,7 @@ async def test_set_field_returns_next_tool_chain_directive(
 ):
     """After store, model receives next_tool — no auto-inlined next_field."""
     signup = SkillDoc(
-        name="signup_interview",
+        name="signup-interview",
         description="JVAgent training signup.",
         body="SOP.",
         requires_tools=(
@@ -182,7 +182,7 @@ async def test_set_field_returns_next_tool_chain_directive(
         {
             "action": "tool",
             "tool": "use_skill",
-            "args": {"name": "signup_interview"},
+            "args": {"name": "signup-interview"},
         },
         {
             "action": "tool",
@@ -243,7 +243,7 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
 ):
     """Model naming the locked skill as a tool should steer, not waste a tick."""
     signup = SkillDoc(
-        name="signup_interview",
+        name="signup-interview",
         description="JVAgent training signup.",
         body="SOP.",
         requires_tools=("interview__set_fields", "interview__next_field"),
@@ -274,9 +274,9 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
         {
             "action": "tool",
             "tool": "use_skill",
-            "args": {"name": "signup_interview"},
+            "args": {"name": "signup-interview"},
         },
-        {"action": "tool", "tool": "signup_interview", "args": {}},
+        {"action": "tool", "tool": "signup-interview", "args": {}},
         {"action": "tool", "tool": "reply", "args": {}},
     ]
 
@@ -312,7 +312,7 @@ async def test_locked_skill_name_as_tool_gets_steer_not_dispatch(
 
     assert len(model_calls) >= 3
     steer_obs = [
-        o for o in model_calls[2]["observations"] if o.get("tool") == "signup_interview"
+        o for o in model_calls[2]["observations"] if o.get("tool") == "signup-interview"
     ]
     assert steer_obs
     assert "active locked skill" in steer_obs[0]["observation"].lower()
@@ -330,7 +330,7 @@ async def test_reground_parent_lock_returns_to_parent(monkeypatch):
 
     ex = OrchestratorInteractAction()
     parent = SkillDoc(
-        name="signup_interview", description="", body="PROC", task_lock=True
+        name="signup-interview", description="", body="PROC", task_lock=True
     )
     bound = MagicMock()
     bound.prepare_task_lock_turn = AsyncMock(
@@ -355,7 +355,7 @@ async def test_reground_parent_lock_returns_to_parent(monkeypatch):
     ret = [o for o in obs if o.get("tool") == "(task-lock)"]
     assert ret, "expected a return-to-parent directive"
     text = ret[0]["observation"].lower()
-    assert "signup_interview" in ret[0]["observation"]
+    assert "signup-interview" in ret[0]["observation"]
     assert "return to" in text and "continue" in text
     # all server-prep so they render as system context, not user-visible
     assert all(o.get("kind") == "server_prep" for o in obs)

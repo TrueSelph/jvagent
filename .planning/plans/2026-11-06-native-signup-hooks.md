@@ -136,3 +136,11 @@ including the configured pinned Docker/Shell cases. The final interview/scaffold
 migration slice passes 482 on each Python 3.11/3.12. The nineteen-case hook slice
 and full native lanes cover the final loader case. An earlier attempt with an
 incorrect schema-test path ran no tests and is excluded from evidence.
+
+The initial full pre-push suite stopped with two failures / 5,055 passes /
+67 skips: app-coupled legacy turn-lock fixtures still named signup_interview
+after the reference asset rename. The fixture names now follow signup-interview;
+independent fixtures that intentionally exercise old names are retained. No
+runtime behavior or browser-tested source changes in this follow-up. Source:
+`tests/action/orchestrator/test_use_skill_task_lock_prep.py:43`. The full push
+gate must pass again before publication is reported successful.
