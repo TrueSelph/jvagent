@@ -1,5 +1,5 @@
 ---
-name: product_faq
+name: product-faq
 description: >-
   Answer common product questions — pricing, free trial, onboarding time,
   support, integrations, security/compliance, cancellation/refunds — from the
@@ -20,6 +20,11 @@ tags:
 Use this when the visitor asks a common question about the product — pricing,
 free trial, onboarding/setup time, support, integrations, security/compliance,
 or cancellation/refunds.
+
+For a mixed request, answer the FAQ part and use the `product-search` skill for
+the product recommendation and its price. FAQ subscription tiers do not identify
+which catalog product fits a need. Do not substitute plan pricing for a product
+lookup, or stop after answering only the FAQ part.
 
 1. Call `storefront__faq` with the visitor's question as `query`.
 2. Answer **from the returned `matches`** — quote the facts in the `answer`

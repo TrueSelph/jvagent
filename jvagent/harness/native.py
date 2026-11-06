@@ -64,6 +64,7 @@ def build_native_agent(
         NativeMutationTool,
         is_mutation_effect,
     )
+    from jvagent.harness.native_model import qualified_model
     from jvagent.harness.skill_assets import project_skill, projected_workspace
 
     if not isinstance(allow_mutations, bool):
@@ -586,7 +587,7 @@ def build_native_agent(
             )
         )
     agent = Agent(
-        model,
+        qualified_model(model),
         instructions=instructions,
         model_settings=settings,
         output_type=(

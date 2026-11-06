@@ -38,16 +38,43 @@
         "tracked_directory_digest": "sha256:f180519b75e318d99231b5347fd90d7d19043885a2bef97ea459817ac27201ef"
       },
       {
-        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_faq/SKILL.md",
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-faq/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:e16688bc71a4c0b9b0798b1f3b52cfa00f1cfce9f6fab47b722a76cd03e45d72",
-        "name": "product_faq",
+        "sha256": "sha256:541e9f2645bcb6f3cfe45d7a3645580738e10166087f2fbf652186475c388d47",
+        "name": "product-faq",
         "spec": "jv",
         "extends": null,
         "byte_order_mark": false,
         "policy_fields": {
           "allowed-tools": [
             "storefront__faq"
+          ],
+          "requires-actions": [
+            "StorefrontAction"
+          ]
+        },
+        "metadata_keys": [
+          "allowed-tools",
+          "description",
+          "name",
+          "requires-actions",
+          "spec",
+          "tags"
+        ],
+        "tracked_directory_files": 0,
+        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-search/SKILL.md",
+        "scope": "app-example",
+        "sha256": "sha256:f46ca22ade176b69b02f7d8cb5f33844d7f290885cee44c3f166c5165188dcc3",
+        "name": "product-search",
+        "spec": "jv",
+        "extends": null,
+        "byte_order_mark": false,
+        "policy_fields": {
+          "allowed-tools": [
+            "storefront__search_products"
           ],
           "requires-actions": [
             "StorefrontAction"
@@ -91,33 +118,6 @@
         ],
         "tracked_directory_files": 1,
         "tracked_directory_digest": "sha256:0cae47fb9b18add0667c4332aa7f730cb2a36bd09af604ba75aa025028c01257"
-      },
-      {
-        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_search/SKILL.md",
-        "scope": "app-example",
-        "sha256": "sha256:d87f8c2d9c5d70856051d43b09523ae0a5341fc5fc3e7fba8721a32d1d2a64ac",
-        "name": "product_search",
-        "spec": "jv",
-        "extends": null,
-        "byte_order_mark": false,
-        "policy_fields": {
-          "allowed-tools": [
-            "storefront__search_products"
-          ],
-          "requires-actions": [
-            "StorefrontAction"
-          ]
-        },
-        "metadata_keys": [
-          "allowed-tools",
-          "description",
-          "name",
-          "requires-actions",
-          "spec",
-          "tags"
-        ],
-        "tracked_directory_files": 0,
-        "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/render_ui/SKILL.md",
@@ -1167,7 +1167,7 @@
         "name": "contrib/storefront",
         "archetype": "StorefrontAction",
         "tracked_directory_files": 2,
-        "tracked_directory_digest": "sha256:469b93e4358cbf73aef06dcdc37ca48dffeb076a5fa8ab1e130c9cfdc79e2451"
+        "tracked_directory_digest": "sha256:380cb1ffe790a8a24098d278af49ebb55340f0a4179dfcf0a28ce4cb94eeef20"
       },
       {
         "path": "jvagent/action/access_control/info.yaml",
@@ -1714,7 +1714,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/agent.yaml",
         "scope": "app-example",
-        "sha256": "sha256:10f3e1a8cdb7b380d486d556e4ce0b80a3b5cc58334964ad2c34a5a8f705f9f8",
+        "sha256": "sha256:fc12603075e4667c39d4a4a804ee15c4a0d00288f6a61c0f2a4a717e200dd4b3",
         "agent": "jvagent/leadgen_agent",
         "action_names": [
           "jvagent/orchestrator",
@@ -1749,8 +1749,8 @@
             ],
             "skill_names": [
               "product_inquiry_leads",
-              "product_faq",
-              "product_search",
+              "product-faq",
+              "product-search",
               "example_leadgen"
             ],
             "skill_directory": null,
@@ -1758,7 +1758,7 @@
           }
         ],
         "tracked_directory_files": 11,
-        "tracked_directory_digest": "sha256:20b769c0c3ced1d09c06d16c483771e6a24201ad1c4cf060e447c7c2f777afbc"
+        "tracked_directory_digest": "sha256:89ad2c0a2b659fce3b43117200f6c6471b803d6519d5f146bdd440caf80bbcbe"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",

@@ -2585,5 +2585,23 @@
       "agent_declarations": 2
     },
     "qualification": "Original arrays are the historical package-only subset; complete tracked coverage is in the linked snapshot. Coverage is not compatibility approval."
+  },
+  "native_storefront_qualification": {
+    "record": "2026-11-06-native-storefront.md",
+    "evidence": "2026-11-06-native-storefront-smoke.json",
+    "action": "contrib/storefront",
+    "tools": [
+      "storefront__faq",
+      "storefront__search_products"
+    ],
+    "qualified_scope": "existing app-local mock fixed-data reads, generic native adapter; actual GPT-4.1 browser permission/restart/reload cohort",
+    "skill_renames": {
+      "product_faq": "product-faq",
+      "product_search": "product-search"
+    },
+    "full_leadgen_app_cutover": false,
+    "legacy_tool_names_and_results_preserved": true,
+    "provider_gap_adapter": "jvagent/harness/native_model.py:7; remove after same cohort passes upstream default",
+    "open_recovery_finding": "Four pre-fix duplicate capability-load receipts remain started; no silent reconciliation"
   }
 }

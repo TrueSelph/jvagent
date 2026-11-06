@@ -624,3 +624,16 @@ ModelRetry address the excessive-timeout failure. Uploaded documents, general
 editing/conversion, hostile inputs, production images and interrupted-script
 recovery remain open. The unchanged reference configuration now has 10 blockers;
 this does not qualify stored-state cutover or full DOCX feature parity.
+
+## App-local Storefront and provider visibility
+
+The [Storefront record](2026-11-06-native-storefront.md) qualifies two mock reads
+and their canonical existing SOPs through the generic native adapter. Actual
+GPT-4.1 success/permission/restart/reload evidence and outgoing SDK tool-schema
+regressions cover a narrow public profile override. This is separate from full
+LeadGen capture/sync migration, and does not lower the ten remaining reference
+configuration blockers. Four pre-fix duplicate capability-load receipts remain
+unresolved in retained failed sessions; no automatic recovery is inferred.
+The latest configured Python 3.12 native/host/real-PG lane passes 688; Python 3.11
+passes 682 plus the six optional Docker cases in its configured affected slice.
+See the dated record for superseding counts and precise scope.

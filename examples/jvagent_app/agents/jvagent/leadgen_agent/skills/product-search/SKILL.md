@@ -1,5 +1,5 @@
 ---
-name: product_search
+name: product-search
 description: >-
   Find, compare, or browse products in the storefront catalog by name,
   category, or need (analytics, dashboards, data warehouse, ETL, alerting,
@@ -20,6 +20,10 @@ tags:
 Use this when the visitor wants to find a product, compare options, or browse
 what's available ("what do you have for churn?", "show me your dashboard tools",
 "which product fits an 8-person data team?").
+
+For a mixed request, complete the product lookup and use the `product-faq` skill
+for trial, subscription, or support questions. Keep catalog product prices
+distinct from subscription tiers returned by the FAQ.
 
 1. Call `storefront__search_products` with a `query` built from the need the
    visitor described (a product name, a category, or the problem they're solving).

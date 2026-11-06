@@ -2620,3 +2620,23 @@ and eleven source/Git regressions prevent silent coverage drift. Source discover
 not runtime qualification or deletion approval; no harness runtime changes or new
 model/browser coverage are claimed. App-local consumer/extension and handoff
 compatibility remain explicit cutover work alongside the ten reference blockers.
+
+## App-local Storefront and GPT-4.1 tool visibility — 2026-11-06
+
+[Qualification](2026-11-06-native-storefront.md) admits the existing app-local
+mock FAQ/catalog through the generic native adapter with read metadata, canonical
+skill names and clarified domain SOPs. Tools/JSON contracts remain stable; no
+Storefront executor or dependency is added. Browser testing exposes repeated
+capability loading with upstream incremental tool definitions; a narrow public
+GPT-4.1 profile override restores ordinary declarations. Its SDK HTTP regression
+fails under the unmodified profile. A subsequent wrong product answer remains
+recorded before SOP correction. Final compound success, live FAQ denial with zero
+body calls, allowed catalog, restored-access restart and unchanged reload pass.
+Eight retained turns reconcile 22 requests, 25,750 reported tokens and USD 0.043412
+estimated, zero unknown usage. Native/host/real-PG passes 688 on Python 3.12; 3.11
+passes 682 plus six optional cases covered by the configured 55-case script/affected
+slice. Final affected tests pass 34 each. Four pre-fix unfinished capability-load
+receipts remain an explicit recovery finding. Full LeadGen app cutover, handoff
+contract equivalence, remaining migration, legacy deletion and enterprise gates
+remain open. The ten reference-agent blockers are not reduced by this separate
+app-local qualification.
