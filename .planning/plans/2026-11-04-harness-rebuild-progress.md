@@ -2718,3 +2718,25 @@ Docker/clock/callback lanes pass 784 per Python 3.11/3.12. Durable background
 callback scheduling/acknowledgement/idempotency, unknown writes/recovery, hard DNS
 worker bounds and customer endpoints remain open. Reference blockers remain nine;
 retained-state cutover, legacy removal and enterprise qualification are unfinished.
+
+## WhatsApp migration boundary audit — 2026-11-06
+
+[Offline assessment](2026-11-06-native-whatsapp-boundary.md) reproduces weak
+channel-only sender gating, successful envelopes without provider message IDs,
+and domain refusals returned as ordinary tool text. Four native admission probes
+confirm that unadapted legacy declarations remain refused. This is not an HTTP
+exploit reproduction or Meta delivery qualification. Ten direct-Action probes
+use local async provider stubs; no network, model calls or messages to people.
+Four added admission regressions fail when the qualification guard is removed;
+the source is then restored exactly. The complete WhatsApp slice plus admission regressions
+passes 196 cases on each Python 3.11/3.12; the 14 offline probes also repeat on
+both versions.
+
+The implementation order is now explicit: authenticated provider sender origin,
+reviewed SDK mutation adapters and acknowledgements, uncertain-send handling,
+canonical skills/channel policy, then actual-model browser and provider gates.
+The raw-JSON business-completion SOP claim also requires correction during that
+migration. No runtime or skill assets change in this assessment round; no new
+browser qualification is claimed. Nine reference blockers, retained-state
+cutover, legacy removal and enterprise gates remain open. Published parent
+9f7dfbf9 has all nine remote checks green; new-head checks are separate.

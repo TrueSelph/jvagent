@@ -690,3 +690,10 @@ Docker/clock/callback lanes pass 784 per Python 3.11/3.12. This does not establi
 durable background callback dispatch, delivery reconciliation, retry/idempotency,
 uncertain-write recovery, hard DNS worker bounds or customer endpoint qualification.
 The nine reference blockers and remaining migration/deletion/release gates stay open.
+
+WhatsApp migration now has an [offline boundary assessment](2026-11-06-native-whatsapp-boundary.md)
+and hashed probe results. Unadapted declarations remain refused; four admission
+regressions are mutation-checked. Sender provenance, provider acknowledgement,
+uncertain effects and raw-form completion claims must be resolved before native
+send admission. This adds no runtime/provider/browser qualification and reduces
+none of the nine reference blockers.
