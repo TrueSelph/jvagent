@@ -34,8 +34,9 @@
       "path": "jvagent/action/code_execution/info.yaml",
       "name": "jvagent/code_execution",
       "archetype": "CodeExecutionAction",
-      "disposition": "Preserve extension contract; qualify workspace sandbox/effect boundary before enabling",
-      "qualification": "pending"
+      "disposition": "Preserve Action and bash declaration; replace execution/staging with official SDK Docker/Shell; retire old executor after file/artifact/state migration",
+      "qualification": "partial development profile: triage/container/permissions/restart; persistent storage and per-user artifact parity remain open",
+      "qualification_evidence": "2026-11-06-native-script-sandbox.md"
     },
     {
       "path": "jvagent/action/email_action/info.yaml",
@@ -2433,5 +2434,32 @@
       "Child/background/distributed planning and broader deployment",
       "Legacy planner and engine deletion; full release qualification"
     ]
+  },
+  "native_script_sandbox_increment": {
+    "evidence": "2026-11-06-native-script-sandbox.md",
+    "reference_report": "2026-11-06-native-script-sandbox-reference-blockers.json",
+    "reference_blocked_requirements": 17,
+    "qualified": [
+      "Official DockerSandbox/Shell and public renamed toolset retain CodeExecutionAction bash name",
+      "Bounded immutable script snapshot, named host permission and SDK mutation intent before staging/execution",
+      "Graph-bound image/limits/script hashes; no legacy executor fallback",
+      "Actual GPT-4.1 triage, non-root/network/host-file/key boundary checks and conversation isolation",
+      "Parent-failing host-notice workspace regression; fresh denial/restart/accepted-input readback preserves workspace",
+      "Completed cache restore leaves SDK records, policy and spend unchanged"
+    ],
+    "remaining": [
+      "Bounded persistent storage and stopped-container semantics",
+      "Per-user FileInterface parity, artifact export/delivery and all script dependencies/specifications",
+      "Retained state and workspace migration",
+      "Container cleanup/expiry, quotas and process crash/timeout/cancellation qualification",
+      "Script-effect operator reconciliation and child/background scripts",
+      "Provider/deployment/security/evaluation gates and legacy removal"
+    ],
+    "legacy_removal_candidates": [
+      "jvagent/action/code_execution/executor.py",
+      "CodeExecutionAction.executor/stage_skill/run_bash",
+      "Mixed old runtime/isolation staging responsibilities after all callers are qualified"
+    ],
+    "optimization_claim": false
   }
 }

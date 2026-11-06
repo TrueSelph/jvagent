@@ -1,5 +1,12 @@
 # Native skill catalog
 
+Script-backed `library:triage` can use the optional official Docker/Shell path
+declared by CodeExecutionAction. Named host permission and explicit native image
+policy are required; no legacy subprocess fallback is permitted. This does not
+qualify artifact delivery, persistent storage or all Claude-standard skills.
+See the [development profile](native-script-sandbox.md) and
+`jvagent/action/code_execution/code_execution_action.py:84`.
+
 Optional `context.planning: true` enables the official SDK `write_plan` and
 `read_plan` tools with a scoped graph-backed [native plan](../GLOSSARY.md#native-plan).
 Keep host permissions explicit; skill metadata does not authorize plan writes.

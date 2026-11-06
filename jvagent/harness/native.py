@@ -43,6 +43,7 @@ def build_native_agent(
     model_settings: dict[str, Any] | None = None,
     allow_mutations: bool = True,
     plan_store: Any = None,
+    script_sandbox: Any = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -75,16 +76,18 @@ def build_native_agent(
     if context_keep_tokens >= context_max_tokens:
         raise ValueError("Context retention must be smaller than its trigger")
     planning_names = {"write_plan", "read_plan"} if plan_store is not None else set()
-    if any(tool.name in planning_names for tool in tools) or any(
-        toolset.declared_names.intersection(planning_names) for toolset in toolsets
+    script_names = {"code_execution__bash"} if script_sandbox is not None else set()
+    reserved_names = planning_names | script_names
+    if any(tool.name in reserved_names for tool in tools) or any(
+        toolset.declared_names.intersection(reserved_names) for toolset in toolsets
     ):
-        raise ValueError("Planning tool names are reserved for the official capability")
+        raise ValueError("Tool names are reserved for official capabilities")
     catalog = NativeSkillCatalog(
         primary=skill_directory,
         directories=skill_directories,
         action_bases=action_skill_bases,
         available_actions=available_actions,
-        available_tools=[*planning_names, *(tool.name for tool in tools)]
+        available_tools=[*reserved_names, *(tool.name for tool in tools)]
         + [name for toolset in toolsets for name in toolset.declared_names]
         + (["delegate_task"] if delegates else []),
         channel=channel,
@@ -95,9 +98,11 @@ def build_native_agent(
     if len({tool.name for tool in tools}) != len(tools):
         raise ValueError("Duplicate Action tool names")
 
-    mutation_names = {
-        tool.name for tool in tools if isinstance(tool, NativeMutationTool)
-    } | ({"write_plan"} if plan_store is not None else set())
+    mutation_names = (
+        {tool.name for tool in tools if isinstance(tool, NativeMutationTool)}
+        | ({"write_plan"} if plan_store is not None else set())
+        | script_names
+    )
 
     def adapt(original: JVTool) -> Any:
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
@@ -288,6 +293,15 @@ def build_native_agent(
             tool_def: Any,
             args: dict[str, Any],
         ) -> dict[str, Any]:
+            if call.tool_name in script_names:
+                reject_model_authority_fields(args)
+                if not allow_mutations:
+                    raise MutationAccessDenied("Recovery continuation is read-only")
+                if not catalog.allows_tool(ctx, call.tool_name):
+                    raise ModelRetry("Load an authorized script skill first")
+                if not await access_check(call.tool_name):
+                    raise MutationAccessDenied("Script execution access denied")
+                script_sandbox.check_arguments(args)
             if call.tool_name in planning_names:
                 reject_model_authority_fields(args)
                 if call.tool_name == "write_plan" and not allow_mutations:
@@ -405,7 +419,11 @@ def build_native_agent(
     from pydantic_ai_harness.compaction import SummarizingCompaction
 
     capabilities = [
-        LocalWorkspace(directory.parent, read_only=True),
+        *(
+            []
+            if script_sandbox is not None
+            else [LocalWorkspace(directory.parent, read_only=True)]
+        ),
         *skill_libraries,
         SelectedSkill(),
         # A failed summary is not an attempted parent request. Run compaction
@@ -420,14 +438,44 @@ def build_native_agent(
         ),
         *run_services,
     ]
+    if script_sandbox is not None or plan_store is not None:
+        from pydantic_ai.capabilities import Hooks
+        from pydantic_ai_harness.step_persistence import annotate_tool_effect
+
+    if script_sandbox is not None:
+        if step_store is None:
+            raise ValueError("Scripts require official SDK step persistence")
+        assets = script_sandbox.assets(catalog.directories)
+
+        async def script_intent(
+            ctx: Any, *, call: Any, tool_def: Any, args: Any
+        ) -> Any:
+            if call.tool_name in script_names:
+                await annotate_tool_effect(
+                    step_store,
+                    ctx,
+                    effect_summary="jv:mutation:script:v1",
+                    idempotency_key=f"{ctx.run_id}/{call.tool_call_id}",
+                )
+                effect = await step_store.get_tool_effect(
+                    run_id=ctx.run_id, tool_call_id=call.tool_call_id
+                )
+                if (
+                    effect is None
+                    or effect.status != "started"
+                    or effect.effect_summary != "jv:mutation:script:v1"
+                ):
+                    raise RuntimeError("Script execution lacks its SDK mutation record")
+            return args
+
+        capabilities.append(Hooks(before_tool_execute=script_intent))
+        capabilities.extend(script_sandbox.capabilities(assets))
     if plan_store is not None:
         if step_store is None:
             raise ValueError(
                 "Persistent planning requires official SDK step persistence"
             )
-        from pydantic_ai.capabilities import Hooks
         from pydantic_ai_harness.planning import Planning
-        from pydantic_ai_harness.step_persistence import annotate_tool_effect
 
         async def plan_intent(ctx: Any, *, call: Any, tool_def: Any, args: Any) -> Any:
             if call.tool_name == "write_plan":

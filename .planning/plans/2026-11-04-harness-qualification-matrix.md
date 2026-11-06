@@ -506,3 +506,16 @@ regressions; 508 native/PG tests pass per Python 3.11/3.12. This qualifies the
 optional root write_plan/read_plan surface and fresh configuration conversion.
 It does not migrate retained legacy plan tasks or qualify uncertain-plan operator
 reconciliation, child/background/distributed planning, engine deletion or release.
+
+## Official Docker/Shell script profile — 2026-11-06
+
+[Qualification](2026-11-06-native-script-sandbox.md): actual bundled triage,
+non-root/network/host-file/key boundaries, live named permission denial,
+conversation isolation and SDK workspace readback after backend restart. A retained
+pre-fix semantic failure exposed a lost ref on a synthetic notice; the regression
+fails on the parent and fresh post-fix denial/restart/continuation preserves files.
+Cache loss leaves graph/usage/refs unchanged. Native/PG suites pass 530 per Python
+3.11/3.12 with reviewed local Docker image enabled. This qualifies a development
+profile, not persistent container storage, per-user FileInterface/artifact parity,
+all script specifications, lifecycle/quotas, script operator recovery, broader
+deployments, legacy deletion or enterprise release.

@@ -271,6 +271,28 @@ def plan_harness_migration(
     if owner["action"] == "jvagent/native_harness":
         report["status"] = "already_native"
         return report, None
+    for action in actions:
+        if action["action"] != "jvagent/code_execution":
+            continue
+        configured = action.get("context", {})
+        if (
+            not isinstance(configured, dict)
+            or type(configured.get("enabled", False)) is not bool
+        ):
+            blockers.append("Code execution Action declaration requires review")
+        elif configured.get("enabled", False):
+            from jvagent.harness.script_sandbox import NativeScriptSandbox
+
+            try:
+                NativeScriptSandbox.from_action_context(configured)
+            except (ValueError, TypeError):
+                blockers.append(
+                    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate"
+                )
+            else:
+                report["required_review"].append(
+                    "Native script workspace durability, artifact delivery and retained-state migration remain required"
+                )
     if set(owner) - {"action", "context"}:
         blockers.append("Execution Action has unqualified declaration fields")
     context = owner.get("context", {})

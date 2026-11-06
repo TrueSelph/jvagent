@@ -61,6 +61,38 @@ def source(app: Path) -> Path:
     return app / "agents/demo/bot/agent.yaml"
 
 
+@pytest.mark.parametrize(
+    "settings,blocked",
+    [
+        ({"enabled": False}, False),
+        ({"enabled": True}, True),
+        ({"enabled": True, "native_image": "python:latest"}, True),
+        ({"enabled": True, "native_image": "python@sha256:" + "0" * 64}, False),
+        (
+            {
+                "enabled": True,
+                "native_image": "python@sha256:" + "0" * 64,
+                "memory_mb": 0,
+            },
+            True,
+        ),
+    ],
+)
+def test_script_executor_migration_requires_explicit_native_policy(
+    app: Path, settings: Any, blocked: bool
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"].append(
+        {"action": "jvagent/code_execution", "context": settings}
+    )
+    source(app).write_text(yaml.safe_dump(document))
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert (candidate is None) == blocked
+    assert bool(report["blockers"]) == blocked
+    assert source(app).read_bytes() == before
+
+
 def change(app: Path, **settings: Any) -> None:
     document = yaml.safe_load(source(app).read_text())
     document["actions"][0]["context"].update(settings)

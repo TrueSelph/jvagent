@@ -24,7 +24,7 @@ def admit_skill(
         metadata = yaml.safe_load(sections[1])
     if not isinstance(metadata, dict) or not isinstance(metadata.get("name"), str):
         raise ValueError("Skill requires a name")
-    if metadata.get("spec", "jv") != "jv":
+    if metadata.get("spec", "jv") not in ("jv", "claude"):
         raise ValueError("This skill specification requires a compatibility adapter")
     for field in (
         "task_lock",
@@ -59,6 +59,13 @@ def admit_skill(
     if missing:
         raise ValueError(f"Required Actions unavailable: {', '.join(missing)}")
     required_tools = names("requires-tools")
+    if metadata.get("spec") == "claude" and (
+        "CodeExecutionAction" not in required_actions
+        or "code_execution__bash" not in required_tools
+    ):
+        raise ValueError(
+            "Script skills require explicit native execution prerequisites"
+        )
     if set(required_tools) - set(available_tools):
         raise ValueError("Required tools unavailable")
     allowed = names("allowed-tools")

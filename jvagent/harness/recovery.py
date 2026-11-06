@@ -39,6 +39,23 @@ class NativeHistory:
         yield self.source
 
 
+def _host_notice(
+    messages: list[ModelMessage], text: str, *, run_id: str | None = None
+) -> ModelResponse:
+    """Carry only the latest authorized SDK workspace through a host notice.
+
+    Core intentionally uses the most recent response's ref, including None.
+    A synthetic notice must not reset it or resurrect an earlier cleared ref.
+    Original SDK messages remain unchanged.
+    """
+    last = next((m for m in reversed(messages) if isinstance(m, ModelResponse)), None)
+    return ModelResponse(
+        parts=[TextPart(text)],
+        run_id=run_id,
+        workspace_ref=last.workspace_ref if last is not None else None,
+    )
+
+
 async def history_for_new_turn(
     previous: Any,
     *,
@@ -112,7 +129,7 @@ async def history_for_new_turn(
         messages.extend(
             [
                 ModelRequest(parts=[UserPromptPart(item.utterance)]),
-                ModelResponse(parts=[TextPart(RECOVERY_NOTICE)]),
+                _host_notice(messages, RECOVERY_NOTICE),
             ]
         )
     if notices:
@@ -305,7 +322,5 @@ async def _history_for_run(
     if previous.has_emitted() and previous.response:
         # This is the observed JV response (usually a canned failure notice),
         # not an unacknowledged model response from the failed run's snapshots.
-        messages.append(
-            ModelResponse(parts=[TextPart(previous.response)], run_id=identity)
-        )
+        messages.append(_host_notice(messages, previous.response, run_id=identity))
     return messages, {"source_run_id": identity, "frontier": "accepted_input"}

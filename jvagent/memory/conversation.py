@@ -116,6 +116,11 @@ class Conversation(DeferredSaveMixin, Node):
         default_factory=dict,
         description="Official Harness spend counters and replay tokens",
     )
+    native_script_policy: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Immutable host policy for a conversation's SDK script workspace.",
+    )
     native_plan: Dict[str, Any] = attribute(
         default_factory=dict,
         protected=True,
@@ -371,6 +376,7 @@ class Conversation(DeferredSaveMixin, Node):
         self.last_interaction_at = fresh.last_interaction_at
         self.native_spend = fresh.native_spend
         object.__setattr__(self, "native_plan", fresh.native_plan)
+        object.__setattr__(self, "native_script_policy", fresh.native_script_policy)
         object.__setattr__(self, "native_history_import", fresh.native_history_import)
 
         from jvagent.core.app import App

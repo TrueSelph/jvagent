@@ -1,6 +1,7 @@
 """Fresh user turns after settled failures never replay undelivered output."""
 
 import asyncio
+from copy import deepcopy
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -30,6 +31,7 @@ async def failed_turn(
     paid: bool = True,
     validation: bool = False,
     delegated: bool = False,
+    seeded_workspace: bool = False,
 ) -> Interaction:
     directory = tmp_path / "example"
     directory.mkdir(exist_ok=True)
@@ -104,6 +106,21 @@ async def failed_turn(
         def reject(output: str) -> str:
             raise RuntimeError("Validation aborted")
 
+    history = []
+    if seeded_workspace:
+        seed = build_native_agent(
+            FunctionModel(
+                lambda messages, info: ModelResponse(parts=[TextPart("seed")])
+            ),
+            skill_directory=directory,
+            tools=[],
+            access_check=check,
+            instructions="Seed the workspace",
+        )
+        result = await seed.run("Seed", run_id="seed", conversation_id="session")
+        history = result.all_messages()
+        assert any(isinstance(m, ModelResponse) and m.workspace_ref for m in history)
+
     with pytest.raises(UsageLimitExceeded if paid and not validation else RuntimeError):
         await run_native_agent(
             agent,
@@ -111,12 +128,44 @@ async def failed_turn(
             conversation_id="session",
             run_id="failed",
             max_cost_usd="2" if validation else "0.00001",
+            message_history=history,
         )
     previous.native_run = {**previous.native_run, "status": "failed"}
     previous.response = "The previous request could not complete."
     previous.mark_emitted()
     await previous.save()
     return previous
+
+
+@pytest.mark.asyncio
+async def test_accepted_input_notice_keeps_the_authorized_sdk_workspace(
+    tmp_path: Path,
+) -> None:
+    previous = await failed_turn(tmp_path, validation=True, seeded_workspace=True)
+    original = deepcopy(previous.native_steps)
+    recovered = await history_for_new_turn(
+        previous, conversation_id="conversation", user_id="caller", session_id="session"
+    )
+    responses = [m for m in recovered.messages if isinstance(m, ModelResponse)]
+    assert responses[-1].parts[0].content == previous.response
+    assert responses[-1].workspace_ref == responses[-2].workspace_ref
+    assert responses[-1].workspace_ref is not None
+    assert previous.native_steps == original
+
+
+def test_host_notice_does_not_resurrect_an_explicitly_cleared_workspace() -> None:
+    from pydantic_ai.messages import WorkspaceRef
+
+    from jvagent.harness.recovery import _host_notice
+
+    old = ModelResponse(
+        parts=[TextPart("old")],
+        workspace_ref=WorkspaceRef(provider="docker", id="owned"),
+    )
+    cleared = ModelResponse(parts=[TextPart("cleared")], workspace_ref=None)
+    assert _host_notice([old], "notice").workspace_ref == old.workspace_ref
+    assert _host_notice([old, cleared], "notice").workspace_ref is None
+    assert cleared.workspace_ref is None and old.workspace_ref is not None
 
 
 @pytest.mark.asyncio

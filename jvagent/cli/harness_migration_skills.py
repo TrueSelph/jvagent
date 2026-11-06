@@ -151,8 +151,20 @@ def migrate_skill_selection(
                 continue
             directory, metadata = member
             try:
-                if name != directory.name or metadata.get("spec", "jv") != "jv":
+                if name != directory.name or metadata.get("spec", "jv") not in (
+                    "jv",
+                    "claude",
+                ):
                     raise ValueError("Selected skill needs name/spec migration")
+                if metadata.get("spec") == "claude" and (
+                    not isinstance(metadata.get("requires-actions"), list)
+                    or not isinstance(metadata.get("requires-tools"), list)
+                    or "CodeExecutionAction" not in metadata.get("requires-actions", [])
+                    or "code_execution__bash" not in metadata.get("requires-tools", [])
+                ):
+                    raise ValueError(
+                        "Script skill needs explicit execution prerequisites"
+                    )
                 # Native JV projection also requires canonical, non-BOM frontmatter.
                 with (directory / "SKILL.md").open("rb") as stream:
                     if stream.read(4) != b"---\n":

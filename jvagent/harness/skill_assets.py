@@ -95,7 +95,9 @@ def project_skill(
         own = yaml.safe_load(sections[1])
         if not isinstance(own, dict) or not isinstance(own.get("name"), str):
             raise ValueError("Skill requires a name")
-        if own.get("spec", "jv") != "jv":
+        if own.get("spec", "jv") not in ("jv", "claude") or (
+            own.get("spec") == "claude" and own.get("extends")
+        ):
             raise ValueError("Inherited skill specification requires an adapter")
         for key in _UNQUALIFIED:
             if own.get(key):

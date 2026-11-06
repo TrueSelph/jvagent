@@ -19,16 +19,15 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Annotated, Any, List, Optional
+from typing import TYPE_CHECKING, Annotated, Any, List
 
 from jvspatial.core.annotations import attribute
+from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
-from jvagent.action.code_execution.executor import (
-    ExecRequest,
-    Executor,
-    SubprocessExecutor,
-)
+
+if TYPE_CHECKING:
+    from jvagent.action.code_execution.executor import Executor
 from jvagent.core.app import App
 from jvagent.core.sandbox import (
     is_local_file_interface,
@@ -78,11 +77,39 @@ class CodeExecutionAction(Action):
     sandbox_root: str = attribute(
         default="", description="Override filesystem root (else env/default)."
     )
+    native_image: str = attribute(
+        default="", description="Reviewed image@sha256 digest for native SDK scripts."
+    )
 
-    _executor: Optional[Executor] = None
+    async def get_native_script_sandbox(self) -> Any:
+        """Declare SDK-owned execution; never fall back to the legacy executor."""
+        if not self.enabled:
+            return None
+        from jvagent.harness.script_sandbox import NativeScriptSandbox
+
+        return NativeScriptSandbox.from_action_context(
+            {
+                name: getattr(self, name)
+                for name in (
+                    "native_image",
+                    "timeout",
+                    "max_output_bytes",
+                    "network",
+                    "sandbox_root",
+                    "memory_mb",
+                    "cpu_seconds",
+                    "max_procs",
+                    "max_file_mb",
+                )
+            }
+        )
+
+    _executor: Any = PrivateAttr(default=None)
 
     def executor(self) -> Executor:
         """The execution backend. Isolation backend when runtime requires it."""
+        from jvagent.action.code_execution.executor import SubprocessExecutor
+
         if self._executor is None:
             inner: Executor = SubprocessExecutor()
             from jvagent.harness.isolation import executor_for_backend
@@ -217,6 +244,8 @@ class CodeExecutionAction(Action):
         return await self.run_bash(command)
 
     async def run_bash(self, command: str) -> str:
+        from jvagent.action.code_execution.executor import ExecRequest
+
         if not self.enabled:
             return "(code execution is disabled for this agent)"
         cmd = (command or "").strip()

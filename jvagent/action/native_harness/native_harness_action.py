@@ -191,8 +191,17 @@ class NativeHarnessAction(InteractAction):
         tools: list[Any] = []
         toolsets: list[Any] = []
         action_skill_bases: dict[str, Path] = {}
+        script_sandbox = None
         for action in actions:
             if isinstance(action, InteractAction):
+                continue
+            script_provider = getattr(action, "get_native_script_sandbox", None)
+            if script_provider is not None:
+                declared = await script_provider()
+                if declared is not None:
+                    if script_sandbox is not None:
+                        raise ValueError("Configure only one native script sandbox")
+                    script_sandbox = declared
                 continue
             base_provider = getattr(action, "get_native_skill_bases", None)
             if base_provider is not None:
@@ -222,6 +231,9 @@ class NativeHarnessAction(InteractAction):
                 host,
                 label=label,
                 tool_name=label,
+                requires_tool_permission=(
+                    script_sandbox is not None and label == "code_execution__bash"
+                ),
                 user_id=caller_user_id,
                 channel=caller_channel,
             )
@@ -373,6 +385,19 @@ class NativeHarnessAction(InteractAction):
             history_source.get("frontier") == "operator_verified_effect"
         )
         spend_store = ConversationSpendStore(conversation)
+        if script_sandbox is not None:
+            await script_sandbox.bind_policy(
+                conversation,
+                agent_id=host.id,
+                user_id=caller_user_id,
+                session_id=visitor.session_id,
+                lock=spend_store.lock,
+                assets=script_sandbox.assets(
+                    [skill_directory]
+                    if skill_directory is not None
+                    else skill_directories
+                ),
+            )
         plan_store = None
         planning = getattr(self, "planning", False)
         if not isinstance(planning, bool):
@@ -390,6 +415,7 @@ class NativeHarnessAction(InteractAction):
         agent = build_native_agent(
             self.model,
             plan_store=plan_store,
+            script_sandbox=script_sandbox,
             allow_mutations=not recovery_read_only,
             model_settings=self.model_settings,
             skill_directory=skill_directory,

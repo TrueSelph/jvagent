@@ -2446,3 +2446,21 @@ Native/PG suites pass 508 per Python 3.11/3.12. Configuration mapping reduces th
 reference app from 18 to 17 blockers; it still cannot cut over. Retained legacy
 plans/tasks, uncertain-plan operator reconciliation, other compatibility classes,
 distributed deployment, engine deletion and enterprise gates remain open.
+
+## Official Docker/Shell script profile — 2026-11-06
+
+[Record](2026-11-06-native-script-sandbox.md): CodeExecutionAction declares an
+optional SDK-owned container/shell profile, retaining its bash name and the
+bundled triage script. Host scope, named permissions, image/resource policy,
+bounded asset staging and SDK mutation effects remain explicit. Real browser
+tests exposed eager allocation and a synthetic host notice resetting SDK workspace
+identity; lazy staging and preserved authorized notice refs repair them. The
+workspace regression fails against published parent. Fresh post-fix denial,
+restart and readback keep the original ref/files, with zero-spend cache restoration.
+All attempts remain recorded: eleven turns, nineteen requests, 21,414 reported
+tokens, USD 0.041412 estimated, including two expected denials and one pre-fix
+semantic failure. Native/PG suites pass 530 per Python version. Reference migration
+still has 17 blockers, with a specific code-execution policy blocker replacing one
+skill-format blocker. Persistent bounded storage, per-user file/artifact parity,
+container lifecycle/quotas, script-effect reconciliation, legacy removal and
+enterprise qualification remain open. No overall optimization is claimed.

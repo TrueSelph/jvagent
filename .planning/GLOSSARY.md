@@ -12,6 +12,15 @@ TaskStore work. Sources: `jvagent/harness/native.py:423`,
 `jvagent/harness/plan_store.py:11`. See the
 [qualification boundary](plans/2026-11-06-native-planning.md).
 
+### Native script workspace
+The official Harness workspace used by the optional native CodeExecution
+profile. SDK messages carry its container reference; the Conversation graph
+retains host authorization policy and SDK execution records. The current bounded
+tmpfs development profile is separate from per-user FileInterface storage and
+does not establish container-restart durability. Sources:
+`jvagent/harness/script_sandbox.py:136`, `:163`. See the
+[storage and migration boundary](runbooks/native-script-sandbox.md).
+
 ### Action
 Pluggable component that extends an agent. Subclass of jvspatial `Node`. Source: [`jvagent/action/base.py:49`](../jvagent/action/base.py). Has lifecycle hooks (`on_register`, `on_enable`, etc.), attribute config, optional endpoints, optional tools (via `get_tools()`) for the agentic loop. Lives in a directory under `jvagent/action/{namespace}/{action_name}/`. See [`action-authoring.md`](reference/action-authoring.md).
 
