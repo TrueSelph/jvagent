@@ -303,3 +303,72 @@ async def rollback_historical_import(
             raise ValidationError(
                 "Historical rollback requires the unchanged pre-execution frontier"
             ) from None
+
+
+class EffectApprovalRequest(BaseModel):
+    """Approve inspected facts, without accepting caller-supplied tool results."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence: str = Field(min_length=1, max_length=500)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+@endpoint(
+    "/actions/{action_id}/native-recovery/{interaction_id}/effect",
+    methods=["GET"],
+    auth=True,
+    roles=["admin"],
+    tags=["Native recovery"],
+)
+async def inspect_native_effect(action_id: str, interaction_id: str) -> dict[str, Any]:
+    """Inspect domain evidence; never execute or repair the original mutation."""
+    from jvagent.harness.effect_recovery import inspect_effect_recovery
+    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
+
+    _, _, conversation = await _scope(action_id, interaction_id)
+    async with conversation_mutation_lock(conversation.id):
+        _, interaction, conversation = await _scope(action_id, interaction_id)
+        try:
+            inspection = await inspect_effect_recovery(interaction, conversation)
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            raise ValidationError(
+                "Effect state requires separate reconciliation"
+            ) from None
+    return inspection.facts
+
+
+@endpoint(
+    "/actions/{action_id}/native-recovery/{interaction_id}/effect-approval",
+    methods=["POST"],
+    auth=True,
+    roles=["admin"],
+    tags=["Native recovery"],
+)
+async def apply_effect_approval(
+    request: Request,
+    action_id: str,
+    interaction_id: str,
+    approval: EffectApprovalRequest,
+) -> dict[str, Any]:
+    """Persist a server-bound decision; the next explicit user turn resumes."""
+    try:
+        approval = EffectApprovalRequest.model_validate(approval)
+    except PydanticValidationError:
+        raise ValidationError("A complete effect approval is required") from None
+    from jvagent.harness.effect_recovery import approve_effect_recovery
+    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
+
+    actor = _operator(request)
+    _, _, conversation = await _scope(action_id, interaction_id)
+    async with conversation_mutation_lock(conversation.id):
+        _, interaction, conversation = await _scope(action_id, interaction_id)
+        try:
+            receipt = await approve_effect_recovery(
+                interaction, conversation, actor=actor, **approval.model_dump()
+            )
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            raise ValidationError(
+                "Effect facts changed or require separate reconciliation"
+            ) from None
+    return {"receipt": receipt}

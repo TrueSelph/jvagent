@@ -41,6 +41,7 @@ def build_native_agent(
     context_max_tokens: int = 32_000,
     context_keep_tokens: int = 16_000,
     model_settings: dict[str, Any] | None = None,
+    allow_mutations: bool = True,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -61,6 +62,8 @@ def build_native_agent(
     )
     from jvagent.harness.skill_assets import project_skill, projected_workspace
 
+    if not isinstance(allow_mutations, bool):
+        raise ValueError("Mutation admission must be a boolean")
     settings = validate_model_settings(model_settings)
 
     if spend_observer is not None and spend_store is None:
@@ -86,8 +89,14 @@ def build_native_agent(
     if len({tool.name for tool in tools}) != len(tools):
         raise ValueError("Duplicate Action tool names")
 
+    mutation_names = {
+        tool.name for tool in tools if isinstance(tool, NativeMutationTool)
+    }
+
     def adapt(original: JVTool) -> Any:
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
+            if isinstance(original, NativeMutationTool) and not allow_mutations:
+                raise MutationAccessDenied("Recovery continuation is read-only")
             reject_model_authority_fields(arguments)
             if not catalog.allows_tool(ctx, original.name):
                 raise ModelRetry("Load an authorized skill before calling this tool")
@@ -112,16 +121,26 @@ def build_native_agent(
                 from pydantic_ai.exceptions import ToolRetryError
                 from pydantic_ai_harness.step_persistence import annotate_tool_effect
 
+                scope = await original.recovery_scope()
+                effect_key = f"{ctx.run_id}/{ctx.tool_call_id}" + (
+                    f"/{scope}" if scope is not None else ""
+                )
                 await annotate_tool_effect(
                     step_store,
                     ctx,
                     effect_summary=original.effect_summary,
-                    idempotency_key=f"{ctx.run_id}/{ctx.tool_call_id}",
+                    idempotency_key=effect_key,
                 )
                 effect = await step_store.get_tool_effect(
                     run_id=ctx.run_id, tool_call_id=ctx.tool_call_id
                 )
-                if effect is None or effect.effect_summary != original.effect_summary:
+                if (
+                    effect is None
+                    or effect.effect_summary != original.effect_summary
+                    or effect.status != "started"
+                    or effect.tool_name != original.name
+                    or effect.idempotency_key != effect_key
+                ):
                     raise RuntimeError("Mutation lacks an SDK effect record")
                 try:
                     result = await original.call(**call_arguments)
@@ -229,7 +248,8 @@ def build_native_agent(
             return [
                 tool
                 for tool in tool_defs
-                if tool.name not in allowed or catalog.allows_tool(ctx, tool.name)
+                if (allow_mutations or tool.name not in mutation_names)
+                and (tool.name not in allowed or catalog.allows_tool(ctx, tool.name))
             ]
 
         async def prepare_output_tools(
@@ -305,13 +325,22 @@ def build_native_agent(
     if step_store is not None:
         from pydantic_ai_harness import StepPersistence
 
+        from jvagent.core.execution_owner import native_worker_metadata
         from jvagent.harness.read_retries import ReadRetryReceipts
         from jvagent.harness.recovery import INPUT_CHECKPOINT_POLICY
 
         persistence = StepPersistence(
             store=step_store,
             capture_frontier=True,
-            metadata={"jv_checkpoint_policy": INPUT_CHECKPOINT_POLICY},
+            metadata={
+                "jv_checkpoint_policy": INPUT_CHECKPOINT_POLICY,
+                **native_worker_metadata(),
+                **(
+                    step_store.registration_metadata()
+                    if hasattr(step_store, "registration_metadata")
+                    else {}
+                ),
+            },
         )
         run_services.append(persistence)
         run_services.append(
@@ -444,6 +473,7 @@ async def run_native_agent(
     conversation_id: str,
     run_id: str,
     message_history: Sequence[Any] = (),
+    deferred_tool_results: Any = None,
     event_stream_handler: Any = None,
     max_requests: int = 20,
     max_tool_calls: int = 40,
@@ -484,6 +514,11 @@ async def run_native_agent(
         conversation_id=conversation_id,
         run_id=run_id,
         message_history=message_history,
+        **(
+            {"deferred_tool_results": deferred_tool_results}
+            if deferred_tool_results is not None
+            else {}
+        ),
         event_stream_handler=event_stream_handler,
         usage_limits=UsageLimits(
             cost_limit=cost_limit,

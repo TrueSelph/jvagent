@@ -471,3 +471,15 @@ five high entries; the full build/development audit adds critical Vitest/tinypoo
 entries. Both require exposure/mitigation evidence before release.
 This does not qualify shutdown, timer deployment, cross-tab rotation, broader
 providers/channels, packaging, migration or engine deletion.
+
+## Operator-verified local write continuation — 2026-11-06
+
+[Qualification](2026-11-06-native-effect-recovery.md): actual kill after physical
+write, stopped-owner/graph/resource validation, admin approval and public deferred
+SDK results permit a new read-only turn with blocked-input recall. Original
+SDK/file facts remain unchanged; a later ordinary turn writes normally. Member
+and anonymous admin-route denials, identical approval retries and zero-spend
+cache restoration have browser/SQL proof. Native/PG suites pass 485 per Python
+3.11/3.12. This supersedes the local single-write operator-continuation gap only.
+Unknown billing plus effects, other effect classes, distributed ownership,
+recovery-specific UI labelling, migration/removal and enterprise gates remain open.

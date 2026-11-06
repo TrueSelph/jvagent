@@ -19,7 +19,9 @@ def recovery_digest(interaction: Any) -> str:
         "user_id": interaction.user_id,
         "session_id": interaction.session_id,
         "run": {
-            k: v for k, v in interaction.native_run.items() if k != "usage_reserve"
+            k: v
+            for k, v in interaction.native_run.items()
+            if k not in {"usage_reserve", "effect_recovery"}
         },
         "steps": interaction.native_steps,
         "metrics": [

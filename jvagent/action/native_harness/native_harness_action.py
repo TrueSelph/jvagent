@@ -222,7 +222,13 @@ class NativeHarnessAction(InteractAction):
                 channel=caller_channel,
             )
 
+        recovery_read_only = False
+
         async def tool_access(tool: Any) -> bool:
+            from jvagent.harness.mutation_tools import NativeMutationTool
+
+            if recovery_read_only and isinstance(tool, NativeMutationTool):
+                return False
             return await is_tool_allowed(
                 host,
                 label=tool.access_label or tool.name,
@@ -329,9 +335,42 @@ class NativeHarnessAction(InteractAction):
                 )
             prompt = task_prompt(task_spec)
 
-        step_store = InteractionStepStore(interaction)
+        step_store = InteractionStepStore(interaction, agent_id=host.id)
+        from jvagent.harness.recovery import (
+            RECOVERY_NOTICE,
+            NativeHistoryError,
+            history_for_new_turn,
+        )
+
+        previous = await interaction.get_previous_interaction()
+        try:
+            prepared_history = await history_for_new_turn(
+                previous,
+                conversation_id=conversation.id,
+                user_id=visitor.user_id,
+                session_id=visitor.session_id,
+                conversation=conversation,
+            )
+        except NativeHistoryError:
+            interaction.native_run = {
+                "status": "blocked",
+                "reason": "predecessor_requires_reconciliation",
+                "predecessor_interaction_id": previous.id,
+            }
+            await interaction.save()
+            await responder.publish(
+                RECOVERY_NOTICE,
+                visitor=visitor,
+                metadata=delivery_metadata(visitor, interaction, self.model),
+            )
+            return
+        history, history_source = prepared_history
+        recovery_read_only = (
+            history_source.get("frontier") == "operator_verified_effect"
+        )
         agent = build_native_agent(
             self.model,
+            allow_mutations=not recovery_read_only,
             model_settings=self.model_settings,
             skill_directory=skill_directory,
             skill_directories=skill_directories,
@@ -347,6 +386,11 @@ class NativeHarnessAction(InteractAction):
                 part
                 for part in (
                     self.instructions,
+                    (
+                        "This is a read-only continuation after an operator verified an interrupted mutation. Acknowledge the verified state without issuing another mutation."
+                        if recovery_read_only
+                        else None
+                    ),
                     getattr(visitor, "_host_system_context", None),
                 )
                 if part
@@ -370,34 +414,6 @@ class NativeHarnessAction(InteractAction):
             ),
             channel=getattr(visitor, "channel", "default"),
         )
-        from jvagent.harness.recovery import (
-            RECOVERY_NOTICE,
-            NativeHistoryError,
-            history_for_new_turn,
-        )
-
-        previous = await interaction.get_previous_interaction()
-        try:
-            history, history_source = await history_for_new_turn(
-                previous,
-                conversation_id=conversation.id,
-                user_id=visitor.user_id,
-                session_id=visitor.session_id,
-                conversation=conversation,
-            )
-        except NativeHistoryError:
-            interaction.native_run = {
-                "status": "blocked",
-                "reason": "predecessor_requires_reconciliation",
-                "predecessor_interaction_id": previous.id,
-            }
-            await interaction.save()
-            await responder.publish(
-                RECOVERY_NOTICE,
-                visitor=visitor,
-                metadata=delivery_metadata(visitor, interaction, self.model),
-            )
-            return
         run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
         interaction.native_run = {
             "run_id": run_id,
@@ -422,6 +438,7 @@ class NativeHarnessAction(InteractAction):
                     conversation_id=visitor.session_id,
                     run_id=run_id,
                     message_history=history,
+                    deferred_tool_results=getattr(prepared_history, "deferred", None),
                     event_stream_handler=events,
                     max_cost_usd=self.max_run_cost_usd,
                     max_requests=self.max_requests,

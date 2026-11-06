@@ -32,6 +32,14 @@ class NativeMutationTool(Tool):
 
     effect_summary: ClassVar[str] = ""
 
+    async def recovery_scope(self) -> str | None:
+        """Optional domain resource fingerprint, captured in SDK run metadata."""
+        return None
+
+    async def verify_recovery(self, *, visitor: Any, arguments: dict[str, Any]) -> Any:
+        """Return a verified domain acknowledgement, without executing the write."""
+        raise ValueError("This mutation has no qualified recovery verifier")
+
     async def call(self, **kwargs: Any) -> ToolResult:
         if kwargs.get("visitor") is not require_tool_visitor():
             raise ValueError("Mutation requires the admitted host visitor")

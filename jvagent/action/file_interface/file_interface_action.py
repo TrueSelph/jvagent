@@ -13,7 +13,7 @@ import base64
 import hashlib
 import json
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Annotated, Any, Optional
 
 from jvspatial.core.annotations import attribute
@@ -32,10 +32,66 @@ logger = logging.getLogger(__name__)
 _NO_CONTEXT = "(no execution context)"
 
 
+@dataclass
 class FileWriteTool(NativeMutationTool):
     """Reviewed local text write; failures never imply rollback."""
 
     effect_summary = "jv:mutation:file-write:v1"
+    recovery_max_bytes: int = 262_144
+
+    async def recovery_scope(self) -> str | None:
+        from jvspatial.storage.interfaces.local import LocalFileInterface
+
+        fi = await _core._get_file_interface(None)
+        if not isinstance(fi, LocalFileInterface):
+            return None
+        stat = fi.root_dir.stat()
+        facts = ["local-file-scope-v1", str(fi.root_dir), stat.st_dev, stat.st_ino]
+        return "sha256:" + hashlib.sha256(json.dumps(facts).encode()).hexdigest()
+
+    async def verify_recovery(self, *, visitor: Any, arguments: dict[str, Any]) -> Any:
+        from jvspatial.storage.interfaces.local import LocalFileInterface
+        from pydantic_ai import ToolReturn
+
+        if (
+            set(arguments) != {"path", "content"}
+            or not isinstance(arguments["content"], str)
+            or not isinstance(arguments["path"], str)
+        ):
+            raise ValueError("Recorded write intent is malformed")
+        content, path = arguments["content"], arguments["path"]
+        if (
+            len(content) > self.recovery_max_bytes
+            or len(content.encode("utf-8")) > self.recovery_max_bytes
+        ):
+            raise ValueError("Recorded write exceeds the current verification limit")
+        fi = await _core._get_file_interface(visitor)
+        if not isinstance(fi, LocalFileInterface):
+            raise ValueError("Only local text write recovery is qualified")
+        try:
+            agent_id, user_id = await _core.resolve_agent_user(visitor)
+            path = _core.validate_relative_path(path)
+            scoped = _core._local_user_storage(fi, agent_id, user_id, path)
+            before = await scoped.get_metadata(path)
+            actual = await _core.read_bounded_text_file(
+                visitor, path, max_bytes=self.recovery_max_bytes
+            )
+            after = await scoped.get_metadata(path)
+        except (ValueError, OSError, StorageError):
+            raise ValueError("The recorded file cannot be safely verified") from None
+        if actual != content or before is None or before != after:
+            raise ValueError("Current file does not match the recorded write intent")
+        return ToolReturn(
+            return_value={
+                "ok": True,
+                "path": path,
+                "bytes": len(content.encode("utf-8")),
+                "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                "operator_verified": True,
+                "verification": "Current file matches recorded intent; original completion was not observed.",
+            },
+            metadata={"jv_resource_version": before},
+        )
 
 
 class FileInterfaceAction(Action):
@@ -140,6 +196,7 @@ class FileInterfaceAction(Action):
                 effect_class="write",
                 idempotency_class=IdempotencyClass.NON_RETRYABLE,
                 requires_tool_permission=True,
+                recovery_max_bytes=write_limit,
             ),
         ]
 

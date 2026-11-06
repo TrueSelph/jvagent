@@ -156,7 +156,9 @@ async def test_native_receipt_precedes_delivery(
     facade = SimpleNamespace(
         id="native",
         get_agent=AsyncMock(
-            return_value=SimpleNamespace(get_actions=AsyncMock(return_value=[owner]))
+            return_value=SimpleNamespace(
+                id="agent", get_actions=AsyncMock(return_value=[owner])
+            )
         ),
         get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
         max_run_cost_usd="2",
@@ -336,7 +338,9 @@ async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
     publish = AsyncMock(return_value=True)
     facade = SimpleNamespace(
         get_agent=AsyncMock(
-            return_value=SimpleNamespace(get_actions=AsyncMock(return_value=[]))
+            return_value=SimpleNamespace(
+                id="agent", get_actions=AsyncMock(return_value=[])
+            )
         ),
         get_responder=AsyncMock(return_value=SimpleNamespace(publish=publish)),
         model="test",

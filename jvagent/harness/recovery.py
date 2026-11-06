@@ -1,8 +1,10 @@
 """Host admission for a fresh user turn, never automatic execution replay."""
 
+from dataclasses import dataclass
 from datetime import timezone
-from typing import Any
+from typing import Any, Iterator
 
+from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -24,6 +26,19 @@ class NativeHistoryError(RuntimeError):
     """The predecessor cannot safely supply this conversation's context."""
 
 
+@dataclass
+class NativeHistory:
+    """SDK history and optional public deferred results, with legacy unpacking."""
+
+    messages: list[ModelMessage]
+    source: dict[str, Any]
+    deferred: DeferredToolResults | None = None
+
+    def __iter__(self) -> Iterator[Any]:
+        yield self.messages
+        yield self.source
+
+
 async def history_for_new_turn(
     previous: Any,
     *,
@@ -31,7 +46,7 @@ async def history_for_new_turn(
     user_id: str,
     session_id: str,
     conversation: Any = None,
-) -> tuple[list[ModelMessage], dict[str, Any]]:
+) -> NativeHistory:
     """Recover SDK history, then project only confirmed nonexecuting notices."""
     approval = (
         getattr(conversation, "native_history_import", {})
@@ -48,7 +63,23 @@ async def history_for_new_turn(
         allow_legacy_root=bool(approval),
         legacy_naive_utc=approval.get("naive_timestamp_zone") == "UTC",
     )
-    if root is not None and not root.native_run:
+    deferred = None
+    if root is not None and root.native_run.get("effect_recovery"):
+        from jvagent.harness.effect_recovery import approved_effect_history
+
+        try:
+            inspected = await approved_effect_history(root, conversation)
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            raise NativeHistoryError(
+                "Effect recovery requires reconciliation"
+            ) from None
+        messages, deferred = inspected.messages, inspected.deferred
+        run_source = {
+            "frontier": "operator_verified_effect",
+            "source_run_id": inspected.facts["run_id"],
+            "recovery_digest": inspected.facts["digest"],
+        }
+    elif root is not None and not root.native_run:
         from jvagent.harness.history_import import imported_history
 
         try:
@@ -72,6 +103,12 @@ async def history_for_new_turn(
         )
     source: dict[str, Any] = dict(run_source)
     for item in notices:
+        if deferred is not None:
+            # The SDK must pair its pending call before any later user message.
+            # Only host-validated notice inputs enter this additional content.
+            for result in deferred.calls.values():
+                result.content = [*(result.content or []), item.utterance]
+            continue
         messages.extend(
             [
                 ModelRequest(parts=[UserPromptPart(item.utterance)]),
@@ -80,7 +117,7 @@ async def history_for_new_turn(
         )
     if notices:
         source = {**source, "blocked_interaction_ids": [item.id for item in notices]}
-    return messages, source
+    return NativeHistory(messages, source, deferred)
 
 
 async def resolve_history_predecessor(

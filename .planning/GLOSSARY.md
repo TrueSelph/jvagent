@@ -358,3 +358,13 @@ does not authorize a tool independently of skill and host access policy. The
 separate compatibility visitor is mutable and only for services that require it.
 Source: `jvagent/tooling/context.py:11`. See
 [the extraction record](plans/2026-11-06-native-context-decoupling.md).
+
+### Operator-verified effect recovery
+
+A host-authorized continuation that supplies independently verified current domain
+state through the official SDK's deferred tool results, without replaying or
+rewriting the original mutation. The initial local text-write profile requires a
+stopped owner, immutable graph/resource scope and known model receipts; its first
+resumed turn is read-only. Sources:
+[`effect_recovery.py:48`](../jvagent/harness/effect_recovery.py:48),
+[`native.py:98`](../jvagent/harness/native.py:98).

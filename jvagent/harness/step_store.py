@@ -21,9 +21,25 @@ from pydantic_ai_harness.step_persistence import (
 class InteractionStepStore:
     """Persist public library records on a declared jvspatial Interaction field."""
 
-    def __init__(self, interaction: Any) -> None:
+    def __init__(self, interaction: Any, *, agent_id: str | None = None) -> None:
         self.interaction = interaction
+        self.agent_id = agent_id
         self.lock = asyncio.Lock()
+
+    def registration_metadata(self) -> dict[str, str]:
+        """Host-established graph scope; metadata stays on the SDK run record."""
+        scope = {
+            "jv_agent_id": self.agent_id,
+            "jv_interaction_id": getattr(self.interaction, "id", None),
+            "jv_conversation_id": getattr(self.interaction, "conversation_id", None),
+            "jv_user_id": getattr(self.interaction, "user_id", None),
+            "jv_session_id": getattr(self.interaction, "session_id", None),
+        }
+        return {
+            key: value
+            for key, value in scope.items()
+            if isinstance(value, str) and value
+        }
 
     def _records(self, key: str, record_type: Any) -> list[Any]:
         values = self.interaction.native_steps.get(key, [])

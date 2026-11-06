@@ -56,14 +56,15 @@
       "name": "jvagent/file_interface",
       "archetype": "FileInterfaceAction",
       "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
-      "qualification": "partial: bounded local native read and explicitly granted text write; interrupted writes block replay",
-      "evidence": "2026-11-06-native-file-write.md",
+      "qualification": "partial: bounded local native read, explicitly granted text write and operator-verified single local write continuation",
+      "evidence": "2026-11-06-native-effect-recovery.md",
       "native_tools": [
         "file_interface__read_file",
         "file_interface__write_file"
       ],
       "remaining": [
-        "operator write-effect reconciliation/resumption",
+        "unknown billing with write effects",
+        "other write/effect classes and distributed ownership",
         "live S3",
         "directory discovery",
         "binary writes and other file operations",
@@ -2378,5 +2379,23 @@
     },
     "reference_blocked_requirements": 18,
     "scope": "Two SOP assets; explicit caller updates required; scripts and other unsupported skill policies remain blocked. Historical baseline inventory retained."
+  },
+  "native_operator_write_recovery_increment": {
+    "evidence": "2026-11-06-native-effect-recovery.md",
+    "qualified": [
+      "stopped local owner and immutable graph/resource binding",
+      "admin-only fact-bound approval and identical retry",
+      "public SDK deferred result, read-only continuation and blocked-input recall",
+      "actual GPT-4.1 crash/restart/browser/SQL no-repeat proof",
+      "ordinary subsequent write retains named permission",
+      "zero-spend completed-reply cache restore"
+    ],
+    "remaining": [
+      "unknown billing combined with mutations",
+      "multiple/external/child/background effects",
+      "distributed fencing",
+      "distinct restored-result UI label",
+      "migration/deletion and enterprise release"
+    ]
   }
 }

@@ -2409,3 +2409,15 @@ Python 3.11 and 3.12; 45 affected core/monitor/host tests pass. The initial clos
 failure remains recorded. jvchat does not synchronize unsolicited background replies;
 that client/channel gate remains open, alongside other triggers/effects, distributed
 recovery, migration/deletion and full release qualification.
+
+## Operator-verified native local write — 2026-11-06
+
+[Evidence](2026-11-06-native-effect-recovery.md) qualifies a stopped local owner,
+immutable graph/resource binding, admin inspection/approval and public SDK
+deferred-result continuation without replay. A real restart exposed unstable
+MAC-derived identity; boot-session identity and a cross-process regression repair
+it. Actual GPT-4.1 browser continuation recalls blocked input; original file and
+SDK facts remain unchanged, and an ordinary subsequent write succeeds. Native/PG
+suites pass 485 per Python 3.11/3.12. Unknown billing with effects, broader writes,
+distributed fencing, UI recovery labelling, migration/deletion and release remain
+open. No second execution engine, state store or dependency was added.
