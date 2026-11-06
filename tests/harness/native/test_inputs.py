@@ -88,7 +88,7 @@ def test_mixed_content_preserves_order_bytes_and_declared_mime() -> None:
     assert parts[0] == "compare"
     assert parts[2].data == b"\x89PNG\r\n\xff" and parts[2].media_type == "image/png"
     assert parts[4].data == b"%PDF-example" and parts[4].media_type == "application/pdf"
-    assert parts[6] == "JUNIPER-28"
+    assert parts[6].content == "JUNIPER-28"
 
 
 @pytest.mark.asyncio

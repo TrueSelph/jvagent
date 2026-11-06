@@ -4,6 +4,13 @@ Single-source definitions for terms used throughout jvagent. Whenever a defined 
 
 ---
 
+### Native media
+Conversation-owned immutable payloads referenced by official Harness media markers
+in SDK snapshots. The public MediaStore adapter stores each payload once per
+agent/user/session/conversation scope in existing jvspatial nodes; it is not a
+public URL or a second state database. Sources: `jvagent/memory/native_media.py:9`,
+`jvagent/harness/media_store.py:31`. See [storage and recovery](runbooks/native-media.md).
+
 ### Native plan
 Conversation-scoped checklist edited by official Harness `Planning` tools and
 persisted through JV's public `PlanStore` adapter. Its statuses are authored

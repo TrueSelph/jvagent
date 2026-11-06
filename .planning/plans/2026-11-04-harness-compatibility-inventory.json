@@ -2511,5 +2511,24 @@
       "full legacy vision flag/artifact/caller migration",
       "full retained-state migration, distributed recovery, security/deployment, evaluation and legacy deletion"
     ]
+  },
+  "native_media_storage_qualification": {
+    "status": "local public-SDK media storage and recovery qualified to recorded scope; caption quality remains partial",
+    "record": "2026-11-06-native-media.md",
+    "qualified": [
+      "official externalize_media/restore_media and MediaStore protocol on existing graph",
+      "scoped immutable create_if_absent payload nodes; authoritative reads and hash/bounds checks",
+      "old inline compatibility, literal marker escaping and typed TextContent",
+      "JSON adversarial tests and fresh PostgreSQL deferred on/off round trips",
+      "actual browser/model large input, restart, missing-payload zero-attempt refusal, exact restoration and unchanged reload",
+      "652 native/host/real-PG tests per Python 3.11/3.12"
+    ],
+    "remaining": [
+      "orphan/unreferenced media reclamation, aggregate quotas and capacity",
+      "maximum-size/hostile files and binary compaction",
+      "old bare-string media migration and lossless rollback export",
+      "other providers/deployments, repair UX and representative visual evaluation",
+      "remaining legacy migration, distributed recovery, security/deployment and old-engine deletion"
+    ]
   }
 }

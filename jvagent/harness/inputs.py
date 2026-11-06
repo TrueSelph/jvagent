@@ -52,7 +52,7 @@ def native_user_prompt(
     utterance: str, data: Any, *, allowed_media_types: Any = INPUT_MEDIA_TYPES
 ) -> str | list[Any]:
     """Preserve each admitted file; never fetch, interpret or silently truncate."""
-    from pydantic_ai.messages import BinaryContent
+    from pydantic_ai.messages import BinaryContent, TextContent
 
     allowed = validate_input_media_types(allowed_media_types)
     if not isinstance(data, dict):
@@ -105,7 +105,7 @@ def native_user_prompt(
             result.append(BinaryContent(data=raw, media_type=mime))
         else:
             try:
-                result.append(raw.decode("utf-8", errors="strict"))
+                result.append(TextContent(raw.decode("utf-8", errors="strict")))
             except UnicodeError:
                 raise NativeInputError(INPUT_NOTICE) from None
     return result

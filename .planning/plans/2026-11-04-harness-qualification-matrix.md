@@ -588,3 +588,17 @@ Native/host/real-PG lanes pass 623 per Python 3.11/3.12. Large media offloading,
 retention/compaction, same-session invalid-input recovery, remote/channel media,
 other providers and full legacy vision migration remain open. The reference
 profile remains at 12 blockers; migration/deletion and enterprise gates stay open.
+
+## Official SDK media storage — 2026-11-06
+
+[Evidence](2026-11-06-native-media.md) adds a public MediaStore adapter on the
+existing graph and official snapshot externalization/restoration. Scoped immutable
+NativeMedia nodes deduplicate bytes without another state database. Actual-model
+browser read/restart, zero-attempt missing-payload refusal, exact operator data
+restoration, fresh continuation and unchanged reload pass. One image-caption
+answer remains a recorded partial failure; a clarified question and final restart
+read succeed. First checkpoint representation is 10,311 versus 1,353,927 inline
+SDK bytes; this is serialized size, not a general performance claim. Final native/
+host/real-PG lanes pass 652 per Python 3.11/3.12. Quotas/GC, orphan reconciliation,
+large/hostile files, rollback export, broader deployment/provider evaluation and
+remaining migration/deletion/release gates stay open. Reference blockers remain 12.

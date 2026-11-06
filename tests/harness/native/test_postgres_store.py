@@ -87,6 +87,41 @@ class PostgresScope:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("deferred", [False, True])
+async def test_offloaded_media_survives_fresh_postgres_context(
+    postgres_scope: PostgresScope, tmp_path: Path, monkeypatch: Any, deferred: bool
+) -> None:
+    from jvagent.memory.native_media import NativeMedia
+    from tests.harness.native.test_media_store import test_sdk_large_media_end_to_end
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    await test_sdk_large_media_end_to_end(tmp_path)
+    rows = await postgres_scope.database.find("node", {"entity": "Interaction"})
+    assert len(rows) == 1
+    blobs = await postgres_scope.database.find("node", {"entity": "NativeMedia"})
+    assert len(blobs) == 2
+    fresh_database = PostgresDB(
+        dsn=postgres_scope.dsn,
+        schema_name=postgres_scope.schema,
+        min_size=1,
+        max_size=2,
+    )
+    try:
+        set_default_context(GraphContext(database=fresh_database))
+        loaded = await Interaction.get(rows[0]["id"])
+        snapshot = await InteractionStepStore(loaded).latest_snapshot(
+            run_id=loaded.native_run["run_id"]
+        )
+        content = snapshot.messages[0].parts[0].content
+        assert content[0].data == b"\x89PNG\r\n" + b"a" * 70000
+        assert content[1].content.startswith("JUNIPER-28")
+        assert len(await NativeMedia.find({})) == 2
+    finally:
+        set_default_context(GraphContext(database=postgres_scope.database))
+        await fresh_database.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
 async def test_multimodal_bytes_survive_fresh_postgres_context(
     postgres_scope: PostgresScope, tmp_path: Path, monkeypatch: Any, deferred: bool
 ) -> None:

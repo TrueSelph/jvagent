@@ -56,6 +56,22 @@ class InteractionStepStore:
             state = dict(self.interaction.native_steps)
             values = list(state.get(key, []))
             encoded = TypeAdapter(type(record)).dump_python(record, mode="json")
+            if key == "snapshots":
+                from pydantic_ai_harness.media import externalize_media
+
+                from jvagent.harness.media_store import (
+                    MEDIA_THRESHOLD_BYTES,
+                    GraphMediaStore,
+                )
+
+                encoded["messages"] = await externalize_media(
+                    encoded["messages"],
+                    media_store=GraphMediaStore(
+                        self.interaction, agent_id=self.agent_id
+                    ),
+                    threshold_bytes=MEDIA_THRESHOLD_BYTES,
+                )
+                encoded["jv_media_version"] = 1
             if key == "runs":
                 prior = next(
                     (v for v in values if v.get("run_id") == record.run_id), None
@@ -163,26 +179,38 @@ class InteractionStepStore:
         while a new user turn after failure needs the accepted-input frontier.
         No history is repaired, replayed or synthesized here.
         """
-        return next(
-            (
-                r
-                for r in self._records("snapshots", ContinuableSnapshot)
-                if r.run_id == run_id
-            ),
-            None,
-        )
+        for value in self.interaction.native_steps.get("snapshots", []):
+            if value.get("run_id") == run_id:
+                return await self._snapshot(value)
+        return None
+
+    async def _snapshot(self, value: dict[str, Any]) -> ContinuableSnapshot:
+        encoded = dict(value)
+        if "jv_media_version" in encoded:
+            if (
+                type(encoded["jv_media_version"]) is not int
+                or encoded["jv_media_version"] != 1
+            ):
+                raise ValueError("Unsupported native media snapshot version")
+            from pydantic_ai_harness.media import restore_media
+
+            from jvagent.harness.media_store import GraphMediaStore
+
+            encoded["messages"] = await restore_media(
+                encoded["messages"],
+                media_store=GraphMediaStore(self.interaction, agent_id=self.agent_id),
+            )
+        return TypeAdapter(ContinuableSnapshot).validate_python(encoded)
 
     async def latest_snapshot(
         self, *, run_id: str, include_interrupted: bool = False
     ) -> ContinuableSnapshot | None:
-        return next(
-            (
-                r
-                for r in reversed(self._records("snapshots", ContinuableSnapshot))
-                if r.run_id == run_id and (include_interrupted or r.state == "complete")
-            ),
-            None,
-        )
+        for value in reversed(self.interaction.native_steps.get("snapshots", [])):
+            if value.get("run_id") == run_id and (
+                include_interrupted or value.get("state") == "complete"
+            ):
+                return await self._snapshot(value)
+        return None
 
     async def record_tool_effect(self, record: ToolEffectRecord) -> None:
         await self._write("effects", record, identity="tool_call_id")

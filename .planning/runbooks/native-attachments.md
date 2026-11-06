@@ -40,8 +40,12 @@ URL is never fetched by this adapter. User content remains untrusted and cannot
 change caller identity, permissions or budgets. A rejected input receives a
 persisted `invalid_input` host notice and requires a new conversation; it is not
 turned into synthetic SDK model history. Same-conversation rejected-input
-recovery, remote/channel-specific authenticated downloads, media offloading and
+recovery, remote/channel-specific authenticated downloads, aggregate media capacity and
 large-document/long-session behavior remain qualification work. Configured model
 and provider must support the selected formats; the allowlist is admission policy,
 not proof of model capability. No full legacy `vision` flag migration is authorized
 by this local profile. See [qualification](../plans/2026-11-06-native-inputs.md).
+
+Payloads now use the [official SDK media adapter](native-media.md) on the existing
+graph. Large image/PDF/TextContent payloads are referenced rather than copied
+into each new snapshot; old inline data remains readable.

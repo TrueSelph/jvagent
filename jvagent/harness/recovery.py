@@ -15,6 +15,7 @@ from pydantic_ai.messages import (
 from pydantic_ai_harness.step_persistence import continue_run, is_provider_valid
 from pydantic_ai_harness.step_persistence.recovery import inspect_recovery
 
+from jvagent.harness.media_store import NativeMediaError, NativeMediaMissing
 from jvagent.harness.step_store import InteractionStepStore
 
 INPUT_CHECKPOINT_POLICY = "accepted-input-v1"
@@ -86,7 +87,7 @@ async def history_for_new_turn(
 
         try:
             inspected = await approved_effect_history(root, conversation)
-        except (ValueError, TypeError, KeyError, ArithmeticError):
+        except (ValueError, TypeError, KeyError, ArithmeticError, NativeMediaMissing):
             raise NativeHistoryError(
                 "Effect recovery requires reconciliation"
             ) from None
@@ -112,12 +113,17 @@ async def history_for_new_turn(
                 "Historical import requires reconciliation"
             ) from None
     else:
-        messages, run_source = await _history_for_run(
-            root,
-            conversation_id=conversation_id,
-            user_id=user_id,
-            session_id=session_id,
-        )
+        try:
+            messages, run_source = await _history_for_run(
+                root,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except (NativeMediaError, NativeMediaMissing):
+            raise NativeHistoryError(
+                "Native media history requires reconciliation"
+            ) from None
     source: dict[str, Any] = dict(run_source)
     for item in notices:
         if deferred is not None:
