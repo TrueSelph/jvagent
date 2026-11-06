@@ -52,6 +52,7 @@ DISPATCH = frozenset(
         "messenger",
         "stress-seed",
         "stress_seed",
+        "harness-migrate",
     }
 )
 
@@ -79,7 +80,8 @@ def _first_app_root_path(
             "--help",
         ]
     )
-    value_flags = frozenset(["--dir"])
+    value_flags = frozenset(["--dir", "--agent", "--skill", "--output"])
+    static_flags = static_flags | value_flags
     static_flags = static_flags | frozenset(STRESS_FLAG_NAMES)
     app: Optional[str] = None
     out: list[str] = []
@@ -254,6 +256,10 @@ def main() -> None:
             handle_bundle_command(args[1:], app_root=app_root)
         elif args[0] == "validate":
             sys.exit(run_validate(app_root, strict="--strict" in args))
+        elif args[0] == "harness-migrate":
+            from jvagent.cli.harness_migrate import handle_harness_migrate
+
+            sys.exit(handle_harness_migrate(args[1:], app_root))
         elif args[0] == "chat":
             from jvagent.cli.chat import handle_chat_command
 

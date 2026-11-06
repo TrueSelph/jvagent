@@ -32,6 +32,14 @@ its result through the browser. One SIGTERM with a parked reader exited in
 single-worker closed-loop timer and idle-SSE drain cases only; active effects,
 blocking shutdown hooks and distributed deployment remain open.
 
+Latest configuration migration qualification: [rehearsal](2026-11-05-native-migration.md).
+Offline dry run/new-file candidate, explicit unknown-setting blockers, portable
+skill paths and preserved public SDK pilot ceilings are implemented. A fresh
+synthetic old declaration produces native/MCP/reply and actual model/tool/browser
+success, with persisted configuration and usage proof. This is configuration-only:
+the reference agent has 31 remaining blockers; stored graph migration, upgrade/
+rollback, default cutover and implementation deletion are not complete.
+
 ## Required asset migrations
 
 Latest background-channel qualification: [2026-11-05 record](2026-11-05-native-channel.md).

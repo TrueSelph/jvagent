@@ -1,0 +1,29 @@
+........................................................................ [ 54%]
+.............................................................            [100%]
+=============================== warnings summary ===============================
+tests/harness/native/test_native.py::test_tool_access_and_native_skill_loading[True]
+tests/harness/native/test_native.py::test_tool_access_and_native_skill_loading[False]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: example: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_native.py::test_native_runner_preserves_history_usage_and_events
+tests/harness/native/test_native.py::test_output_cap_is_enforced_by_public_sdk
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/usage.py:673: CostNotFoundWarning: A `cost_limit` is set but cannot be enforced because no cost was calculated for this run. This usually means there is no pricing data for the model or provider in use. If the model is newer than your install, `pydantic_ai.prices.update_in_background()` can download current prices.
+    warnings.warn(
+
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[None]
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[False]
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[True]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: named: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_native.py::test_action_argument_named_ctx_does_not_shadow_sdk_context
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: context-argument: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_skill_assets.py::test_official_skill_loads_projected_sop_and_checks_inherited_tools
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: child: allowed-tools
+    results[index] = await coro
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+133 passed, 9 warnings in 3.55s

@@ -111,7 +111,9 @@ class NativeHarnessAction(InteractAction):
     context_max_tokens: int = attribute(default=32_000)
     context_keep_tokens: int = attribute(default=16_000)
     max_requests: int = attribute(default=20)
+    max_tool_calls: int = attribute(default=40)
     max_tokens: int = attribute(default=100_000)
+    max_output_tokens: int | None = attribute(default=None)
     timeout_seconds: float = attribute(default=180.0)
 
     async def on_startup(self) -> None:
@@ -283,7 +285,9 @@ class NativeHarnessAction(InteractAction):
         from jvagent.harness.accounting import NativeSpendRecorder
 
         task_spec = native_task_spec(visitor)
-        skill_directory = Path(self.skill_directory)
+        from jvagent.harness.skill_assets import resolve_skill_directory
+
+        skill_directory = resolve_skill_directory(self.skill_directory)
         prompt = getattr(visitor, "utterance", "")
         if task_spec is not None:
             from jvagent.harness.skill_assets import project_skill
@@ -396,7 +400,9 @@ class NativeHarnessAction(InteractAction):
                     event_stream_handler=events,
                     max_cost_usd=self.max_run_cost_usd,
                     max_requests=self.max_requests,
+                    max_tool_calls=self.max_tool_calls,
                     max_tokens=self.max_tokens,
+                    max_output_tokens=self.max_output_tokens,
                     timeout_seconds=self.timeout_seconds,
                 )
             from jvagent.harness.accounting import record_native_usage

@@ -106,6 +106,8 @@ async def test_native_task_sdk_output_and_failure_do_not_replay(
         max_run_cost_usd="2",
         max_conversation_cost_usd="20",
         max_requests=3,
+        max_tool_calls=40,
+        max_output_tokens=None,
         max_tokens=10000,
         timeout_seconds=10,
     )

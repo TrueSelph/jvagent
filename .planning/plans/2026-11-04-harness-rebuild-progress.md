@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [dependency qualification](2026-11-05-native-dependencies.md).
+Latest increment: [configuration migration rehearsal](2026-11-05-native-migration.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,26 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Offline native configuration candidate
+
+The new harness-migrate command maps known declarations into a separate private
+candidate and blocks unknown controls. Source/graph writes, output overwrite,
+secret-value reporting and unqualified model-service retirement are refused.
+The synthetic old profile converts to native/MCP/reply with the simple model
+service removed; fresh graph readback has no old execution/model-service nodes.
+Actual GPT-4.1/MCP browser lookup passes twice, including a clean final query;
+four requests total 1,560 reported tokens and USD 0.003660 estimated. Repeated
+planning changes neither persisted results nor spending. The initial automation
+text duplication and observer/fixture defects remain in the evidence.
+App-relative skill paths now resolve independently of cwd. Public SDK limits
+carry pilot tool and cumulative output ceilings; no second counter/loop is added.
+CLI/config/native runner/path: 133 passed on each Python 3.11/3.12; native/host/
+real-PG: 367 passed on each. Two isolated mutations make protective regressions
+fail. Parent 9b217d28 has all nine CI checks green. Final hooks/full pre-push/
+new-head CI remain separate gates.
+The actual reference agent still has 31 explicit blockers. Stored graph/state
+migration, broader compatibility, default cutover and engine deletion remain open.
 
 ## One core SDK and combined native test dependencies
 

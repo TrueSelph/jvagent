@@ -150,7 +150,9 @@ async def test_native_receipt_precedes_delivery(
         context_max_tokens=32000,
         context_keep_tokens=16000,
         max_requests=2,
+        max_tool_calls=40,
         max_tokens=2000,
+        max_output_tokens=None,
         timeout_seconds=10,
     )
     visitor = SimpleNamespace(

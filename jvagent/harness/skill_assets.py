@@ -31,6 +31,26 @@ _UNQUALIFIED = (
 )
 
 
+def resolve_skill_directory(configured: str) -> Path:
+    """Resolve declarative paths against the app root, independent of process cwd.
+
+    Existing explicitly absolute paths remain supported. Relative paths cannot
+    escape the app root, including through symlinks.
+    """
+    if not configured.strip():
+        raise ValueError("Skill directory must be explicit")
+    directory = Path(configured)
+    if directory.is_absolute():
+        return directory.resolve(strict=True)
+    from jvagent.core.app_context import get_app_root
+
+    root = Path(get_app_root()).resolve(strict=True)
+    directory = (root / directory).resolve(strict=True)
+    if not directory.is_relative_to(root):
+        raise ValueError("Relative skill directory escapes the app root")
+    return directory
+
+
 def project_skill(
     directory: Path, *, action_bases: Mapping[str, Path] | None = None
 ) -> tuple[dict[str, Any], str]:

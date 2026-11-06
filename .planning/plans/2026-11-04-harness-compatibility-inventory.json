@@ -415,37 +415,49 @@
       "name": "weight",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:454",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "description",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:458",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "model",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:468",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "model_action_type",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:469",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "model_temperature",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:470",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "model_max_tokens",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:471",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "model_max_tokens_ceiling",
@@ -463,43 +475,57 @@
       "name": "skill_runtime",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:513",
       "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_skill",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:521",
       "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_max_model_requests",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:530",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_max_tool_calls",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:536",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_max_total_tokens",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:542",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_max_output_tokens",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:548",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "pilot_max_runtime_seconds",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:554",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "enforce_json_mode",
@@ -577,13 +603,17 @@
       "name": "activation_budget",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:635",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "max_duration_seconds",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:639",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "max_statement_length",
@@ -619,13 +649,17 @@
       "name": "max_turn_cost_usd",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:680",
       "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "max_conversation_cost_usd",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:691",
       "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "budget_exhausted_text",
@@ -739,7 +773,9 @@
       "name": "system_prompt_extra",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:858",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
     },
     {
       "name": "user_prompt",
@@ -2183,6 +2219,29 @@
       "provider and extension matrix",
       "packaged client delivery",
       "security/remediation and release qualification"
+    ]
+  },
+  "native_configuration_migration_increment": {
+    "evidence": "2026-11-05-native-migration.md",
+    "command": "harness-migrate",
+    "scope": "offline configuration candidate only; source and graph unchanged",
+    "qualified": [
+      "redacted dry run and private exclusive new output",
+      "known execution/identity/model/budget mappings",
+      "simple model-service retirement with explicit consumer/credential/endpoint/retry boundaries",
+      "portable app-relative skill path with no relative escape",
+      "pilot request/tool/total/output/runtime ceilings forwarded to public SDK",
+      "fresh graph with NativeHarnessAction/MCPAction/ReplyAction and actual GPT-4.1 browser lookup",
+      "unchanged results/spending after repeated planning"
+    ],
+    "reference_profile_blockers": 31,
+    "remaining": [
+      "reference controls and custom model consumers/providers",
+      "broader skill/action/channel qualification",
+      "stored graph and usage/credential/task/checkpoint migration",
+      "default native cutover",
+      "legacy/pilot code and dependency deletion",
+      "upgrade/rollback and release gates"
     ]
   }
 }

@@ -141,6 +141,56 @@ async def test_native_runner_rejects_invalid_limits(limit: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_output_cap_is_enforced_by_public_sdk() -> None:
+    from pydantic_ai import Agent
+    from pydantic_ai.exceptions import UsageLimitExceeded
+    from pydantic_ai.usage import RequestUsage
+
+    from jvagent.harness.native import run_native_agent
+
+    agent = Agent(
+        FunctionModel(
+            lambda messages, info: ModelResponse(
+                parts=[TextPart("answer")],
+                usage=RequestUsage(input_tokens=1, output_tokens=30),
+            )
+        )
+    )
+    with pytest.raises(UsageLimitExceeded):
+        await run_native_agent(
+            agent,
+            "Answer",
+            conversation_id="output-limit",
+            run_id="limited",
+            max_output_tokens=20,
+        )
+    result = await run_native_agent(
+        agent,
+        "Answer",
+        conversation_id="output-limit",
+        run_id="allowed",
+        max_output_tokens=30,
+    )
+    assert result.output == "answer"
+    assert result.usage.output_tokens == 30
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5])
+async def test_output_cap_requires_positive_integer(limit: Any) -> None:
+    from jvagent.harness.native import run_native_agent
+
+    with pytest.raises(ValueError):
+        await run_native_agent(
+            None,
+            "Answer",
+            conversation_id="output-limit",
+            run_id="invalid",
+            max_output_tokens=limit,
+        )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("host_permission", [None, False, True])
 async def test_native_explicit_named_permission_requires_host_tool_check(
     tmp_path: Path, host_permission: bool | None

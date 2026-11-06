@@ -414,6 +414,7 @@ async def run_native_agent(
     max_requests: int = 20,
     max_tool_calls: int = 40,
     max_tokens: int = 100_000,
+    max_output_tokens: int | None = None,
     timeout_seconds: float = 180.0,
     max_cost_usd: str = "2.00",
 ) -> Any:
@@ -429,7 +430,10 @@ async def run_native_agent(
 
     if not conversation_id.strip() or not run_id.strip():
         raise ValueError("Host-established conversation and run IDs are required")
-    for limit in (max_requests, max_tool_calls, max_tokens):
+    limits: tuple[int, ...] = (max_requests, max_tool_calls, max_tokens)
+    if max_output_tokens is not None:
+        limits += (max_output_tokens,)
+    for limit in limits:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("Native run limits must be positive integers")
     if (
@@ -452,6 +456,7 @@ async def run_native_agent(
             request_limit=max_requests,
             tool_calls_limit=max_tool_calls,
             total_tokens_limit=max_tokens,
+            output_tokens_limit=max_output_tokens,
         ),
         timeout=timeout_seconds,
     )

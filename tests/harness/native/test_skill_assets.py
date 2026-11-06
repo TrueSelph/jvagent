@@ -6,7 +6,32 @@ from typing import Any
 import pytest
 import yaml
 
-from jvagent.harness.skill_assets import project_skill
+from jvagent.harness.skill_assets import project_skill, resolve_skill_directory
+
+
+def test_relative_skill_path_uses_app_root_not_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    directory = tmp_path / "app" / "skills" / "example"
+    directory.mkdir(parents=True)
+    monkeypatch.setattr("jvagent.core.app_context._app_root", str(tmp_path / "app"))
+    monkeypatch.chdir(tmp_path)
+    assert resolve_skill_directory("skills/example") == directory
+    assert resolve_skill_directory(str(directory)) == directory
+
+
+@pytest.mark.parametrize("configured", ["", "../outside", "skills/link"])
+def test_relative_skill_path_cannot_escape_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    root = tmp_path / "app"
+    outside = tmp_path / "outside"
+    (root / "skills").mkdir(parents=True)
+    outside.mkdir()
+    (root / "skills/link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr("jvagent.core.app_context._app_root", str(root))
+    with pytest.raises(ValueError):
+        resolve_skill_directory(configured)
 
 
 def skill(root: Path, name: str, fields: dict[str, Any], body: str = "") -> Path:

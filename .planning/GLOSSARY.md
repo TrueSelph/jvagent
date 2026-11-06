@@ -306,3 +306,9 @@ It does not rerun models/tools or redeliver external effects. Client receipt,
 uncertain delivery reconciliation and arbitrary cursor replay are separate gates.
 See `jvagent/action/response/native_replay.py:9` and
 [qualification](plans/2026-11-05-native-replay.md).
+
+### Native migration candidate
+
+A new YAML declaration proposed by the offline `harness-migrate` command. It
+does not modify source configuration, migrate graph state or certify runtime
+compatibility. See [the migration runbook](runbooks/native-harness-migration.md).
