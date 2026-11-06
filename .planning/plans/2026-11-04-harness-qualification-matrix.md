@@ -47,6 +47,13 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native scheduling: [qualification](2026-11-06-native-tool-mode.md). Legacy one-tool
+ceilings map to the public SDK sequential mode; new native apps keep parallel by
+default. Actual-model MCP batches prove peak overlap one/three, correct output,
+usage and unchanged restart/readback. SDK regressions cover mode isolation,
+failure/cancellation and child inheritance. Wider numeric ceilings, distributed
+capacity and remaining release gates stay open.
+
 Native PDF: [qualification](2026-11-06-native-pdf.md). Canonical skill folder,
 explicit script prerequisite, unchanged renderer and optional reviewed image
 deliver an actual one-page PDF through SDK bash and FileInterface. Restart,

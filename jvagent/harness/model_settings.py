@@ -1,7 +1,18 @@
-"""Validate persisted common settings against the public native SDK contract."""
+"""Validate persisted settings against the public native SDK contracts."""
 
 from functools import lru_cache
 from typing import Any
+
+
+def validate_tool_execution_mode(value: Any) -> Any:
+    """Use the SDK's public mode type; never print untrusted setting values."""
+    from pydantic import TypeAdapter, ValidationError
+    from pydantic_ai.agent import ParallelExecutionMode
+
+    try:
+        return TypeAdapter(ParallelExecutionMode).validate_python(value, strict=True)
+    except ValidationError:
+        raise ValueError("Invalid native tool execution mode") from None
 
 
 @lru_cache(maxsize=1)

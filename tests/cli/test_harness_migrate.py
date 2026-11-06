@@ -99,6 +99,29 @@ def change(app: Path, **settings: Any) -> None:
     source(app).write_text(yaml.safe_dump(document))
 
 
+@pytest.mark.parametrize("width", [0, 1])
+def test_serial_tool_ceiling_uses_public_sdk_execution_mode(
+    app: Path, width: int
+) -> None:
+    change(app, max_concurrent_tools=width)
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and not report["blockers"]
+    assert candidate["actions"][0]["context"]["tool_execution_mode"] == "sequential"
+    assert report["mappings"]["max_concurrent_tools"] == "tool_execution_mode"
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize("width", [-1, True, "1", 1.0, None, 2, 10])
+def test_unqualified_tool_width_cannot_silently_expand(app: Path, width: Any) -> None:
+    change(app, max_concurrent_tools=width)
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("tool concurrency" in blocker for blocker in report["blockers"])
+    assert source(app).read_bytes() == before
+
+
 def test_candidate_preserves_modules_identity_assets_and_limits(app: Path) -> None:
     before = source(app).read_bytes()
     original = yaml.safe_load(before)
@@ -112,6 +135,7 @@ def test_candidate_preserves_modules_identity_assets_and_limits(app: Path) -> No
     assert candidate["context"] == original["context"]
     context = target["context"]
     assert context["model"] == "openai:gpt-4.1"
+    assert context["tool_execution_mode"] == "sequential"
     assert context["skill_directory"] == "agents/demo/bot/skills/answer"
     assert context["max_requests"] == 12
     assert context["timeout_seconds"] == 60

@@ -54,6 +54,7 @@ Unmapped controls and provider policy are checked in
 | OpenAI model / `openai/` LiteLLM model | Native `openai:` provider; other provider mappings remain unqualified |
 | `model_temperature`, positive `model_max_tokens` | Public native model settings; zero/absent completion ceiling selects a reported 8192-token proposal |
 | `activation_budget` | Native request ceiling; explicit zero remains clamped to one, as in the old loop; absent selects a reported 20-request proposal |
+| `max_concurrent_tools` zero/one or omitted legacy default | Public SDK `tool_execution_mode: sequential`; wider numeric ceilings remain blocked, not widened to parallel |
 | `max_duration_seconds` | Native timeout; zero/absent selects a reported finite 180-second proposal |
 | Positive turn/conversation dollar limits | Same numeric limits on native run/conversation spend; zero/absent selects reported USD 2/20 proposals |
 | Pilot request/tool/total/output/runtime ceilings | Native public usage limits and timeout, including the pilot's implicit defaults; mixed driver controls block |
@@ -67,6 +68,9 @@ Unmapped controls and provider policy are checked in
 | Empty/disabled channel/tool/vision/flow controls | May retire only when exactly empty/disabled; active policies block until qualified |
 
 Mapping/default construction: [`harness_migrate.py:359`](../../jvagent/cli/harness_migrate.py#L359).
+
+See [native tool execution](native-tool-execution.md) for scheduling modes and
+the difference between preserving a concurrency ceiling and reproducing legacy ticks.
 
 The candidate uses app-relative skill directories or portable `library:<directory>`
 references to installed JV assets, resolved independently of process cwd. No skill

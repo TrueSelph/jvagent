@@ -401,3 +401,11 @@ the existing file service. Sharing issues an expiring bearer download capability
 backed by the existing jvspatial URLProxy; a digest binds the delivered bytes.
 It is application data, not a second execution checkpoint or file store. Source:
 [`sharing.py:39`](../jvagent/action/file_interface/sharing.py:39).
+
+### Tool execution mode
+
+The public SDK scheduling mode scoped around a native run: parallel, sequential,
+or parallel execution with ordered events. JV validates the library-owned type
+and delegates scheduling to its public context manager. It is not an exact
+numeric concurrency quota or distributed capacity guarantee. Source:
+[`native.py:635`](../jvagent/harness/native.py:635).

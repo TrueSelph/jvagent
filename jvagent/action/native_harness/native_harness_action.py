@@ -118,14 +118,19 @@ class NativeHarnessAction(InteractAction):
     max_tokens: int = attribute(default=100_000)
     max_output_tokens: int | None = attribute(default=None)
     timeout_seconds: float = attribute(default=180.0)
+    tool_execution_mode: str = attribute(default="parallel")
 
     async def on_startup(self) -> None:
         """Reject invalid native settings before the process accepts traffic."""
         from jvagent.core.execution_owner import require_native_local_ownership
-        from jvagent.harness.model_settings import validate_model_settings
+        from jvagent.harness.model_settings import (
+            validate_model_settings,
+            validate_tool_execution_mode,
+        )
 
         require_native_local_ownership()
         validate_model_settings(self.model_settings)
+        validate_tool_execution_mode(self.tool_execution_mode)
         if not isinstance(self.planning, bool):
             raise ValueError("planning must be a boolean")
 
@@ -492,6 +497,9 @@ class NativeHarnessAction(InteractAction):
                     max_tokens=self.max_tokens,
                     max_output_tokens=self.max_output_tokens,
                     timeout_seconds=self.timeout_seconds,
+                    tool_execution_mode=getattr(
+                        self, "tool_execution_mode", "parallel"
+                    ),
                 )
             from jvagent.harness.accounting import record_native_usage
 

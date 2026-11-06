@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native PDF skill](2026-11-06-native-pdf.md).
+Latest increment: [native tool scheduling](2026-11-06-native-tool-mode.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native tool scheduling
+
+The SDK's public execution mode preserves legacy zero/one/default tool ceilings
+without a new dispatcher. Actual GPT-4.1/jvchat three-call batches have independent
+MCP audit peaks of one sequentially and three in parallel. Both replies, node
+settings, SDK results and spend survive restart/readback unchanged. Four requests,
+1,750 reported tokens and USD 0.005012 estimated reconcile. Deterministic SDK tests
+cover invalid settings, concurrent mode isolation, cancellation/error restoration
+and official child inheritance. Full native/host/PG lanes pass 575 on both Python
+versions, with the later two child cases passing separately. The
+[record](2026-11-06-native-tool-mode.md) bounds the single-tool migration gate;
+the reference app now has 15 blockers. Wider ceilings, distributed limits,
+compatibility, recovery, migration/deletion and enterprise gates remain open.
+Parent e07139c0 has nine green checks; new-head publication gates are separate.
 
 ## Native PDF skill
 

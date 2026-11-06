@@ -1053,7 +1053,9 @@
       "name": "max_concurrent_tools",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1125",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "qualification_evidence": "2026-11-06-native-tool-mode.md",
+      "migration_status": "partial: zero/one and omitted default use SDK sequential execution; wider numeric ceilings remain blocked"
     }
   ],
   "skills": [

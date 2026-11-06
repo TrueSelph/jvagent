@@ -14,6 +14,14 @@
 
 Code: [`jvagent/core/config.py:60-150`](../../jvagent/core/config.py) — `ConfigKey` / `ConfigSchema`. Env placeholders in YAML are expanded by [`jvagent/core/env_resolver.py`](../../jvagent/core/env_resolver.py).
 
+### Native execution scheduling
+
+NativeHarnessAction's `tool_execution_mode` defaults to `parallel` and uses the
+public Pydantic AI mode type. `sequential` preserves a migrated legacy one-tool
+ceiling without recreating legacy ticks. See [native scheduling settings](../runbooks/native-tool-execution.md).
+Sources: `jvagent/action/native_harness/native_harness_action.py:121`,
+`jvagent/harness/native.py:635`.
+
 ---
 
 ## 2. Core environment variables

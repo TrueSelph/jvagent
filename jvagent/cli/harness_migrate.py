@@ -186,6 +186,7 @@ _KNOWN = (
         "pilot_max_runtime_seconds",
         "pilot_max_output_tokens",
         "pilot_max_tool_calls",
+        "max_concurrent_tools",
     }
 )
 
@@ -387,6 +388,18 @@ def plan_harness_migration(
     target: dict[str, Any] = {
         k: copy.deepcopy(context[k]) for k in _DIRECT if k in context
     }
+    width = context.get("max_concurrent_tools", 1)
+    if type(width) is not int or width not in (0, 1):
+        blockers.append(
+            "Legacy tool concurrency requires an integer zero/one ceiling; wider batches need qualified native policy migration"
+        )
+    else:
+        # The legacy default and explicit zero clamp to one. Preserve that
+        # execution ceiling through the SDK, not another dispatcher.
+        target["tool_execution_mode"] = "sequential"
+        report["mappings"]["max_concurrent_tools"] = "tool_execution_mode"
+        if "max_concurrent_tools" not in context:
+            report["bounded_defaults"].append("tool_execution_mode")
     try:
         for old, (new, default) in _LIMITS.items():
             value = context.get(old, 0)

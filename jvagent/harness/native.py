@@ -599,6 +599,7 @@ async def run_native_agent(
     max_output_tokens: int | None = None,
     timeout_seconds: float = 180.0,
     max_cost_usd: str = "2.00",
+    tool_execution_mode: str = "parallel",
 ) -> Any:
     """Run through native lifecycle, limits and events, returning the full result.
 
@@ -609,6 +610,10 @@ async def run_native_agent(
     from decimal import Decimal
 
     from pydantic_ai.usage import UsageLimits
+
+    from jvagent.harness.model_settings import validate_tool_execution_mode
+
+    execution_mode = validate_tool_execution_mode(tool_execution_mode)
 
     if not conversation_id.strip() or not run_id.strip():
         raise ValueError("Host-established conversation and run IDs are required")
@@ -627,23 +632,24 @@ async def run_native_agent(
     cost_limit = Decimal(max_cost_usd)
     if not cost_limit.is_finite() or cost_limit <= 0:
         raise ValueError("Native cost limit must be finite and positive")
-    return await agent.run(
-        question,
-        conversation_id=conversation_id,
-        run_id=run_id,
-        message_history=message_history,
-        **(
-            {"deferred_tool_results": deferred_tool_results}
-            if deferred_tool_results is not None
-            else {}
-        ),
-        event_stream_handler=event_stream_handler,
-        usage_limits=UsageLimits(
-            cost_limit=cost_limit,
-            request_limit=max_requests,
-            tool_calls_limit=max_tool_calls,
-            total_tokens_limit=max_tokens,
-            output_tokens_limit=max_output_tokens,
-        ),
-        timeout=timeout_seconds,
-    )
+    with agent.parallel_tool_call_execution_mode(execution_mode):
+        return await agent.run(
+            question,
+            conversation_id=conversation_id,
+            run_id=run_id,
+            message_history=message_history,
+            **(
+                {"deferred_tool_results": deferred_tool_results}
+                if deferred_tool_results is not None
+                else {}
+            ),
+            event_stream_handler=event_stream_handler,
+            usage_limits=UsageLimits(
+                cost_limit=cost_limit,
+                request_limit=max_requests,
+                tool_calls_limit=max_tool_calls,
+                total_tokens_limit=max_tokens,
+                output_tokens_limit=max_output_tokens,
+            ),
+            timeout=timeout_seconds,
+        )
