@@ -15,6 +15,17 @@ import pytest
 from jvagent.core import callback
 
 
+@pytest.fixture(autouse=True)
+def capture_httpx_logs(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Establish capture independently of earlier server logging configuration."""
+    http_logger = logging.getLogger("httpx")
+    caplog.set_level(logging.INFO, logger="httpx")
+    monkeypatch.setattr(http_logger, "disabled", False)
+    monkeypatch.setattr(http_logger, "propagate", True)
+
+
 def test_callback_logging_accepts_an_existing_callable_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

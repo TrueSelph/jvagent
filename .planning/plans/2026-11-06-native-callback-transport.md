@@ -94,3 +94,11 @@ capacity, background task scheduling/acknowledgement/idempotency, uncertain writ
 crash/recovery and customer-specific endpoints remain unqualified. No automatic
 replay or repair is inferred from a successful echo. The nine reference migration
 blockers, retained-state cutover, legacy removal and enterprise gates remain open.
+
+The initial full pre-push suite stopped at eight logging-capture assertions:
+5,074 passed / eight failed / 68 skipped. Transport assertions passed, and the
+twenty-case module passed alone. The logging fixture now explicitly establishes
+HTTPX INFO/enabled/propagating capture and restores it afterward, independently of
+earlier server logging configuration. A deliberately muted logger run checks that
+isolation. This follow-up changes tests/documentation only; browser-tested runtime
+source is unchanged. Publication still requires another clean full push gate.
