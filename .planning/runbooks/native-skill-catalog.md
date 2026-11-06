@@ -20,7 +20,9 @@ Configure either `skill_directories` or the existing `skill_directory`, never
 both. The singular form continues to load that primary skill automatically.
 The catalog form offers the configured skills for library-managed selection.
 Each directory must contain its own reviewed SKILL.md; roots are explicit and
-bounded to 32 entries. App-relative paths retain the existing containment rules.
+bounded to 32 entries. `library:research` selects the installed package asset
+portably; references to one directory cannot traverse paths or escape through
+package directory/SKILL.md symlinks (`skill_assets.py:56`). App-relative paths retain the existing containment rules.
 Directory/name mismatches, duplicate names, unsupported metadata and unavailable
 Action/tool/channel prerequisites fail admission. Every configured member must
 also pass official loader preflight before a model request is made.
@@ -50,8 +52,9 @@ That task uses the same native factory with that skill selected; it cannot
 select an unlisted sibling or expand its tool permissions through pinned tools.
 See `jvagent/action/native_harness/native_harness_action.py:300`.
 
-This adds a native configuration surface, not a complete conversion of the old
-`skills`/`skills_source` router. Scripts, wildcard declarations, automatic library
+The offline converter now maps finite `skills`/`skills_source` declarations into
+this surface, preserving declared members and app-over-library overrides. This
+is not a complete migration of the old router or stored state. Scripts, wildcard declarations, automatic library
 search, channel-specific catalog composition and custom task metadata still need
 their migration and compatibility evidence. Research-owned MCP evidence remains
 refused until provenance is qualified; an unrelated read-only MCP skill may share

@@ -20,6 +20,45 @@ def test_relative_skill_path_uses_app_root_not_cwd(
     assert resolve_skill_directory(str(directory)) == directory
 
 
+def test_portable_library_reference_is_independent_of_app_and_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("jvagent.core.app_context._app_root", str(tmp_path))
+    directory = resolve_skill_directory("library:research")
+    assert directory.name == "research"
+    assert (directory / "SKILL.md").is_file()
+    assert not directory.is_relative_to(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "name", ["", ".", "..", "../research", "/research", "a\\research", "missing"]
+)
+def test_library_reference_cannot_escape_or_fall_back_to_app(
+    tmp_path: Path, name: str
+) -> None:
+    with pytest.raises((ValueError, FileNotFoundError)):
+        resolve_skill_directory("library:" + name)
+
+
+@pytest.mark.parametrize("target", ["directory", "file"])
+def test_library_reference_refuses_symlink_escape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    root, outside = tmp_path / "package", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "SKILL.md").write_text("Do not expose foreign instructions")
+    if target == "directory":
+        (root / "research").symlink_to(outside, target_is_directory=True)
+    else:
+        (root / "research").mkdir()
+        (root / "research/SKILL.md").symlink_to(outside / "SKILL.md")
+    monkeypatch.setattr("importlib.resources.files", lambda package: root)
+    with pytest.raises(ValueError, match="escapes"):
+        resolve_skill_directory("library:research")
+
+
 @pytest.mark.parametrize("configured", ["", "../outside", "skills/link"])
 def test_relative_skill_path_cannot_escape_app(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured: str

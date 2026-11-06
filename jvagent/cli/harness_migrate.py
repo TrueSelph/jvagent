@@ -1,4 +1,4 @@
-"""Offline, explicit configuration migration; never imports an execution engine."""
+"""Offline, explicit configuration migration; never invokes an execution engine."""
 
 import argparse
 import copy
@@ -7,11 +7,14 @@ import json
 import math
 import os
 import re
+from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from jvagent.cli.harness_migration_skills import migrate_skill_selection
 
 _SCHEMA = "jvagent.native-config-migration.v1"
 _MODEL_ACTIONS = {"OpenAILanguageModelAction", "LiteLLMLanguageModelAction"}
@@ -33,6 +36,7 @@ _REVIEWED_CONSUMERS = {
     "jvagent/access_control",
     "jvagent/web_fetch",
     "jvagent/web_search",
+    "jvagent/serper_web_search",
     "jvagent/pageindex_read",
 }
 _DIRECT = {"enabled", "weight", "description"}
@@ -42,10 +46,135 @@ _LIMITS = {
     "max_turn_cost_usd": ("max_run_cost_usd", "2.00"),
     "max_conversation_cost_usd": ("max_conversation_cost_usd", "20.00"),
 }
+# Explicitly retired engine heuristics, not host authorization or budget policy.
+_RETIRE = {
+    "light_model": "text",
+    "light_model_action_type": "text",
+    "light_model_temperature": "number",
+    "light_model_max_tokens": "integer",
+    "enable_transient_ack": "boolean",
+    "ack_on_first_tool_call": "boolean",
+    "ack_interval_ms": "integer",
+    "first_emit_timeout_ms": "integer",
+    "ack_statements": "texts",
+    "stream_internal_progress": "boolean",
+    "lean_tool_threshold": "integer",
+    "lean_presurface_k": "integer",
+    "history_limit": "integer",
+}
+_EMPTY = {
+    "pinned_tools": list,
+    "skill_only_tools": list,
+    "channel_overrides": dict,
+    "vision": bool,
+    "planning": bool,
+    "lock_active_flow": bool,
+    "with_event": bool,
+    "tool_call_timeout": float,
+}
+
+
+def _retire_controls(
+    context: dict[str, Any], report: dict[str, Any], mode: Any
+) -> None:
+    retired = report.setdefault("retired_settings", {})
+    for key, kind in _RETIRE.items():
+        if key not in context:
+            continue
+        value = context[key]
+        if kind == "boolean":
+            valid = type(value) is bool
+        elif kind == "text":
+            valid = isinstance(value, str)
+        elif kind == "texts":
+            valid = isinstance(value, list) and all(isinstance(v, str) for v in value)
+        else:
+            try:
+                _number(value, key, integer=kind == "integer")
+                valid = True
+            except ValueError:
+                valid = False
+        if not valid:
+            report["blockers"].append(f"Invalid legacy setting requires review: {key}")
+            continue
+        reason = (
+            "Retired model gearing; use the configured native model and remeasure cost"
+            if key.startswith("light_model")
+            else (
+                "Retired turn-count prompt window; native bounded SDK compaction replaces it"
+                if key == "history_limit"
+                else (
+                    "Retired legacy pre-surfacing; official Skills and host tool ownership replace it"
+                    if key.startswith("lean_")
+                    else "Retired synthetic loop progress/acknowledgements; native SDK events remain"
+                )
+            )
+        )
+        retired[key] = reason
+        report["mappings"][key] = "retired"
+    for key, kind in _EMPTY.items():
+        if key not in context:
+            continue
+        value = context[key]
+        valid = (
+            (type(value) in (int, float) and value == 0)
+            if kind is float
+            else type(value) is kind and not value
+        )
+        if not valid:
+            report["blockers"].append(
+                f"Setting requires qualified native policy migration: {key}"
+            )
+            continue
+        retired[key] = (
+            "Explicitly empty/disabled legacy control; no active policy removed"
+        )
+        report["mappings"][key] = "retired inactive control"
+    if mode == "legacy":
+        for key in (
+            "pilot_skill",
+            "pilot_max_model_requests",
+            "pilot_max_total_tokens",
+            "pilot_max_runtime_seconds",
+            "pilot_max_output_tokens",
+            "pilot_max_tool_calls",
+        ):
+            if key not in context:
+                continue
+            value = context[key]
+            try:
+                valid = (
+                    isinstance(value, str)
+                    if key == "pilot_skill"
+                    else _number(value, key, integer=key != "pilot_max_runtime_seconds")
+                    > 0
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                report["blockers"].append(
+                    f"Inactive pilot setting requires review: {key}"
+                )
+                continue
+            retired[key] = (
+                "Inactive pilot declaration; active legacy limits migrate separately"
+            )
+            report["mappings"][key] = "retired inactive pilot control"
+    if retired:
+        report["required_review"].append(
+            "Review explicit control retirements and native single-model/context/event behavior before cutover"
+        )
+
+
 _KNOWN = (
     _DIRECT
     | set(_LIMITS)
+    | set(_RETIRE)
+    | set(_EMPTY)
     | {
+        "skills",
+        "skills_source",
+        "max_statement_length",
         "model",
         "model_action_type",
         "model_temperature",
@@ -82,7 +211,7 @@ def _number(value: Any, field: str, *, integer: bool = False) -> float | int:
 
 
 def plan_harness_migration(
-    app_root: Path, agent_name: str, *, skill: str | None = None
+    app_root: Path, agent_name: str, *, skill: str | Sequence[str] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Return a redacted plan and candidate without graph or env resolution.
 
@@ -156,28 +285,14 @@ def plan_harness_migration(
     mode = context.get("skill_runtime", "legacy")
     if not isinstance(mode, str) or mode not in {"legacy", "capability_pilot"}:
         blockers.append("Unknown execution driver")
-    if mode == "legacy" and any(k.startswith("pilot_") for k in context):
-        blockers.append("Inactive pilot settings require explicit removal or review")
+    _retire_controls(context, report, mode)
     if mode == "capability_pilot":
         for key in ("activation_budget", "max_duration_seconds"):
             if key in context:
                 blockers.append(f"Mixed driver limit requires explicit review: {key}")
-    chosen = skill if skill is not None else context.get("pilot_skill")
-    if not isinstance(chosen, str) or not _name(chosen):
-        blockers.append("Select one installed skill explicitly with --skill")
-    elif (
-        mode == "capability_pilot"
-        and skill is not None
-        and skill != context.get("pilot_skill", "research")
-    ):
-        blockers.append("Selected skill differs from the configured pilot skill")
-    else:
-        directory = (source.parent / "skills" / chosen).resolve()
-        if (
-            not directory.is_relative_to(source.parent)
-            or not (directory / "SKILL.md").is_file()
-        ):
-            blockers.append("Selected skill is missing or escapes the agent directory")
+    skill_settings = migrate_skill_selection(
+        root, source.parent, context, skill, report
+    )
     model = context.get("model")
     model_action = context.get("model_action_type", "OpenAILanguageModelAction")
     if (
@@ -313,9 +428,7 @@ def plan_harness_migration(
         )
     if blockers:
         return report, None
-    target.update(
-        model="openai:" + bare, skill_directory=str(directory.relative_to(root))
-    )
+    target.update(model="openai:" + bare, **skill_settings)
     identity = document.get("context", {})
     if not isinstance(identity, dict):
         blockers.append("Agent identity context must be a mapping")
@@ -332,6 +445,23 @@ def plan_harness_migration(
         blockers.append("system_prompt_extra requires literal text")
         return report, None
     instructions.append(extra or "Help the user using the available skill.")
+    if "max_statement_length" in context:
+        try:
+            length = _number(
+                context["max_statement_length"], "max_statement_length", integer=True
+            )
+        except ValueError:
+            blockers.append(
+                "max_statement_length requires a finite nonnegative integer"
+            )
+            return report, None
+        if length:
+            instructions.append(
+                f"Keep final replies within {length} characters when practical."
+            )
+        report["mappings"][
+            "max_statement_length"
+        ] = "instructions; no response truncation"
     target["instructions"] = "\n\n".join(instructions)
     report["mappings"].update(
         model="model",
@@ -342,11 +472,7 @@ def plan_harness_migration(
     )
     report["mappings"].update({key: key for key in _DIRECT if key in context})
     report["mappings"].update(
-        {
-            key: "skill_directory / native execution owner"
-            for key in ("skill_runtime", "pilot_skill")
-            if key in context
-        }
+        {key: "native execution owner" for key in ("skill_runtime",) if key in context}
     )
     candidate = copy.deepcopy(document)
     candidate["actions"][actions.index(owner)] = {
@@ -366,7 +492,11 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
     """Print a safe dry run; write a new private candidate only when requested."""
     parser = argparse.ArgumentParser(prog="jvagent harness-migrate")
     parser.add_argument("--agent", required=True)
-    parser.add_argument("--skill")
+    parser.add_argument(
+        "--skill",
+        action="append",
+        help="Explicit installed skill; repeat for a finite catalog",
+    )
     parser.add_argument("--output", help="New candidate YAML file; never overwrites")
     options = parser.parse_args(args)
     try:

@@ -39,6 +39,8 @@ def resolve_skill_directory(configured: str) -> Path:
     """
     if not configured.strip():
         raise ValueError("Skill directory must be explicit")
+    if configured.startswith("library:"):
+        return library_skill_directory(configured.removeprefix("library:"))
     directory = Path(configured)
     if directory.is_absolute():
         return directory.resolve(strict=True)
@@ -48,6 +50,20 @@ def resolve_skill_directory(configured: str) -> Path:
     directory = (root / directory).resolve(strict=True)
     if not directory.is_relative_to(root):
         raise ValueError("Relative skill directory escapes the app root")
+    return directory
+
+
+def library_skill_directory(name: str) -> Path:
+    """Resolve a portable package asset reference, never an arbitrary path."""
+    from importlib.resources import files
+
+    if not name or Path(name).name != name or name in {".", ".."} or "\\" in name:
+        raise ValueError("Library skill must name one installed directory")
+    root = Path(str(files("jvagent.skills"))).resolve(strict=True)
+    directory = (root / name).resolve(strict=True)
+    asset = (directory / "SKILL.md").resolve(strict=True)
+    if directory.parent != root or asset.parent != directory or not asset.is_file():
+        raise ValueError("Library skill escapes or is missing from the package")
     return directory
 
 

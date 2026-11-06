@@ -135,7 +135,9 @@ An explicit `NativeHarnessAction.skill_directories` list offered through officia
 Pydantic AI Harness Skills. The library owns deferred loading and persisted
 activation; JV enforces authored tool ownership and current host access, with
 output obligations scoped to a run's skill invocation. The singular
-`skill_directory` remains an explicitly loaded primary skill. Source:
+`skill_directory` remains an explicitly loaded primary skill. A
+`library:<directory>` reference selects a contained installed package asset without
+embedding a machine-specific installation path. Source:
 [`skill_catalog.py:24`](../jvagent/harness/skill_catalog.py#L24).
 See [the catalog runbook](runbooks/native-skill-catalog.md).
 

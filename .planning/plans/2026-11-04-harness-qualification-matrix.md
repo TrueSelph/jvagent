@@ -47,6 +47,15 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Finite configuration migration: [rehearsal](2026-11-05-native-config-cutover.md).
+App/library declarations preserve their finite skill sets and override precedence,
+with public official format and JV policy projection checks. Known typed engine
+controls retire explicitly; active unqualified policies remain blocked. Real
+GPT-4.1/MCP/Serper/fetch browser behavior and fresh PostgreSQL spending reconcile
+for a converted candidate. Current reference assessment has 19 blocked requirements,
+including nine asset migrations; historic graph/task/usage upgrade and old-engine
+deletion are not qualified by this fresh-graph rehearsal.
+
 New-app execution default: [installed-wheel scaffold record](2026-11-05-native-scaffold.md).
 Both creation CLI paths now default to the native profile with an official-loader
 compatible primary skill. Actual installed-wheel jvchat recall and JsonDB usage
@@ -90,7 +99,7 @@ after restart, cross-tab conflict cases and other channels/deployments remain op
   Move model configuration to native providers; provider-specific services such
   as embeddings, transcription and speech synthesis remain Actions.
 - Before removing any persisted setting, implement and test its migration or emit
-  an actionable rejection. The inventory flags every mapping as unimplemented.
+  an actionable rejection. The inventory records implemented retirement proposals and partial/blocked mappings; field-level conversion does not prove an entire agent or graph migration.
 
 ## Workload and optimization acceptance
 

@@ -543,25 +543,33 @@
       "name": "light_model",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:584",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "light_model_action_type",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:589",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "light_model_temperature",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:594",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "light_model_max_tokens",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:595",
       "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "reasoning_enabled",
@@ -591,7 +599,9 @@
       "name": "stream_internal_progress",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:623",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "stream_reasoning_trace",
@@ -683,7 +693,9 @@
       "name": "history_limit",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:728",
       "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "history_statement_max_chars",
@@ -695,7 +707,9 @@
       "name": "with_event",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:738",
       "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "safeguards_reminder",
@@ -817,7 +831,9 @@
       "name": "lock_active_flow",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:903",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "auto_start_skills_on_new_user",
@@ -829,7 +845,9 @@
       "name": "planning",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:921",
       "disposition": "Replace generic behavior with official optional capability",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "planning_heavy_first_tick",
@@ -853,7 +871,9 @@
       "name": "vision",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:950",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "ingest_uploads",
@@ -871,13 +891,17 @@
       "name": "skills_source",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:983",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Finite selections and app/library precedence implemented; dynamic selectors, aliases and unqualified assets remain blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "skills",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:984",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Finite selections and app/library precedence implemented; dynamic selectors, aliases and unqualified assets remain blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "denied_skills",
@@ -889,31 +913,41 @@
       "name": "enable_transient_ack",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:988",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "first_emit_timeout_ms",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:993",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "ack_interval_ms",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:999",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "ack_statements",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1004",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "ack_on_first_tool_call",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1010",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "ack_spoken_channels",
@@ -925,7 +959,9 @@
       "name": "channel_overrides",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1027",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "block_raw_tool_invocation",
@@ -943,7 +979,9 @@
       "name": "tool_call_timeout",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1055",
       "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "tool_thought_max_chars",
@@ -955,19 +993,25 @@
       "name": "lean_tool_threshold",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1072",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "lean_presurface_k",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1080",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "pinned_tools",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1086",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "denied_tools",
@@ -979,7 +1023,9 @@
       "name": "skill_only_tools",
       "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1105",
       "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
-      "migration_implemented": false
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
     },
     {
       "name": "tool_servers",
@@ -2234,7 +2280,7 @@
       "fresh graph with NativeHarnessAction/MCPAction/ReplyAction and actual GPT-4.1 browser lookup",
       "unchanged results/spending after repeated planning"
     ],
-    "reference_profile_blockers": 31,
+    "reference_profile_blockers": 19,
     "remaining": [
       "reference controls and custom model consumers/providers",
       "broader skill/action/channel qualification",
@@ -2246,7 +2292,8 @@
     "global_flag_guard": {
       "evidence": "2026-11-05-native-migration-flags.md",
       "status": "rejects graph mutation flags before global processing; actual graph digest unchanged; subsequent model browser lookup succeeds"
-    }
+    },
+    "reference_profile_report": "2026-11-05-native-config-cutover-reference-blockers.json"
   },
   "native_skill_catalog_qualification": {
     "evidence": "2026-11-05-native-catalog.md",
@@ -2284,6 +2331,29 @@
       "ReplyAction inherited model-setting retirement",
       "container/cloud deployment and packaged frontend delivery",
       "full enterprise and optimization gates"
+    ]
+  },
+  "native_finite_catalog_migration_increment": {
+    "evidence": "2026-11-05-native-config-cutover.md",
+    "scope": "offline configuration candidate and fresh-graph rehearsal; no historical graph migration",
+    "qualified": [
+      "finite declared skill set preserved with no silent narrowing",
+      "bounded authored-name inventory and app-over-library precedence",
+      "same JV policy projection and public official Skills format preflight",
+      "portable contained package references without asset rewriting",
+      "typed explicit engine heuristics/inactive control retirement; active policies still block",
+      "qualified simple OpenAI model-service retirement with canonical Serper REST consumer",
+      "actual GPT-4.1 greeting, MCP read, Serper search/fetch research and ordinary follow-up",
+      "unchanged live outcomes/spending after current compiler re-plan"
+    ],
+    "reference_blocked_requirements": 19,
+    "remaining": [
+      "active channel/vision/planning/flow/concurrency/stream/tool policy mapping",
+      "nine reference skill format/name/spec/policy migrations",
+      "unqualified model-service consumers",
+      "historical config/state/usage migration, upgrade/rollback and release cutover",
+      "legacy implementation/profile/dependency deletion",
+      "broader compatibility, comparison, security and deployment gates"
     ]
   }
 }

@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytest.importorskip("pydantic_ai_harness")
+
 from jvagent.cli.harness_migrate import handle_harness_migrate, plan_harness_migration
 from jvagent.cli.main import DISPATCH, _first_app_root_path
 
@@ -98,7 +100,7 @@ def test_candidate_preserves_modules_identity_assets_and_limits(app: Path) -> No
     [
         "system_prompt",
         "tool_protocol",
-        "light_model",
+        "unreviewed_light_model_policy",
         "model_fallbacks",
         "pilot_max_output_tokens",
         "misspelled_limit",
@@ -350,3 +352,201 @@ def test_existing_output_directory_is_not_mistaken_for_app_root(app: Path) -> No
     )
     assert parsed == str(app)
     assert args[-2:] == ["--output", str(app.parent)]
+
+
+def test_finite_mixed_catalog_preserves_authored_app_override(app: Path) -> None:
+    change(app, skills=["answer", "research"], skills_source="both")
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert report["status"] == "candidate" and candidate is not None
+    context = candidate["actions"][0]["context"]
+    assert context["skill_directories"] == [
+        "agents/demo/bot/skills/answer",
+        "library:research",
+    ]
+    assert "skill_directory" not in context
+    assert report["selected_skill_count"] == 2
+    assert report["mappings"]["skills_source"] == "skill_directories"
+    assert source(app).read_bytes() == before
+
+
+def test_repeated_cli_skill_arguments_do_not_narrow_configured_catalog(
+    app: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    change(app, skills=["answer", "research"], skills_source="both")
+    output = app / "catalog.yaml"
+    args = ["--agent", "demo/bot", "--skill", "answer", "--output", str(output)]
+    assert handle_harness_migrate(args, str(app)) == 2
+    assert not output.exists()
+    assert handle_harness_migrate([*args, "--skill", "research"], str(app)) == 0
+    candidate = yaml.safe_load(output.read_text())
+    assert len(candidate["actions"][0]["context"]["skill_directories"]) == 2
+    assert "secret-example-value" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "selector", ["-all", ["ans*"], [], ["answer", "answer"], ["answer", 1]]
+)
+def test_dynamic_or_invalid_skill_selection_is_not_silently_replaced(
+    app: Path, selector: Any
+) -> None:
+    change(app, skills=selector)
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert candidate is None and report["status"] == "blocked"
+
+
+def test_app_alias_cannot_fall_back_to_a_less_restrictive_library_skill(
+    app: Path,
+) -> None:
+    directory = app / "agents/demo/bot/skills/renamed-research"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: research\ndescription: An app override\nallowed-tools: []\n---\nPrivate restrictions\n"
+    )
+    change(app, skills=["research"], skills_source="both")
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert candidate is None
+    assert any("format/name/spec" in reason for reason in report["blockers"])
+    assert "Private restrictions" not in json.dumps(report)
+
+
+def test_source_selection_does_not_leak_app_override_into_library_mode(
+    app: Path,
+) -> None:
+    change(app, skills=["answer"], skills_source="library")
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert report["status"] == "candidate"
+    assert candidate["actions"][0]["context"]["skill_directories"] == ["library:answer"]
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("channel_overrides", {"web": {"skill_only_tools": ["pay__*"]}}),
+        ("skill_only_tools", ["pay__*"]),
+        ("pinned_tools", ["write__save"]),
+        ("vision", True),
+        ("lock_active_flow", True),
+        ("planning", True),
+        ("tool_call_timeout", 30),
+    ],
+)
+def test_active_unqualified_policy_is_never_retired(
+    app: Path, key: str, value: Any
+) -> None:
+    change(app, **{key: value})
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and any(key in reason for reason in report["blockers"])
+
+
+def test_engine_heuristics_retire_explicitly_without_leaking_values_or_active_caps(
+    app: Path,
+) -> None:
+    change(
+        app,
+        light_model="secret-example-value",
+        light_model_action_type="OpenAILanguageModelAction",
+        light_model_temperature=0.1,
+        light_model_max_tokens=1024,
+        enable_transient_ack=True,
+        ack_on_first_tool_call=True,
+        first_emit_timeout_ms=1000,
+        ack_interval_ms=3000,
+        ack_statements=["secret-example-value"],
+        history_limit=10,
+        lean_tool_threshold=15,
+        lean_presurface_k=5,
+        stream_internal_progress=True,
+        pilot_max_output_tokens=20000,
+        pinned_tools=[],
+        skill_only_tools=[],
+        channel_overrides={},
+        vision=False,
+        max_statement_length=700,
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and report["status"] == "candidate"
+    target = candidate["actions"][0]["context"]
+    assert target["max_requests"] == 12 and target["max_run_cost_usd"] == "0.25"
+    assert target["model"] == "openai:gpt-4.1"
+    assert (
+        "max_output_tokens" not in target
+    )  # Inactive pilot limit was not active policy.
+    assert "700 characters" in target["instructions"]
+    assert (
+        "light_model" in report["retired_settings"]
+        and "history_limit" in report["retired_settings"]
+    )
+    assert "pilot_max_output_tokens" in report["retired_settings"]
+    assert not set(report["retired_settings"]).intersection(target)
+    assert "secret-example-value" not in json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"history_limit": -1},
+        {"ack_interval_ms": True},
+        {"enable_transient_ack": "yes"},
+        {"light_model_temperature": float("inf")},
+        {"ack_statements": [1]},
+        {"vision": 0},
+        {"skill_only_tools": ""},
+    ],
+)
+def test_retirement_requires_valid_typed_values(
+    app: Path, settings: dict[str, Any]
+) -> None:
+    change(app, **settings)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert report["status"] == "blocked" and candidate is None
+
+
+def test_app_skill_symlink_cannot_redirect_catalog_outside_agent(app: Path) -> None:
+    outside = app / "outside"
+    outside.mkdir()
+    (outside / "SKILL.md").write_text(
+        "---\nname: research\ndescription: Foreign\n---\nForeign body\n"
+    )
+    (app / "agents/demo/bot/skills/research").symlink_to(
+        outside, target_is_directory=True
+    )
+    change(app, skills=["answer", "research"], skills_source="both")
+    report, candidate = plan_harness_migration(app, "demo/bot")
+    assert report["status"] == "blocked" and candidate is None
+
+
+def test_large_inactive_numbers_do_not_overflow_during_retirement(app: Path) -> None:
+    change(app, light_model_temperature=10**400, pilot_max_runtime_seconds=10**400)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert report["status"] == "candidate" and candidate is not None
+    assert candidate["actions"][0]["context"]["max_requests"] == 12
+    assert "light_model_temperature" in report["retired_settings"]
+    change(app, tool_call_timeout=10**400)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and report["status"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("allowed-groups", ["private-group"]),
+        ("access-action", "private-action"),
+        ("requires-tasks", [{"when": "private-condition"}]),
+        ("allowed-tools", "lookup*"),
+    ],
+)
+def test_skill_format_preflight_does_not_discard_unsupported_jv_policy(
+    app: Path,
+    field: str,
+    value: Any,
+) -> None:
+    asset = app / "agents/demo/bot/skills/answer/SKILL.md"
+    asset.write_text(
+        "---\n"
+        + yaml.safe_dump({"name": "answer", "description": "Answer", field: value})
+        + "---\nAnswer.\n"
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert report["status"] == "blocked" and candidate is None
+    assert "private-group" not in json.dumps(report)

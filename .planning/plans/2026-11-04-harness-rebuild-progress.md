@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native default scaffolding](2026-11-05-native-scaffold.md).
+Latest increment: [finite catalog/configuration cutover](2026-11-05-native-config-cutover.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,26 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Finite configuration catalogs and explicit retirement
+
+The converter now preserves finite app/library skill sets with authored override
+precedence, JV policy projection and official format checks. Portable library
+references avoid installation paths. Typed model gearing, synthetic progress,
+lean pre-surfacing and turn-window controls retire explicitly; inactive pilot
+caps do not override active budgets, and active policy controls still block.
+A converted three-skill declaration with 26 retirement entries and simple model
+service removal delivers four actual GPT-4.1 browser turns, including real Serper
+search/fetch and MCP read. Ten requests reconcile to 14510 reported tokens and
+USD 0.031096 estimated, with zero reserves. The initial fixture sequencing/CLI
+log-prefix error is retained: its isolated legacy startup made no model request
+and had no Interaction; its unused graph was removed after verification.
+263 migration/CLI/scaffold/path cases and 404 native/host/real-PG cases pass on
+each Python 3.11/3.12 (overlapping suites). Unknown-control and override mutations
+fail. Parent 0ecac1b6 has nine green checks. The reference report now identifies
+19 blocked requirements, including nine asset migrations; this is not a same-
+denominator comparison with its earlier 31 coarse controls. Existing graph/state
+migration, release cutover and engine deletion remain open.
 
 ## Native defaults for new apps and agents
 
