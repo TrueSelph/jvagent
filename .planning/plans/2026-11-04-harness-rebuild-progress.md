@@ -2535,3 +2535,17 @@ still has 17 blockers, with a specific code-execution policy blocker replacing o
 skill-format blocker. Persistent bounded storage, per-user file/artifact parity,
 container lifecycle/quotas, script-effect reconciliation, legacy removal and
 enterprise qualification remain open. No overall optimization is claimed.
+
+## Native clock and schema admission — 2026-11-06
+
+[Qualification](2026-11-06-native-clock.md) extracts fresh app time into the
+existing AgentUtils Action and explicitly maps old tool tiers. A malicious clock
+argument exposes missing validation in schema-defined SDK tools; the public SDK
+validator callback now enforces declared JSON Schema using standard libraries.
+Nullable/required and extra-key signature semantics are corrected without a
+second dispatcher. Real GPT-4.1 browser success, permission refusal, restart/fresh
+time and unchanged reload/accounting pass. Native/host/real-PG suites pass 587
+per Python 3.11/3.12; affected slices pass 239 each. Reference migration has 12
+blockers, down from 13. Broader schemas/providers, retained-state cutover,
+distributed recovery, security/deployment, evaluation and legacy deletion remain
+open; this does not qualify the whole release.

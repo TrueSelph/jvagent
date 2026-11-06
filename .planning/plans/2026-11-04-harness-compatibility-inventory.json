@@ -2471,5 +2471,23 @@
       "Mixed old runtime/isolation staging responsibilities after all callers are qualified"
     ],
     "optimization_claim": false
+  },
+  "native_clock_schema_qualification": {
+    "status": "local clock and declarative schema boundary qualified; final gates remain open",
+    "record": "2026-11-06-native-clock.md",
+    "reference_profile_blockers": 12,
+    "qualified": [
+      "existing AgentUtils get_current_datetime name with app timezone and independent host access",
+      "explicit offline standard/full/minimal tool-tier migration",
+      "SDK public args_validator with standard JSON Schema validation, nullable and closed signature schemas",
+      "actual GPT-4.1 browser success, denial, restart/fresh read and zero-spend reload",
+      "587 native/host/real-PG tests per Python 3.11/3.12; fresh native-only installs"
+    ],
+    "remaining": [
+      "broader Action annotation/schema/provider compatibility",
+      "remaining reference configuration and retained-state migration",
+      "distributed recovery, security/deployment and evaluation",
+      "legacy/pilot execution removal and full release qualification"
+    ]
   }
 }

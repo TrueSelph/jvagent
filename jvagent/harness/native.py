@@ -4,6 +4,7 @@ Development entrypoint only: callers establish identity and provide an access
 checker. This module does not import the legacy Orchestrator or pilot engine.
 """
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
@@ -165,7 +166,9 @@ def build_native_agent(
                 return await policy.observe(original.name, arguments, result)
             return str(result.content)
 
-        schema = dict(original.parameters_schema)
+        from jvagent.harness.tool_schema import argument_validator
+
+        schema = deepcopy(original.parameters_schema)
         if original.binds_visitor:
             properties = dict(schema.get("properties", {}))
             properties.pop("visitor", None)
@@ -181,6 +184,7 @@ def build_native_agent(
             json_schema=schema,
             takes_ctx=True,
             sequential=bool(original.binds_visitor),
+            args_validator=argument_validator(schema),
         )
 
     declared = [tool.name for tool in tools] + [

@@ -261,7 +261,18 @@ async def test_native_repeated_writes_cannot_bypass_validation_or_item_scope(
         await action.get_native_skill_bases(),
     )
     assert all(not item["ok"] for item in results(result, "interview__set_fields"))
-    assert all(not item["ok"] for item in results(result, "interview__set_item_fields"))
+    item_returns = [
+        part.content
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+        and part.tool_name == "interview__set_item_fields"
+    ]
+    # Nested objects fail at the SDK schema boundary; domain-invalid scalar
+    # answers still reach the interview validator and return its JSON result.
+    assert len(item_returns) == 5
+    assert item_returns[0] == "Tool arguments do not match the declared schema"
+    assert all(not json.loads(value)["ok"] for value in item_returns[1:])
     assert results(result, "interview__set_items")[-1]["ok"] is False
     session = load_session(visitor.conversation)
     assert session.fields == {"items": "A1, B2"}

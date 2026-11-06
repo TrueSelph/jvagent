@@ -4,7 +4,7 @@ Turns a Python function's type hints into the ``parameters_schema`` shape that
 :class:`jvagent.tooling.tool.Tool` expects, so tool authors no longer hand-write
 JSON Schema dicts. Output is deliberately the *portable subset* enforced by
 :mod:`jvagent.tooling.tool_schema_validator` (single string ``type``, ``items``
-always present on arrays, no ``$defs``/``anyOf``/``title`` noise) — it is the
+always present on arrays, explicit nullable ``anyOf`` for optional values) — it is the
 test oracle for this module.
 
 Supported annotations:
@@ -14,8 +14,8 @@ Supported annotations:
 - ``dict`` / ``Dict[...]``                   → ``object``
 - ``Literal[...]``                           → primitive + ``enum``
 - ``Enum`` subclass                          → primitive + ``enum``
-- ``Optional[T]`` / ``Union[T, None]``       → schema of ``T`` (nullability is
-  expressed via ``required``, never a list ``type``)
+- ``Optional[T]`` / ``Union[T, None]``       → nullable ``anyOf`` schema;
+  omission and null are distinct JSON Schema concepts
 - ``Annotated[T, "description", ...]``       → schema of ``T`` + ``description``
 
 Anything else (bare params, multi-member Unions, unknown classes) degrades to an
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import enum
 import inspect
+import types
 import typing
 from typing import Any, Dict, List, Tuple, Union, get_args, get_origin
 
@@ -42,7 +43,7 @@ def _is_optional(annotation: Any) -> Tuple[bool, Any]:
     original Union with ``NoneType`` stripped (still a Union) so the caller can
     decide how to render it. Non-optional annotations return (False, annotation).
     """
-    if get_origin(annotation) is Union:
+    if get_origin(annotation) in (Union, types.UnionType):
         args = [a for a in get_args(annotation) if a is not type(None)]  # noqa: E721
         if len(args) < len(get_args(annotation)):
             if len(args) == 1:
@@ -90,8 +91,8 @@ def python_type_to_json_schema(annotation: Any) -> Dict[str, Any]:
     # Optional / Union
     optional, inner = _is_optional(annotation)
     if optional:
-        return python_type_to_json_schema(inner)
-    if get_origin(annotation) is Union:
+        return {"anyOf": [python_type_to_json_schema(inner), {"type": "null"}]}
+    if get_origin(annotation) in (Union, types.UnionType):
         return {}  # genuine multi-member union — leave untyped
 
     # Literal[...]
@@ -143,7 +144,7 @@ def build_parameters_schema(func: Any) -> Dict[str, Any]:
     """Build a ``parameters_schema`` object for *func* from its signature.
 
     ``self``/``cls`` and ``*args``/``**kwargs`` are skipped. Parameters with no
-    default and no ``Optional`` wrapper are ``required``. JSON-scalar defaults
+    default are ``required``; nullable values and omission are separate. JSON-scalar defaults
     are echoed under ``default``.
     """
     try:
@@ -169,7 +170,6 @@ def build_parameters_schema(func: Any) -> Dict[str, Any]:
             prop["description"] = desc
 
         has_default = param.default is not inspect.Parameter.empty
-        optional, _ = _is_optional(annotation)
 
         if has_default:
             default = param.default
@@ -177,12 +177,18 @@ def build_parameters_schema(func: Any) -> Dict[str, Any]:
             # not echoed (the absence already signals optional).
             if isinstance(default, _JSON_SCALARS):
                 prop["default"] = default
-        elif not optional:
+        else:
             required.append(pname)
 
         properties[pname] = prop
 
-    schema: Dict[str, Any] = {"type": "object", "properties": properties}
+    schema: Dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": any(
+            p.kind == p.VAR_KEYWORD for p in sig.parameters.values()
+        ),
+    }
     if required:
         schema["required"] = required
     return schema

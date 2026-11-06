@@ -2293,8 +2293,10 @@ litellm = [
     { name = "litellm" },
 ]
 native-harness = [
+    { name = "jsonschema" },
     { name = "pydantic-ai-harness", extra = ["skills"], marker = "extra == 'extra-7-jvagent-native-harness'" },
     { name = "pydantic-ai-slim", extra = ["openai"], marker = "extra == 'extra-7-jvagent-native-harness'" },
+    { name = "referencing" },
 ]
 native-mcp = [
     { name = "fastmcp-slim", extra = ["client"] },
@@ -2356,6 +2358,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.24.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
+    { name = "jsonschema", marker = "extra == 'native-harness'", specifier = ">=4.23,<5" },
     { name = "jsonschema", marker = "extra == 'pydantic-pilot'", specifier = ">=4.23,<5" },
     { name = "jvspatial", specifier = "==0.2.4" },
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.101.0,<1.102" },
@@ -2385,6 +2388,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "rapidocr", marker = "extra == 'pageindex'", specifier = ">=3.3,<4" },
     { name = "redis", marker = "extra == 'distributed-lock'", specifier = ">=5.0.0" },
+    { name = "referencing", marker = "extra == 'native-harness'", specifier = ">=0.35,<1" },
     { name = "regex", marker = "extra == 'test'", specifier = ">=2024.0.0" },
     { name = "sortedcontainers", marker = "extra == 'test'", specifier = ">=2.4.0" },
     { name = "tabulate", marker = "extra == 'pageindex'", specifier = ">=0.9.0" },

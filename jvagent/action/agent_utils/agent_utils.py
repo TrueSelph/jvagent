@@ -7,12 +7,19 @@ from pathlib import Path
 from typing import Dict, List
 
 from jvagent.action.base import Action
+from jvagent.core.clock import read_app_clock
+from jvagent.tooling.tool_decorator import tool
 
 logger = logging.getLogger(__name__)
 
 
 class AgentUtils(Action):
     """Action for agent utilities and power user controls."""
+
+    @tool(name="get_current_datetime", effect_class="read")
+    async def get_current_datetime(self) -> str:
+        """Read the current app date, time, UTC offset and configured timezone. No model-selected timezone or host clock override is accepted."""  # noqa: E501
+        return await read_app_clock(await self.get_app())
 
     async def list_interactions(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         """List interaction logs from the configured logs directory.

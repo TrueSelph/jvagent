@@ -99,6 +99,64 @@ def change(app: Path, **settings: Any) -> None:
     source(app).write_text(yaml.safe_dump(document))
 
 
+@pytest.mark.parametrize("tier", ["minimal", "standard", "full"])
+def test_tool_tier_becomes_explicit_clock_service(app: Path, tier: str) -> None:
+    change(app, tool_tier=tier)
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and not report["blockers"]
+    assert "tool_tier" not in candidate["actions"][0]["context"]
+    utilities = [
+        a for a in candidate["actions"] if a["action"] == "jvagent/agent_utils"
+    ]
+    assert bool(utilities) == (tier != "minimal")
+    assert report["mappings"]["tool_tier"] == "declared clock service"
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "tier,enabled,accepted",
+    [
+        ("standard", True, True),
+        ("standard", False, False),
+        ("full", True, True),
+        ("minimal", False, True),
+        ("minimal", True, False),
+        ("standard", 0, False),
+        ("standard", "false", False),
+    ],
+)
+def test_clock_migration_preserves_existing_enablement(
+    app: Path, tier: str, enabled: Any, accepted: bool
+) -> None:
+    change(app, tool_tier=tier)
+    doc = yaml.safe_load(source(app).read_text())
+    declaration = {
+        "action": "jvagent/agent_utils",
+        "context": {"enabled": enabled, "description": "Keep this declaration"},
+    }
+    doc["actions"].append(declaration)
+    source(app).write_text(yaml.safe_dump(doc))
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert (candidate is not None) == accepted
+    if candidate is not None:
+        assert [
+            a for a in candidate["actions"] if a["action"] == "jvagent/agent_utils"
+        ] == [declaration]
+        assert not report.get("added_actions")
+    assert source(app).read_bytes() == before
+
+
+@pytest.mark.parametrize("tier", [None, False, 1, "", "private-invalid-tier"])
+def test_unknown_tool_tier_is_not_guessed(app: Path, tier: Any) -> None:
+    change(app, tool_tier=tier)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("Core tool tier" in b for b in report["blockers"])
+    assert "private-invalid-tier" not in json.dumps(report)
+
+
 @pytest.mark.parametrize("block_raw", [True, False])
 def test_native_tool_controls_retire_without_changing_host_policy(
     app: Path, block_raw: bool
@@ -115,7 +173,12 @@ def test_native_tool_controls_retire_without_changing_host_policy(
         "tool_servers",
     }
     assert "permission" in report["retired_settings"]["block_raw_tool_invocation"]
-    assert candidate["actions"][1:] == original["actions"][1:]
+    assert candidate["actions"][1:-1] == original["actions"][1:]
+    assert candidate["actions"][-1] == {
+        "action": "jvagent/agent_utils",
+        "context": {"enabled": True},
+    }
+    assert report["added_actions"] == ["jvagent/agent_utils"]
     assert source(app).read_bytes() == before
 
 
@@ -166,7 +229,10 @@ def test_all_mcp_migration_requires_reviewed_native_tools(
     accepted = reviewed == ["mcp_records__lookup_record"]
     assert (candidate is not None) == accepted
     if accepted:
-        assert candidate["actions"][-1] == document["actions"][-1]
+        assert (
+            next(a for a in candidate["actions"] if a["action"] == "jvagent/mcp")
+            == document["actions"][-1]
+        )
     else:
         assert any("reviewed native_read_tools" in item for item in report["blockers"])
     assert source(app).read_bytes() == before
@@ -219,7 +285,12 @@ def test_candidate_preserves_modules_identity_assets_and_limits(app: Path) -> No
     assert candidate is not None
     target = candidate["actions"][0]
     assert target["action"] == "jvagent/native_harness"
-    assert candidate["actions"][1:] == original["actions"][1:]
+    assert candidate["actions"][1:-1] == original["actions"][1:]
+    assert candidate["actions"][-1] == {
+        "action": "jvagent/agent_utils",
+        "context": {"enabled": True},
+    }
+    assert report["added_actions"] == ["jvagent/agent_utils"]
     assert candidate["context"] == original["context"]
     context = target["context"]
     assert context["model"] == "openai:gpt-4.1"
@@ -359,6 +430,7 @@ def test_simple_model_service_is_retired_only_for_reviewed_callers(app: Path) ->
     assert [a["action"] for a in candidate["actions"]] == [
         "jvagent/native_harness",
         "jvagent/reply",
+        "jvagent/agent_utils",
     ]
     data["actions"].append({"action": "demo/unknown_consumer"})
     source(app).write_text(yaml.safe_dump(data))

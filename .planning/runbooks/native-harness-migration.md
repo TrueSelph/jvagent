@@ -249,3 +249,25 @@ execution; do not rewrite old messages or grant filesystem access based on a
 historical reference. Operator-reviewed relocation and recovery of the resulting
 pre-registration failed frontier remain separate migration work. Boundary
 regression: `tests/harness/native/test_context.py:42`.
+
+Clock service migration retires `tool_tier`. Standard/full (including the old
+standard default) explicitly retain or add the existing `jvagent/agent_utils`
+Action in the new candidate; minimal adds none. Disabled/ambiguous declarations
+and minimal with an active clock service require operator review. Source YAML
+is preserved. The clock keeps `get_current_datetime`, with no model parameters,
+and uses fresh configured app time. Invalid configured timezones now refuse
+rather than silently falling back. Skill ownership and host permissions still
+apply. Sources: `jvagent/cli/harness_migrate.py:370`,
+`jvagent/action/agent_utils/agent_utils.py:19`, `jvagent/core/clock.py:8`.
+See [clock and schema qualification](../plans/2026-11-06-native-clock.md).
+
+Existing Action JSON Schemas are validated through the SDK public
+`args_validator` callback because `Tool.from_schema` skips built-in validation.
+The thin bridge uses standard JSON Schema validation, refuses external reference
+retrieval and returns generic errors without argument values; it does not coerce
+inputs. Local references work. Remove this adapter when the SDK supplies the
+equivalent validation for schema-defined tools, then remove its dependencies if
+no other consumer needs them. Existing permissive declarations remain permissive;
+this does not qualify every Python annotation or Action-specific constraint.
+Sources: `jvagent/harness/native.py:169`, `jvagent/harness/tool_schema.py:14`,
+`jvagent/tooling/signature_schema.py:143`.

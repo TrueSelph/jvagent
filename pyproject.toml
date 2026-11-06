@@ -46,6 +46,8 @@ dependencies = [
 native-harness = [
     "pydantic-ai-slim[openai]==2.66.0",
     "pydantic-ai-harness[skills]==0.66.0",
+    "jsonschema>=4.23,<5",
+    "referencing>=0.35,<1",
 ]
 native-mcp = [
     "pydantic-ai-slim[mcp]==2.66.0",

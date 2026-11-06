@@ -38,6 +38,7 @@ _REVIEWED_CONSUMERS = {
     "jvagent/web_search",
     "jvagent/serper_web_search",
     "jvagent/pageindex_read",
+    "jvagent/agent_utils",
 }
 _DIRECT = {"enabled", "weight", "description", "planning"}
 _LIMITS = {
@@ -237,6 +238,7 @@ _KNOWN = (
         "pilot_max_tool_calls",
         "max_concurrent_tools",
         "tool_servers",
+        "tool_tier",
     }
 )
 
@@ -365,6 +367,45 @@ def plan_harness_migration(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
     _retire_controls(context, report, mode, actions)
+    tier = context.get("tool_tier", "standard")
+    clock_actions = [a for a in actions if a["action"] == "jvagent/agent_utils"]
+    add_clock = False
+    if not isinstance(tier, str) or tier.strip().lower() not in {
+        "minimal",
+        "standard",
+        "full",
+    }:
+        blockers.append("Core tool tier requires explicit native service migration")
+    elif len(clock_actions) > 1:
+        blockers.append("Clock service declarations are ambiguous")
+    else:
+        tier = tier.strip().lower()
+        if tier == "minimal" and clock_actions:
+            declared = clock_actions[0].get("context", {})
+            if not isinstance(declared, dict) or declared.get("enabled") is not False:
+                blockers.append(
+                    "Minimal tool tier with an active clock service requires explicit skill-policy review"
+                )
+        if tier != "minimal":
+            if clock_actions:
+                configured_clock = clock_actions[0].get("context", {})
+                if (
+                    not isinstance(configured_clock, dict)
+                    or configured_clock.get("enabled", True) is not True
+                ):
+                    blockers.append(
+                        "Clock service is disabled or invalid; explicit declaration review is required"
+                    )
+            else:
+                add_clock = True
+                report["added_actions"] = ["jvagent/agent_utils"]
+        report["mappings"]["tool_tier"] = "declared clock service"
+        report.setdefault("retired_settings", {})[
+            "tool_tier"
+        ] = "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+        report["required_review"].append(
+            "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions"
+        )
     if mode == "capability_pilot":
         for key in ("activation_budget", "max_duration_seconds"):
             if key in context:
@@ -575,6 +616,10 @@ def plan_harness_migration(
             a for a in candidate["actions"] if a.get("action") != selected_service
         ]
         report["preserved_action_count"] -= 1
+    if add_clock:
+        candidate["actions"].append(
+            {"action": "jvagent/agent_utils", "context": {"enabled": True}}
+        )
     report["status"] = "candidate"
     return report, candidate
 
