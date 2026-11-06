@@ -2266,5 +2266,24 @@
       "full comparison and default native cutover",
       "historical-state migration and legacy engine deletion"
     ]
+  },
+  "native_new_app_default_qualification": {
+    "evidence": "2026-11-05-native-scaffold.md",
+    "scope": "newly scaffolded default apps/agents only; existing profiles and stored graphs unchanged",
+    "qualified": [
+      "native profile chosen by app/agent CLI and context defaults",
+      "app-relative valid starter skill with authored-asset preservation and containment",
+      "native dependency extra in generated README and Docker examples",
+      "fresh 80-package installed wheel generates unedited native app outside checkout",
+      "actual GPT-4.1 jvchat remember/recall with isolated JsonDB receipts",
+      "public first-contact semantics retained; owner-capability/invalid-bearer refusals produce no Interaction or spend"
+    ],
+    "remaining": [
+      "reference declaration and stored-state migration",
+      "legacy profile and execution-engine/dependency deletion",
+      "ReplyAction inherited model-setting retirement",
+      "container/cloud deployment and packaged frontend delivery",
+      "full enterprise and optimization gates"
+    ]
   }
 }

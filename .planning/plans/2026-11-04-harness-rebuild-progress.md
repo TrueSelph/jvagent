@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native multi-skill catalog](2026-11-05-native-catalog.md).
+Latest increment: [native default scaffolding](2026-11-05-native-scaffold.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,22 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native defaults for new apps and agents
+
+Both scaffold CLI defaults now select native execution, with an app-relative
+valid starter skill, native install guidance and no Orchestrator/model-service
+declaration. Force regeneration preserves authored starter assets and refuses
+symlink escape. A fresh 80-package installed wheel generated the unedited app
+outside checkout and served actual GPT-4.1 jvchat remember/recall turns: two
+requests, 579 tokens, USD 0.001254 estimated. JsonDB state and usage reconcile.
+Public first contact retains anonymous Mode B semantics; its probe adds one
+accounted request (307 tokens, USD 0.000902). Missing owner capability and invalid
+bearer probes return 401 with no Interaction or spend. All 200 scaffold/CLI
+cases pass on each Python 3.11/3.12; default/asset-overwrite mutations fail.
+Parent cfb0bc8e has nine green checks; final publication and new-head CI remain
+separate. Existing graph migration, reference blockers and legacy deletion are
+not closed by the new-app default. No private-only ingress or cloud claim is made.
 
 ## Official native skill catalog
 

@@ -73,8 +73,8 @@ def test_resolve_orchestrator_profile_includes_orchestrator() -> None:
     assert "jvagent/persona_center" not in ids
 
 
-def test_create_app_default_profile_is_orchestrator(tmp_path: Path) -> None:
-    """Calling create_app with no explicit default_profile picks orchestrator.
+def test_create_app_default_profile_is_native(tmp_path: Path) -> None:
+    """Calling create_app with no explicit default_profile picks native execution.
 
     Existing apps (those that already have agent.yaml files) are NOT
     affected — the default_profile only governs newly-scaffolded agents.
@@ -97,8 +97,7 @@ def test_create_app_default_profile_is_orchestrator(tmp_path: Path) -> None:
     with open(agent_yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     action_ids = {a.get("action") for a in (data.get("actions") or [])}
-    assert "jvagent/orchestrator" in action_ids
-    assert "jvagent/reply" in action_ids
+    assert action_ids == {"jvagent/native_harness", "jvagent/reply"}
 
 
 def test_create_app_minimal(tmp_path: Path) -> None:

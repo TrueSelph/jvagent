@@ -36,8 +36,8 @@ A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-i
 
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).
-- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Orchestrator** action (weight `-200`) runs the whole turn in one `execute()`: a deterministic **continuation check** (resume an active flow from the conversation `TaskStore`), then a bounded **think-act-observe loop** over a unified tool surface. Routing = tool selection; turn-lock = an active flow that hasn't returned `COMPLETE`/`YIELD`.
-- Production-shaped: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB.
+- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; `InteractWalker` visits the agent's `InteractAction`s in weight order. New scaffolds use **NativeHarnessAction** with official Pydantic AI/Harness execution (`jvagent/scaffold/builtin_profiles/native.yaml:2`, `jvagent/action/native_harness/native_harness_action.py:138`). Existing Orchestrator deployments remain transitional until configuration/state migration passes; never configure both execution owners on one agent.
+- Shared services: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB. Native enterprise qualification remains governed by the active acceptance gates.
 
 Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email / web), long-running autonomous agents.
 
@@ -143,7 +143,7 @@ jvagent chat --url https://my-agent  # point the UI at a remote agent
 
 # Scaffolding
 jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
-    --author "You" --agent jvagent/main_bot@minimal --profile minimal
+    --description "A skill-driven assistant" --author "You" --agent jvagent/main_bot
 
 # Tests
 pytest tests/                        # all
@@ -259,7 +259,7 @@ pytest tests/                  # or the affected slice(s) at minimum
 
 - Database adapter internals → jvspatial.
 - Auth / JWT / HTTP wire format → jvspatial.
-- Model-provider API quirks → individual `LanguageModelAction` subclasses, not the core.
+- Harness provider APIs → public Pydantic AI providers. Existing `LanguageModelAction` classes remain transitional/service compatibility surfaces until their callers are migrated.
 - Frontend chat UI internals → `jvchat/` reference client (built bundle is served by `jvagent chat`; the Python side is just a static server — see [`docs/jvchat.md`](docs/jvchat.md)).
 
 ---

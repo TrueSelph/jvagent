@@ -92,14 +92,11 @@ def _write_profiles_example(profiles_dir: Path) -> None:
     examples = profiles_dir / "examples"
     examples.mkdir(parents=True, exist_ok=True)
     (examples / "custom.yaml").write_text(
-        """# Example custom profile — copy to ../my_team.yaml and use @my_team on agent create
-extends: minimal
+        """# Example custom profile — copy to ../my_team.yaml and use @my_team
+extends: native
 
-actions:
-  - action: jvagent/intro_interact_action
-    context:
-      enabled: true
-      description: Optional intro flow on top of minimal stack
+# Add Action integrations here, then declare their tools in the agent's SKILL.md.
+actions: []
 """,
         encoding="utf-8",
     )
@@ -256,7 +253,14 @@ def _patch_env_for_deployment(app_root: Path, deployment: str) -> None:
         p.write_text(p.read_text(encoding="utf-8") + extra, encoding="utf-8")
 
 
-def _write_readme_app(app_root: Path, ctx: "CreateAppContext") -> None:
+def _write_readme_app(
+    app_root: Path, ctx: "CreateAppContext", *, native_runtime: bool
+) -> None:
+    install = (
+        'python -m pip install "jvagent[native-harness]"'
+        if native_runtime
+        else "python -m pip install jvagent"
+    )
     agents_md = "\n".join(f"- `{s}`" for s in ctx.agent_specs) or "- _(none)_"
     (app_root / "README.md").write_text(
         f"""# {ctx.title}
@@ -269,14 +273,19 @@ Scaffolded with `jvagent app create`. Agents:
 
 ## Quickstart
 
-1. `cp .env.example .env` and set at least `JVAGENT_ADMIN_PASSWORD` and any API keys your actions need.
-2. `jvagent bootstrap`
-3. `jvagent run`
+1. Use Python 3.11 or newer, create/activate a virtual environment, then run `{install}`.
+2. `cp .env.example .env`. Set `JVSPATIAL_JWT_SECRET_KEY` (generate with `openssl rand -hex 32`), `JVAGENT_ADMIN_PASSWORD`, and the configured provider's API key (`OPENAI_API_KEY` for the native profile).
+3. `jvagent bootstrap`
+4. `jvagent run`
+
+The native profile uses Pydantic AI core and official Harness Skills for execution.
+It supplies a conversation SKILL.md and uses JV ReplyAction for delivery.
+Configure modular Actions and skill tool permissions explicitly before enabling integrations.
 
 ## Adding agents later
 
 ```text
-jvagent agent create your_ns/new_agent@minimal
+jvagent agent create your_ns/new_agent
 jvagent bootstrap --update
 ```
 
@@ -312,15 +321,16 @@ lambda:
     )
 
 
-def _write_dockerfile_example(app_root: Path) -> None:
+def _write_dockerfile_example(app_root: Path, *, native_runtime: bool) -> None:
+    package = '"jvagent[native-harness]"' if native_runtime else "jvagent"
     (app_root / "Dockerfile").write_text(
-        """# Generated scaffold — adjust base image and pip install for your registry.
+        f"""# Generated scaffold — adjust base image and pip install for your registry.
 FROM python:3.11-slim
 
 WORKDIR /app
 COPY . /app
 
-RUN pip install --no-cache-dir jvagent jvspatial
+RUN pip install --no-cache-dir {package} jvspatial
 
 # Install action extras from agents/*/actions/**/info.yaml in your CI or bundle step.
 # RUN jvagent bundle  # generates Dockerfile layers when using jvagent bundle
@@ -359,6 +369,43 @@ def _inject_skill_defaults(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]
         context.setdefault("skills_source", "both")
 
     return actions
+
+
+def _write_agent_readme(
+    agent_dir: Path, agent_ref: str, actions: List[Dict[str, Any]]
+) -> None:
+    text = (
+        f"# {_default_agent_alias(agent_ref)}\n\n"
+        f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n"
+    )
+    if _has_native_harness(actions):
+        text += (
+            '\nRequires Python >=3.11 and `pip install "jvagent[native-harness]"`.\n'
+            "Native execution uses the configured SKILL.md; extend its tool permissions "
+            "only after configuring and reviewing the corresponding Actions.\n"
+        )
+    (agent_dir / "README.md").write_text(text, encoding="utf-8")
+
+
+def _has_native_harness(actions: List[Dict[str, Any]]) -> bool:
+    return any(item.get("action") == "jvagent/native_harness" for item in actions)
+
+
+def _write_native_starter_skill(agent_dir: Path) -> None:
+    """Create the standard native starter once; preserve authored assets on force."""
+    directory = resolve_under(agent_dir, "skills", "conversation")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = resolve_under(agent_dir, "skills", "conversation", "SKILL.md")
+    if path.exists():
+        return
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(
+            "---\nname: conversation\ndescription: Answer ordinary conversational requests.\n"
+            "allowed-tools: []\n---\n"
+            "Answer the user's request clearly and concisely. Ask for clarification when needed. "
+            "Distinguish uncertainty from facts. Do not claim to have used tools or performed "
+            "external work unless an available tool returned that result.\n"
+        )
 
 
 def _write_starter_skills_bundle(agent_dir: Path) -> None:
@@ -412,7 +459,7 @@ class CreateAppContext:
     jvagent_spec: str = field(default_factory=lambda: f"~{jvagent_package_version}")
     deployment: str = "local"  # local | aws-lambda | azure-functions
     agent_specs: List[str] = field(default_factory=list)
-    default_profile: str = "orchestrator"
+    default_profile: str = "native"
     extra_action_flags: List[str] = field(default_factory=list)
     copy_builtin_profiles: bool = True
     force: bool = False
@@ -462,6 +509,7 @@ def create_app(ctx: CreateAppContext) -> None:
     agents_root = root / "agents"
     agents_root.mkdir(parents=True, exist_ok=True)
 
+    native_runtime = False
     for spec in ctx.agent_specs:
         agent_ref, prof = parse_agent_spec(spec)
         profile_key = prof or ctx.default_profile
@@ -470,6 +518,7 @@ def create_app(ctx: CreateAppContext) -> None:
             actions,
             _default_agent_alias(agent_ref),
             f"{ctx.title} — {_default_agent_alias(agent_ref)}",
+            agent_ref=agent_ref,
         )
         actions = _inject_skill_defaults(actions)
         agent_dir = _agent_dir_under(root, agent_ref)
@@ -484,18 +533,17 @@ def create_app(ctx: CreateAppContext) -> None:
             description=f"Agent {_default_agent_alias(agent_ref)} for {ctx.title}",
             actions=actions,
         )
-        (agent_dir / "README.md").write_text(
-            f"# {_default_agent_alias(agent_ref)}\n\n"
-            f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
-            encoding="utf-8",
-        )
+        _write_agent_readme(agent_dir, agent_ref, actions)
+        if _has_native_harness(actions):
+            native_runtime = True
+            _write_native_starter_skill(agent_dir)
         if _has_skill_interact_action(actions):
             _write_starter_skills_bundle(agent_dir)
 
-    _write_readme_app(root, ctx)
+    _write_readme_app(root, ctx, native_runtime=native_runtime)
     if ctx.deployment == "aws-lambda":
         _write_deploy_example(root, ctx)
-        _write_dockerfile_example(root)
+        _write_dockerfile_example(root, native_runtime=native_runtime)
 
     if ctx.init_git:
         try:
@@ -513,7 +561,7 @@ def create_app(ctx: CreateAppContext) -> None:
 class CreateAgentContext:
     app_root: Path
     agent_spec: str
-    default_profile: str = "orchestrator"
+    default_profile: str = "native"
     extra_action_flags: List[str] = field(default_factory=list)
     force: bool = False
     author: Optional[str] = None
@@ -564,6 +612,7 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         actions,
         _default_agent_alias(agent_ref),
         f"{app_title} — {_default_agent_alias(agent_ref)}",
+        agent_ref=agent_ref,
     )
     actions = _inject_skill_defaults(actions)
 
@@ -578,11 +627,9 @@ def create_agent_in_app(ctx: CreateAgentContext) -> None:
         description=f"Agent {_default_agent_alias(agent_ref)} for {app_title}",
         actions=actions,
     )
-    (agent_dir / "README.md").write_text(
-        f"# {_default_agent_alias(agent_ref)}\n\n"
-        f"Defined as `{agent_ref}`. Edit `agent.yaml` to change actions.\n",
-        encoding="utf-8",
-    )
+    _write_agent_readme(agent_dir, agent_ref, actions)
+    if _has_native_harness(actions):
+        _write_native_starter_skill(agent_dir)
     if _has_skill_interact_action(actions):
         _write_starter_skills_bundle(agent_dir)
 

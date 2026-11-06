@@ -47,6 +47,13 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+New-app execution default: [installed-wheel scaffold record](2026-11-05-native-scaffold.md).
+Both creation CLI paths now default to the native profile with an official-loader
+compatible primary skill. Actual installed-wheel jvchat recall and JsonDB usage
+readback pass. Public first contact remains anonymous-capable; owner resume and
+invalid bearer refusals are verified. Existing apps/graphs and explicit legacy
+profiles are not migrated. Full native cutover and engine deletion remain open.
+
 Native multi-skill runtime: [catalog record](2026-11-05-native-catalog.md).
 Official deferred loading and JV active-skill/host-access checks pass actual
 GPT-4.1 chat/MCP/research/greeting/research browser flows and fresh PostgreSQL
