@@ -531,12 +531,40 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         cfg: DriveIngestConfig,
         cancel_event: threading.Event,
         mime_type: str = "",
+        queued_version: Any = None,
     ) -> Dict[str, Any]:
+        async def verify_version() -> None:
+            if (
+                not isinstance(queued_version, str)
+                or not queued_version.isascii()
+                or not queued_version.isdecimal()
+            ):
+                raise ValidationError(
+                    "Native Drive ingestion requires a queued file version"
+                )
+            current = await google_drive_action.get_file_metadata(
+                file_id, fields="id,version,mimeType,trashed"
+            )
+            if current.get("mimeType") == "application/vnd.google-apps.shortcut":
+                raise ValidationError(
+                    "Native Drive ingestion requires a versioned shortcut target"
+                )
+            if (
+                current.get("id") != file_id
+                or current.get("version") != queued_version
+                or current.get("trashed") is True
+            ):
+                raise ValidationError("Drive file changed since it was queued")
+
+        if cfg.native_action is not None:
+            await verify_version()
         try:
             file_bytes = await google_drive_action.get_media(file_id=file_id)
         except ValueError as exc:
             logger.warning("Skipping non-exportable Drive file %s: %s", doc_name, exc)
             raise ValidationError(str(exc)) from exc
+        if cfg.native_action is not None:
+            await verify_version()
         forge_base = (get_jvagent_jvforge_base_url() or "").strip()
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
@@ -879,6 +907,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         file_id=file_id,
                         doc_url=doc_url,
                         mime_type=ingest_mime,
+                        queued_version=file_info.get("version"),
                         cfg=cfg,
                         cancel_event=cancel_event,
                     ),
@@ -1119,6 +1148,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         collection_name: str,
         skip_existing_documents: bool,
         remove_deleted_documents: bool = False,
+        *,
+        include_version: bool = False,
     ) -> None:
         """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes.
 
@@ -1192,7 +1223,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 drive_id = google_drive_folder_id
 
             files = await google_drive_action.list_files(
-                with_link=True, folder_id=google_drive_folder_id, drive_id=drive_id
+                with_link=True,
+                folder_id=google_drive_folder_id,
+                drive_id=drive_id,
+                **({"include_version": True} if include_version else {}),
             )
             metadata = google_drive_folder.get("metadata", {})
 
@@ -1672,6 +1706,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             collection_name,
             skip_existing_documents,
             remove_deleted_documents=remove_deleted_documents,
+            **({"include_version": True} if native is not None else {}),
         )
 
         if native is None:

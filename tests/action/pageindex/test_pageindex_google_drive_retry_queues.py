@@ -1318,3 +1318,43 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
         settle.assert_awaited_once()
     else:
         settle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued_version", [None, "42"])
+async def test_native_drive_refuses_unversioned_or_changed_download(queued_version):
+    fixture = {"id": "file", "name": "doc.pdf", "version": queued_version}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [fixture], "modified": [], "removed": []},
+    )
+    action = PageIndexGoogleDriveSyncAction()
+    drive = SimpleNamespace(
+        get_media=AsyncMock(return_value=b"pdf"),
+        get_file_metadata=AsyncMock(
+            side_effect=[
+                {"id": "file", "version": "42", "mimeType": "application/pdf"},
+                {"id": "file", "version": "43", "mimeType": "application/pdf"},
+            ]
+        ),
+    )
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+        skip_existing_documents=False,
+    )
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "_ingest_native_drive_document", AsyncMock()
+    ) as publish:
+        result = await action._process_single_document(
+            node, drive, fixture, "added", cfg
+        )
+    assert not result["success"]
+    assert node.failed_documents["added"] == [fixture]
+    assert drive.get_media.await_count == int(queued_version is not None)
+    publish.assert_not_awaited()

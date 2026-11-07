@@ -12,6 +12,28 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native folder listings request the Drive file version. Native ingestion
+requires the queued version to match before and after download, prior
+to calling the model or writing a root
+(`google_drive_action.py:129`, `pageindex_google_drive_sync_action.py:534`).
+Missing versions, changed versions, trashed files and unresolved shortcut
+targets fail admission. This does not establish replacement ownership or
+upgrade legacy queued entries that lack a version.
+
+A browser fixture at parent `8da40b5e` supplied synthetic Drive metadata
+and bytes to the production queue handler. Changing version 42 to 43
+during download returned an ingestion refusal in 74 ms. The failed queue
+preserved version 42 and no root, model request or tool event was produced.
+The stable case returned HTTP 200 in 12.640 seconds, published two chunks
+under `n.DocumentRootNode.3655cfc3ddcf4b189f178ba3`, and cleared its queue.
+PostgreSQL interaction `n.Interaction.bf50b225c3564a8c983c1c31` recorded
+10 GPT-4.1 requests, 3,094 provider-reported tokens, USD 0.009596 estimated
+cost and zero unknown-cost requests. The final diff hash
+`0e141602c9f6d53880e6d10a59cd10d7e160b61f` also corrects a listing
+keyword separator caught by the automated tests. The browser fixture
+starts with a queued file. Standard endpoint and live OAuth listing
+remain separate qualification gates.
+
 Native Drive can now settle the crash state below when the exact published
 root and source scope match, the local worker is confirmed dead, and every
 registered SDK run has a completed single-request journal
