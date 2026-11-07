@@ -1394,3 +1394,63 @@ def test_selected_provider_maps_only_qualified_defaults_and_timeout(
         assert report["retired_actions"] == ["jvagent/litellm_lm"]
         assert report["model_service_review"]["unreviewed_actions"] == []
         assert all(action in candidate["actions"] for action in retained_actions)
+
+
+@pytest.mark.parametrize("case", ["reviewed", "custom_collection", "legacy_tool"])
+def test_reference_pageindex_conversion_requires_explicit_model(
+    app: Path, case: str
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    profile = {
+        "enabled": True,
+        "strategy": "tree_search",
+        "limit": 10,
+        "model": "gpt-4.1-nano",
+        "model_action_type": "OpenAILanguageModelAction",
+    }
+    if case == "custom_collection":
+        profile["collection"] = "custom"
+    elif case == "legacy_tool":
+        asset = source(app).parent / "skills/answer/SKILL.md"
+        asset.write_text(
+            asset.read_text().replace(
+                "description: Answer",
+                "description: Answer\nrequires-tools: [pageindex__assimilate]",
+            )
+        )
+    document["actions"] = [
+        document["actions"][0],
+        document["actions"][2],
+        {"action": "jvagent/pageindex_action", "context": profile},
+        {"action": "jvagent/litellm_lm", "context": {}},
+    ]
+    source(app).write_text(yaml.safe_dump(document))
+    original = source(app).read_bytes()
+    _, unapproved = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert unapproved is None
+    report, candidate = plan_harness_migration(
+        app, "demo/bot", skill="answer", pageindex_model="openai:gpt-4.1-mini"
+    )
+    assert source(app).read_bytes() == original
+    if case != "reviewed":
+        assert candidate is None
+        expected = (
+            "outside the reviewed"
+            if case == "custom_collection"
+            else "tools unavailable"
+        )
+        assert any(expected in entry for entry in report["blockers"])
+        return
+    assert candidate is not None
+    assert report["model_service_review"]["unreviewed_actions"] == []
+    assert {
+        "action": "jvagent/pageindex_read",
+        "context": {
+            "enabled": True,
+            "strategy": "tree_search",
+            "limit": 10,
+            "native_search_model": "openai:gpt-4.1-mini",
+            "native_callback_model": "openai:gpt-4.1-mini",
+            "native_ingestion_model": "openai:gpt-4.1-mini",
+        },
+    } in candidate["actions"]

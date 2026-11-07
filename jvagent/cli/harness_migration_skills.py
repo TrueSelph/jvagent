@@ -193,6 +193,27 @@ def migrate_skill_selection(
                 )
                 continue
             directory, metadata = member
+            if (
+                report["mappings"].get("jvagent/pageindex_action")
+                == "jvagent/pageindex_read"
+            ):
+                removed_tools = (
+                    "pageindex__assimilate",
+                    "pageindex__delete",
+                    "pageindex__list",
+                )
+                for key in ("allowed-tools", "requires-tools"):
+                    patterns = metadata.get(key, [])
+                    if isinstance(patterns, list) and any(
+                        fnmatchcase(tool, pattern)
+                        for pattern in patterns
+                        if isinstance(pattern, str)
+                        for tool in removed_tools
+                    ):
+                        blockers.append(
+                            f"Selected skill {index} declares tools unavailable on the native PageIndex read profile"
+                        )
+                        break
             if context.get("vision") is True and (
                 any(
                     not isinstance(metadata.get(key, []), list)

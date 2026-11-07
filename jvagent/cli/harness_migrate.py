@@ -403,8 +403,70 @@ def _plan_model_service(
     return selected_service, retired_service, service_timeout
 
 
+def _migrate_pageindex_profile(
+    actions: list[dict[str, Any]], model: str | None, report: dict[str, Any]
+) -> None:
+    """Replace the reviewed legacy tree profile only on explicit operator opt-in."""
+    if model is None:
+        return
+    profiles = [
+        action
+        for action in actions
+        if action["action"] in {"jvagent/pageindex_action", "jvagent/pageindex_read"}
+    ]
+    if (
+        not re.fullmatch(r"openai:[A-Za-z0-9][A-Za-z0-9_.-]*", model)
+        or len(profiles) != 1
+        or profiles[0]["action"] != "jvagent/pageindex_action"
+    ):
+        report["blockers"].append(
+            "PageIndex migration requires one legacy profile and an explicit OpenAI SDK model"
+        )
+        return
+    profile = profiles[0]
+    context = profile.get("context")
+    if (
+        set(profile) != {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled", "strategy", "limit", "model", "model_action_type"}
+        or context.get("enabled") is not True
+        or context.get("strategy") != "tree_search"
+        or context.get("model_action_type") != "OpenAILanguageModelAction"
+        or not isinstance(context.get("model"), str)
+        or not context["model"]
+        or type(context.get("limit", 10)) is not int
+        or context.get("limit", 10) < 1
+    ):
+        report["blockers"].append(
+            "PageIndex has settings outside the reviewed native tree profile"
+        )
+        return
+    actions[actions.index(profile)] = {
+        "action": "jvagent/pageindex_read",
+        "context": {
+            **{
+                key: value
+                for key, value in context.items()
+                if key not in {"model", "model_action_type"}
+            },
+            "native_search_model": model,
+            "native_callback_model": model,
+            "native_ingestion_model": model,
+        },
+    }
+    report["mappings"]["jvagent/pageindex_action"] = "jvagent/pageindex_read"
+    report["required_review"].append(
+        "PageIndex uses a read-only skill tool; review legacy write and list callers, "
+        "explicitly enable qualified ingestion and callback routes, and verify retained collection and webhook bindings"
+    )
+
+
 def plan_harness_migration(
-    app_root: Path, agent_name: str, *, skill: str | Sequence[str] | None = None
+    app_root: Path,
+    agent_name: str,
+    *,
+    skill: str | Sequence[str] | None = None,
+    pageindex_model: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Return a redacted plan and candidate without graph or env resolution.
 
@@ -507,6 +569,7 @@ def plan_harness_migration(
             report["required_review"].append(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
+    _migrate_pageindex_profile(actions, pageindex_model, report)
     _retire_controls(context, report, mode, actions)
     retire_vision = migrate_vision(context, actions, report)
     tier = context.get("tool_tier", "standard")
@@ -796,6 +859,10 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
         action="append",
         help="Explicit installed skill; repeat for a finite catalog",
     )
+    parser.add_argument(
+        "--pageindex-model",
+        help="Replace the reviewed legacy PageIndex tree profile with an explicit OpenAI SDK model",
+    )
     parser.add_argument("--output", help="New candidate YAML file; never overwrites")
     parser.add_argument(
         "--state-snapshot",
@@ -804,7 +871,10 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
     options = parser.parse_args(args)
     try:
         report, candidate = plan_harness_migration(
-            Path(app_root), options.agent, skill=options.skill
+            Path(app_root),
+            options.agent,
+            skill=options.skill,
+            pageindex_model=options.pageindex_model,
         )
         if options.state_snapshot:
             from jvagent.cli.harness_migration_state import inspect_state_snapshot

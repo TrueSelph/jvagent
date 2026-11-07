@@ -1,5 +1,23 @@
 # Reference model service retirement boundary
 
+## Explicit PageIndex configuration conversion
+
+`harness-migrate --pageindex-model openai:gpt-4.1-mini` converts the
+reviewed legacy OpenAI tree declaration into a native read profile and
+sets the search, ingestion and callback models
+(`harness_migrate.py:406`). The old service selector and model value are
+removed from that profile. A selected skill that declares an unavailable
+PageIndex tool blocks conversion (`harness_migration_skills.py:198`).
+Unreviewed Action settings also block. Operators must separately enable
+and qualify ingestion and callback routes and verify retained bindings.
+
+On the script-qualified full reference copy at parent `2b174fa0`, the
+offline dry run accepted the PageIndex mapping and left Intro and SkillHub
+as unreviewed Actions. Alternate OpenAI and Ollama declarations still
+prevent a full candidate. The regression uses a reduced declaration to
+verify candidate output, settings preservation and source immutability.
+This increment changes offline planning only.
+
 ## Reference PageIndex provider mismatch
 
 At `1862a530`, the reference config names GPT-4.1 Nano for PageIndex
