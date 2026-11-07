@@ -121,6 +121,10 @@ class PageIndexAction(Action):
         default="",
         description="SDK model for native callbacks; empty uses the chat model",
     )
+    native_ingestion_model: str = attribute(
+        default="",
+        description="SDK model for native ingestion; empty uses the chat model",
+    )
     native_markdown_ingestion: bool = attribute(
         default=False, description="Enable accounted local Markdown ingestion"
     )

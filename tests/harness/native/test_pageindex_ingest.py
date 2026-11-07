@@ -46,11 +46,11 @@ async def test_native_markdown_publishes_after_summary_and_description(
             usage=RequestUsage(input_tokens=10, output_tokens=5, cost=Decimal("0.001")),
         )
 
-    monkeypatch.setattr(
-        native_model,
-        "qualified_model",
-        lambda _: FunctionModel(respond, model_name="gpt-4.1"),
-    )
+    def resolve(model: str) -> FunctionModel:
+        assert model == "openai:gpt-4.1-mini"
+        return FunctionModel(respond, model_name="gpt-4.1-mini")
+
+    monkeypatch.setattr(native_model, "qualified_model", resolve)
 
     async def assimilate(complete: CompleteText) -> dict[str, Any]:
         return await documents.assimilate_document(
@@ -68,7 +68,8 @@ async def test_native_markdown_publishes_after_summary_and_description(
             agent_id="agent",
             actor="operator",
             doc_name="Fixture",
-            requested_model=None,
+            requested_model="gpt-4.1-mini",
+            configured_model="openai:gpt-4.1-mini",
             assimilate=assimilate,
         )
 
@@ -87,6 +88,7 @@ async def test_native_markdown_publishes_after_summary_and_description(
     legacy_tokens.assert_not_called()
     rows = await Interaction.find({"channel": CHANNEL})
     assert len(rows) == 1 and rows[0].closed
+    assert rows[0].native_run["model"] == "openai:gpt-4.1-mini"
     assert rows[0].usage["total_tokens"] == 15 * max_requests
     if max_requests == 2:
         assert '"_root_id": "document-root"' in rows[0].response

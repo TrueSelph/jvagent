@@ -911,6 +911,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             "actor": self.id,
             "doc_name": doc_name,
             "requested_model": cfg.model,
+            "configured_model": cfg.page_index_action.native_ingestion_model,
         }
         if ext == ".pdf" and cfg.page_index_action.native_pdf_ingestion is True:
             if Path(doc_name).suffix.lower() not in {"", ".pdf"}:

@@ -1507,7 +1507,7 @@
         "name": "jvagent/pageindex_action",
         "archetype": "PageIndexAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:8675c16f3b72622c9462ea2bc1e6337a7b7defa7bfd978f01c8de7ef9d588429"
+        "tracked_directory_digest": "sha256:9b1b2e5673d7ecb3f7a13136dc04192a81948e22425c8d3e42924df77a051468"
       },
       {
         "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",
@@ -1516,7 +1516,7 @@
         "name": "jvagent/pageindex_google_drive_sync_action",
         "archetype": "PageIndexGoogleDriveSyncAction",
         "tracked_directory_files": 7,
-        "tracked_directory_digest": "sha256:5c1a864e0747c2194cf259f6539bcdde7c0351e2b11cd5ee281cd24a7d054daa"
+        "tracked_directory_digest": "sha256:314daafbdb6059d9f3230bf3555084310f6d16012d0063eb7d54fd63c5e678a6"
       },
       {
         "path": "jvagent/action/pageindex_read/info.yaml",

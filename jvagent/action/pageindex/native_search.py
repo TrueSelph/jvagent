@@ -158,7 +158,12 @@ async def run_native_operation(
         **native_worker_metadata(),
         "jv_operation": channel,
     }
-    receipt = {"run_id": run_id, "status": "running", "limits": limits}
+    receipt = {
+        "run_id": run_id,
+        "status": "running",
+        "limits": limits,
+        "model": model_name,
+    }
     interaction.native_run = receipt
     await interaction.save()
     await flush_deferred_entities(interaction, strict=True)

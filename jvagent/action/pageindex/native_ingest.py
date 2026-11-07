@@ -26,11 +26,13 @@ async def run_native_markdown_ingest(
     actor: str,
     doc_name: str,
     requested_model: str | None,
+    configured_model: str = "",
     on_started: Callable[[str], None] | None = None,
     assimilate: Callable[[CompleteText], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Share SDK accounting across summaries and retain the published root ID."""
-    admitted_operation_model(action.model, requested_model)
+    operation_model = configured_model or action.model
+    admitted_operation_model(operation_model, requested_model)
 
     async def operation(complete: Complete) -> dict[str, Any]:
         async def text(prompt: str) -> str:
@@ -51,6 +53,7 @@ async def run_native_markdown_ingest(
         operation=operation,
         result_receipt=_publication,
         on_started=on_started,
+        configured_model=operation_model,
     )
 
 
@@ -61,11 +64,13 @@ async def run_native_pdf_ingest(
     actor: str,
     doc_name: str,
     requested_model: str | None,
+    configured_model: str = "",
     on_started: Callable[[str], None] | None = None,
     assimilate: Callable[[Complete], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Use the same host limits and receipts for the classic PDF parser."""
-    admitted_operation_model(action.model, requested_model)
+    operation_model = configured_model or action.model
+    admitted_operation_model(operation_model, requested_model)
     return await run_native_operation(
         action,
         agent_id=agent_id,
@@ -75,6 +80,7 @@ async def run_native_pdf_ingest(
         operation=assimilate,
         result_receipt=_publication,
         on_started=on_started,
+        configured_model=operation_model,
     )
 
 
@@ -133,7 +139,10 @@ async def settle_interrupted_publication(
         ]:
             raise ValueError("Publication has an unsettled SDK request")
 
-    projected = await project_native_usage(interaction, run_id=identity, model=model)
+    recorded_model = interaction.native_run.get("model") or model
+    projected = await project_native_usage(
+        interaction, run_id=identity, model=recorded_model
+    )
     usage = projected.usage
     if (
         usage.get("unknown_cost_call_count")

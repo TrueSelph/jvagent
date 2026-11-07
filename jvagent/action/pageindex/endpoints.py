@@ -926,6 +926,7 @@ async def _ingest_locally(
                 actor=actor,
                 doc_name=options["doc_name"],
                 requested_model=options.get("model"),
+                configured_model=profile.native_ingestion_model,
                 assimilate=pdf_assimilate,
             )
         except (UsageLimitExceeded, SpendLimitExceeded):
@@ -950,6 +951,7 @@ async def _ingest_locally(
         doc_name=options["doc_name"],
         requested_model=options.get("model"),
         assimilate=assimilate,
+        configured_model=profile.native_ingestion_model,
     )
 
 
