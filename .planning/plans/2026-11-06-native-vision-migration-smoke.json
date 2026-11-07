@@ -1,0 +1,362 @@
+{
+  "parent_revision": "git-commit:3c16e4339b2672e9c48c613a22377afb5768fea3",
+  "source_sha256": {
+    "jvagent/harness/inputs.py": "sha256:40bfead57bde9a770573a48d0909ff3d91b18954f29c89163a91646dc11fc4ff",
+    "jvagent/action/native_harness/native_harness_action.py": "sha256:2d31d753448081150050ff970a837c1fa90786bd4a3e993a9afa7ca63c095b9a",
+    "jvagent/cli/harness_migrate.py": "sha256:b40660cc0b8b2d5c35d5ea8cffca27a0b875968c8f49c6eb6ff3ee9b673cb864",
+    "jvagent/cli/harness_migration_skills.py": "sha256:0b28aee6ab125ed165a62de496ca81fb617247ba02174c70e2c14acc851644d0",
+    "jvagent/cli/harness_migration_vision.py": "sha256:bb9bdcc4c17d84ae95e58cb35f344190ab185df8b9bd86176454977b2ef38289"
+  },
+  "scope": "Actual OpenAI GPT-4.1; disposable PostgreSQL and jvchat; original PNG input, cold recall and browser-origin opt-out probe. No independent VisionAction is configured.",
+  "migration": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/demo/inspect/agent.yaml",
+    "source_digest": "sha256:796e3415c47584aa0fd7870f811b739f2dd72ef724aa49b1608a1b0b60cf0814",
+    "status": "candidate",
+    "blockers": [],
+    "mappings": {
+      "vision": "input_media_types; independent vision execution retired",
+      "tool_tier": "declared clock service",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds",
+      "max_turn_cost_usd": "max_run_cost_usd",
+      "max_conversation_cost_usd": "max_conversation_cost_usd",
+      "model": "model",
+      "model_action_type": "native provider",
+      "system_prompt_extra": "instructions",
+      "model_temperature": "model_settings.temperature",
+      "model_max_tokens": "model_settings.max_tokens",
+      "enabled": "enabled"
+    },
+    "bounded_defaults": [
+      "tool_execution_mode",
+      "max_tokens"
+    ],
+    "preserved_action_count": 1,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Review native image input with the primary model: original media replaces generated description artifacts; explicit image_interpretation:false refuses current images; remote URLs, interpret_images callers, other channel opt-outs and retained artifacts require separate migration",
+      "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions"
+    ],
+    "retired_settings": {
+      "vision": "Retired independent interpreter and description-artifact reflex; native primary-model image input and SDK media history replace them",
+      "tool_tier": "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+    },
+    "retired_actions": [
+      "jvagent/vision"
+    ],
+    "added_actions": [
+      "jvagent/agent_utils"
+    ],
+    "selected_skill_count": 1,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "candidate_actions": [
+    "jvagent/native_harness",
+    "jvagent/reply",
+    "jvagent/agent_utils"
+  ],
+  "candidate_input_media_types": [
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+  ],
+  "regenerated_candidate_exact": true,
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.6ef39b017e394ff684f92717",
+      "session_id": "sess_652fed2cdff645a5",
+      "utterance": "What is the background color and the large code on the attached image? Reply only with those two details.",
+      "response": "Background color: Yellow\nLarge code: VECTOR-73",
+      "started_at": "2026-11-06T21:35:55.809361-04:00",
+      "completed_at": "2026-11-06T21:35:59.159971-04:00",
+      "elapsed_seconds": 3.35061,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 741,
+          "output_tokens": 13
+        },
+        "output": "Background color: Yellow\nLarge code: VECTOR-73",
+        "run_id": "corr-c2a315939e0c4b6b991171629408c1d6",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:35:59.137291+00:00",
+                "total_tokens": 754,
+                "prompt_tokens": 741,
+                "total_cost_usd": 0.001586,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 13,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001586,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.123,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.123,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-c2a315939e0c4b6b991171629408c1d6"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T01:35:59.160011+00:00",
+        "total_tokens": 754,
+        "prompt_tokens": 741,
+        "total_cost_usd": 0.001586,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 13,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001586,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.123,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.123,
+        "unmeasured_model_attempt_count": 0
+      },
+      "sdk_registration": [
+        {
+          "run_id": "corr-c2a315939e0c4b6b991171629408c1d6",
+          "metadata": {
+            "jv_user_id": "o.User.c37e1d5f195f4a599336bd1f",
+            "jv_agent_id": "n.Agent.bb2deecf5cae404d9494469e",
+            "jv_session_id": "sess_652fed2cdff645a5",
+            "jv_worker_pid": "89172",
+            "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+            "jv_worker_epoch": "worker-epoch:68fcd11971c24367a0540c96a5e41eeb",
+            "jv_interaction_id": "n.Interaction.6ef39b017e394ff684f92717",
+            "jv_conversation_id": "n.Conversation.684bc6de7adc4dc68bca279f",
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-07T01:35:56.717903Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_652fed2cdff645a5",
+          "registration_id": "5339989e-8d1d-4b64-b60e-dee85c39201d"
+        }
+      ],
+      "persisted_media": [
+        {
+          "sha256": "sha256:d75db02f4d9c8db66144084d84237fb52fecf824b7d6a95b64cfc1af96d41b1d",
+          "bytes": 15048,
+          "media_type": "image/png"
+        }
+      ],
+      "observed_source": {
+        "process_id": 89172,
+        "observed_at": "2026-11-07T01:34:18.423932+00:00",
+        "source_blobs": {
+          "jvagent/action/native_harness/native_harness_action.py": "git-blob:7d5903eca3b4fe2ad8bef5ddb04ae63faa1d3c00",
+          "jvagent/cli/harness_migrate.py": "git-blob:c42863ae83590832abe5b404a41e3145e4a7d0a3",
+          "jvagent/cli/harness_migration_skills.py": "git-blob:e01eb89c6a38b21f3ed8899a3a5bf1e5f7c002b4",
+          "jvagent/cli/harness_migration_vision.py": "git-blob:b889d66994955653d9114b73ce2fc96a81b9a8a7",
+          "jvagent/harness/inputs.py": "git-blob:0a52734adc6aa53a4f0602572ba5e61aba87503d"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.de235908a5bd4c28bfa554a5",
+      "session_id": "sess_775051759ade4a17",
+      "utterance": "Do not interpret this image. Image interpretation is disabled for this request.",
+      "response": "Image interpretation is disabled for this request. No model work was performed. Start a new conversation without the image, or enable image interpretation.",
+      "started_at": "2026-11-06T21:36:43.970195-04:00",
+      "completed_at": "2026-11-06T21:36:44.013028-04:00",
+      "elapsed_seconds": 0.042833,
+      "native_run": {
+        "reason": "invalid_input",
+        "status": "blocked"
+      },
+      "usage": {
+        "last_updated": "2026-11-07T01:36:44.013054+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "sdk_registration": [],
+      "persisted_media": [],
+      "observed_source": null
+    },
+    {
+      "interaction_id": "n.Interaction.5ee8b65be53f4f27bb475dc3",
+      "session_id": "sess_652fed2cdff645a5",
+      "utterance": "What is the smaller label at the bottom of the original image? Reply only with that label.",
+      "response": "DOCK 28",
+      "started_at": "2026-11-06T21:38:36.305866-04:00",
+      "completed_at": "2026-11-06T21:38:39.005194-04:00",
+      "elapsed_seconds": 2.699328,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 779,
+          "output_tokens": 6
+        },
+        "output": "DOCK 28",
+        "run_id": "corr-b98f1c27ea34406a9172c39ecf9157b8",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:38:38.981098+00:00",
+                "total_tokens": 785,
+                "prompt_tokens": 779,
+                "total_cost_usd": 0.001606,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 6,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001606,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.377,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.377,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-b98f1c27ea34406a9172c39ecf9157b8"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-c2a315939e0c4b6b991171629408c1d6"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T01:38:39.005231+00:00",
+        "total_tokens": 785,
+        "prompt_tokens": 779,
+        "total_cost_usd": 0.001606,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 6,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001606,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.377,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.377,
+        "unmeasured_model_attempt_count": 0
+      },
+      "sdk_registration": [
+        {
+          "run_id": "corr-b98f1c27ea34406a9172c39ecf9157b8",
+          "metadata": {
+            "jv_user_id": "o.User.c37e1d5f195f4a599336bd1f",
+            "jv_agent_id": "n.Agent.bb2deecf5cae404d9494469e",
+            "jv_session_id": "sess_652fed2cdff645a5",
+            "jv_worker_pid": "89390",
+            "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+            "jv_worker_epoch": "worker-epoch:08b18a1845d348d8abb937971e50d7bd",
+            "jv_interaction_id": "n.Interaction.5ee8b65be53f4f27bb475dc3",
+            "jv_conversation_id": "n.Conversation.684bc6de7adc4dc68bca279f",
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-07T01:38:37.348009Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_652fed2cdff645a5",
+          "registration_id": "435164de-51f8-488a-93c5-674e19a4b0f7"
+        }
+      ],
+      "persisted_media": [
+        {
+          "sha256": "sha256:d75db02f4d9c8db66144084d84237fb52fecf824b7d6a95b64cfc1af96d41b1d",
+          "bytes": 15048,
+          "media_type": "image/png"
+        }
+      ],
+      "observed_source": {
+        "process_id": 89390,
+        "observed_at": "2026-11-07T01:37:56.933406+00:00",
+        "source_blobs": {
+          "jvagent/action/native_harness/native_harness_action.py": "git-blob:7d5903eca3b4fe2ad8bef5ddb04ae63faa1d3c00",
+          "jvagent/cli/harness_migrate.py": "git-blob:c42863ae83590832abe5b404a41e3145e4a7d0a3",
+          "jvagent/cli/harness_migration_skills.py": "git-blob:d8ba14b2d7905670d568e042242353e93a262355",
+          "jvagent/cli/harness_migration_vision.py": "git-blob:b889d66994955653d9114b73ce2fc96a81b9a8a7",
+          "jvagent/harness/inputs.py": "git-blob:0a52734adc6aa53a4f0602572ba5e61aba87503d"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    }
+  ],
+  "model_requests": 2,
+  "independent_http_post_observations": 2,
+  "reported_tokens": 1539,
+  "estimated_usd": "0.003192",
+  "provider_billed_usd_available": false,
+  "conversation_spend_exact": true,
+  "cold_restart_rows_and_conversations_exact": true,
+  "reload_rows_and_conversations_exact": true,
+  "vision_action_instances": 0,
+  "legacy_artifacts": 0,
+  "domain_tasks": 0,
+  "limitations": [
+    "Actual PNG/GPT-4.1 local profile only; other MIME formats have deterministic coverage",
+    "No remote URL, channel media download or OS file-picker qualification",
+    "Independent vision model, interpret_images API and generated-description artifact semantics intentionally retired in the candidate",
+    "Stored legacy artifacts/tasks and whole-reference cutover remain unqualified",
+    "No distributed/provider/performance or enterprise qualification claim"
+  ]
+}

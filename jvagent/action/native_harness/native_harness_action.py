@@ -14,6 +14,8 @@ from jvspatial.core.annotations import attribute
 from jvagent.action.interact.base import InteractAction
 from jvagent.harness.inputs import (
     INPUT_NOTICE,
+    SUPPRESSED_NOTICE,
+    NativeImageSuppressed,
     NativeInputError,
     native_user_prompt,
     validate_input_media_types,
@@ -235,9 +237,13 @@ class NativeHarnessAction(InteractAction):
             await interaction.save()
             if not await responder.publish(
                 (
-                    INPUT_NOTICE
-                    if input_error
-                    else "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation."
+                    SUPPRESSED_NOTICE
+                    if isinstance(error, NativeImageSuppressed)
+                    else (
+                        INPUT_NOTICE
+                        if input_error
+                        else "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation."
+                    )
                 ),
                 visitor=visitor,
                 metadata=delivery_metadata(

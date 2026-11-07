@@ -34,6 +34,16 @@ class NativeInputError(ValueError):
     """The complete incoming attachment set was refused before model work."""
 
 
+SUPPRESSED_NOTICE = (
+    "Image interpretation is disabled for this request. No model work was performed. "
+    "Start a new conversation without the image, or enable image interpretation."
+)
+
+
+class NativeImageSuppressed(NativeInputError):
+    """An explicit caller opt-out must not forward current images to a model."""
+
+
 def validate_input_media_types(value: Any) -> frozenset[str]:
     """Host configuration only; unsupported formats never reach a provider."""
     if (
@@ -87,6 +97,8 @@ def native_user_prompt(
         mime = mime.strip().lower()
         if mime not in allowed:
             raise NativeInputError(INPUT_NOTICE)
+        if mime.startswith("image/") and data.get("image_interpretation") is False:
+            raise NativeImageSuppressed(SUPPRESSED_NOTICE)
         if encoded.startswith("data:"):
             prefix, separator, encoded = encoded.partition(",")
             if not separator or prefix != f"data:{mime};base64":

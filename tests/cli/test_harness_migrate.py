@@ -729,6 +729,114 @@ def test_active_unqualified_policy_is_never_retired(
     assert candidate is None and any(key in reason for reason in report["blockers"])
 
 
+@pytest.mark.parametrize("model_service", [False, True])
+def test_default_vision_migrates_to_native_images_without_second_interpreter(
+    app: Path,
+    model_service: bool,
+) -> None:
+    change(app, vision=True)
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"] = [
+        a for a in document["actions"] if a["action"] != "demo/modular_tool"
+    ]
+    document["actions"].append(
+        {"action": "jvagent/vision", "context": {"model": "gpt-4o"}}
+    )
+    if model_service:
+        document["actions"].append({"action": "jvagent/litellm_lm"})
+    source(app).write_text(yaml.safe_dump(document))
+    original = source(app).read_bytes()
+
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+
+    assert candidate is not None
+    native = candidate["actions"][0]["context"]
+    assert native["input_media_types"] == [
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    ]
+    assert "vision" not in native
+    assert ("jvagent/litellm_lm" in report["retired_actions"]) is model_service
+    assert report["preserved_action_count"] == 1
+    assert "jvagent/vision" in report["retired_actions"]
+    assert all(a["action"] != "jvagent/vision" for a in candidate["actions"])
+    assert "vision" in report["retired_settings"]
+    assert source(app).read_bytes() == original
+    assert "secret-example-value" not in json.dumps(report)
+
+
+def test_unknown_action_caller_blocks_vision_retirement(app: Path) -> None:
+    change(app, vision=True)
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"].append({"action": "jvagent/vision"})
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("vision" in reason.lower() for reason in report["blockers"])
+
+
+@pytest.mark.parametrize(
+    "vision_context",
+    [
+        {"enabled": False},
+        {"enabled": 1},
+        {"model": "other-model"},
+        {"model": {}},
+        {"model": []},
+        {"model_action_type": "OtherProvider"},
+        {"interpretation_prompt": "secret-example-value"},
+        {"model_max_tokens": 50},
+        {"api_key": "secret-example-value"},
+    ],
+)
+def test_unreviewed_vision_configuration_blocks_retirement(
+    app: Path, vision_context: dict[str, Any]
+) -> None:
+    change(app, vision=True)
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"] = [
+        a for a in document["actions"] if a["action"] != "demo/modular_tool"
+    ]
+    document["actions"].append({"action": "jvagent/vision", "context": vision_context})
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("vision" in reason.lower() for reason in report["blockers"])
+    assert "secret-example-value" not in json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        "requires-actions: [VisionAction]",
+        "allowed-tools: [interpret_images]",
+        "allowed-tools: ['*']",
+        "requires-tools: null",
+    ],
+)
+def test_vision_dependent_skill_blocks_action_retirement(
+    app: Path, metadata: str
+) -> None:
+    change(app, vision=True)
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"] = [
+        a for a in document["actions"] if a["action"] != "demo/modular_tool"
+    ]
+    document["actions"].append({"action": "jvagent/vision"})
+    source(app).write_text(yaml.safe_dump(document))
+    skill = app / "agents/demo/bot/skills/answer/SKILL.md"
+    skill.write_text(
+        "---\nname: answer\ndescription: Answer\n"
+        + metadata
+        + "\n---\nInspect images.\n"
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("vision" in reason.lower() for reason in report["blockers"])
+
+
 def test_engine_heuristics_retire_explicitly_without_leaking_values_or_active_caps(
     app: Path,
 ) -> None:

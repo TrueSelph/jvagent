@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from fnmatch import fnmatchcase
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -192,6 +193,26 @@ def migrate_skill_selection(
                 )
                 continue
             directory, metadata = member
+            if context.get("vision") is True and (
+                any(
+                    not isinstance(metadata.get(key, []), list)
+                    or any(not isinstance(v, str) for v in metadata.get(key, []))
+                    for key in ("requires-actions", "allowed-tools", "requires-tools")
+                )
+                or "VisionAction" in metadata.get("requires-actions", [])
+                or "jvagent/vision" in metadata.get("requires-actions", [])
+                or any(
+                    any(
+                        fnmatchcase("interpret_images", name)
+                        for name in metadata.get(key, [])
+                    )
+                    for key in ("allowed-tools", "requires-tools")
+                )
+            ):
+                blockers.append(
+                    f"Selected skill {index} depends on the legacy vision tool or Action; migrate its contract explicitly"
+                )
+                continue
             try:
                 if name != directory.name or metadata.get("spec", "jv") not in (
                     "jv",

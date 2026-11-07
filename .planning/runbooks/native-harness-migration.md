@@ -68,6 +68,7 @@ Unmapped controls and provider policy are checked in
 | `tool_servers: "-all"` or implicit default with MCP Actions | Retire the selector only with reviewed native tool declarations on enabled MCP Actions; restricted/empty/invalid selectors stay blocked |
 | Typed inactive pilot settings under the legacy driver | Explicit retirement; active legacy budgets migrate independently |
 | Empty/disabled channel/tool/vision/flow controls | May retire only when exactly empty/disabled; active policies block until qualified |
+| Reviewed default `vision: true` + default OpenAI VisionAction + primary GPT-4.1 | Declare native image MIME policy and propose removing VisionAction; independent model/tool/description-artifact semantics retire explicitly. Custom callers/settings and dependent skills block. See [qualification](../plans/2026-11-06-native-vision-migration.md) |
 
 Mapping/default construction: [`harness_migrate.py:359`](../../jvagent/cli/harness_migrate.py#L359).
 

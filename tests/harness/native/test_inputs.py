@@ -14,7 +14,12 @@ from pydantic_ai.models.function import FunctionModel
 from pydantic_ai_harness.step_persistence import continue_run
 
 from jvagent.action.native_harness import NativeHarnessAction
-from jvagent.harness.inputs import INPUT_NOTICE, NativeInputError, native_user_prompt
+from jvagent.harness.inputs import (
+    INPUT_NOTICE,
+    SUPPRESSED_NOTICE,
+    NativeInputError,
+    native_user_prompt,
+)
 from jvagent.harness.native import build_native_agent, run_native_agent
 from jvagent.harness.recovery import history_for_new_turn
 from jvagent.harness.step_store import InteractionStepStore
@@ -34,6 +39,34 @@ def attachment(
 @pytest.mark.parametrize("data", [None, {}, {"other": "value"}, {"image_urls": []}])
 def test_no_uploads_preserves_plain_prompt(data: Any) -> None:
     assert native_user_prompt("hello", data) == "hello"
+
+
+@pytest.mark.parametrize(
+    "key", ["image_urls", "whatsapp_media", "files", "attachments", "documents"]
+)
+def test_image_suppression_refuses_whole_request(key: str) -> None:
+    with pytest.raises(NativeInputError, match="disabled for this request"):
+        native_user_prompt(
+            "do not interpret",
+            {
+                "image_interpretation": False,
+                key: [attachment()],
+                "documents" if key != "documents" else "files": [
+                    attachment(b"note", "text/plain")
+                ],
+            },
+        )
+
+
+def test_image_suppression_keeps_text_only_input() -> None:
+    parts = native_user_prompt(
+        "read text",
+        {
+            "image_interpretation": False,
+            "files": [attachment(b"note", "text/plain")],
+        },
+    )
+    assert parts[-1].content == "note"
 
 
 @pytest.mark.parametrize(
@@ -92,11 +125,19 @@ def test_mixed_content_preserves_order_bytes_and_declared_mime() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("suppressed", [False, True])
 async def test_rejected_input_has_own_notice_without_model_work(
     monkeypatch: Any,
+    suppressed: bool,
 ) -> None:
     async def reject(self: Any, visitor: Any) -> None:
-        native_user_prompt("read", {"files": ["http://127.0.0.1/private"]})
+        native_user_prompt(
+            "read",
+            {
+                "files": [attachment()] if suppressed else ["http://127.0.0.1/private"],
+                "image_interpretation": not suppressed,
+            },
+        )
 
     monkeypatch.setattr(NativeHarnessAction, "_execute", reject)
     interaction = SimpleNamespace(
@@ -111,7 +152,9 @@ async def test_rejected_input_has_own_notice_without_model_work(
     )
     await NativeHarnessAction.execute(facade, SimpleNamespace(interaction=interaction))
     assert interaction.native_run == {"status": "blocked", "reason": "invalid_input"}
-    assert publish.call_args.args[0] == INPUT_NOTICE
+    assert publish.call_args.args[0] == (
+        SUPPRESSED_NOTICE if suppressed else INPUT_NOTICE
+    )
 
 
 @pytest.mark.asyncio

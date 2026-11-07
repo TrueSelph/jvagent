@@ -50,6 +50,13 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Default vision: [qualification](2026-11-06-native-vision-migration.md). A bounded
+default profile proposes native image input and retires the separate interpreter,
+tool and description-artifact reflex. Actual GPT-4.1 PNG recognition/cold recall,
+original-byte history, opt-out refusal and unchanged reload pass. Four reference
+blockers remain. Custom callers/settings, remote/channel media and stored-artifact
+cutover remain unqualified; the legacy module is retained until deletion gates pass.
+
 Reference signup: [qualification](2026-11-06-native-signup-policy.md). Reviewed
 conversation-only source is host-approved, unavailable times cannot silently
 change, and completion records local details without booking/notification claims.

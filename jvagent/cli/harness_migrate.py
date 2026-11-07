@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from jvagent.cli.harness_migration_skills import migrate_skill_selection
+from jvagent.cli.harness_migration_vision import IMAGE_TYPES, migrate_vision
 
 _SCHEMA = "jvagent.native-config-migration.v1"
 _MODEL_ACTIONS = {"OpenAILanguageModelAction", "LiteLLMLanguageModelAction"}
@@ -68,7 +69,6 @@ _EMPTY = {
     "pinned_tools": list,
     "skill_only_tools": list,
     "channel_overrides": dict,
-    "vision": bool,
     "lock_active_flow": bool,
     "with_event": bool,
     "tool_call_timeout": float,
@@ -240,6 +240,7 @@ _KNOWN = (
         "max_concurrent_tools",
         "tool_servers",
         "tool_tier",
+        "vision",
     }
 )
 
@@ -368,6 +369,7 @@ def plan_harness_migration(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
     _retire_controls(context, report, mode, actions)
+    retire_vision = migrate_vision(context, actions, report)
     tier = context.get("tool_tier", "standard")
     clock_actions = [a for a in actions if a["action"] == "jvagent/agent_utils"]
     add_clock = False
@@ -444,6 +446,7 @@ def plan_harness_migration(
             or any(
                 a.get("action") not in _REVIEWED_CONSUMERS | {selected_service}
                 for a in actions
+                if not (retire_vision and a.get("action") == "jvagent/vision")
             )
         ):
             blockers.append(
@@ -473,7 +476,7 @@ def plan_harness_migration(
                 )
             else:
                 retired_service = service
-                report["retired_actions"] = [selected_service]
+                report.setdefault("retired_actions", []).append(selected_service)
                 report["required_review"].append(
                     "Default model service retired; native provider uses OPENAI_API_KEY and zero transport retries"
                 )
@@ -605,6 +608,8 @@ def plan_harness_migration(
             "max_statement_length"
         ] = "instructions; no response truncation"
     target["instructions"] = "\n\n".join(instructions)
+    if retire_vision:
+        target["input_media_types"] = list(IMAGE_TYPES)
     report["mappings"].update(
         model="model",
         model_action_type="native provider",
@@ -624,6 +629,11 @@ def plan_harness_migration(
     if retired_service is not None:
         candidate["actions"] = [
             a for a in candidate["actions"] if a.get("action") != selected_service
+        ]
+        report["preserved_action_count"] -= 1
+    if retire_vision:
+        candidate["actions"] = [
+            a for a in candidate["actions"] if a.get("action") != "jvagent/vision"
         ]
         report["preserved_action_count"] -= 1
     if add_clock:
