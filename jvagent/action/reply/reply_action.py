@@ -543,6 +543,20 @@ class ReplyAction(Action):
         here (so it lands in ``interaction.directives``) and composed *with* the
         others — never overridden. Both egress tools (reply/respond) funnel here.
         """
+        from jvspatial.api.exceptions import ValidationError
+
+        from jvagent.core.execution_owner import uses_native_harness
+
+        agent = await self.get_agent() if self.agent_id else None
+        if self.agent_id and agent is None:
+            raise ValidationError("Reply execution owner could not be verified")
+        if getattr(visitor, "_native_execution", False) is True or (
+            agent is not None and await uses_native_harness(agent)
+        ):
+            raise ValidationError(
+                "Native reply composition belongs to the harness; publish completed text through ReplyAction"
+            )
+
         interaction = interaction or getattr(visitor, "interaction", None)
         original_text = (text or "").strip()
         base = original_text

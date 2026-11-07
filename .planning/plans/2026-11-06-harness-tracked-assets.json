@@ -1543,7 +1543,7 @@
         "name": "jvagent/reply",
         "archetype": "ReplyAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:e223db47afca07a3f6be81dd21694be5b60fb2e01b5e78ae8519d78b4b54046c"
+        "tracked_directory_digest": "sha256:4efe3cc77e7614415192293d6d66f2a1a7bb610eb05f0890c21bb8db7c957f34"
       },
       {
         "path": "jvagent/action/sentdm_broadcast/info.yaml",

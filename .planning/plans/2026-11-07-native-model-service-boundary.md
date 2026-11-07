@@ -1,5 +1,19 @@
 # Reference model service retirement boundary
 
+At parent `97ac197d`, Reply composition now checks native ownership
+before shaping or resolving a legacy model (`reply_action.py:546`).
+The public literal publish path remains the native response-bus boundary.
+An isolated browser fixture called direct Reply composition and received
+HTTP 422 in 24 ms with zero provider requests. On the same final backend,
+jvchat delivered the exact text "Reply path verified." from GPT-4.1.
+PostgreSQL Interaction `n.Interaction.7c5e36679c374837bc2c1ec0` was
+delivered in 2.029 seconds with one request, 284 provider tokens,
+USD 0.000604 estimated cost, zero unknown-cost calls and no tool events.
+The tested Reply blob was `184bc616566fe423c02c3040d7e540201a1d26d9`.
+The regression verifies native refusal before compose model lookup.
+Reference migration still needs to classify independent Reply callers
+and decide how to handle their legacy shaping declarations.
+
 At parent `fb0ff665`, direct Action tree search now requires explicit
 accounted completion on a native-owned agent
 (`pageindex_action.py:381`). The browser fixture called the same Action

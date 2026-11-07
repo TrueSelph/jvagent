@@ -808,3 +808,22 @@ async def test_respond_uses_byok_primary_model(monkeypatch):
     ):
         await ra.reply("answer", v)
     assert captured.get("model") == "byok-primary"
+
+
+async def test_native_reply_refuses_second_model_call(monkeypatch):
+    import pytest
+    from jvspatial.api.exceptions import ValidationError
+
+    import jvagent.core.execution_owner as ownership
+
+    owner = object()
+    monkeypatch.setattr(ReplyAction, "get_agent", AsyncMock(return_value=owner))
+    native = AsyncMock(return_value=True)
+    monkeypatch.setattr(ownership, "uses_native_harness", native)
+    compose = AsyncMock()
+    monkeypatch.setattr(ReplyAction, "_compose_model_action", compose)
+
+    with pytest.raises(ValidationError, match="belongs to the harness"):
+        await ReplyAction(agent_id="n.Agent.native").respond(text="Fixture")
+    native.assert_awaited_once_with(owner)
+    compose.assert_not_awaited()
