@@ -22,6 +22,7 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
+    get_document_roots,
 )
 from jvagent.action.pageindex.lexical_index import (
     index_node,
@@ -331,6 +332,27 @@ async def test_delete_cleans_lexical_index(pageindex_temp_db, sample_markdown):
 
     results_after = await search("budget", "del_lex_col")
     assert not any(r["doc_name"] == "del_lex_doc" for r in results_after)
+
+
+@pytest.mark.asyncio
+async def test_delete_root_preserves_same_name_replacement(pageindex_temp_db):
+    name, collection = "orientation.pdf", "replacement"
+    old_id = await persist_structure(
+        name, [{"title": "amberturnstile"}], collection_name=collection
+    )
+    replacement_id = await persist_structure(
+        name, [{"title": "quartzobservatory"}], collection_name=collection
+    )
+
+    assert not await delete_document(name, "foreign", root_id=old_id)
+    assert not await delete_document("different.pdf", collection, root_id=old_id)
+    assert await delete_document(name, collection, root_id=old_id)
+    assert not await delete_document(name, collection, root_id=old_id)
+    assert {root.id for root in await get_document_roots(collection)} == {
+        replacement_id
+    }
+    assert not await search("amberturnstile", collection)
+    assert await search("quartzobservatory", collection)
 
 
 # ---------------------------------------------------------------------------

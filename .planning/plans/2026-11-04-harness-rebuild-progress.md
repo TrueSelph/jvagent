@@ -10,6 +10,53 @@ The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
 
+## Drive replacement qualification gap
+
+PageIndex deletion now accepts an exact root ID, verifies its collection
+and name, and removes postings only for chunks deleted by the graph cascade
+(`documents.py:908`). The regression tests a same-name replacement, wrong
+collection, wrong name and repeated deletion. Drive still needs to persist
+which source version owns each root.
+
+Browser smoke ran from `982ba742` with the patched `documents.py` blob
+`7178d5fd2e1b070a37f6c2543687dea189f3cdb5`. A synthetic replacement was
+seeded in the isolated PageIndex graph through production publication and
+exact-root deletion. Graph readback showed only the replacement root for
+that name, with search hits preserved. jvchat then showed `load_capability`
+and `pageindex__search`, answered BEACON-829, and linked the replacement
+source. PostgreSQL readback recorded delivered interaction
+`n.Interaction.927878b2e8164f9bbd3ba8bf` in 4.829 seconds, with four
+GPT-4.1 requests, 4,174 provider-reported tokens, USD 0.009290 estimated
+cost and zero unknown-cost requests. An initial turn inherited the PDF
+fixture's one-request cap and correctly refused further work after 2.154
+seconds, one request, 308 tokens and USD 0.000742 estimated cost. The
+successful replay followed restoration of the fixture's normal cap.
+The fixture exercises cited retrieval after cleanup. Drive OAuth, queue
+revision replay and interrupted publication still need qualification.
+
+At `982ba742`, Drive sync still resolves a legacy model Action before it
+reads the queue (`pageindex_google_drive_sync_action.py:1437`). Reusing the
+native completion adapter alone would carry forward a publication defect.
+The modified-file path publishes a replacement and then deletes by the prior
+filename (`pageindex_google_drive_sync_action.py:813`). The graph creates a
+new root for each publication (`adapter.py:200`), but the cleanup selects the
+first root matching the filename and collection and removes lexical postings
+for all matching chunks (`documents.py:847`, `documents.py:908`).
+
+An offline probe used a disposable JSON PageIndex graph and the production
+publication, lexical search and deletion functions. Two roots shared
+`orientation.pdf` in one collection. The second contained the unique term
+`quartzobservatory`. Search returned one hit before cleanup and zero after,
+even though graph readback still contained the replacement root. This
+reproduces the shared cleanup defect without a Drive account or model call.
+
+The native Drive migration needs to associate the prior and replacement
+roots with a stable source identity, retire only the prior root and its
+postings, and reconcile queue state if publication succeeds before the queue
+save. Browser qualification needs an isolated Drive transport fixture that
+can replay a same-name revision, an interrupted queue save and the resulting
+cited retrieval while using the actual configured model.
+
 ## Native classic PDF ingestion
 
 The opted-in classic PDF parser now routes its worker-thread calls to the

@@ -908,28 +908,47 @@ async def list_documents(
 async def delete_document(
     doc_name: str,
     collection_name: str = "default",
+    *,
+    root_id: Optional[str] = None,
 ) -> bool:
     """Delete a document and all its nodes from the PageIndex graph."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
-    root = await get_document_root(doc_name, collection_name=collection_name)
-    if not root:
-        return False
-
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
-        # Clean up lexical index before cascade-deleting graph nodes
+        if root_id is None:
+            root = await get_document_root(doc_name, collection_name=collection_name)
+        else:
+            root = await DocumentRootNode.get(root_id)
+        if (
+            not isinstance(root, DocumentRootNode)
+            or root.collection_name != collection_name
+            or root.doc_name != doc_name
+        ):
+            return False
+
+        pending = list(await root.outgoing(node=DocumentNode, edge=DocumentContentEdge))
+        chunk_ids: set[str] = set()
+        while pending:
+            chunk = pending.pop()
+            if chunk.id in chunk_ids or chunk.collection_name != collection_name:
+                continue
+            chunk_ids.add(chunk.id)
+            pending.extend(
+                await chunk.outgoing(node=DocumentNode, edge=DocumentContentEdge)
+            )
+
+        await root.delete()
         try:
             from .lexical_index import remove_document_nodes
-            from .models import DocumentNode
 
-            nodes = await DocumentNode.find(
-                {
-                    "context.doc_name": doc_name,
-                    "context.collection_name": collection_name,
-                }
-            )
-            if nodes:
-                await remove_document_nodes([n.id for n in nodes], collection_name)
+            # Graph cascade preserves chunks shared with surviving roots.
+            removed_ids = [
+                chunk_id
+                for chunk_id in sorted(chunk_ids)
+                if await DocumentNode.get(chunk_id) is None
+            ]
+            if removed_ids:
+                await remove_document_nodes(removed_ids, collection_name)
         except Exception:
             # Promote to warning: orphan postings linger forever and surface as
             # phantom candidates in subsequent BM25 retrieval. A periodic
@@ -943,7 +962,6 @@ async def delete_document(
                 exc_info=True,
             )
 
-        await root.delete()
         logger.info(f"Deleted document '{doc_name}'")
         return True
 
