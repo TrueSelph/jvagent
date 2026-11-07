@@ -683,6 +683,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             PDF_CHANNEL,
             run_native_markdown_ingest,
             run_native_pdf_ingest,
+            settle_interrupted_publication,
         )
         from ..native_search import Complete
 
@@ -705,14 +706,34 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 receipt is not None
                 and receipt.user_id == self.id
                 and receipt.channel in {CHANNEL, PDF_CHANNEL}
-                and receipt.closed
-                and receipt.native_run.get("status") == "completed"
-                and receipt.native_run.get("usage_complete") is True
-                and receipt.usage.get("unknown_cost_call_count", 0) == 0
                 and root.metadata == cfg.metadata
                 and root.doc_url == doc_url
                 and (root.chunks or 0) > 0
             ):
+                if not receipt.closed and receipt.native_run.get("status") == "running":
+                    try:
+                        await settle_interrupted_publication(
+                            receipt,
+                            agent_id=cfg.agent_id,
+                            model=cfg.native_action.model,
+                            publication={
+                                "doc_name": root.doc_name,
+                                "_root_id": root.id,
+                            },
+                        )
+                    except ValueError as exc:
+                        raise ValidationError(
+                            f"Native Drive publication requires reconciliation: {exc}"
+                        ) from exc
+                if (
+                    not receipt.closed
+                    or receipt.native_run.get("status") != "completed"
+                    or receipt.native_run.get("usage_complete") is not True
+                    or receipt.usage.get("unknown_cost_call_count", 0)
+                ):
+                    raise ValidationError(
+                        "Native Drive publication conflicts with an existing root"
+                    )
                 publication = json.loads(receipt.response or "null")
                 if (
                     isinstance(publication, dict)

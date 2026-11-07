@@ -1256,6 +1256,7 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
     ).hexdigest()
     root = SimpleNamespace(
         id="root",
+        doc_name="doc.pdf",
         drive_operation_id="operation",
         drive_source_key=source_key,
         metadata={},
@@ -1284,7 +1285,7 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
         node_summary=None,
         agent_id="agent-1",
         page_index_action=None,
-        native_action=object(),
+        native_action=SimpleNamespace(model="openai:gpt-4.1"),
     )
     with (
         patch(
@@ -1293,6 +1294,10 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
             AsyncMock(return_value=root),
         ),
         patch.object(Interaction, "get", AsyncMock(return_value=receipt)),
+        patch(
+            "jvagent.action.pageindex.native_ingest.settle_interrupted_publication",
+            AsyncMock(side_effect=ValueError("unsettled SDK request")),
+        ) as settle,
     ):
         replay = action._ingest_native_drive_document(
             data,
@@ -1303,7 +1308,13 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
             cfg=cfg,
         )
         if scenario != "complete":
-            with pytest.raises(ValidationError, match="conflicts"):
+            with pytest.raises(
+                ValidationError, match="conflicts|unsettled SDK request"
+            ):
                 await replay
         else:
             assert (await replay)["_root_id"] == root.id
+    if scenario == "unsettled":
+        settle.assert_awaited_once()
+    else:
+        settle.assert_not_awaited()

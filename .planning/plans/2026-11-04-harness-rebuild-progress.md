@@ -12,6 +12,24 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native Drive can now settle the crash state below when the exact published
+root and source scope match, the local worker is confirmed dead, and every
+registered SDK run has a completed single-request journal
+(`native_ingest.py:81`). It uses the existing usage projection to restore
+attempt accounting, requires measured attempts and known cost, and saves
+the closed operation before acknowledging the Drive queue.
+
+Browser recovery at parent `a91922e3` and runtime diff hash
+`882958079d60520e0126d7eab0eeb9d079bce3e2` reused the saved GPT-4.1
+crash fixture below. HTTP 200 in 976 ms displayed "Recovered publication",
+the original root and operation IDs, and an empty failed queue. PostgreSQL
+readback showed the original Interaction closed with
+`publication_recovered=true`, 10 finalized attempts, 3,095 provider tokens,
+USD 0.009604 estimated cost and zero unknown-cost calls. The retry made
+zero model requests and emitted no tool events. Partial roots, unmatched
+or unpriced requests, foreign workers, and document replacement remain
+outside automatic recovery.
+
 An abrupt-exit browser test at `92f33877` exercised the interval between
 root publication and operation settlement (`native_search.py:232`).
 A disposable fixture used actual GPT-4.1, then forced process exit 71

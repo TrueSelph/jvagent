@@ -76,3 +76,82 @@ async def run_native_pdf_ingest(
         result_receipt=_publication,
         on_started=on_started,
     )
+
+
+async def settle_interrupted_publication(
+    interaction: Any,
+    *,
+    agent_id: str,
+    model: str,
+    publication: dict[str, Any],
+) -> None:
+    """Close a proved publication using completed SDK requests from a dead worker."""
+    import json
+
+    from jvspatial import flush_deferred_entities
+
+    from jvagent.core.execution_owner import require_dead_native_owner
+    from jvagent.harness.accounting import project_native_usage
+    from jvagent.harness.step_store import InteractionStepStore
+
+    identity = interaction.native_run.get("run_id")
+    if (
+        not identity
+        or interaction.closed
+        or interaction.native_run.get("status") != "running"
+    ):
+        raise ValueError("Publication has no interrupted operation to settle")
+
+    store = InteractionStepStore(interaction, agent_id=agent_id)
+    runs = await store.list_runs()
+    roots = [run for run in runs if run.run_id == identity and not run.parent_run_id]
+    if len(roots) != 1:
+        raise ValueError("Publication operation has no unique SDK root")
+    root = roots[0]
+    require_dead_native_owner(root.metadata)
+    scope = {
+        **store.registration_metadata(),
+        "jv_operation": interaction.channel,
+    }
+    worker_keys = ("jv_worker_host", "jv_worker_epoch", "jv_worker_pid")
+    for run in runs:
+        if (
+            run.conversation_id != interaction.session_id
+            or (run.run_id != identity and run.parent_run_id != identity)
+            or any(run.metadata.get(key) != value for key, value in scope.items())
+            or any(
+                run.metadata.get(key) != root.metadata.get(key) for key in worker_keys
+            )
+        ):
+            raise ValueError("Publication contains an unbound SDK run")
+        events = await store.list_events(run_id=run.run_id)
+        if [event.kind for event in events] != [
+            "run_started",
+            "model_request_started",
+            "model_request_completed",
+            "run_completed",
+        ]:
+            raise ValueError("Publication has an unsettled SDK request")
+
+    projected = await project_native_usage(interaction, run_id=identity, model=model)
+    usage = projected.usage
+    if (
+        usage.get("unknown_cost_call_count")
+        or usage.get("unmeasured_model_attempt_count")
+        or usage.get("model_attempt_count") != len(runs)
+        or usage.get("model_call_count") != len(runs)
+    ):
+        raise ValueError("Publication usage cannot be settled from the SDK journal")
+
+    interaction.observability_metrics = projected.observability_metrics
+    interaction.usage = usage
+    interaction.native_run = {
+        **interaction.native_run,
+        "status": "completed",
+        "usage_complete": True,
+        "publication_recovered": True,
+    }
+    interaction.response = json.dumps(publication, ensure_ascii=False)
+    await interaction.close_interaction()
+    await interaction.save()
+    await flush_deferred_entities(interaction, strict=True)
