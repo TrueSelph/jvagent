@@ -1,5 +1,20 @@
 # Reference model service retirement boundary
 
+At `3e0d5d4c`, a reduced fixture with source digest
+`sha256:3da34b31edf72affce99eb9c28519d1da4eedcf505153f5faea103cbcf91779a`
+converted a 1 ms provider timeout. Merge sync preserved the existing
+120-second setting. After applying the converted settings to the
+disposable Action and verifying PostgreSQL readback, a fresh jvchat
+conversation attempted GPT-4.1 with SDK retries disabled.
+Interaction `n.Interaction.62770a0bb529471d8a691e13` persisted
+`ModelTimeoutError` after 196 ms end to end, with one failed attempt
+lasting 8 ms, no tool events, no provider usage receipt, and one
+unknown-cost event. jvchat showed the failure response and the unknown
+cost. This verifies request timeout enforcement on the native OpenAI
+path. The fixture does not isolate the transport phase that timed out.
+The failure copy asks users to check configuration and does not name
+the timeout. The full reference conversion remains blocked.
+
 An isolated candidate rehearsal at `4c349688` copied the reference
 LiteLLM model, temperature, output limit and 120-second request timeout
 into a reduced legacy fixture. This fixture omitted the unqualified
