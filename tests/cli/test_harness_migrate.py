@@ -1313,3 +1313,45 @@ def test_native_candidate_retires_only_legacy_action_model_settings(app: Path):
         "servers": [{"name": "fixture", "enabled": False}],
     }
     assert yaml.safe_load(source(app).read_text()) == declaration
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, True),
+        ({"model": "openai/gpt-4.1-mini"}, False),
+        ({"temperature": 0.7}, False),
+        ({"max_tokens": 8192.0}, False),
+        ({"timeout": True}, False),
+        ({"timeout": float("inf")}, False),
+        ({"drop_params": True}, False),
+    ],
+)
+def test_selected_provider_maps_only_qualified_defaults_and_timeout(
+    app: Path, overrides: dict[str, Any], expected: bool
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    owner = document["actions"][0]
+    owner["context"]["model_temperature"] = 0.2
+    document["actions"] = [
+        owner,
+        document["actions"][2],
+        {
+            "action": "jvagent/litellm_lm",
+            "context": {
+                "model": "openai/gpt-4.1",
+                "temperature": 0.2,
+                "max_tokens": 8192,
+                "timeout": 120,
+                **overrides,
+            },
+        },
+    ]
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert (candidate is not None) is expected
+    if expected:
+        assert candidate is not None
+        assert report["mappings"]["model_service.timeout"] == "model_settings.timeout"
+        assert candidate["actions"][0]["context"]["model_settings"]["timeout"] == 120
+        assert report["retired_actions"] == ["jvagent/litellm_lm"]

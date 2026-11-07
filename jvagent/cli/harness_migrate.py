@@ -291,6 +291,108 @@ def _number(value: Any, field: str, *, integer: bool = False) -> float | int:
     return value
 
 
+def _plan_model_service(
+    actions: list[dict[str, Any]],
+    context: dict[str, Any],
+    model_action: Any,
+    retire_vision: bool,
+    report: dict[str, Any],
+) -> tuple[str, bool, float | int | None]:
+    blockers = report["blockers"]
+    services = [a for a in actions if a.get("action") in _MODEL_SERVICES]
+    selected_service = (
+        "jvagent/openai_lm"
+        if model_action == "OpenAILanguageModelAction"
+        else "jvagent/litellm_lm"
+    )
+    retired_service = False
+    service_timeout: float | int | None = None
+    if services:
+        report["model_service_review"] = {
+            "selected": selected_service,
+            "declared": sorted(service["action"] for service in services),
+        }
+        if (
+            len(services) != 1
+            or services[0].get("action") != selected_service
+            or any(
+                a.get("action") not in _REVIEWED_CONSUMERS | {selected_service}
+                for a in actions
+                if not (retire_vision and a.get("action") == "jvagent/vision")
+            )
+        ):
+            blockers.append(
+                "Model service has unqualified callers or provider declarations; review before removal"
+            )
+        else:
+            service = services[0]
+            config = service.get("context", {})
+            if (
+                not isinstance(config, dict)
+                or set(service) - {"action", "context"}
+                or set(config)
+                - {
+                    "enabled",
+                    "api_key",
+                    "api_base",
+                    "max_retries",
+                    "model",
+                    "temperature",
+                    "max_tokens",
+                    "timeout",
+                }
+            ):
+                blockers.append(
+                    "Model service settings require explicit native migration"
+                )
+            elif (
+                config.get("enabled", True) is not True
+                or config.get("api_key", "") not in ("", None, "${OPENAI_API_KEY}")
+                or config.get("api_base", "")
+                not in ("", None, "https://api.openai.com/v1")
+                or type(config.get("max_retries", 0)) is not int
+                or config.get("max_retries", 0) != 0
+            ):
+                blockers.append(
+                    "Model credentials, endpoint, disabled service or retry policy requires explicit migration"
+                )
+            elif any(
+                key in config
+                and (
+                    owner_key not in context
+                    or type(config[key]) is bool
+                    or key == "max_tokens"
+                    and type(config[key]) is not int
+                    or config[key] != context.get(owner_key)
+                )
+                for key, owner_key in {
+                    "model": "model",
+                    "temperature": "model_temperature",
+                    "max_tokens": "model_max_tokens",
+                }.items()
+            ):
+                blockers.append(
+                    "Model service defaults conflict with explicit execution settings"
+                )
+            elif "timeout" in config and (
+                type(config["timeout"]) not in (int, float)
+                or not 0 < config["timeout"] < float("inf")
+            ):
+                blockers.append("Model service timeout must be finite and positive")
+            else:
+                retired_service = True
+                service_timeout = config.get("timeout")
+                if service_timeout is not None:
+                    report["mappings"][
+                        "model_service.timeout"
+                    ] = "model_settings.timeout"
+                report.setdefault("retired_actions", []).append(selected_service)
+                report["required_review"].append(
+                    "Default model service retired; native provider uses OPENAI_API_KEY and zero transport retries"
+                )
+    return selected_service, retired_service, service_timeout
+
+
 def plan_harness_migration(
     app_root: Path, agent_name: str, *, skill: str | Sequence[str] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -459,54 +561,9 @@ def plan_harness_migration(
         bare = model.removeprefix("openai/").removeprefix("openai:")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", bare):
             blockers.append("Model declaration requires an explicit provider migration")
-    services = [a for a in actions if a.get("action") in _MODEL_SERVICES]
-    selected_service = (
-        "jvagent/openai_lm"
-        if model_action == "OpenAILanguageModelAction"
-        else "jvagent/litellm_lm"
+    selected_service, retired_service, service_timeout = _plan_model_service(
+        actions, context, model_action, retire_vision, report
     )
-    retired_service = None
-    if services:
-        if (
-            len(services) != 1
-            or services[0].get("action") != selected_service
-            or any(
-                a.get("action") not in _REVIEWED_CONSUMERS | {selected_service}
-                for a in actions
-                if not (retire_vision and a.get("action") == "jvagent/vision")
-            )
-        ):
-            blockers.append(
-                "Model service has unqualified callers or provider declarations; review before removal"
-            )
-        else:
-            service = services[0]
-            config = service.get("context", {})
-            if (
-                not isinstance(config, dict)
-                or set(service) - {"action", "context"}
-                or set(config) - {"enabled", "api_key", "api_base", "max_retries"}
-            ):
-                blockers.append(
-                    "Model service settings require explicit native migration"
-                )
-            elif (
-                config.get("enabled", True) is not True
-                or config.get("api_key", "") not in ("", None, "${OPENAI_API_KEY}")
-                or config.get("api_base", "")
-                not in ("", None, "https://api.openai.com/v1")
-                or type(config.get("max_retries", 0)) is not int
-                or config.get("max_retries", 0) != 0
-            ):
-                blockers.append(
-                    "Model credentials, endpoint, disabled service or retry policy requires explicit migration"
-                )
-            else:
-                retired_service = service
-                report.setdefault("retired_actions", []).append(selected_service)
-                report["required_review"].append(
-                    "Default model service retired; native provider uses OPENAI_API_KEY and zero transport retries"
-                )
     target: dict[str, Any] = {
         k: copy.deepcopy(context[k]) for k in _DIRECT if k in context
     }
@@ -583,6 +640,8 @@ def plan_harness_migration(
             "max_tokens": context.get("model_max_tokens", 8192),
             "max_retries": 0,
         }
+        if service_timeout is not None:
+            settings["timeout"] = service_timeout
         if isinstance(settings["max_tokens"], bool):
             raise ValueError("model_max_tokens requires an integer")
         if settings["max_tokens"] == 0:
@@ -700,7 +759,7 @@ def plan_harness_migration(
         if isinstance(settings, dict):
             for key in action_settings.get(action["action"], ()):
                 settings.pop(key, None)
-    if retired_service is not None:
+    if retired_service:
         candidate["actions"] = [
             a for a in candidate["actions"] if a.get("action") != selected_service
         ]

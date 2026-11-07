@@ -1,5 +1,22 @@
 # Reference model service retirement boundary
 
+The offline provider converter accepts a selected service's explicit
+model, temperature and output limit when they exactly match the
+execution declaration. A finite positive service timeout maps to
+the SDK request timeout (`harness_migrate.py:294`). The converter
+keeps custom transport switches such as `drop_params` blocked.
+This mapping still needs a deployment rehearsal for effective timeout
+behavior under the native provider's connection and run limits.
+
+The reference recheck at parent `110ffe6b` produced no candidate.
+The report now identifies LiteLLM as selected and lists LiteLLM,
+Ollama and OpenAI as declared services without exposing settings or
+credentials. Both the script and model-service blockers remain.
+Regression cases cover matching settings, conflicting defaults,
+invalid timeouts and the explicit transport switch. This round
+changes offline conversion only.
+
+
 The offline converter now retires the legacy model settings for Reply
 composition and MCP natural-language selection from a native candidate
 (`harness_migrate.py:625`). Its printable report records only Action
