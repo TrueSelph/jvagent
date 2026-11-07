@@ -12,6 +12,26 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+An isolated browser fault test at `8cc8b934` renamed the version 43
+fixture to version 44 and used actual GPT-4.1 to publish the renamed
+successor. The backend exited with status 72 at the entry to prior-root
+retirement (`pageindex_google_drive_sync_action.py:825`). The browser
+reported a disconnected request after 11.941 seconds. PostgreSQL
+interaction `n.Interaction.d763f6ab5f9743198ead7577` had completed and
+recorded 10 model requests, 3,084 provider-reported tokens, USD 0.009516
+estimated cost and zero unknown-cost calls.
+
+After restart the original queue node
+`n.GoogleDriveDocuments.14bc58cf68f04748a8b2b7d7` was reclaimed.
+HTTP 200 in 235 ms showed the recovered publication, cleared queue, and
+sole remaining root `n.DocumentRootNode.75330e8098ed4f6c9d64352b` with
+two chunks under the new name. The retry made no model calls and no chat
+tool events. The fixture injected the exit and supplied synthetic Drive
+transport. The regression asserts exact prior-root retirement when
+both roots and receipts exist. Live OAuth and interruption inside
+graph cascade deletion remain separate gates.
+
+
 Native replacement selects the prior root by its verified Drive revision
 and checks its closed publication receipt. It refuses unrelated same-name
 roots and changes to access metadata. After the successor's native

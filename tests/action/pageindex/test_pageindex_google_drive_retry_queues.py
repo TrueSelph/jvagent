@@ -1436,3 +1436,72 @@ async def test_native_drive_replacement_refuses_unrelated_same_name_root():
                 old_file={"id": "file", "name": "doc.pdf", "version": "42"},
             )
     retire.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_drive_rename_retires_exact_prior_after_receipt():
+    from jvagent.memory.interaction import Interaction
+
+    action = PageIndexGoogleDriveSyncAction()
+    source = b"fixture"
+    url = "https://example.com/drive-doc"
+    prior, successor = [
+        SimpleNamespace(
+            id=root_id,
+            doc_name=name,
+            drive_revision_key=hashlib.sha256(
+                json.dumps([action.id, "file", version]).encode()
+            ).hexdigest(),
+            drive_source_key=hashlib.sha256(
+                json.dumps(
+                    [action.id, "file", hashlib.sha256(source).hexdigest()]
+                ).encode()
+            ).hexdigest(),
+            drive_operation_id=operation,
+            doc_url=url,
+            chunks=1,
+            metadata={},
+        )
+        for root_id, name, version, operation in (
+            ("prior-root", "old.pdf", "42", "prior-op"),
+            ("successor-root", "new.pdf", "43", "successor-op"),
+        )
+    ]
+    receipts = {
+        root.drive_operation_id: SimpleNamespace(
+            user_id=action.id,
+            channel="pageindex_pdf_ingestion",
+            closed=True,
+            native_run={"status": "completed", "usage_complete": True},
+            usage={"unknown_cost_call_count": 0},
+            response=json.dumps({"_root_id": root.id}),
+        )
+        for root in (prior, successor)
+    }
+    cfg = DriveIngestConfig("agent-1", {}, None, None, None, "agent-1", None)
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_roots",
+            AsyncMock(return_value=[successor, prior]),
+        ),
+        patch.object(Interaction, "get", AsyncMock(side_effect=receipts.__getitem__)),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            AsyncMock(return_value=True),
+        ) as retire,
+    ):
+        result = await action._ingest_native_drive_document(
+            source,
+            ".pdf",
+            doc_name=successor.doc_name,
+            doc_url=url,
+            file_id="file",
+            version="43",
+            cfg=cfg,
+            old_file={"id": "file", "name": prior.doc_name, "version": "42"},
+        )
+    assert result["_root_id"] == successor.id
+    assert result["reconciled"]
+    retire.assert_awaited_once_with("old.pdf", "agent-1", root_id=prior.id)
