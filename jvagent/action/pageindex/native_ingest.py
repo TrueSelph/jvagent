@@ -1,4 +1,4 @@
-"""Accounted local PageIndex Markdown ingestion."""
+"""Accounted local PageIndex ingestion."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -8,6 +8,15 @@ from jvagent.harness.completion_tool import CompleteText
 from .native_search import Complete, admitted_operation_model, run_native_operation
 
 CHANNEL = "pageindex_markdown_ingestion"
+PDF_CHANNEL = "pageindex_pdf_ingestion"
+
+
+def _publication(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: result[key]
+        for key in ("doc_name", "_root_id", "doc_description")
+        if key in result
+    }
 
 
 async def run_native_markdown_ingest(
@@ -32,13 +41,6 @@ async def run_native_markdown_ingest(
 
         return await assimilate(text)
 
-    def publication(result: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: result[key]
-            for key in ("doc_name", "_root_id", "doc_description")
-            if key in result
-        }
-
     return await run_native_operation(
         action,
         agent_id=agent_id,
@@ -46,5 +48,27 @@ async def run_native_markdown_ingest(
         query=doc_name,
         channel=CHANNEL,
         operation=operation,
-        result_receipt=publication,
+        result_receipt=_publication,
+    )
+
+
+async def run_native_pdf_ingest(
+    action: Any,
+    *,
+    agent_id: str,
+    actor: str,
+    doc_name: str,
+    requested_model: str | None,
+    assimilate: Callable[[Complete], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Use the same host limits and receipts for the classic PDF parser."""
+    admitted_operation_model(action.model, requested_model)
+    return await run_native_operation(
+        action,
+        agent_id=agent_id,
+        actor=actor,
+        query=doc_name,
+        channel=PDF_CHANNEL,
+        operation=assimilate,
+        result_receipt=_publication,
     )

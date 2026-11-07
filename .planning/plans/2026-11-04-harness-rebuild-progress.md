@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native Markdown ingestion](2026-11-07-native-pageindex-ingest.md).
+Latest increment: [native classic PDF ingestion](2026-11-07-native-pageindex-pdf.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,14 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native classic PDF ingestion
+
+The opted-in classic PDF parser now routes its worker-thread calls to the
+accounted SDK operation. Browser upload and cited retrieval pass. A one-request
+browser replay refuses the next call before publication and returns a
+configured-budget error. Scanned/Office documents, Drive sync and publication
+recovery remain open. See [qualification](2026-11-07-native-pageindex-pdf.md).
 
 ## Native local Markdown ingestion
 

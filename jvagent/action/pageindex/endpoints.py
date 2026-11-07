@@ -66,6 +66,7 @@ from .documents import (
 )
 from .jvforge_assimilate import assimilate_via_jvforge, assimilate_via_jvforge_async
 from .jvforge_routing import resolve_effective_jvforge_base
+from .native_search import Complete
 from .pageindex_action import (
     PageIndexAction,
     ensure_ingestion_config_for_agent,
@@ -799,6 +800,7 @@ async def _do_assimilate(
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
     complete: Optional[CompleteText] = None,
+    pdf_complete: Optional[Complete] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
     assimilate_kw: dict[str, Any] = {
@@ -816,6 +818,8 @@ async def _do_assimilate(
     }
     if complete is not None:
         assimilate_kw["complete"] = complete
+    if pdf_complete is not None:
+        assimilate_kw["pdf_complete"] = pdf_complete
 
     work_dir = await _ensure_pageindex_work_dir()
 
@@ -870,7 +874,7 @@ async def _do_assimilate(
 async def _ingest_locally(
     request: Request, agent_id: str, content: bytes, ext: str, **options: Any
 ) -> dict[str, Any]:
-    """Select native Markdown ingestion when the target has a native owner."""
+    """Select a qualified ingestion path for the target's native owner."""
     from jvagent.core.execution_owner import native_harness_action
 
     agent = await Agent.get(agent_id)
@@ -880,17 +884,13 @@ async def _ingest_locally(
     if native is None:
         return await _do_assimilate(content, ext, **options)
 
-    from .native_ingest import run_native_markdown_ingest
+    from .native_ingest import run_native_markdown_ingest, run_native_pdf_ingest
 
     profile = await agent.get_action_by_type("PageIndexAction")
     if profile is None:
         profile = await agent.get_action_by_type("PageIndexReadAction")
-    if (
-        not isinstance(profile, PageIndexAction)
-        or not profile.enabled
-        or profile.native_markdown_ingestion is not True
-    ):
-        raise ValidationError("Native PageIndex Markdown ingestion is not enabled")
+    if not isinstance(profile, PageIndexAction) or not profile.enabled:
+        raise ValidationError("Native PageIndex ingestion is not enabled")
     principal = getattr(request.state, "user", None)
     actor = (
         principal.get("id")
@@ -899,12 +899,38 @@ async def _ingest_locally(
     )
     if not isinstance(actor, str) or not actor:
         raise AuthenticationError("An authenticated operator is required")
+    if options["collection_name"] != agent_id:
+        raise ValidationError("Native ingestion requires this agent's collection")
+    if ext == ".pdf":
+        if profile.native_pdf_ingestion is not True or options["convert_to_markdown"]:
+            raise ValidationError(
+                "Native classic PDF ingestion is not enabled for this upload"
+            )
+        from pydantic_ai.exceptions import UsageLimitExceeded
+        from pydantic_ai_harness.spend import SpendLimitExceeded
+
+        async def pdf_assimilate(complete: Complete) -> dict[str, Any]:
+            return await _do_assimilate(content, ext, pdf_complete=complete, **options)
+
+        try:
+            return await run_native_pdf_ingest(
+                native,
+                agent_id=agent_id,
+                actor=actor,
+                doc_name=options["doc_name"],
+                requested_model=options.get("model"),
+                assimilate=pdf_assimilate,
+            )
+        except (UsageLimitExceeded, SpendLimitExceeded):
+            raise ValidationError(
+                "PDF ingestion reached the configured model budget"
+            ) from None
     if (
         ext not in PAGEINDEX_TEXT_LIKE_EXTENSIONS
-        or options["collection_name"] != agent_id
+        or profile.native_markdown_ingestion is not True
     ):
         raise ValidationError(
-            "Native ingestion requires Markdown or text in this agent's collection"
+            "Native Markdown ingestion is not enabled for this upload"
         )
 
     async def assimilate(complete: CompleteText) -> dict[str, Any]:

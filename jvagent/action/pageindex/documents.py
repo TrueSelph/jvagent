@@ -46,7 +46,9 @@ from .docling_convert import (
 )
 from .llm_bridge import (
     PageIndexCancelled,
+    attach_native_pdf_bridge,
     attach_pageindex_cancel_event,
+    check_pageindex_cancelled,
     set_pageindex_model_action,
     signal_pageindex_cancel,
 )
@@ -60,6 +62,8 @@ from .md_tree_enriched import (
     md_to_tree,
 )
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_enabled
+from .native_pdf import NativePDFBridge, extract_native_pdf_pages
+from .native_search import Complete
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +312,7 @@ def _pdf_page_index_worker(
     if_add_node_text: bool,
     if_add_node_summary: bool,
     if_add_doc_description: bool,
+    native_bridge: NativePDFBridge | None = None,
 ) -> Dict[str, Any]:
     """Run sync page_index_main in a thread with optional cooperative cancel.
 
@@ -316,6 +321,7 @@ def _pdf_page_index_worker(
     ``{log_base}/logs/`` without changing process cwd.
     """
     attach_pageindex_cancel_event(cancel_event)
+    attach_native_pdf_bridge(native_bridge)
     try:
         user_opt = {
             "model": model,
@@ -335,8 +341,21 @@ def _pdf_page_index_worker(
         if log_base:
             log_dir = os.path.join(log_base, "logs")
             logger = _PageIndexDirLogger(doc, log_dir)
-        return page_index_main(doc, opt, logger=logger)
+        if native_bridge is None:
+            return page_index_main(doc, opt, logger=logger)
+        pages = extract_native_pdf_pages(doc)
+        try:
+            result = page_index_main(doc, opt, logger=logger, page_list=pages)
+        except Exception:
+            if native_bridge.failure is not None:
+                raise native_bridge.failure from None
+            raise
+        if native_bridge.failure is not None:
+            raise native_bridge.failure from None
+        check_pageindex_cancelled()
+        return result
     finally:
+        attach_native_pdf_bridge(None)
         attach_pageindex_cancel_event(None)
 
 
@@ -467,6 +486,7 @@ async def assimilate_document(
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
     complete: Optional[CompleteText] = None,
+    pdf_complete: Complete | None = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -500,7 +520,7 @@ async def assimilate_document(
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
     """
-    if complete is not None and model_action is not None:
+    if sum(owner is not None for owner in (complete, pdf_complete, model_action)) > 1:
         raise ValueError("Use one PageIndex model execution owner")
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
@@ -645,6 +665,8 @@ async def assimilate_document(
             is_pdf = False
 
         use_pdf_page_index = is_pdf and not convert_to_markdown
+        if pdf_complete is not None and not use_pdf_page_index:
+            raise ValueError("Native PDF completion requires the classic PDF parser")
         ingest_kind = "pdf_pageindex" if use_pdf_page_index else "markdown_enriched"
 
         if not use_pdf_page_index and isinstance(doc, BytesIO):
@@ -674,6 +696,9 @@ async def assimilate_document(
             log_base = resolve_pageindex_json_log_dir(merged)
 
             loop = asyncio.get_running_loop()
+            native_bridge = (
+                NativePDFBridge(pdf_complete) if pdf_complete is not None else None
+            )
             fut = loop.run_in_executor(
                 None,
                 functools.partial(
@@ -689,6 +714,7 @@ async def assimilate_document(
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
                     if_add_doc_description=if_add_doc_description,
+                    **({"native_bridge": native_bridge} if native_bridge else {}),
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
@@ -697,6 +723,9 @@ async def assimilate_document(
             except asyncio.CancelledError:
                 signal_pageindex_cancel(cancel_event)
                 raise
+            finally:
+                if native_bridge is not None:
+                    await native_bridge.stop()
         else:
             md_path = Path(doc)
             raw_text = md_path.read_text(encoding="utf-8")

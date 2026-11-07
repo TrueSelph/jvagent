@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 from uuid import uuid4
 
 from jvspatial.api.exceptions import ValidationError
@@ -13,7 +13,18 @@ from jvagent.harness.completion_tool import CompleteText
 
 CHANNEL = "pageindex_admin_search"
 Result = TypeVar("Result")
-Complete = Callable[[str | list[Any]], Awaitable[Any]]
+
+
+class Complete(Protocol):
+    """An accounted SDK completion within one PageIndex operation."""
+
+    async def __call__(
+        self,
+        prompt: str | list[Any],
+        *,
+        message_history: list[Any] | None = None,
+        allow_partial: bool = False,
+    ) -> Any: ...
 
 
 def admitted_operation_model(configured: str, requested: Any) -> str:
@@ -150,7 +161,12 @@ async def run_native_operation(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + limits["timeout_seconds"]
 
-    async def complete(prompt: str | list[Any]) -> Any:
+    async def complete(
+        prompt: str | list[Any],
+        *,
+        message_history: list[Any] | None = None,
+        allow_partial: bool = False,
+    ) -> Any:
         nonlocal first
         remaining = deadline - loop.time()
         if remaining <= 0:
@@ -174,13 +190,14 @@ async def run_native_operation(
             )
             result = await worker.run(
                 prompt,
+                message_history=message_history,
                 run_id=identity,
                 conversation_id=run_id,
                 usage=usage,
                 usage_limits=usage_limits,
                 timeout=remaining,
             )
-        if result.response.finish_reason == "length":
+        if result.response.finish_reason == "length" and not allow_partial:
             raise OutputTokenLimitReached("PageIndex ranking output was truncated")
         return result
 
