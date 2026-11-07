@@ -470,3 +470,29 @@ admit those effects only with explicit host permission and SDK
 receipts. The native base should describe only the operations that
 its owning Action can safely supply. This was offline qualification,
 with no graph writes or model requests.
+
+### Native LeadGen profile retrieval
+
+Native LeadGen exposes status and a separately permitted retrieval tool.
+Retrieval uses a detached profile view for missing or changed required
+fields and does not create or update a graph row. The visitor binding
+supplies caller identity and the model-facing schema accepts no extra
+arguments. Legacy retrieval retains its existing write behavior.
+Sources: `leadgen_action.py:101`, `engine.py:392`.
+
+At parent `425e348c`, a browser fixture used the production streaming
+endpoint, actual GPT-4.1 and a disposable PostgreSQL app. A first attempt
+used the persisted readiness configuration because of merge precedence
+and did not call LeadGen. It took 3.510 seconds and recorded two requests,
+588 provider tokens and USD 0.001476 estimated. After applying the
+LeadGen config and named permission and restarting, the browser showed
+`leadgen__retrieve`, an empty profile with missing email, and a reply
+confirming no email was on file. HTTP 200 took 3.190 seconds.
+Interaction `n.Interaction.3ac7b4506d324584bda7f062` was delivered with
+two requests, 974 provider tokens and USD 0.002254 estimated. Neither
+attempt had unknown-cost events. PostgreSQL contained no LeadProfile.
+The model offered to update the profile despite the read-only skill.
+No write tool was available or called. Capture, sync and the native
+Action skill base remain open.
+
+Runtime diff SHA-256: `3d423909fc8e9af03dda441b34c97949a5b51dac75620304a74f9c291fd52a1f`.

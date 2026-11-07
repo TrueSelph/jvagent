@@ -533,7 +533,7 @@
           "name"
         ],
         "tracked_directory_files": 19,
-        "tracked_directory_digest": "sha256:ff9b29b07262029bac9d32948eb86c7bc5a45b12ed045d57e4224b311b2037ce"
+        "tracked_directory_digest": "sha256:a517143cd86a6505a39ff9381acd862ef8007784ca271f8bd1774dbf030c1298"
       },
       {
         "path": "jvagent/action/leadgen/examples/example_leadgen/SKILL.md",
@@ -1318,7 +1318,7 @@
         "name": "jvagent/leadgen",
         "archetype": "LeadGenAction",
         "tracked_directory_files": 19,
-        "tracked_directory_digest": "sha256:e39e595dbe9fbc9a43eed0cd7aa79f33b9fd88f04527d023c43b9b42748b7ad1"
+        "tracked_directory_digest": "sha256:e6735a145463c7789cea57f378dacf75506ab7091a28f67add7db2c30e1e9abb"
       },
       {
         "path": "jvagent/action/mcp/info.yaml",
