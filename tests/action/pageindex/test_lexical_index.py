@@ -23,6 +23,7 @@ from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
     get_document_roots,
+    import_documents,
 )
 from jvagent.action.pageindex.lexical_index import (
     index_node,
@@ -551,3 +552,28 @@ async def test_multiple_docs_lexical_ranking(pageindex_temp_db):
     results = await search("budget", "rank_col")
     assert len(results) == 2
     assert results[0]["node_id"] == "rank_n1"
+
+
+@pytest.mark.asyncio
+async def test_import_cannot_restore_drive_source_binding(pageindex_temp_db):
+    await persist_structure(
+        "local.pdf",
+        [{"title": "Local"}],
+        collection_name="local",
+        drive_source_key="local-source",
+    )
+    await import_documents(
+        {
+            "roots": [
+                {
+                    "doc_name": "imported.pdf",
+                    "collection_name": "imported",
+                    "drive_source_key": "copied-source",
+                }
+            ]
+        }
+    )
+    (local,) = await get_document_roots("local")
+    (imported,) = await get_document_roots("imported")
+    assert local.drive_source_key == "local-source"
+    assert imported.drive_source_key is None

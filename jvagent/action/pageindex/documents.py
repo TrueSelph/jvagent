@@ -487,6 +487,7 @@ async def assimilate_document(
     docling_ocr_engine: Optional[str] = None,
     complete: Optional[CompleteText] = None,
     pdf_complete: Complete | None = None,
+    drive_source_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -800,6 +801,8 @@ async def assimilate_document(
         if persist and result.get("structure"):
             result["collection_name"] = collection_name
             result["metadata"] = metadata
+            if drive_source_key is not None:
+                result["drive_source_key"] = drive_source_key
             if doc_description is not None:
                 result["doc_description"] = doc_description
             if doc_url is not None:
@@ -1054,7 +1057,13 @@ async def import_documents(
             for root in roots:
                 await root.delete()
         for root_data in data.get("roots", []):
-            await DocumentRootNode(**root_data).save()
+            await DocumentRootNode(
+                **{
+                    key: value
+                    for key, value in root_data.items()
+                    if key != "drive_source_key"
+                }
+            ).save()
         imported_nodes: list = []
         for node_data in data.get("nodes", []):
             node = DocumentNode(**node_data)

@@ -1,5 +1,7 @@
 import asyncio
 import copy
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -559,6 +561,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 Path(forge_filename).suffix.lower(),
                 doc_name=doc_name,
                 doc_url=doc_url,
+                file_id=file_id,
                 cfg=cfg,
             )
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
@@ -668,6 +671,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         *,
         doc_name: str,
         doc_url: str,
+        file_id: str,
         cfg: DriveIngestConfig,
     ) -> Dict[str, Any]:
         """Index a new Drive document with the host's admitted completion service."""
@@ -677,7 +681,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         from ..native_ingest import run_native_markdown_ingest, run_native_pdf_ingest
         from ..native_search import Complete
 
+        if not file_id:
+            raise ValidationError("Native Drive ingestion requires a source file ID")
+        source_facts = [self.id, file_id, hashlib.sha256(content).hexdigest()]
+        source_key = hashlib.sha256(json.dumps(source_facts).encode()).hexdigest()
         options: dict[str, Any] = {
+            "drive_source_key": source_key,
             "doc_name": doc_name,
             "doc_url": doc_url,
             "collection_name": cfg.collection_name,

@@ -12,6 +12,28 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native Drive publication now stores a source key on the root before
+linking its chunks. The key binds the executing Action ID, Drive file
+ID and SHA-256 of the downloaded bytes
+(`pageindex_google_drive_sync_action.py:657`, `adapter.py:168`).
+Ordinary document metadata cannot supply this field. Graph import
+strips it so imported roots cannot inherit native publication identity
+(`documents.py:1056`). This identifies content, and does not yet prove
+that the Drive revision remained stable between listing and download.
+
+The browser fixture at parent `9fca6acf` and runtime diff hash
+`a337f3a2a5e1fd82b238b2f6965e6b3f3cfeaa7f` ingested a synthetic Drive
+PDF through actual GPT-4.1. HTTP 200 in 12.831 seconds showed two chunks
+and an acknowledged queue. A graph lookup verified the expected source
+key on `n.DocumentRootNode.be647064697d43208321d980`. PostgreSQL
+interaction `n.Interaction.c2644aa8e7e245d4ab1896b6` was completed with
+10 requests, 3,077 provider-reported tokens, USD 0.009460 estimated
+cost and zero unknown-cost calls. There were no chat tool events.
+The test fixture supplied synthetic Drive bytes. Restart acknowledgement
+still needs to correlate the root with the completed operation receipt
+before it can reconcile a queue item.
+
+
 Native Drive claims now persist server-owned worker identity
 (`google_drive_documents.py:54`). Before refreshing the folder listing,
 native admission applies the existing same-host process-death check. It

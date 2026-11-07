@@ -46,6 +46,10 @@ class DocumentRootNode(Node):
         default=None,
         description="Custom key-value metadata for filtering at query time",
     )
+    drive_source_key: Optional[str] = attribute(
+        default=None,
+        description="Server-bound Drive source and content identity",
+    )
     chunks: Optional[int] = attribute(
         default=None,
         description="Number of DocumentNode chunks for this document",

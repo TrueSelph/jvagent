@@ -801,6 +801,7 @@ async def _do_assimilate(
     docling_ocr_engine: Optional[str] = None,
     complete: Optional[CompleteText] = None,
     pdf_complete: Optional[Complete] = None,
+    drive_source_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
     assimilate_kw: dict[str, Any] = {
@@ -816,6 +817,8 @@ async def _do_assimilate(
         "ocr": ocr,
         "docling_ocr_engine": docling_ocr_engine,
     }
+    if drive_source_key is not None:
+        assimilate_kw["drive_source_key"] = drive_source_key
     if complete is not None:
         assimilate_kw["complete"] = complete
     if pdf_complete is not None:
