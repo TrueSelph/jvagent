@@ -3,8 +3,8 @@
 from typing import Any
 
 
-def effective_instructions(action: Any, channel: str) -> str:
-    """Append only the exact channel's literal instructions.
+def effective_instructions(action: Any, channel: str, *, new_user: bool = False) -> str:
+    """Append literal channel and first-user presentation instructions.
 
     Channel is a routing fact, not an authorization boundary. These declarations
     cannot change tools, permissions, providers, budgets or skill ownership.
@@ -12,6 +12,9 @@ def effective_instructions(action: Any, channel: str) -> str:
     """
     base = action.instructions
     profiles = getattr(action, "channel_instructions", {})
+    first_user = getattr(action, "first_user_instructions", "")
+    if not isinstance(first_user, str):
+        raise ValueError("First-user instructions require literal text")
     if not isinstance(base, str) or not isinstance(profiles, dict):
         raise ValueError("Native instructions require literal text declarations")
     if not isinstance(channel, str) or not channel.strip():
@@ -26,4 +29,8 @@ def effective_instructions(action: Any, channel: str) -> str:
             raise ValueError(
                 "Channel instructions require exact labels and literal text"
             )
-    return "\n\n".join(part for part in (base, profiles.get(channel, "")) if part)
+    return "\n\n".join(
+        part
+        for part in (base, profiles.get(channel, ""), first_user if new_user else "")
+        if part
+    )

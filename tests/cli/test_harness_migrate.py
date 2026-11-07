@@ -1454,3 +1454,26 @@ def test_reference_pageindex_conversion_requires_explicit_model(
             "native_ingestion_model": "openai:gpt-4.1-mini",
         },
     } in candidate["actions"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_intro_migrates_to_native_first_user_presentation(
+    app: Path, enabled: bool
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    name = "jvagent/intro_interact_action"
+    document["actions"].append(
+        {
+            "action": name,
+            "context": {"enabled": enabled, "directive": "private greeting"},
+        }
+    )
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None
+    assert candidate["actions"][0]["context"]["first_user_instructions"] == (
+        "private greeting" if enabled else ""
+    )
+    assert all(action["action"] != name for action in candidate["actions"])
+    assert report["retired_actions"] == [name]
+    assert "private greeting" not in json.dumps(report)

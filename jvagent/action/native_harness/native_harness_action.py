@@ -189,6 +189,7 @@ class NativeHarnessAction(InteractAction):
     planning: bool = attribute(default=False)
     publish_reasoning: bool = attribute(default=False)
     instructions: str = attribute(default="Help the user using the available skill.")
+    first_user_instructions: str = attribute(default="")
     channel_instructions: dict[str, str] = attribute(default_factory=dict)
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
@@ -516,7 +517,9 @@ class NativeHarnessAction(InteractAction):
         limits = effective_run_limits(self, caller_channel)
         from jvagent.harness.instructions import effective_instructions
 
-        instructions = effective_instructions(self, caller_channel)
+        instructions = effective_instructions(
+            self, caller_channel, new_user=getattr(visitor, "new_user", False) is True
+        )
         with bind_dispatch_context(visitor):
             agent = build_native_agent(
                 self.model,

@@ -333,3 +333,30 @@ declaration blocker while leaving the model-service blocker and producing no
 candidate. This does not qualify the combined app, its script workload or its
 retained state. The checked-in reference declaration remains the baseline for
 the [two-blocker assessment](2026-11-07-native-sdk-tool-policy-reference-blockers.json).
+
+## Native first-user presentation
+
+The converter folds the reviewed Intro Action into literal
+`first_user_instructions` on the native owner. It preserves disabled
+behavior and refuses custom Action scheduling. The native host selects
+the instruction from the walker's server-resolved new-user flag and
+passes it to SDK instructions for that run. Sources:
+`harness_migrate.py:406`, `instructions.py:6`,
+`native_harness_action.py:520`. The reference dry run now reports SkillHub
+as the remaining unreviewed Action alongside the alternate providers.
+
+At parent `f2560463`, a loopback browser fixture exercised production
+streaming ingress with actual GPT-4.1. The first fixture lacked a required
+skill and returned an admission notice in 212 ms without a model call.
+A fresh disposable PostgreSQL graph with a minimal readiness skill then
+showed `HARBOR-WELCOME` and `READY.` in 1.943 seconds. Interaction
+`n.Interaction.3c099ab80f5040f086f06d7d` was delivered with one request,
+260 provider tokens and USD 0.000580 estimated. The same authenticated
+user started a distinct conversation and saw only `READY.` in 2.361
+seconds after one capability call/result. Interaction
+`n.Interaction.f3d95b9aeb304d8383ca56cd` was delivered with two requests,
+539 provider tokens and USD 0.001204 estimated. Both recorded zero
+unknown-cost events. The browser test used a streaming fixture without
+jvchat. Retained-graph migration remains separate.
+
+Runtime diff SHA-256: `a2b9cd591a7b68101d5c13531605c24693697988099ff69cc217cbb7150d9cde`.

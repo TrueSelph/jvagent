@@ -403,6 +403,46 @@ def _plan_model_service(
     return selected_service, retired_service, service_timeout
 
 
+def _migrate_intro(
+    actions: list[dict[str, Any]], owner: dict[str, Any], report: dict[str, Any]
+) -> str | None:
+    name = "jvagent/intro_interact_action"
+    declarations = [action for action in actions if action["action"] == name]
+    if not declarations:
+        return None
+    from jvagent.action.intro.intro_interact_action import IntroInteractAction
+
+    declaration = declarations[0]
+    context = declaration.get("context", {})
+    weight = owner.get("weight", -200)
+    if (
+        len(declarations) != 1
+        or set(declaration) - {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled", "directive"}
+        or type(context.get("enabled", True)) is not bool
+        or type(weight) is not int
+        or weight <= -300
+    ):
+        report["blockers"].append(
+            "Intro Action requires explicit native presentation review"
+        )
+        return None
+    directive = context.get(
+        "directive", IntroInteractAction.model_fields["directive"].default
+    )
+    if not isinstance(directive, str):
+        report["blockers"].append(
+            "Intro Action requires literal first-user instructions"
+        )
+        return None
+    actions.remove(declaration)
+    report.setdefault("retired_actions", []).append(name)
+    report["preserved_action_count"] -= 1
+    report["mappings"][name] = "first_user_instructions"
+    return directive if context.get("enabled", True) else ""
+
+
 def _migrate_pageindex_profile(
     actions: list[dict[str, Any]], model: str | None, report: dict[str, Any]
 ) -> None:
@@ -569,6 +609,7 @@ def plan_harness_migration(
             report["required_review"].append(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
+    intro = _migrate_intro(actions, context, report)
     _migrate_pageindex_profile(actions, pageindex_model, report)
     _retire_controls(context, report, mode, actions)
     retire_vision = migrate_vision(context, actions, report)
@@ -640,6 +681,8 @@ def plan_harness_migration(
     target: dict[str, Any] = {
         k: copy.deepcopy(context[k]) for k in _DIRECT if k in context
     }
+    if intro is not None:
+        target["first_user_instructions"] = intro
     if "stream_reasoning_trace" in context:
         if type(context["stream_reasoning_trace"]) is not bool:
             blockers.append("stream_reasoning_trace requires a boolean")

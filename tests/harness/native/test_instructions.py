@@ -54,3 +54,19 @@ def test_missing_profiles_preserve_existing_instructions() -> None:
 def test_invalid_base_fails(base: Any) -> None:
     with pytest.raises(ValueError):
         effective_instructions(SimpleNamespace(instructions=base), "web")
+
+
+def test_first_user_presentation_is_selected_only_for_new_user() -> None:
+    host = SimpleNamespace(
+        instructions="Base",
+        channel_instructions={"web": "Web"},
+        first_user_instructions="Introduce yourself",
+    )
+    assert (
+        effective_instructions(host, "web", new_user=True)
+        == "Base\n\nWeb\n\nIntroduce yourself"
+    )
+    assert effective_instructions(host, "web") == "Base\n\nWeb"
+    host.first_user_instructions = {"invalid": "value"}
+    with pytest.raises(ValueError, match="literal text"):
+        effective_instructions(host, "web")
