@@ -1,5 +1,20 @@
 # Reference model service retirement boundary
 
+At parent `924cb4de`, the legacy natural-language MCP selector
+refuses native ownership before discovery or model resolution
+(`mcp_action.py:656`). An isolated fixture returned the existing
+structured gateway error in 26 ms with no provider or tool request.
+In jvchat on the same disposable PostgreSQL app, the SDK ran the
+reviewed `mcp_records__lookup_record` tool exactly once and returned
+Cedar at 14:30. Interaction `n.Interaction.014affd6929a49f08f6a3aba`
+was delivered in 4.447 seconds. It recorded two GPT-4.1 requests, 793
+provider tokens, USD 0.001880 estimated cost and zero unknown-cost calls.
+The tested MCP Action blob was `37650319d02ef2302c9fd14b5b3fb8854f0bb084`.
+
+The earlier audit called the legacy selector "sampling". It is a
+separate model call that selects a tool from inventory. Server-initiated
+MCP sampling is a distinct SDK capability and was outside this fixture.
+
 At parent `97ac197d`, Reply composition now checks native ownership
 before shaping or resolving a legacy model (`reply_action.py:546`).
 The public literal publish path remains the native response-bus boundary.
@@ -46,7 +61,7 @@ MCP sampling contracts.
 Source revision `50b6c737`. This is an offline compatibility audit. The
 reference agent selects GPT-4.1 through LiteLLM for orchestration and uses
 GPT-4.1 Nano through OpenAI for PageIndex tree search and Reply. MCP is disabled
-in this declaration and still carries an OpenAI sampling configuration.
+in this declaration and still carries an OpenAI tool-selection configuration.
 OpenAI, Ollama and LiteLLM Actions are all enabled. The model service migration
 guard in `jvagent/cli/harness_migrate.py:459` rejects multiple declarations
 before checking consumer coverage or the selected service settings. Removing
@@ -60,7 +75,7 @@ alternate declarations alone would leave the existing consumers unresolved.
 | PageIndex tree search | Action search binds the Action in a ContextVar; the HTTP endpoint dispatches retrieval directly (`endpoints.py:1857`). The retriever can invoke model completion (`retrieval.py:479`) | Route both entrypoints through explicit host-selected SDK execution. Preserve ranked results, citations and access scope |
 | PageIndex ingestion and sync | Action assimilation and Drive sync resolve a model Action (`pageindex_action.py:565`, `pageindex_google_drive_sync_action.py:1438`). PDF processing crosses a worker thread (`documents.py:670`) | Carry explicit execution policy across the worker boundary. Bound all completions, including continuation history, and preserve cancellation and publication semantics |
 | PageIndex jvforge callback | Authenticated callback resolves a PageIndex Action and accepts text or image work (`endpoints.py:2011`, `pageindex_action.py:216`) | Preserve callback response/usage fields, admit only configured models and media, and bound and account for the operation independently of chat |
-| MCP sampling | Legacy sampling resolves a model Action (`mcp_action.py:701`); native reviewed toolsets use public SDK lifecycle (`:886`) | Treat disabled sampling, reviewed stdio tool use and active sampling as separate compatibility cases. Qualify or block active sampling before retiring its provider |
+| MCP tool selection | Legacy `fulfill()` resolves a model Action after tool discovery. Native reviewed toolsets use the public SDK lifecycle | Keep reviewed stdio tool selection in the owning native run. Qualify server-initiated sampling separately before admitting a sampling profile |
 | Other modular declarations | Converter consumer coverage is explicit and incomplete | Review lifecycle, tools and endpoints individually. An unclassified Action is not evidence that it calls a model |
 
 ## Reproduced behavior

@@ -672,6 +672,17 @@ class MCPAction(Action):
                 in their own per-session sandbox folder rather than the
                 shared system-default folder.
         """
+        from jvagent.core.execution_owner import uses_native_harness
+
+        if self.agent_id:
+            agent = await self.get_agent()
+            if agent is None or await uses_native_harness(agent):
+                return MCPFulfillResult(
+                    text="MCP tool selection requires an admitted native toolset when the legacy owner cannot be verified.",
+                    is_error=True,
+                    error_kind="gateway_error",
+                )
+
         from jvagent.core.sandbox import effective_user_segment
 
         # Resolve the segment used for sandbox routing. ``default=""`` so we
