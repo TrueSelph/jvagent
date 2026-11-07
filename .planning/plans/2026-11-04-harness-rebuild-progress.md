@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [offline channel migration](2026-11-07-native-channel-migration.md).
+Latest increment: [legacy tool pin retirement](2026-11-07-native-pin-retirement.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Retire legacy tool pins
+
+Typed global/channel pins explicitly retire into official skill discovery rather
+than becoming prompts or grants. The public CLI candidate preserves modular
+Actions and named denial exactly. Five actual GPT-4.1 browser turns verify owned
+read execution, unavailable unowned tools and two host-denied writes with zero
+write bodies. Eleven calls/4,498 reported tokens/USD 0.010136 estimated reconcile;
+cold/reload graph comparisons are exact. An old frozen client displayed a stale
+success icon; final tests use the byte-qualified current build and show a warning.
+Distinct denied-tool status remains a documented UI gap. Both Python migration
+lanes pass 216; transitional suite 5,139. See the
+[record](2026-11-07-native-pin-retirement.md). Channel migration now blocks only
+on nonzero tool deadlines; all three reference blocker categories and the full
+cutover/deletion/enterprise gates remain open.
 
 ## Offline channel migration
 

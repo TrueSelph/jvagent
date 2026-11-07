@@ -10,6 +10,18 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Legacy tool pins
+
+[Qualification](2026-11-07-native-pin-retirement.md) retires typed global/channel
+pre-surfacing pins with explicit workflow review, not native tool grants.
+Five real GPT-4.1 browser turns verify deferred activation/owned Action reads,
+unowned-tool exclusion and named write denial before any body. Eleven requests/
+4,498 reported tokens/USD 0.010136 estimated reconcile; cold/reload readback is
+exact. The final byte-qualified client shows a warning, while precise denied-tool
+presentation remains open. Both migration lanes pass 216; transitional 5,139.
+Only nonzero tool deadlines remain within the reference channel blocker; other
+reference, compatibility, retained-state, deletion and enterprise gates remain.
+
 ## Offline channel migration
 
 [Qualification](2026-11-07-native-channel-migration.md) covers public CLI generation

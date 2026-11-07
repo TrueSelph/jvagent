@@ -128,6 +128,11 @@ Every runtime increment uses a disposable app/graph and actual configured model
 for in-browser smoke. Record revision, scenario, outcome, duration, visible events,
 state readback and cost provenance. Do not substitute page-load checks for success
 of a model workflow. Run deterministic/adversarial tests as separate gates.
+For a bundled or frozen browser client, identify the actual served artifact and
+record its source revision/bundle hashes separately from backend source. Prefer
+an owned immutable build for qualification; a shared port can serve an older
+snapshot. Preserve initial stale-client observations and repeat affected cases
+on the qualified build before making UI claims.
 
 ## Optimization and completion
 

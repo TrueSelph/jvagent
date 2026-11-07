@@ -715,7 +715,6 @@ def test_source_selection_does_not_leak_app_override_into_library_mode(
     [
         ("channel_overrides", {"web": {"skill_only_tools": ["pay__*"]}}),
         ("skill_only_tools", ["pay__*"]),
-        ("pinned_tools", ["write__save"]),
         ("vision", True),
         ("tool_call_timeout", 30),
     ],
@@ -783,7 +782,7 @@ def test_channel_policy_migrates_without_writing_or_reporting_instructions(
         {"with_event": 0},
         {"with_event": True},
         {"denied_tools": ["private-channel-instruction"]},
-        {"pinned_tools": ["private-channel-instruction"]},
+        {"pinned_tools": [True]},
         {"history_limit": True},
         {"history_limit": 10**400},
         {"system_prompt_extra": {"private-channel-instruction": 1}},
@@ -831,6 +830,57 @@ def test_invalid_global_limit_with_channel_policy_returns_report(app: Path) -> N
     )
     report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
     assert candidate is None and report["blockers"]
+
+
+@pytest.mark.parametrize("pins", [[], ["write__save"], ["write__*", "*", "read__?"]])
+def test_tool_pins_retire_without_creating_native_tool_authority(
+    app: Path, pins: Any
+) -> None:
+    change(app, pinned_tools=pins, channel_overrides={"web": {"pinned_tools": pins}})
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and source(app).read_bytes() == before
+    target = candidate["actions"][0]["context"]
+    assert "pinned_tools" in report["retired_settings"]
+    assert "pinned_tools" in report["retired_channel_settings"]
+    assert "pinned_tools" not in target and "channel_overrides" not in target
+    assert "channel_instructions" not in target and "channel_limits" not in target
+    assert "write__" not in json.dumps(report)
+    assert "write__" not in target["instructions"]
+    assert any("host permissions" in text for text in report["required_review"])
+
+
+@pytest.mark.parametrize(
+    "pins", [None, "read__*", {}, [None], [True], [""], [" read__x"], ["read__x "]]
+)
+@pytest.mark.parametrize("channel", [False, True])
+def test_invalid_pin_declarations_never_silently_retire(
+    app: Path, pins: Any, channel: bool
+) -> None:
+    change(
+        app,
+        **(
+            {"channel_overrides": {"web": {"pinned_tools": pins}}}
+            if channel
+            else {"pinned_tools": pins}
+        ),
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and report["blockers"]
+
+
+@pytest.mark.parametrize("restriction", ["denied_tools", "skill_only_tools"])
+def test_retired_pins_do_not_erase_active_tool_restrictions(
+    app: Path, restriction: str
+) -> None:
+    change(
+        app,
+        channel_overrides={
+            "web": {"pinned_tools": ["*"], restriction: ["write__save"]}
+        },
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and restriction in report["blocked_channel_settings"]
 
 
 @pytest.mark.parametrize("lock_setting", [None, False, True])

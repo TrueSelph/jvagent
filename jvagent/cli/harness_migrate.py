@@ -65,9 +65,9 @@ _RETIRE = {
     "history_limit": "integer",
     "block_raw_tool_invocation": "boolean",
     "lock_active_flow": "boolean",
+    "pinned_tools": "patterns",
 }
 _EMPTY = {
-    "pinned_tools": list,
     "skill_only_tools": list,
     "with_event": bool,
     "tool_call_timeout": float,
@@ -89,8 +89,11 @@ def _retire_controls(
             valid = type(value) is bool
         elif kind == "text":
             valid = isinstance(value, str)
-        elif kind == "texts":
-            valid = isinstance(value, list) and all(isinstance(v, str) for v in value)
+        elif kind in {"texts", "patterns"}:
+            valid = isinstance(value, list) and all(
+                isinstance(v, str) and (kind == "texts" or bool(v) and v == v.strip())
+                for v in value
+            )
         else:
             try:
                 _number(value, key, integer=kind == "integer")
@@ -114,6 +117,13 @@ def _retire_controls(
             )
         )
         retired[key] = reason
+        if key == "pinned_tools":
+            retired[key] = (
+                "Retired legacy tool pre-surfacing; official SDK Skills own discovery and activation, with host permissions independent"
+            )
+            report["required_review"].append(
+                "Qualify formerly pinned Action tools through selected skills and host permissions; pins no longer promise first-request visibility and do not become native grants"
+            )
         if key == "block_raw_tool_invocation":
             retired[key] = (
                 "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory"

@@ -10,8 +10,12 @@ def _retirable(value: Any, kind: str) -> bool:
         return type(value) is bool
     if kind == "text":
         return isinstance(value, str)
-    if kind == "texts":
-        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+    if kind in {"texts", "patterns"}:
+        return isinstance(value, list) and all(
+            isinstance(item, str)
+            and (kind == "texts" or bool(item) and item == item.strip())
+            for item in value
+        )
     try:
         if kind == "integer":
             return type(value) is int and value >= 0 and math.isfinite(value)
@@ -103,7 +107,7 @@ def migrate_channel_overrides(
                 elif key in retire_kinds and _retirable(value, retire_kinds[key]):
                     retired.add(key)
                 elif (
-                    key in {"pinned_tools", "skill_only_tools", "denied_tools"}
+                    key in {"skill_only_tools", "denied_tools"}
                     and type(value) is list
                     and not value
                 ):
@@ -147,6 +151,10 @@ def migrate_channel_overrides(
     ] = "channel_instructions/channel_limits; explicit inactive or engine-control retirement"
     if retired:
         report["retired_channel_settings"] = sorted(retired)
+        if "pinned_tools" in retired:
+            report["required_review"].append(
+                "Qualify formerly channel-pinned Action tools through official SDK Skills and host permissions; no first-request visibility or tool grant is preserved by a pin"
+            )
     if blocked:
         report["blocked_channel_settings"] = sorted(blocked)
     report["required_review"].append(
