@@ -4,7 +4,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
 
 from jvspatial.core import Node
 from jvspatial.core.annotations import attribute, compound_index
@@ -87,12 +87,17 @@ class Conversation(DeferredSaveMixin, Node):
         created_at: Timestamp of conversation creation
         last_interaction_at: Timestamp of last interaction
         interaction_count: Number of interactions in this conversation
+        native_spend: Native Harness spend counters and replay tokens
         interaction_limit: Maximum number of interactions to keep (0 = disabled, no pruning)
         context: Conversation context dictionary for storing state
     """
 
     session_id: str = attribute(default="", description="Session identifier")
     user_id: str = attribute(indexed=True, default="", description="Owning user ID")
+    public_identity_kind: Literal["unbound", "bearer", "anonymous"] = attribute(
+        default="unbound",
+        description="Server-established public ownership; legacy sessions require owner proof",
+    )
     status: str = attribute(
         indexed=True,
         default="active",
@@ -107,6 +112,25 @@ class Conversation(DeferredSaveMixin, Node):
         default=None, description="Timestamp of last interaction"
     )
     interaction_count: int = attribute(default=0, description="Number of interactions")
+    native_spend: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Official Harness spend counters and replay tokens",
+    )
+    native_script_policy: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Immutable host policy for a conversation's SDK script workspace.",
+    )
+    native_plan: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Caller-scoped official Harness Planning state",
+    )
+    native_history_import: Dict[str, Any] = attribute(
+        default_factory=dict,
+        protected=True,
+        description="Operator-approved immutable historical text and spend-import receipt",
+    )
     interaction_limit: int = attribute(
         default=0,
         description="Maximum number of interactions to keep (0 = disabled, no pruning)",
@@ -338,23 +362,22 @@ class Conversation(DeferredSaveMixin, Node):
     ) -> "Interaction":
         from jvagent.memory.interaction import Interaction
 
-        fresh = await Conversation.get(self.id)
-        if fresh is not None:
-            self.interaction_count = fresh.interaction_count
-            self.last_interaction_id = fresh.last_interaction_id
-            self.last_interaction_at = fresh.last_interaction_at
-            self.interaction_limit = fresh.interaction_limit
-
         if interaction is None and utterance is None:
             raise ValueError("Must provide either interaction or utterance")
 
-        if self.id:
-            fresh = await Conversation.get(self.id)
-            if fresh is not None:
-                self.interaction_count = fresh.interaction_count
-                self.last_interaction_id = fresh.last_interaction_id
-                self.interaction_limit = fresh.interaction_limit
-                self.last_interaction_at = fresh.last_interaction_at
+        # get() can return the object cached before this request acquired the
+        # lock. find() reads persisted state through jvspatial's public API.
+        rows = await Conversation.find({"id": self.id})
+        if len(rows) != 1:
+            raise ValueError("Conversation disappeared before interaction admission")
+        fresh = rows[0]
+        self.interaction_count = fresh.interaction_count
+        self.last_interaction_id = fresh.last_interaction_id
+        self.last_interaction_at = fresh.last_interaction_at
+        self.native_spend = fresh.native_spend
+        object.__setattr__(self, "native_plan", fresh.native_plan)
+        object.__setattr__(self, "native_script_policy", fresh.native_script_policy)
+        object.__setattr__(self, "native_history_import", fresh.native_history_import)
 
         from jvagent.core.app import App
 
@@ -396,6 +419,9 @@ class Conversation(DeferredSaveMixin, Node):
         # AUDIT-memory HIGH-10: a single save() covers all the field
         # changes above instead of two back-to-back writes.
         await self.save()
+        # Chain admission is committed before releasing the conversation lock.
+        # A later endpoint flush must never write this turn's stale counters.
+        await self.flush()
 
         if (
             self.interaction_limit > 0

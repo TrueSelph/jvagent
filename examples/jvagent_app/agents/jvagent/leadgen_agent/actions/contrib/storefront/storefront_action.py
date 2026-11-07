@@ -1,7 +1,7 @@
 """Mock storefront action — product-FAQ lookup + product-catalog search.
 
 Two tools, both backed by in-memory dummy data so the leadgen reference agent's
-``product_faq`` and ``product_search`` skills have something real to call while
+``product-faq`` and ``product-search`` skills have something real to call while
 the leadgen skill captures contact details in the same conversation:
 
 - ``storefront__faq`` — keyword search over a small FAQ knowledge base.
@@ -342,12 +342,14 @@ def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
 class StorefrontAction(Action):
     """Mock storefront: product-FAQ lookup + product-catalog search (dummy data)."""
 
-    description: str = (
-        "Mock storefront action exposing a product-FAQ lookup and a "
-        "product-catalog search over in-memory dummy data."
+    description: str = attribute(
+        default=(
+            "Mock storefront action exposing a product-FAQ lookup and a "
+            "product-catalog search over in-memory dummy data."
+        )
     )
 
-    @tool(name="storefront__faq")
+    @tool(name="storefront__faq", effect_class="read")
     async def faq(
         self,
         query: Annotated[
@@ -379,7 +381,7 @@ class StorefrontAction(Action):
             )
         return json.dumps({"status": "ok", "matches": matches})
 
-    @tool(name="storefront__search_products")
+    @tool(name="storefront__search_products", effect_class="read")
     async def search_products_tool(
         self,
         query: Annotated[

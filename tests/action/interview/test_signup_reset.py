@@ -32,7 +32,7 @@ async def test_reset_returns_reply_directive_not_next_field_chain(
     signup_action,
 ):
     action, _spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     conv = MagicMock()
     conv.context = {}

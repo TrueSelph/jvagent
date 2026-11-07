@@ -40,6 +40,8 @@ These are **regression boundaries**. Breaking them reintroduces a “fat harness
 
 9. **Model owns extraction; validators are the gate** — the server does not re-extract values from the user's message or compare model-supplied values against the utterance. Freshness rules ("use only the latest message") live in the SOP; acceptance rules live in declared validators. A harness that second-guesses model extraction is a fat harness.
 
+10. **User utterance provenance** — `Interaction.utterance` contains only content supplied by the user (including normalized inbound media/transcription). Internal scheduled work and host continuations carry their instructions through structured dispatch/host context; never fabricate a user utterance to start them.
+
 ## Invariant rules (skill and action authors)
 
 1. **Capabilities on Actions** — operations any user may call directly belong in `Action.get_tools()`, not buried in skill-only wrappers ([`jvagent/skills/README.md`](../jvagent/skills/README.md)).

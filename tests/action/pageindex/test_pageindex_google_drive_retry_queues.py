@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -16,14 +18,19 @@ from jvspatial.exceptions import ValidationError
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
     file_ids_under_excluded_folders,
 )
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.google_drive_documents import (
+    GoogleDriveDocuments,
+)
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
     DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
+    _drive_added_fname_matches_indexed,
     _extract_and_prepend_queue_item,
     _filter_doc_queues_for_disabled,
     _find_file_dict_in_tree,
     _merge_configured_exclude_sub_folders,
     _prune_added_queue_skip_existing,
+    _refresh_native_queued_additions,
     _strip_file_id_from_doc_queues,
     _sync_drive_node_status_from_queues,
 )
@@ -38,6 +45,37 @@ def test_sync_drive_node_status_respects_failed_backlog() -> None:
     )
     _sync_drive_node_status_from_queues(node)
     assert node.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_failed_rename_preserves_persisted_queue_item() -> None:
+    old = {"id": "file", "name": "old.pdf", "modifiedTime": "2026-11-05T00:00:00Z"}
+    new = {"id": "file", "name": "new.pdf", "modifiedTime": "2026-11-06T00:00:00Z"}
+    revision = {"id": "file", "old": old, "new": new}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [], "modified": [revision], "removed": []},
+    )
+    action = PageIndexGoogleDriveSyncAction()
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+    )
+    drive = SimpleNamespace(get_media=AsyncMock(side_effect=OSError("unavailable")))
+    for source in ("ingesting_documents", "failed_documents"):
+        result = await action._process_single_document(
+            node, drive, new, "modified", cfg, old_file=old, source=source
+        )
+        assert result["success"] is False
+        node = await GoogleDriveDocuments.get(node.id)
+        assert node is not None
+        assert node.ingesting_documents["modified"] == []
+        assert node.failed_documents["modified"] == [revision]
+        assert not node.active_document
 
 
 def test_sync_drive_node_status_pending_when_ingesting_has_work() -> None:
@@ -1084,3 +1122,386 @@ async def test_no_exclusions_leaves_deletion_detection_alone() -> None:
     )
     assert "old1" in [d.get("id") for d in node.ingesting_documents["added"]]
     assert [f["id"] for f in node.files] == ["keep1", "arch"]
+
+
+@pytest.mark.asyncio
+async def test_skip_existing_requires_completed_root(tmp_path, monkeypatch):
+    from jvspatial.db import unregister_database
+
+    from jvagent.action.pageindex import documents
+    from jvagent.action.pageindex.adapter import persist_structure
+    from jvagent.action.pageindex.config import (
+        PAGEINDEX_DB_NAME,
+        initialize_pageindex_database,
+    )
+    from jvagent.action.pageindex.models import (
+        DocumentContentEdge,
+        DocumentNode,
+        DocumentRootNode,
+    )
+
+    collection = "drive-fixture"
+    initialize_pageindex_database({"db_type": "json", "db_path": str(tmp_path)})
+    monkeypatch.setattr(
+        documents, "_get_app_id_from_node", AsyncMock(return_value=None)
+    )
+    try:
+        async with documents._scoped_pageindex_context(
+            documents._get_pageindex_context()
+        ):
+            partial = await DocumentRootNode.create(
+                doc_name="partial.pdf", collection_name=collection
+            )
+            chunk = await DocumentNode.create(
+                doc_name=partial.doc_name, collection_name=collection
+            )
+            await partial.connect(chunk, edge=DocumentContentEdge, direction="out")
+        await persist_structure(
+            "ready.pdf", [{"title": "Ready"}], collection_name=collection
+        )
+
+        node = SimpleNamespace(
+            ingesting_documents={
+                "added": [{"name": "partial.pdf"}, {"name": "ready.pdf"}]
+            },
+            failed_documents={"added": [], "modified": [], "removed": []},
+            active_document="",
+            save=AsyncMock(),
+        )
+        await _prune_added_queue_skip_existing(
+            node, collection, skip_existing_documents=True
+        )
+        assert node.ingesting_documents["added"] == [{"name": "partial.pdf"}]
+        assert not await _drive_added_fname_matches_indexed("partial.pdf", collection)
+        assert await _drive_added_fname_matches_indexed("ready.pdf", collection)
+    finally:
+        unregister_database(PAGEINDEX_DB_NAME)
+
+
+@pytest.mark.asyncio
+async def test_native_drive_replacement_refuses_before_downloading() -> None:
+    old = {"id": "file", "name": "old.pdf"}
+    new = {"id": "file", "name": "new.pdf"}
+    revision = {"id": "file", "old": old, "new": new}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [], "modified": [revision], "removed": []},
+    )
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+    )
+    drive = SimpleNamespace(get_media=AsyncMock())
+    result = await PageIndexGoogleDriveSyncAction()._process_single_document(
+        node, drive, new, "modified", cfg, old_file=old
+    )
+    assert not result["success"]
+    assert "revision ownership" in result["ingestion_message"]
+    assert node.failed_documents["modified"] == [revision]
+    drive.get_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_dead", [True, False])
+async def test_native_drive_stale_marker_requires_proven_owner_death(owner_dead):
+    action = await PageIndexGoogleDriveSyncAction.create()
+    revision = {"id": "file", "name": "interrupted.pdf"}
+    owner = {"jv_worker_pid": "1234"}
+    node = await GoogleDriveDocuments.create(
+        folder_id="fixture",
+        active_document=revision["name"],
+        active_worker=owner,
+        status="processing",
+        ingesting_documents={"added": [revision], "modified": [], "removed": []},
+    )
+    await action.connect(node)
+    with patch(
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+        "pageindex_google_drive_sync_action.require_dead_native_owner",
+        side_effect=None if owner_dead else ValueError("owner still live"),
+    ) as verify:
+        busy = await action._check_active_google_drive_document(
+            [{"folder_id": "fixture"}], {}, native=True
+        )
+    verify.assert_called_once_with(owner)
+    saved = await GoogleDriveDocuments.get(node.id)
+    assert saved is not None
+    assert saved.ingesting_documents["added"] == [revision]
+    if owner_dead:
+        assert busy is None
+        assert saved.status == "pending"
+        assert not saved.active_document
+        assert not saved.active_worker
+    else:
+        assert busy is not None
+        assert saved.active_document == revision["name"]
+        assert saved.active_worker == owner
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "scenario",
+    ["complete", "changed_metadata", "unsettled", "unknown_cost", "different_revision"],
+)
+async def test_native_drive_replay_checks_publication_receipt(scenario):
+    from jvagent.memory.interaction import Interaction
+
+    action = PageIndexGoogleDriveSyncAction()
+    data = b"fixture"
+    source_key = hashlib.sha256(
+        json.dumps([action.id, "file", hashlib.sha256(data).hexdigest()]).encode()
+    ).hexdigest()
+    root = SimpleNamespace(
+        id="root",
+        doc_name="doc.pdf",
+        drive_operation_id="operation",
+        drive_revision_key=(
+            "other-version" if scenario == "different_revision" else None
+        ),
+        drive_source_key=source_key,
+        metadata={},
+        doc_url="https://example.com/doc.pdf",
+        chunks=1,
+    )
+    receipt = SimpleNamespace(
+        user_id=action.id,
+        channel="pageindex_pdf_ingestion",
+        closed=True,
+        native_run={"status": "completed", "usage_complete": True},
+        usage={"unknown_cost_call_count": 0},
+        response=json.dumps({"_root_id": root.id}),
+    )
+    if scenario == "unsettled":
+        receipt.closed = False
+        receipt.native_run = {"status": "running"}
+    if scenario == "unknown_cost":
+        receipt.usage["unknown_cost_call_count"] = 1
+
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={"access": ["restricted"]} if scenario == "changed_metadata" else {},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=SimpleNamespace(model="openai:gpt-4.1"),
+    )
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_root",
+            AsyncMock(return_value=root),
+        ),
+        patch.object(Interaction, "get", AsyncMock(return_value=receipt)),
+        patch(
+            "jvagent.action.pageindex.native_ingest.settle_interrupted_publication",
+            AsyncMock(side_effect=ValueError("unsettled SDK request")),
+        ) as settle,
+    ):
+        replay = action._ingest_native_drive_document(
+            data,
+            ".pdf",
+            doc_name="doc.pdf",
+            doc_url=root.doc_url,
+            file_id="file",
+            version="42",
+            cfg=cfg,
+        )
+        if scenario != "complete":
+            with pytest.raises(
+                ValidationError, match="conflicts|unsettled SDK request"
+            ):
+                await replay
+        else:
+            assert (await replay)["_root_id"] == root.id
+    if scenario == "unsettled":
+        settle.assert_awaited_once()
+    else:
+        settle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("queued_version", [None, "42"])
+async def test_native_drive_refuses_unversioned_or_changed_download(queued_version):
+    fixture = {"id": "file", "name": "doc.pdf", "version": queued_version}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [fixture], "modified": [], "removed": []},
+    )
+    action = PageIndexGoogleDriveSyncAction()
+    drive = SimpleNamespace(
+        get_media=AsyncMock(return_value=b"pdf"),
+        get_file_metadata=AsyncMock(
+            side_effect=[
+                {"id": "file", "version": "42", "mimeType": "application/pdf"},
+                {"id": "file", "version": "43", "mimeType": "application/pdf"},
+            ]
+        ),
+    )
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+        skip_existing_documents=False,
+    )
+    with patch.object(
+        PageIndexGoogleDriveSyncAction, "_ingest_native_drive_document", AsyncMock()
+    ) as publish:
+        result = await action._process_single_document(
+            node, drive, fixture, "added", cfg
+        )
+    assert not result["success"]
+    assert node.failed_documents["added"] == [fixture]
+    assert drive.get_media.await_count == int(queued_version is not None)
+    publish.assert_not_awaited()
+
+
+def test_native_refresh_retains_pending_and_failed_additions() -> None:
+    pending = {"id": "pending", "name": "before.pdf", "version": "42"}
+    failed = {"id": "failed", "name": "failed.pdf", "version": "42"}
+    indexed = {"id": "indexed", "name": "indexed.pdf", "version": "42"}
+    pending_next = {**pending, "name": "after.pdf", "version": "43"}
+    failed_next = {**failed, "version": "43"}
+    indexed_next = {**indexed, "version": "43"}
+    node = SimpleNamespace(
+        ingesting_documents={"added": [pending]},
+        failed_documents={"added": [failed]},
+    )
+    changes = {
+        "modified": [
+            {"id": old["id"], "old": old, "new": new}
+            for old, new in (
+                (pending, pending_next),
+                (failed, failed_next),
+                (indexed, indexed_next),
+            )
+        ]
+    }
+    _refresh_native_queued_additions(node, changes)
+    assert node.ingesting_documents["added"] == [pending_next]
+    assert node.failed_documents["added"] == [failed_next]
+    assert changes["modified"] == [
+        {"id": "indexed", "old": indexed, "new": indexed_next}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_native_drive_replacement_refuses_unrelated_same_name_root():
+    action = PageIndexGoogleDriveSyncAction()
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+    )
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_roots",
+            AsyncMock(
+                return_value=[
+                    SimpleNamespace(doc_name="doc.pdf", drive_revision_key=None)
+                ]
+            ),
+        ),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            AsyncMock(),
+        ) as retire,
+    ):
+        with pytest.raises(ValidationError, match="ambiguous document root"):
+            await action._ingest_native_drive_document(
+                b"fixture",
+                ".pdf",
+                doc_name="doc.pdf",
+                doc_url="https://example.com/doc.pdf",
+                file_id="file",
+                version="43",
+                cfg=cfg,
+                old_file={"id": "file", "name": "doc.pdf", "version": "42"},
+            )
+    retire.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_drive_rename_retires_exact_prior_after_receipt():
+    from jvagent.memory.interaction import Interaction
+
+    action = PageIndexGoogleDriveSyncAction()
+    source = b"fixture"
+    url = "https://example.com/drive-doc"
+    prior, successor = [
+        SimpleNamespace(
+            id=root_id,
+            doc_name=name,
+            drive_revision_key=hashlib.sha256(
+                json.dumps([action.id, "file", version]).encode()
+            ).hexdigest(),
+            drive_source_key=hashlib.sha256(
+                json.dumps(
+                    [action.id, "file", hashlib.sha256(source).hexdigest()]
+                ).encode()
+            ).hexdigest(),
+            drive_operation_id=operation,
+            doc_url=url,
+            chunks=1,
+            metadata={},
+        )
+        for root_id, name, version, operation in (
+            ("prior-root", "old.pdf", "42", "prior-op"),
+            ("successor-root", "new.pdf", "43", "successor-op"),
+        )
+    ]
+    receipts = {
+        root.drive_operation_id: SimpleNamespace(
+            user_id=action.id,
+            channel="pageindex_pdf_ingestion",
+            closed=True,
+            native_run={"status": "completed", "usage_complete": True},
+            usage={"unknown_cost_call_count": 0},
+            response=json.dumps({"_root_id": root.id}),
+        )
+        for root in (prior, successor)
+    }
+    cfg = DriveIngestConfig("agent-1", {}, None, None, None, "agent-1", None)
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_roots",
+            AsyncMock(return_value=[successor, prior]),
+        ),
+        patch.object(Interaction, "get", AsyncMock(side_effect=receipts.__getitem__)),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            AsyncMock(return_value=True),
+        ) as retire,
+    ):
+        result = await action._ingest_native_drive_document(
+            source,
+            ".pdf",
+            doc_name=successor.doc_name,
+            doc_url=url,
+            file_id="file",
+            version="43",
+            cfg=cfg,
+            old_file={"id": "file", "name": prior.doc_name, "version": "42"},
+        )
+    assert result["_root_id"] == successor.id
+    assert result["reconciled"]
+    retire.assert_awaited_once_with("old.pdf", "agent-1", root_id=prior.id)

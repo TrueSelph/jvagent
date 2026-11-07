@@ -33,3 +33,27 @@ async def test_on_startup_rebuilds_server_registry():
         await action.on_startup()
 
     assert action.get_server_names() == ["filesystem"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("auth_type", ["oauth", "service_key"])
+async def test_unsupported_http_auth_profile_fails_before_connect(
+    auth_type: str,
+) -> None:
+    action = MCPAction(
+        sandbox_mode=False,
+        servers=[
+            {
+                "name": "external",
+                "transport": "streamable_http",
+                "url": "https://example.test/mcp",
+                "auth": {"type": auth_type},
+            }
+        ],
+    )
+    with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+        with pytest.raises(
+            ValueError, match="Vendor MCP auth profiles are unsupported"
+        ):
+            await action._build_server_entries()
+    assert action.get_server_names() == []

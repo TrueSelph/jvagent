@@ -288,6 +288,10 @@ Rationale: [`adr/0003-interaction-limit-pruning.md`](adr/0003-interaction-limit-
 
 ### 6.3 Bootstrap update modes
 
+Declared Action admission and initialization failures refuse startup; see
+[Action startup failures](../docs/configuration.md#action-startup-failures) for
+canonical naming, migration behavior, source anchors and deployment limits.
+
 `App.update_mode` ([`app.py:74`](../jvagent/core/app.py)) controls YAML sync on next start:
 
 | Mode | Behavior |

@@ -34,7 +34,7 @@ _SHARED_ALLOWLIST = frozenset(
     }
 )
 
-# Documented sibling edges (legacy coupling — prefer shared modules for new code).
+# Documented sibling edges (prefer shared modules except explicit service profiles).
 _ALLOWED_SIBLING_EDGES = frozenset(
     {
         ("email_action", "google"),
@@ -47,6 +47,9 @@ _ALLOWED_SIBLING_EDGES = frozenset(
         ("microsoft", "email_action"),
         ("microsoft", "mcp_oauth"),
         ("pageindex", "google"),
+        # Direct-read service profile subclasses PageIndexAction rather than
+        # duplicating retrieval. See action/pageindex_read/README.md.
+        ("pageindex_read", "pageindex"),
         ("artifact_handler_interact_action", "pageindex"),
         ("handoff_action", "email_action"),
         ("handoff_action", "pageindex"),

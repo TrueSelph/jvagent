@@ -54,7 +54,7 @@ async def test_assimilate_document_rejects_unresolved_path():
 def _patch_sandbox(monkeypatch, *, content=None, exc=None, visitor=object()):
     """Patch the dispatch visitor + sandbox text read used by _resolve_sandbox_doc."""
     monkeypatch.setattr(
-        "jvagent.tooling.tool_executor.get_tool_visitor",
+        "jvagent.tooling.context.get_tool_visitor",
         lambda: visitor,
     )
 

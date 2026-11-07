@@ -133,6 +133,8 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
             ),
             parameters_schema=optional_skill,
             execute=_status,
+            effect_class="read",
+            binds_visitor=True,
         ),
         Tool(
             name="leadgen__sync",

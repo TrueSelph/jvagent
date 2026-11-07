@@ -10,7 +10,7 @@ name = "jvagent"
 dynamic = ["version"]
 description = "A modular, pluggable agentive platform built on jvspatial"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "TrueSelph Inc.", email = "adminh@trueselph.com"},
@@ -20,7 +20,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Framework :: FastAPI",
@@ -30,7 +29,7 @@ classifiers = [
 
 dependencies = [
     "aiohttp>=3.9.0",
-    "jvspatial==0.1.1",
+    "jvspatial==0.2.4",
     "pydantic[email]>=2.13.5",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
@@ -40,10 +39,25 @@ dependencies = [
     # Version-spec parsing for dependency probing (core/dependency_installer)
     "packaging>=21.0",
     # MCP stdio client + jvspatial_fs_server
-    "mcp>=1.0.0",
+    "mcp==2.3.0",
 ]
 
 [project.optional-dependencies]
+native-harness = [
+    "pydantic-ai-slim[openai]==2.66.0",
+    "pydantic-ai-harness[skills]==0.66.0",
+    "jsonschema>=4.23,<5",
+    "referencing>=0.35,<1",
+]
+native-mcp = [
+    "pydantic-ai-slim[mcp]==2.66.0",
+    "fastmcp-slim[client]==4.1.6",
+]
+pydantic-pilot = [
+    # Transitional import compatibility only; never select a second core SDK.
+    "pydantic-ai-slim==2.66.0",
+    "jsonschema>=4.23,<5",
+]
 dev = [
     "pytest>=7.0",
     "pytest-xdist>=3.0.0",
@@ -72,7 +86,6 @@ test = [
     "openai>=1.0.0",
     "filetype>=1.2.0",
     "tiktoken>=0.5.0",
-    "litellm>=1.101.0,<1.102",
     "PyPDF2>=3.0.1",
     "pypdfium2>=4.30.0",
     "sortedcontainers>=2.4.0",
@@ -133,6 +146,12 @@ Documentation = "https://github.com/TrueSelph/jvagent/blob/main/README.md"
 # action and emits "Action jvagent/<x> not found locally or in core
 # library" warnings on startup.
 include-package-data = true
+
+[tool.uv]
+# Temporary transport boundary, removed with the LiteLLM execution adapters.
+# Their OpenAI <3 requirement cannot share the native OpenAI >=3 environment.
+# This declares the real incompatibility; it does not override package metadata.
+conflicts = [[{ extra = "litellm" }, { extra = "native-harness" }]]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -203,7 +222,7 @@ line_length = 88
 skip_glob = ["jvagent/action/pageindex/core/**"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false

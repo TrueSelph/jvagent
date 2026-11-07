@@ -1,0 +1,645 @@
+{
+  "baseline_revision": "git-commit:986ddbe0d693fa337c127133165b51bbfb906fd1",
+  "candidate_runtime_blobs": {
+    "jvagent/action/leadgen/engine.py": "git-blob:075ece98a5bfab332d0e541ee8235736edeb21a4",
+    "jvagent/action/leadgen/store.py": "git-blob:baa27b3e5cd72d492e71d05bbb8e442995d7738c",
+    "jvagent/action/leadgen/tools.py": "git-blob:68c59b48862c4077bb36fa6af2ff115ba128359f",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:3e0005b305e8ccae93cfd54685323fb900019b90",
+    "jvagent/harness/contracts.py": "git-blob:e854dcf3f43e81aea1b8a31cd4df6ebd3908661c",
+    "jvagent/harness/native.py": "git-blob:65ef71ded0ba59ffdebd7f178e8c69f6167fa3f0",
+    "jvagent/tooling/__init__.py": "git-blob:26dabadd842117ddf36d2f2abb1557458b2681a9",
+    "jvagent/tooling/context.py": "git-blob:62531a594c55fb8c60470d96bd6553fa942339f0"
+  },
+  "environment": "Disposable PostgreSQL app 8131 + jvchat 3131; Python 3.11; pydantic-ai-slim 2.66.0; Harness 0.66.0; OpenAI GPT-4.1",
+  "raw_profile_equality": true,
+  "profile_sha256": {
+    "other": "sha256:2489f92b6aa3dfc8bb768716e4bae962a06a20ad713309e8150ad5220f1ed612",
+    "own": "sha256:b81e621cb0bff5e4c46081814bafe619c019b5a6d38d91569087e97ac775cc0a"
+  },
+  "policy_restored": true,
+  "cost_provenance": "SDK price-table estimates, not provider-reported charges",
+  "ui_evidence": "Observed tool badges delegate_task and leadgen__status, allowed missing email/50 percent, denied no fields or score, restored repeat missing email/50 percent; invalid configuration produced visible service-configuration failure with no tools or token badge after fix.",
+  "scenarios": [
+    {
+      "interaction_id": "n.Interaction.d8a2374edf6a4d38aa2ae66a",
+      "prompt": "Delegate to lead_status to check my current lead profile. Tell me which required fields are missing and the completion score. Do not capture or change any data.",
+      "native_run": {
+        "run_id": "fccedae3c19940688610be4379082e43",
+        "status": "failed",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 3.594815,
+      "native_seconds": 2.382808,
+      "usage": {
+        "last_updated": "2026-11-05T07:29:36.877030+00:00",
+        "total_tokens": 602,
+        "prompt_tokens": 554,
+        "total_cost_usd": 0.001492,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 48,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001492,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "fccedae3c19940688610be4379082e43"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "fccedae3c19940688610be4379082e43"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "fccedae3c19940688610be4379082e43"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "fccedae3c19940688610be4379082e43"
+        },
+        {
+          "kind": "tool_call_failed",
+          "tool_name": "delegate_task",
+          "error": "UserError(\"No capability with id 'lead_status' is registered in this run.\")",
+          "run_id": "fccedae3c19940688610be4379082e43"
+        },
+        {
+          "kind": "run_failed",
+          "tool_name": null,
+          "error": "UserError(\"No capability with id 'lead_status' is registered in this run.\")",
+          "run_id": "fccedae3c19940688610be4379082e43"
+        }
+      ],
+      "run_ids": [
+        "run:fccedae3c19940688610be4379082e43"
+      ],
+      "snapshot_count": 3,
+      "effects": [
+        {
+          "run_id": "fccedae3c19940688610be4379082e43",
+          "status": "failed",
+          "ended_at": "2026-11-05T07:29:36.722413Z",
+          "tool_name": "delegate_task",
+          "started_at": "2026-11-05T07:29:36.709148Z",
+          "tool_call_id": "call_WZZxPirqgZzk2Khdy2PRuGrC",
+          "effect_summary": "UserError(\"No capability with id 'lead_status' is registered in this run.\")",
+          "idempotency_key": null
+        }
+      ],
+      "runtime_phase": "before catalog preflight fix"
+    },
+    {
+      "interaction_id": "n.Interaction.1a881d6d855e433f90082b34",
+      "prompt": "Delegate to lead_status to check my lead profile completion score. If access is denied, report that and do not guess any fields or score.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 1784,
+          "output_tokens": 119
+        },
+        "output": "Access to your lead profile completion score is denied, so I cannot retrieve or guess any fields or scores. If you need further assistance, please check your access permissions or contact your administrator.",
+        "run_id": "acc56ede0480450bb476472ac03771ba",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 6.394964,
+      "native_seconds": 4.838197,
+      "usage": {
+        "last_updated": "2026-11-05T07:38:16.900942+00:00",
+        "total_tokens": 1903,
+        "prompt_tokens": 1784,
+        "total_cost_usd": 0.00452,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 119,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00452,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "leadgen__status",
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "acc56ede0480450bb476472ac03771ba"
+        }
+      ],
+      "run_ids": [
+        "run:acc56ede0480450bb476472ac03771ba",
+        "run:01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a"
+      ],
+      "snapshot_count": 12,
+      "effects": [
+        {
+          "run_id": "01a1aaa4-d8e3-7015-bdd1-d87b4e76fe4a",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "leadgen__status",
+          "started_at": "2026-11-05T07:38:13.738770Z",
+          "tool_call_id": "call_gdHwbNFdHJZDHBKhhdVlol7U",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "acc56ede0480450bb476472ac03771ba",
+          "status": "completed",
+          "ended_at": "2026-11-05T07:38:14.760102Z",
+          "tool_name": "delegate_task",
+          "started_at": "2026-11-05T07:38:12.570615Z",
+          "tool_call_id": "call_5tZEwC8FpKtHLd4N12t5t67C",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "runtime_phase": "final candidate runtime"
+    },
+    {
+      "interaction_id": "n.Interaction.e1199a28f0c546aeb43ff212",
+      "prompt": "Delegate to lead_status to check my current required fields, missing fields and completion score again. Do not change data.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 1851,
+          "output_tokens": 157
+        },
+        "output": "Here are your current lead status details:\n\n- Required fields: email, full name\n- Missing fields: email\n- Completion score: 50%\n\nNo changes were made to your data. If you need help completing any fields, let me know!",
+        "run_id": "96bb0e80c82548018f24008ec9f1aba8",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 6.845225,
+      "native_seconds": 5.291144,
+      "usage": {
+        "last_updated": "2026-11-05T07:39:19.733477+00:00",
+        "total_tokens": 2008,
+        "prompt_tokens": 1851,
+        "total_cost_usd": 0.004958,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 157,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004958,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "leadgen__status",
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "leadgen__status",
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8"
+        }
+      ],
+      "run_ids": [
+        "run:96bb0e80c82548018f24008ec9f1aba8",
+        "run:01a1aaa5-cddd-702e-ad80-d70c2a9e0172"
+      ],
+      "snapshot_count": 12,
+      "effects": [
+        {
+          "run_id": "01a1aaa5-cddd-702e-ad80-d70c2a9e0172",
+          "status": "completed",
+          "ended_at": "2026-11-05T07:39:16.918863Z",
+          "tool_name": "leadgen__status",
+          "started_at": "2026-11-05T07:39:16.881713Z",
+          "tool_call_id": "call_TA1qloy6MxCZ0EdR4FljSX0S",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "96bb0e80c82548018f24008ec9f1aba8",
+          "status": "completed",
+          "ended_at": "2026-11-05T07:39:18.049496Z",
+          "tool_name": "delegate_task",
+          "started_at": "2026-11-05T07:39:15.278536Z",
+          "tool_call_id": "call_Kcg8jukKJ9eoIK0gslD52ArM",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "runtime_phase": "final candidate runtime"
+    },
+    {
+      "interaction_id": "n.Interaction.5cdc3d9b4b97447f839ee1c1",
+      "prompt": "Delegate to lead_status to check my required lead fields and completion score. Do not change data.",
+      "native_run": {
+        "run_id": "003fe235a4de4320b5068c131af9947d",
+        "status": "failed",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 0.967907,
+      "native_seconds": null,
+      "usage": {
+        "last_updated": "2026-11-05T07:36:28.440921+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "events": [],
+      "run_ids": [],
+      "snapshot_count": 0,
+      "effects": [],
+      "runtime_phase": "final candidate runtime"
+    },
+    {
+      "interaction_id": "n.Interaction.58e09bb397334fb2bc601f83",
+      "prompt": "Delegate to lead_status to check my lead profile. Report the required fields, missing fields and completion score. Do not capture or change data.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 1851,
+          "output_tokens": 133
+        },
+        "output": "Here is the report on your lead profile:\n\n- Required fields: email, full name\n- Missing field: email\n- Completion score: 50%\n\nNo data was captured or changed.",
+        "run_id": "6656ecf9d1604f5fadff46eced069306",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 6.873741,
+      "native_seconds": 5.401371,
+      "usage": {
+        "last_updated": "2026-11-05T07:37:30.399014+00:00",
+        "total_tokens": 1984,
+        "prompt_tokens": 1851,
+        "total_cost_usd": 0.004766,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 133,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004766,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "run_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "leadgen__status",
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "leadgen__status",
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "delegate_task",
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        },
+        {
+          "kind": "run_completed",
+          "tool_name": null,
+          "error": null,
+          "run_id": "6656ecf9d1604f5fadff46eced069306"
+        }
+      ],
+      "run_ids": [
+        "run:6656ecf9d1604f5fadff46eced069306",
+        "run:01a1aaa4-232f-77ae-94b9-bba305651e85"
+      ],
+      "snapshot_count": 12,
+      "effects": [
+        {
+          "run_id": "01a1aaa4-232f-77ae-94b9-bba305651e85",
+          "status": "completed",
+          "ended_at": "2026-11-05T07:37:27.168357Z",
+          "tool_name": "leadgen__status",
+          "started_at": "2026-11-05T07:37:27.147276Z",
+          "tool_call_id": "call_IofvPntvBbNkCzwrOeBMhYJD",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "6656ecf9d1604f5fadff46eced069306",
+          "status": "completed",
+          "ended_at": "2026-11-05T07:37:28.678174Z",
+          "tool_name": "delegate_task",
+          "started_at": "2026-11-05T07:37:26.054509Z",
+          "tool_call_id": "call_7FsBhkwAhMBrj8xDdqbxAjp8",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "runtime_phase": "final candidate runtime"
+    }
+  ],
+  "limitations": [
+    "Only leadgen__status qualified in visitor-bound cohort",
+    "No ordinary-member browser account test",
+    "No general visitor Action, write, flow, MCP or external-effect qualification",
+    "Not an optimization benchmark or enterprise release qualification"
+  ]
+}

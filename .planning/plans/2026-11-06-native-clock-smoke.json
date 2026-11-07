@@ -1,0 +1,634 @@
+{
+  "observed_at": "2026-11-06T16:38:17.963814+00:00",
+  "parent_revision": "git-commit:ecd4be95783c24cd9cfc6565d86351398367bc68",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-clock-smoke",
+    "backend": 8161,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    }
+  },
+  "runtime_observer": {
+    "process_id": 36122,
+    "observed_at": "2026-11-06T16:38:17.796680+00:00",
+    "source_blobs": {
+      "jvagent/action/agent_utils/agent_utils.py": "git-blob:bca837a1739ac2c1c8f75d4e8cb1c95ae4e09e2d",
+      "jvagent/action/orchestrator/core_tools.py": "git-blob:a254cabfa632aa2eb081ff2aa91661f248be90e5",
+      "jvagent/cli/harness_migrate.py": "git-blob:c9bf5625e9af3ae47fc3ce27c51a6c2695b2c32f",
+      "jvagent/core/clock.py": "git-blob:c757e5042a30760a04e70cf0424a542daf1d06e6",
+      "jvagent/harness/native.py": "git-blob:6559d42b36e4da088a7e10ab6e878dbcd07ee466",
+      "jvagent/harness/tool_schema.py": "git-blob:f6f2e4ec9e72239b1c4f4f257a0d4ae6760549e8",
+      "jvagent/tooling/signature_schema.py": "git-blob:dd899092bef3bc05d189b5dfa6310606c0d8bd9d"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 35660,
+      "observed_at": "2026-11-06T16:32:00.133943+00:00",
+      "source_blobs": {
+        "jvagent/action/agent_utils/agent_utils.py": "git-blob:bca837a1739ac2c1c8f75d4e8cb1c95ae4e09e2d",
+        "jvagent/action/orchestrator/core_tools.py": "git-blob:a254cabfa632aa2eb081ff2aa91661f248be90e5",
+        "jvagent/cli/harness_migrate.py": "git-blob:c9bf5625e9af3ae47fc3ce27c51a6c2695b2c32f",
+        "jvagent/core/clock.py": "git-blob:c757e5042a30760a04e70cf0424a542daf1d06e6",
+        "jvagent/harness/native.py": "git-blob:6559d42b36e4da088a7e10ab6e878dbcd07ee466",
+        "jvagent/harness/tool_schema.py": "git-blob:f6f2e4ec9e72239b1c4f4f257a0d4ae6760549e8",
+        "jvagent/tooling/signature_schema.py": "git-blob:dd899092bef3bc05d189b5dfa6310606c0d8bd9d"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 35726,
+      "observed_at": "2026-11-06T16:32:30.424846+00:00",
+      "source_blobs": {
+        "jvagent/action/agent_utils/agent_utils.py": "git-blob:bca837a1739ac2c1c8f75d4e8cb1c95ae4e09e2d",
+        "jvagent/action/orchestrator/core_tools.py": "git-blob:a254cabfa632aa2eb081ff2aa91661f248be90e5",
+        "jvagent/cli/harness_migrate.py": "git-blob:c9bf5625e9af3ae47fc3ce27c51a6c2695b2c32f",
+        "jvagent/core/clock.py": "git-blob:c757e5042a30760a04e70cf0424a542daf1d06e6",
+        "jvagent/harness/native.py": "git-blob:6559d42b36e4da088a7e10ab6e878dbcd07ee466",
+        "jvagent/harness/tool_schema.py": "git-blob:f6f2e4ec9e72239b1c4f4f257a0d4ae6760549e8",
+        "jvagent/tooling/signature_schema.py": "git-blob:dd899092bef3bc05d189b5dfa6310606c0d8bd9d"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 36122,
+      "observed_at": "2026-11-06T16:35:11.015726+00:00",
+      "source_blobs": {
+        "jvagent/action/agent_utils/agent_utils.py": "git-blob:bca837a1739ac2c1c8f75d4e8cb1c95ae4e09e2d",
+        "jvagent/action/orchestrator/core_tools.py": "git-blob:a254cabfa632aa2eb081ff2aa91661f248be90e5",
+        "jvagent/cli/harness_migrate.py": "git-blob:c9bf5625e9af3ae47fc3ce27c51a6c2695b2c32f",
+        "jvagent/core/clock.py": "git-blob:c757e5042a30760a04e70cf0424a542daf1d06e6",
+        "jvagent/harness/native.py": "git-blob:6559d42b36e4da088a7e10ab6e878dbcd07ee466",
+        "jvagent/harness/tool_schema.py": "git-blob:f6f2e4ec9e72239b1c4f4f257a0d4ae6760549e8",
+        "jvagent/tooling/signature_schema.py": "git-blob:dd899092bef3bc05d189b5dfa6310606c0d8bd9d"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.83748be01d1242228934df6f",
+      "scenario": "fresh_clock",
+      "utterance": "Read the current app clock using its tool. Return the exact ISO 8601 timestamp and configured timezone. Do not guess or reuse an earlier result.",
+      "response": "The current app clock reads:\n\n- ISO 8601 timestamp: 2026-11-06T12:33:07.536618-04:00\n- Configured timezone: America/Guyana",
+      "started_at": "2026-11-06T12:33:03.831604-04:00",
+      "completed_at": "2026-11-06T12:33:09.220544-04:00",
+      "duration_seconds": 5.38894,
+      "sdk_digest": "sha256:fdc288b385c31e981990a9c53476d49d47d64a61a63ec48c683e28fb70e56bb9",
+      "worker_pid": "35726",
+      "usage": {
+        "last_updated": "2026-11-06T16:33:09.220624+00:00",
+        "total_tokens": 722,
+        "prompt_tokens": 665,
+        "total_cost_usd": 0.001786,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 57,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001786,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.525,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.525,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 309,
+            "prompt_tokens": 297,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00069,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2ea1eba648e54c25acf64746359018f6",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-2ea1eba648e54c25acf64746359018f6:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 413,
+            "prompt_tokens": 368,
+            "completion_tokens": 45,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001096,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2ea1eba648e54c25acf64746359018f6",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-2ea1eba648e54c25acf64746359018f6:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_clock_return": {
+        "retry": null,
+        "content": "ISO 8601: 2026-11-06T12:33:07.536618-04:00\nDate: Friday, November 06, 2026\nTime: 12:33:07\nTimezone: America/Guyana",
+        "outcome": "success",
+        "metadata": null,
+        "part_kind": "tool-return",
+        "timestamp": "2026-11-06T16:33:07.551973Z",
+        "tool_kind": null,
+        "tool_name": "get_current_datetime",
+        "tool_call_id": "call_m63VtCDW4kOvT3VOar7R9qhZ"
+      },
+      "status": "delivered",
+      "sdk_effects": [
+        {
+          "run_id": "corr-2ea1eba648e54c25acf64746359018f6",
+          "status": "completed",
+          "ended_at": "2026-11-06T16:33:07.537593Z",
+          "tool_name": "get_current_datetime",
+          "started_at": "2026-11-06T16:33:07.521840Z",
+          "tool_call_id": "call_m63VtCDW4kOvT3VOar7R9qhZ",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.271bf53d9c2a4927b767a477",
+      "scenario": "permission_denial",
+      "utterance": "Read the current app clock again using its tool. Give a fresh exact timestamp; if access is denied, report that without giving an earlier timestamp.",
+      "response": "Access to the current app clock is denied. I cannot provide a fresh timestamp.",
+      "started_at": "2026-11-06T12:33:51.077887-04:00",
+      "completed_at": "2026-11-06T12:33:54.889793-04:00",
+      "duration_seconds": 3.811906,
+      "sdk_digest": "sha256:0aa6ac7fc39b08eb6819eb0816c053e66e199cf5e0b72140b22d75f56abf0cad",
+      "worker_pid": "35726",
+      "usage": {
+        "last_updated": "2026-11-06T16:33:54.889837+00:00",
+        "total_tokens": 951,
+        "prompt_tokens": 921,
+        "total_cost_usd": 0.002082,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 30,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002082,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.703,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.703,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 460,
+            "prompt_tokens": 448,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000992,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-205924fb014e40d7adae02bd531e94eb",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-205924fb014e40d7adae02bd531e94eb:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 491,
+            "prompt_tokens": 473,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00109,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-205924fb014e40d7adae02bd531e94eb",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-205924fb014e40d7adae02bd531e94eb:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_clock_return": {
+        "retry": {
+          "cause": "model_retry",
+          "attempt": 1,
+          "max_retries": 1
+        },
+        "content": "Action access denied",
+        "outcome": "retried",
+        "metadata": null,
+        "part_kind": "tool-return",
+        "timestamp": "2026-11-06T16:33:53.102198Z",
+        "tool_kind": null,
+        "tool_name": "get_current_datetime",
+        "tool_call_id": "call_AxTBizw2dNf37Awvd7HYFHDh"
+      },
+      "status": "delivered",
+      "sdk_effects": [
+        {
+          "run_id": "corr-205924fb014e40d7adae02bd531e94eb",
+          "status": "failed",
+          "ended_at": "2026-11-06T16:33:53.103382Z",
+          "tool_name": "get_current_datetime",
+          "started_at": "2026-11-06T16:33:53.089315Z",
+          "tool_call_id": "call_AxTBizw2dNf37Awvd7HYFHDh",
+          "effect_summary": "ToolRetryError('Action access denied')",
+          "idempotency_key": null
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.3481bfa3c59346a9953fde57",
+      "scenario": "fresh_clock_after_restart",
+      "utterance": "After the backend restart, read the current app clock freshly using its tool. Return its exact ISO 8601 timestamp and timezone.",
+      "response": "The current app clock reads:\n\n- ISO 8601 timestamp: 2026-11-06T12:36:12.243902-04:00\n- Configured timezone: America/Guyana",
+      "started_at": "2026-11-06T12:36:09.881244-04:00",
+      "completed_at": "2026-11-06T12:36:13.650978-04:00",
+      "duration_seconds": 3.769734,
+      "sdk_digest": "sha256:b8c54b0bcbc0608a76408e9d775a852409ae6812202a65b778ad652a06b2eacd",
+      "worker_pid": "36122",
+      "usage": {
+        "last_updated": "2026-11-06T16:36:13.651104+00:00",
+        "total_tokens": 1174,
+        "prompt_tokens": 1117,
+        "total_cost_usd": 0.00269,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 57,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00269,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.914,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.914,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 535,
+            "prompt_tokens": 523,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001142,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8aa514541278474cac61a85b3b0bc3f7",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-8aa514541278474cac61a85b3b0bc3f7:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 639,
+            "prompt_tokens": 594,
+            "completion_tokens": 45,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001548,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8aa514541278474cac61a85b3b0bc3f7",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-8aa514541278474cac61a85b3b0bc3f7:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_clock_return": {
+        "retry": null,
+        "content": "ISO 8601: 2026-11-06T12:36:12.243902-04:00\nDate: Friday, November 06, 2026\nTime: 12:36:12\nTimezone: America/Guyana",
+        "outcome": "success",
+        "metadata": null,
+        "part_kind": "tool-return",
+        "timestamp": "2026-11-06T16:36:12.258947Z",
+        "tool_kind": null,
+        "tool_name": "get_current_datetime",
+        "tool_call_id": "call_Z6JFlLBQu8ElFqW3rCCMUfmd"
+      },
+      "status": "delivered",
+      "sdk_effects": [
+        {
+          "run_id": "corr-8aa514541278474cac61a85b3b0bc3f7",
+          "status": "completed",
+          "ended_at": "2026-11-06T16:36:12.244803Z",
+          "tool_name": "get_current_datetime",
+          "started_at": "2026-11-06T16:36:12.231484Z",
+          "tool_call_id": "call_Z6JFlLBQu8ElFqW3rCCMUfmd",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.53d9e8a6c9bd4342b2c9879c",
+      "spend": {
+        "usd": "0.006558",
+        "tokens": 2847,
+        "requests": 6,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "migration_report": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/demo/clock/agent.yaml",
+    "source_digest": "sha256:e3b4029e243029c723a746ba1447d20c723187f157f620cda407f03949af9735",
+    "status": "candidate",
+    "blockers": [],
+    "mappings": {
+      "tool_tier": "declared clock service",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds",
+      "max_turn_cost_usd": "max_run_cost_usd",
+      "max_conversation_cost_usd": "max_conversation_cost_usd",
+      "model": "model",
+      "model_action_type": "native provider",
+      "system_prompt_extra": "instructions",
+      "model_temperature": "model_settings.temperature",
+      "model_max_tokens": "model_settings.max_tokens",
+      "enabled": "enabled"
+    },
+    "bounded_defaults": [
+      "tool_execution_mode",
+      "max_tokens"
+    ],
+    "preserved_action_count": 2,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions"
+    ],
+    "retired_settings": {
+      "tool_tier": "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+    },
+    "added_actions": [
+      "jvagent/agent_utils"
+    ],
+    "selected_skill_count": 1,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "reference_migration": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/jvagent/orchestrator_agent/agent.yaml",
+    "source_digest": "sha256:4a84450f53dfdcc1b606e55f79f59eea61b2e0cc5ed5e1e9058104eb2b15c437",
+    "status": "blocked",
+    "blockers": [
+      "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+      "Unmapped execution setting: stream_reasoning_trace",
+      "Setting requires qualified native policy migration: channel_overrides",
+      "Setting requires qualified native policy migration: vision",
+      "Setting requires qualified native policy migration: lock_active_flow",
+      "Selected skill 6 needs native format/name/spec migration",
+      "Selected skill 7 needs native format/name/spec migration",
+      "Selected skill 8 needs native format/name/spec migration",
+      "Selected skill 9 needs native format/name/spec migration",
+      "Selected skill 10 needs native format/name/spec migration",
+      "Selected skill 11 needs native format/name/spec migration",
+      "Model service has unqualified callers or provider declarations; review before removal"
+    ],
+    "mappings": {
+      "light_model": "retired",
+      "light_model_action_type": "retired",
+      "light_model_temperature": "retired",
+      "light_model_max_tokens": "retired",
+      "enable_transient_ack": "retired",
+      "ack_on_first_tool_call": "retired",
+      "ack_interval_ms": "retired",
+      "first_emit_timeout_ms": "retired",
+      "ack_statements": "retired",
+      "stream_internal_progress": "retired",
+      "lean_tool_threshold": "retired",
+      "lean_presurface_k": "retired",
+      "history_limit": "retired",
+      "block_raw_tool_invocation": "retired",
+      "tool_servers": "retired",
+      "pinned_tools": "retired inactive control",
+      "skill_only_tools": "retired inactive control",
+      "with_event": "retired inactive control",
+      "tool_call_timeout": "retired inactive control",
+      "pilot_max_model_requests": "retired inactive pilot control",
+      "pilot_max_total_tokens": "retired inactive pilot control",
+      "pilot_max_runtime_seconds": "retired inactive pilot control",
+      "pilot_max_output_tokens": "retired inactive pilot control",
+      "pilot_max_tool_calls": "retired inactive pilot control",
+      "tool_tier": "declared clock service",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds"
+    },
+    "bounded_defaults": [
+      "timeout_seconds",
+      "max_run_cost_usd",
+      "max_conversation_cost_usd",
+      "max_tokens"
+    ],
+    "preserved_action_count": 17,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration",
+      "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools",
+      "Review explicit control retirements and native single-model/context/event behavior before cutover",
+      "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions"
+    ],
+    "retired_settings": {
+      "light_model": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_action_type": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_temperature": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_max_tokens": "Retired model gearing; use the configured native model and remeasure cost",
+      "enable_transient_ack": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_on_first_tool_call": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_interval_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "first_emit_timeout_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_statements": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "stream_internal_progress": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "lean_tool_threshold": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "lean_presurface_k": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "history_limit": "Retired turn-count prompt window; native bounded SDK compaction replaces it",
+      "block_raw_tool_invocation": "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory",
+      "tool_servers": "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure",
+      "pinned_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "skill_only_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "with_event": "Explicitly empty/disabled legacy control; no active policy removed",
+      "tool_call_timeout": "Explicitly empty/disabled legacy control; no active policy removed",
+      "pilot_max_model_requests": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_total_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_runtime_seconds": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_output_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_tool_calls": "Inactive pilot declaration; active legacy limits migrate separately",
+      "tool_tier": "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+    },
+    "added_actions": [
+      "jvagent/agent_utils"
+    ],
+    "selected_skill_count": 5,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "reload_audit": {
+    "label": "reload",
+    "interaction_hashes": {
+      "n.Interaction.3481bfa3c59346a9953fde57": "sha256:2b1e35e9af494d41b43e0b48dd18092829db0c1ba025b906fef7a5ddda8c4e1e",
+      "n.Interaction.83748be01d1242228934df6f": "sha256:1364c172fc98043545f330a94536fa834c58f7f012ea8f454ab78ba2af012c07",
+      "n.Interaction.271bf53d9c2a4927b767a477": "sha256:286b862663582ad018681ba782a974fb495583fab0bb80b56982b96d2bb6eb50"
+    },
+    "interaction_count": 3,
+    "registration_count": 3,
+    "conversations": {
+      "n.Conversation.53d9e8a6c9bd4342b2c9879c": {
+        "native_spend_digest": "sha256:d5ad7f09f7f4dfab361f15edcf4f3d3b5d2b1242e76c700f540b46897c4a2579",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_28d77474a5054da7": {
+            "spent": {
+              "usd": "0.006558",
+              "tokens": 2847,
+              "requests": 6,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T16:36:13.305273+00:00"
+          },
+          "default|run|*|corr-205924fb014e40d7adae02bd531e94eb": {
+            "spent": {
+              "usd": "0.002082",
+              "tokens": 951,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T16:33:54.524282+00:00"
+          },
+          "default|run|*|corr-2ea1eba648e54c25acf64746359018f6": {
+            "spent": {
+              "usd": "0.001786",
+              "tokens": 722,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T16:33:08.818685+00:00"
+          },
+          "default|run|*|corr-8aa514541278474cac61a85b3b0bc3f7": {
+            "spent": {
+              "usd": "0.002690",
+              "tokens": 1174,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T16:36:13.305273+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "restored_originals_unchanged": true,
+  "totals": {
+    "model_turns": 3,
+    "delivered": 3,
+    "provider_requests": 6,
+    "provider_reported_tokens": 2847,
+    "estimated_cost_usd": "0.006558",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Local GPT-4.1 clock profile only; malformed arguments and invalid clock configuration use deterministic tests, not provider-induced failures.",
+    "Initial fixture used wrong AccessControl canonical name; bootstrap refused before model work. Corrected fixture started normally.",
+    "Legacy wrapper shares the clock service but legacy engine remains until full migration.",
+    "Signature schema mapping is not complete for all Python annotations; permissive declarations remain permissive.",
+    "Remaining migration, security/deployment, distributed recovery, evaluation and legacy-deletion gates stay open."
+  ]
+}

@@ -1,0 +1,507 @@
+{
+  "browser_stop_observations": {
+    "11": {
+      "started_at": "2026-11-05T14:37:26.572Z",
+      "headers_at": "2026-11-05T14:37:27.302Z",
+      "start_event_seen": true,
+      "start_at": "2026-11-05T14:37:27.409Z",
+      "stop_button_found": true,
+      "stop_at": "2026-11-05T14:37:29.409Z"
+    },
+    "12": {
+      "started_at": "2026-11-05T14:56:40.814Z",
+      "headers_at": "2026-11-05T14:56:41.547Z",
+      "start_event_seen": true,
+      "start_at": "2026-11-05T14:56:41.651Z",
+      "stop_button_found": true,
+      "stop_at": "2026-11-05T14:56:43.651Z"
+    },
+    "13": {
+      "started_at": "2026-11-05T15:04:54.555Z",
+      "headers_at": "2026-11-05T15:04:55.280Z",
+      "start_event_seen": true,
+      "start_at": "2026-11-05T15:04:55.513Z",
+      "stop_button_found": true,
+      "stop_at": "2026-11-05T15:04:57.514Z"
+    }
+  },
+  "wire": {
+    "final_health": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.405f894e23a64e018230740c",
+        "session_id": "sess_863906cf0fcf4de8",
+        "user_id": "user_5c932924d8404ca0ad5140f26e39ef50"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-4e459579341948ada43baff101fe928f",
+          "session_id": "sess_863906cf0fcf4de8",
+          "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+          "interaction_id": "n.Interaction.405f894e23a64e018230740c",
+          "message_type": "adhoc",
+          "content": "FINAL-READY",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "page_context": {
+              "origin": "http://127.0.0.1:3137",
+              "path": "/sandbox",
+              "title": "jvmessenger sandbox",
+              "secondsOnPage": 45,
+              "scrollDepth": 0,
+              "visitCount": 1,
+              "returning": false
+            }
+          },
+          "timestamp": "2026-11-05T11:04:06.802964"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-4e459579341948ada43baff101fe928f",
+          "session_id": "sess_863906cf0fcf4de8",
+          "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+          "interaction_id": "n.Interaction.405f894e23a64e018230740c",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T11:04:06.810237"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+        "session_id": "sess_863906cf0fcf4de8",
+        "response": "FINAL-READY",
+        "interaction": {
+          "id": "n.Interaction.405f894e23a64e018230740c",
+          "utterance": "CANCEL-FINAL-HEALTH: For this smoke check reply only FINAL-READY.",
+          "response": "FINAL-READY",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-4e459579341948ada43baff101fe928f"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-4e459579341948ada43baff101fe928f:1",
+                "native_run_id": "corr-4e459579341948ada43baff101fe928f",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 278,
+                  "completion_tokens": 5,
+                  "total_tokens": 283,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000596,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 278,
+            "completion_tokens": 5,
+            "total_tokens": 283,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.000596,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.000596,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:04:06.810551+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.405f894e23a64e018230740c",
+              "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+              "session_id": "sess_863906cf0fcf4de8"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ],
+    "final_followup": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.b989168cc811406ca0c73cee",
+        "session_id": "sess_863906cf0fcf4de8",
+        "user_id": "user_5c932924d8404ca0ad5140f26e39ef50"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.7714b48042c54ce7a62739f6",
+          "session_id": "sess_863906cf0fcf4de8",
+          "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+          "interaction_id": "n.Interaction.b989168cc811406ca0c73cee",
+          "message_type": "adhoc",
+          "content": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "page_context": {
+              "origin": "http://127.0.0.1:3137",
+              "path": "/sandbox",
+              "title": "jvmessenger sandbox",
+              "secondsOnPage": 165,
+              "scrollDepth": 0,
+              "visitCount": 1,
+              "returning": false
+            }
+          },
+          "timestamp": "2026-11-05T11:05:55.516705"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.7714b48042c54ce7a62739f6",
+          "session_id": "sess_863906cf0fcf4de8",
+          "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+          "interaction_id": "n.Interaction.b989168cc811406ca0c73cee",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T11:05:55.526226"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+        "session_id": "sess_863906cf0fcf4de8",
+        "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+        "interaction": {
+          "id": "n.Interaction.b989168cc811406ca0c73cee",
+          "utterance": "CANCEL-FINAL-FOLLOWUP: Can this conversation safely issue another paid request now? Reply READY only if it can.",
+          "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-7266ec3394c5435281792446e844699d"
+            }
+          ],
+          "observability_metrics": [],
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 0,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:05:55.527971+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.b989168cc811406ca0c73cee",
+              "user_id": "user_5c932924d8404ca0ad5140f26e39ef50",
+              "session_id": "sess_863906cf0fcf4de8"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ],
+    "fresh_after_stop": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.c874504592e24bad9b21ac93",
+        "session_id": "sess_f920499d95fe42ef",
+        "user_id": "user_305b5fc65148401ea452c7f5daa658e5"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-6b4b48a37dd0405abaf1a50c8f812004",
+          "session_id": "sess_f920499d95fe42ef",
+          "user_id": "user_305b5fc65148401ea452c7f5daa658e5",
+          "interaction_id": "n.Interaction.c874504592e24bad9b21ac93",
+          "message_type": "adhoc",
+          "content": "FRESH-READY",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "page_context": {
+              "origin": "http://127.0.0.1:3137",
+              "path": "/sandbox",
+              "title": "jvmessenger sandbox",
+              "secondsOnPage": 120,
+              "scrollDepth": 0,
+              "visitCount": 1,
+              "returning": false
+            }
+          },
+          "timestamp": "2026-11-05T11:08:37.446478"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-6b4b48a37dd0405abaf1a50c8f812004",
+          "session_id": "sess_f920499d95fe42ef",
+          "user_id": "user_305b5fc65148401ea452c7f5daa658e5",
+          "interaction_id": "n.Interaction.c874504592e24bad9b21ac93",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T11:08:37.454171"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "user_305b5fc65148401ea452c7f5daa658e5",
+        "session_id": "sess_f920499d95fe42ef",
+        "response": "FRESH-READY",
+        "interaction": {
+          "id": "n.Interaction.c874504592e24bad9b21ac93",
+          "utterance": "CANCEL-FRESH-AFTER-STOP: Reply only FRESH-READY to confirm a separate conversation still works.",
+          "response": "FRESH-READY",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-6b4b48a37dd0405abaf1a50c8f812004"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-6b4b48a37dd0405abaf1a50c8f812004:1",
+                "native_run_id": "corr-6b4b48a37dd0405abaf1a50c8f812004",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 284,
+                  "completion_tokens": 6,
+                  "total_tokens": 290,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000616,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 284,
+            "completion_tokens": 6,
+            "total_tokens": 290,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.000616,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.000616,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:08:37.454521+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.c874504592e24bad9b21ac93",
+              "user_id": "user_305b5fc65148401ea452c7f5daa658e5",
+              "session_id": "sess_f920499d95fe42ef"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "11": "## Latest page snapshot\nuid=365_0 RootWebArea \"jvmessenger sandbox\" url=\"http://127.0.0.1:3137/sandbox\"\n  uid=365_1 heading \"Native public identity smoke\" level=\"1\"\n  uid=365_2 StaticText \"Disposable anonymous Messenger fixture. Personal graphs untouched.\"\n  uid=365_3 button \"Close chat\"\n  uid=366_0 Iframe \"Chat\"\n    uid=368_0 RootWebArea \"Chat\" url=\"http://127.0.0.1:3137/app.html\"\n      uid=368_1 banner\n        uid=368_2 StaticText \"Native Identity Qualification\"\n        uid=368_3 button \"Menu\"\n        uid=377_0 button \"Expand window\"\n        uid=377_1 button \"Light theme\"\n        uid=377_2 button \"Download transcript\"\n        uid=368_4 button \"Close\"\n      uid=368_5 StaticText \"Remember the test marker PUBLIC-CEDAR. Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.\"\n      uid=368_6 StaticText \"REHEARSAL-47 is in room Cedar and starts at 14:30.\"\n      uid=369_0 StaticText \"What test marker did I ask you to remember? Reply with only the marker.\"\n      uid=369_1 StaticText \"PUBLIC-CEDAR\"\n      uid=373_0 StaticText \"CANCEL-MODEL-CEDAR: Write a detailed 6000-word original training guide on maintaining a bicycle. Include numbered explanations and examples. Do not use tools.\"\n      uid=374_0 StaticText \"I'm sorry, but I can't provide a 6000-word training guide in this format. However, I can offer a concise and detailed outline or a shorter guide on maintaining a bicycle if you'd like. Let me know how you'd like to proceed!\"\n      uid=375_0 StaticText \"CANCEL-MODEL-PINE: Give 100 numbered bicycle maintenance tips, each with two explanatory sentences. Start directly with tip 1 and continue through 100. Do not use tools.\"\n      uid=376_0 StaticText \"After the stopped response, please reply READY if this conversation can safely continue.\"\n      uid=376_1 StaticText \"This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\"\n      uid=378_0 StaticText \"CANCEL-RESTART-CHECK: After the backend restart, can this session safely run? Reply READY only if it can.\"\n      uid=378_1 StaticText \"This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\"\n      uid=378_2 button \"Copy\"\n      uid=378_3 button \"Regenerate\"\n      uid=368_9 form\n        uid=368_10 textbox \"Send a message...\" focusable focused multiline\n        uid=368_11 button \"Attach a file\"\n        uid=378_4 button \"Send message\" disableable disabled\n",
+    "13": "## Latest page snapshot\nuid=384_0 RootWebArea \"jvmessenger sandbox\" url=\"http://127.0.0.1:3137/sandbox\"\n  uid=384_1 heading \"Final native cancellation smoke\" level=\"1\"\n  uid=384_2 StaticText \"Disposable client and graph. Final accounting and cancellation adapter.\"\n  uid=384_3 button \"Close chat\"\n  uid=385_0 Iframe \"Chat\"\n    uid=385_1 RootWebArea \"Chat\" url=\"http://127.0.0.1:3137/app.html\"\n      uid=386_0 banner\n        uid=386_1 StaticText \"Native Cancellation Final\"\n        uid=386_2 button \"Menu\"\n        uid=386_3 button \"Close\"\n      uid=387_0 StaticText \"CANCEL-FINAL-HEALTH: For this smoke check reply only FINAL-READY.\"\n      uid=387_1 StaticText \"FINAL-READY\"\n      uid=388_0 StaticText \"CANCEL-FINAL-PINE: Give 100 numbered bicycle maintenance tips, each with two explanatory sentences. Start directly with tip 1 and continue through 100. Do not use tools.\"\n      uid=389_0 StaticText \"CANCEL-FINAL-FOLLOWUP: Can this conversation safely issue another paid request now? Reply READY only if it can.\"\n      uid=389_1 StaticText \"This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\"\n      uid=389_2 button \"Copy\"\n      uid=389_3 button \"Regenerate\"\n      uid=386_5 form\n        uid=386_6 textbox \"Send a message...\" focusable focused multiline\n        uid=389_4 button \"Send message\" disableable disabled\n",
+    "14": "## Latest page snapshot\nuid=390_0 RootWebArea \"jvmessenger sandbox\" url=\"http://127.0.0.1:3137/sandbox\"\n  uid=390_1 heading \"Fresh conversation after Stop\" level=\"1\"\n  uid=390_2 button \"Close chat\"\n  uid=391_0 Iframe \"Chat\"\n    uid=391_1 RootWebArea \"Chat\" url=\"http://127.0.0.1:3137/app.html\"\n      uid=392_0 banner\n        uid=392_1 StaticText \"After Stop\"\n        uid=392_2 button \"Menu\"\n        uid=392_3 button \"Close\"\n      uid=393_0 StaticText \"CANCEL-FRESH-AFTER-STOP: Reply only FRESH-READY to confirm a separate conversation still works.\"\n      uid=393_1 StaticText \"FRESH-READY\"\n      uid=393_2 button \"Copy\"\n      uid=393_3 button \"Regenerate\"\n      uid=392_5 form\n        uid=392_6 textbox \"Send a message...\" focusable focused multiline\n        uid=393_4 button \"Send message\" disableable disabled\n"
+  },
+  "procedure": "One-shot browser fetch observer cloned only the start event and clicked the real Messenger Stop button 2000 ms afterward. No provider/backend execution function patched. Cloned stream was cancelled immediately after start. Credentials omitted.",
+  "qualifications": "Final graph readback proves SDK run_failed and unknown cost. Blocked follow-ups run no provider. Fresh isolated Messenger context succeeds.",
+  "browser_request_durations": {
+    "11": [
+      {
+        "start_ms": 31351,
+        "duration_ms": 2454
+      },
+      {
+        "start_ms": 799443,
+        "duration_ms": 2684
+      },
+      {
+        "start_ms": 860557,
+        "duration_ms": 2161
+      },
+      {
+        "start_ms": 900746,
+        "duration_ms": 229
+      },
+      {
+        "start_ms": 1780963,
+        "duration_ms": 1651
+      }
+    ],
+    "12": [
+      {
+        "start_ms": 45190,
+        "duration_ms": 5549
+      },
+      {
+        "start_ms": 104566,
+        "duration_ms": 2168
+      }
+    ],
+    "13": [
+      {
+        "start_ms": 31271,
+        "duration_ms": 3228
+      },
+      {
+        "start_ms": 82886,
+        "duration_ms": 2288
+      },
+      {
+        "start_ms": 142784,
+        "duration_ms": 473
+      }
+    ],
+    "14": [
+      {
+        "start_ms": 58507,
+        "duration_ms": 2245
+      }
+    ]
+  }
+}

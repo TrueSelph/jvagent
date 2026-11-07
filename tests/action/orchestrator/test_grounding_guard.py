@@ -209,6 +209,20 @@ def test_corpus_includes_history_and_observations():
     assert "2019" in corpus
 
 
+def test_configured_agent_identity_is_grounded():
+    ex = _orchestrator()
+    identity = 'IDENTITY: You are "Orchestrator Agent", a helpful assistant.'
+    corpus = ex._grounding_corpus("Who are you?", [], [], identity_section=identity)
+
+    assert identity in corpus
+    assert (
+        ex._grounding_deflection(
+            "I'm your Orchestrator Agent, here to help.", 0, corpus
+        )
+        is None
+    )
+
+
 # --- the WIRING, not just the helper ----------------------------------------
 #
 # The helper was correct while the reply path still called it with an empty

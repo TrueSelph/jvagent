@@ -223,11 +223,13 @@ export async function openSession(
   const body: Record<string, string> = {};
   if (existing?.sessionId) body.session_id = existing.sessionId;
   if (existing?.userId) body.user_id = existing.userId;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (existing?.sessionToken) headers["X-Session-Token"] = existing.sessionToken;
   for (const url of urls) {
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(body),
       });
       if (res.status === 404) continue;

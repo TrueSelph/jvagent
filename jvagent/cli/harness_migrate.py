@@ -1,0 +1,996 @@
+"""Offline, explicit configuration migration; never invokes an execution engine."""
+
+import argparse
+import copy
+import hashlib
+import json
+import math
+import os
+import re
+from collections.abc import Sequence
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from jvagent.cli.harness_migration_skills import migrate_skill_selection
+from jvagent.cli.harness_migration_vision import IMAGE_TYPES, migrate_vision
+
+_SCHEMA = "jvagent.native-config-migration.v1"
+_MODEL_ACTIONS = {"OpenAILanguageModelAction", "LiteLLMLanguageModelAction"}
+_MODEL_SERVICES = {
+    "jvagent/openai_lm",
+    "jvagent/ollama_lm",
+    "jvagent/anthropic_lm",
+    "jvagent/gemini_lm",
+    "jvagent/litellm_lm",
+    "jvagent/groq_lm",
+    "jvagent/openrouter_lm",
+}
+_REVIEWED_CONSUMERS = {
+    "jvagent/orchestrator",
+    "jvagent/reply",
+    "jvagent/mcp",
+    "jvagent/task_monitor",
+    "jvagent/interview",
+    "jvagent/access_control",
+    "jvagent/web_fetch",
+    "jvagent/web_search",
+    "jvagent/serper_web_search",
+    "jvagent/pageindex_read",
+    "jvagent/agent_utils",
+    "jvagent/code_execution",
+    "jvagent/file_interface",
+    "jvagent/elevenlabs_tts",
+    "jvagent/deepgram_stt",
+    "jvagent/whatsapp_voice_action",
+    "jvagent/whatsapp_action",
+}
+# These fields are consumed only by legacy Reply composition and MCP selection.
+_NATIVE_ACTION_MODEL_SETTINGS = {
+    "jvagent/reply": {
+        "model_action_type",
+        "model",
+        "model_temperature",
+        "model_max_tokens",
+    },
+    "jvagent/mcp": {"model_action_type", "model"},
+}
+_DIRECT = {"enabled", "weight", "description", "planning"}
+_LIMITS = {
+    "activation_budget": ("max_requests", 20),
+    "max_duration_seconds": ("timeout_seconds", 180.0),
+    "max_turn_cost_usd": ("max_run_cost_usd", "2.00"),
+    "max_conversation_cost_usd": ("max_conversation_cost_usd", "20.00"),
+}
+# Explicitly retired engine heuristics, not host authorization or budget policy.
+_RETIRE = {
+    "light_model": "text",
+    "light_model_action_type": "text",
+    "light_model_temperature": "number",
+    "light_model_max_tokens": "integer",
+    "enable_transient_ack": "boolean",
+    "ack_on_first_tool_call": "boolean",
+    "ack_interval_ms": "integer",
+    "first_emit_timeout_ms": "integer",
+    "ack_statements": "texts",
+    "stream_internal_progress": "boolean",
+    "lean_tool_threshold": "integer",
+    "lean_presurface_k": "integer",
+    "history_limit": "integer",
+    "block_raw_tool_invocation": "boolean",
+    "lock_active_flow": "boolean",
+    "pinned_tools": "patterns",
+}
+_EMPTY = {
+    "skill_only_tools": list,
+    "with_event": bool,
+}
+
+
+def _retire_controls(
+    context: dict[str, Any],
+    report: dict[str, Any],
+    mode: Any,
+    actions: Sequence[dict[str, Any]],
+) -> None:
+    retired = report.setdefault("retired_settings", {})
+    for key, kind in _RETIRE.items():
+        if key not in context and key != "lock_active_flow":
+            continue
+        value = context.get(key, True) if key == "lock_active_flow" else context[key]
+        if kind == "boolean":
+            valid = type(value) is bool
+        elif kind == "text":
+            valid = isinstance(value, str)
+        elif kind in {"texts", "patterns"}:
+            valid = isinstance(value, list) and all(
+                isinstance(v, str) and (kind == "texts" or bool(v) and v == v.strip())
+                for v in value
+            )
+        else:
+            try:
+                _number(value, key, integer=kind == "integer")
+                valid = True
+            except ValueError:
+                valid = False
+        if not valid:
+            report["blockers"].append(f"Invalid legacy setting requires review: {key}")
+            continue
+        reason = (
+            "Retired model gearing; use the configured native model and remeasure cost"
+            if key.startswith("light_model")
+            else (
+                "Retired turn-count prompt window; native bounded SDK compaction replaces it"
+                if key == "history_limit"
+                else (
+                    "Retired legacy pre-surfacing; official Skills and host tool ownership replace it"
+                    if key.startswith("lean_")
+                    else "Retired synthetic loop progress/acknowledgements; native SDK events remain"
+                )
+            )
+        )
+        retired[key] = reason
+        if key == "pinned_tools":
+            retired[key] = (
+                "Retired legacy tool pre-surfacing; official SDK Skills own discovery and activation, with host permissions independent"
+            )
+            report["required_review"].append(
+                "Qualify formerly pinned Action tools through selected skills and host permissions; pins no longer promise first-request visibility and do not become native grants"
+            )
+        if key == "block_raw_tool_invocation":
+            retired[key] = (
+                "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory"
+            )
+        if key == "lock_active_flow":
+            retired[key] = (
+                "Retired deterministic turn routing; official SDK skill ownership and persisted domain task state support model-led continuation, not a hard turn lock"
+            )
+            report["required_review"].append(
+                "Qualify skill detours/resumption and domain validation; retained legacy flow/task locks require separate state migration"
+            )
+        report["mappings"][key] = "retired"
+    mcp_actions = [a for a in actions if a["action"] == "jvagent/mcp"]
+    if "tool_servers" in context or mcp_actions:
+        selector = context.get("tool_servers", "-all")
+        if not isinstance(selector, str) or selector.strip() != "-all":
+            report["blockers"].append(
+                "Restricted or invalid MCP selector requires explicit native policy migration"
+            )
+        else:
+            for action in mcp_actions:
+                configured = action.get("context", {})
+                if isinstance(configured, dict) and configured.get("enabled") is False:
+                    continue
+                reviewed = (
+                    configured.get("native_read_tools")
+                    if isinstance(configured, dict)
+                    else None
+                )
+                if (
+                    not isinstance(configured, dict)
+                    or type(configured.get("enabled", True)) is not bool
+                    or not isinstance(reviewed, list)
+                    or not reviewed
+                    or any(
+                        not isinstance(name, str)
+                        or not name.strip()
+                        or "*" in name
+                        or "?" in name
+                        for name in reviewed
+                    )
+                ):
+                    report["blockers"].append(
+                        "Enabled MCP Action requires reviewed native_read_tools before selector migration"
+                    )
+                    break
+            retired["tool_servers"] = (
+                "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure"
+            )
+            report["mappings"]["tool_servers"] = "retired"
+            report["required_review"].append(
+                "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools"
+            )
+    for key, kind in _EMPTY.items():
+        if key not in context:
+            continue
+        value = context[key]
+        valid = (
+            (type(value) in (int, float) and value == 0)
+            if kind is float
+            else type(value) is kind and not value
+        )
+        if not valid:
+            report["blockers"].append(
+                f"Setting requires qualified native policy migration: {key}"
+            )
+            continue
+        retired[key] = (
+            "Explicitly empty/disabled legacy control; no active policy removed"
+        )
+        report["mappings"][key] = "retired inactive control"
+    if mode == "legacy":
+        for key in (
+            "pilot_skill",
+            "pilot_max_model_requests",
+            "pilot_max_total_tokens",
+            "pilot_max_runtime_seconds",
+            "pilot_max_output_tokens",
+            "pilot_max_tool_calls",
+        ):
+            if key not in context:
+                continue
+            value = context[key]
+            try:
+                valid = (
+                    isinstance(value, str)
+                    if key == "pilot_skill"
+                    else _number(value, key, integer=key != "pilot_max_runtime_seconds")
+                    > 0
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                report["blockers"].append(
+                    f"Inactive pilot setting requires review: {key}"
+                )
+                continue
+            retired[key] = (
+                "Inactive pilot declaration; active legacy limits migrate separately"
+            )
+            report["mappings"][key] = "retired inactive pilot control"
+    if retired:
+        report["required_review"].append(
+            "Review explicit control retirements and native single-model/context/event behavior before cutover"
+        )
+
+
+_KNOWN = (
+    _DIRECT
+    | set(_LIMITS)
+    | set(_RETIRE)
+    | set(_EMPTY)
+    | {
+        "channel_overrides",
+        "tool_call_timeout",
+        "skills",
+        "skills_source",
+        "max_statement_length",
+        "model",
+        "model_action_type",
+        "model_temperature",
+        "model_max_tokens",
+        "system_prompt_extra",
+        "stream_reasoning_trace",
+        "skill_runtime",
+        "pilot_skill",
+        "pilot_max_model_requests",
+        "pilot_max_total_tokens",
+        "pilot_max_runtime_seconds",
+        "pilot_max_output_tokens",
+        "pilot_max_tool_calls",
+        "max_concurrent_tools",
+        "tool_servers",
+        "tool_tier",
+        "vision",
+    }
+)
+
+
+def _name(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value)) and value not in {
+        ".",
+        "..",
+    }
+
+
+def _number(value: Any, field: str, *, integer: bool = False) -> float | int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field}: expected a finite nonnegative number")
+    if (
+        (isinstance(value, float) and not math.isfinite(value))
+        or value < 0
+        or (integer and not isinstance(value, int))
+    ):
+        raise ValueError(f"{field}: expected a finite nonnegative number")
+    return value
+
+
+def _plan_model_service(
+    actions: list[dict[str, Any]],
+    context: dict[str, Any],
+    model_action: Any,
+    retire_vision: bool,
+    report: dict[str, Any],
+) -> tuple[str, bool, float | int | None]:
+    blockers = report["blockers"]
+    services = [a for a in actions if a.get("action") in _MODEL_SERVICES]
+    selected_service = (
+        "jvagent/openai_lm"
+        if model_action == "OpenAILanguageModelAction"
+        else "jvagent/litellm_lm"
+    )
+    retired_service = False
+    service_timeout: float | int | None = None
+    if services:
+        declared_services = sorted(service["action"] for service in services)
+        unreviewed_actions = sorted(
+            {
+                action["action"]
+                for action in actions
+                if action["action"] not in _REVIEWED_CONSUMERS | _MODEL_SERVICES
+                and not (retire_vision and action["action"] == "jvagent/vision")
+            }
+        )
+        report["model_service_review"] = {
+            "selected": selected_service,
+            "declared": declared_services,
+            "additional_services": [
+                service for service in declared_services if service != selected_service
+            ],
+            "unreviewed_actions": unreviewed_actions,
+        }
+        if declared_services != [selected_service] or unreviewed_actions:
+            blockers.append(
+                "Model service has unqualified callers or provider declarations; review before removal"
+            )
+        else:
+            service = services[0]
+            config = service.get("context", {})
+            if (
+                not isinstance(config, dict)
+                or set(service) - {"action", "context"}
+                or set(config)
+                - {
+                    "enabled",
+                    "api_key",
+                    "api_base",
+                    "max_retries",
+                    "model",
+                    "temperature",
+                    "max_tokens",
+                    "timeout",
+                }
+            ):
+                blockers.append(
+                    "Model service settings require explicit native migration"
+                )
+            elif (
+                config.get("enabled", True) is not True
+                or config.get("api_key", "") not in ("", None, "${OPENAI_API_KEY}")
+                or config.get("api_base", "")
+                not in ("", None, "https://api.openai.com/v1")
+                or type(config.get("max_retries", 0)) is not int
+                or config.get("max_retries", 0) != 0
+            ):
+                blockers.append(
+                    "Model credentials, endpoint, disabled service or retry policy requires explicit migration"
+                )
+            elif any(
+                key in config
+                and (
+                    owner_key not in context
+                    or type(config[key]) is bool
+                    or key == "max_tokens"
+                    and type(config[key]) is not int
+                    or config[key] != context.get(owner_key)
+                )
+                for key, owner_key in {
+                    "model": "model",
+                    "temperature": "model_temperature",
+                    "max_tokens": "model_max_tokens",
+                }.items()
+            ):
+                blockers.append(
+                    "Model service defaults conflict with explicit execution settings"
+                )
+            elif "timeout" in config and (
+                type(config["timeout"]) not in (int, float)
+                or not 0 < config["timeout"] < float("inf")
+            ):
+                blockers.append("Model service timeout must be finite and positive")
+            else:
+                retired_service = True
+                service_timeout = config.get("timeout")
+                if service_timeout is not None:
+                    report["mappings"][
+                        "model_service.timeout"
+                    ] = "model_settings.timeout"
+                report.setdefault("retired_actions", []).append(selected_service)
+                report["required_review"].append(
+                    "Default model service retired; native provider uses OPENAI_API_KEY and zero transport retries"
+                )
+    return selected_service, retired_service, service_timeout
+
+
+def _retire_skill_hub(actions: list[dict[str, Any]], report: dict[str, Any]) -> None:
+    """Move catalog changes to the operator-reviewed native declaration."""
+    name = "jvagent/skill_hub"
+    declarations = [action for action in actions if action["action"] == name]
+    if not declarations:
+        return
+    declaration = declarations[0]
+    context = declaration.get("context", {})
+    if (
+        len(declarations) != 1
+        or set(declaration) - {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled"}
+        or type(context.get("enabled", True)) is not bool
+    ):
+        report["blockers"].append(
+            "SkillHub has settings outside operator-managed migration"
+        )
+        return
+    actions.remove(declaration)
+    report.setdefault("retired_actions", []).append(name)
+    report["preserved_action_count"] -= 1
+    report["required_review"].append(
+        "Manage installed skill assets and explicit native catalog paths through reviewed app configuration"
+    )
+
+
+def _migrate_intro(
+    actions: list[dict[str, Any]], owner: dict[str, Any], report: dict[str, Any]
+) -> str | None:
+    name = "jvagent/intro_interact_action"
+    declarations = [action for action in actions if action["action"] == name]
+    if not declarations:
+        return None
+    from jvagent.action.intro.intro_interact_action import IntroInteractAction
+
+    declaration = declarations[0]
+    context = declaration.get("context", {})
+    weight = owner.get("weight", -200)
+    if (
+        len(declarations) != 1
+        or set(declaration) - {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled", "directive"}
+        or type(context.get("enabled", True)) is not bool
+        or type(weight) is not int
+        or weight <= -300
+    ):
+        report["blockers"].append(
+            "Intro Action requires explicit native presentation review"
+        )
+        return None
+    directive = context.get(
+        "directive", IntroInteractAction.model_fields["directive"].default
+    )
+    if not isinstance(directive, str):
+        report["blockers"].append(
+            "Intro Action requires literal first-user instructions"
+        )
+        return None
+    actions.remove(declaration)
+    report.setdefault("retired_actions", []).append(name)
+    report["preserved_action_count"] -= 1
+    report["mappings"][name] = "first_user_instructions"
+    return directive if context.get("enabled", True) else ""
+
+
+def _migrate_pageindex_profile(
+    actions: list[dict[str, Any]], model: str | None, report: dict[str, Any]
+) -> None:
+    """Replace the reviewed legacy tree profile only on explicit operator opt-in."""
+    if model is None:
+        return
+    profiles = [
+        action
+        for action in actions
+        if action["action"] in {"jvagent/pageindex_action", "jvagent/pageindex_read"}
+    ]
+    if (
+        not re.fullmatch(r"openai:[A-Za-z0-9][A-Za-z0-9_.-]*", model)
+        or len(profiles) != 1
+        or profiles[0]["action"] != "jvagent/pageindex_action"
+    ):
+        report["blockers"].append(
+            "PageIndex migration requires one legacy profile and an explicit OpenAI SDK model"
+        )
+        return
+    profile = profiles[0]
+    context = profile.get("context")
+    if (
+        set(profile) != {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled", "strategy", "limit", "model", "model_action_type"}
+        or context.get("enabled") is not True
+        or context.get("strategy") != "tree_search"
+        or context.get("model_action_type") != "OpenAILanguageModelAction"
+        or not isinstance(context.get("model"), str)
+        or not context["model"]
+        or type(context.get("limit", 10)) is not int
+        or context.get("limit", 10) < 1
+    ):
+        report["blockers"].append(
+            "PageIndex has settings outside the reviewed native tree profile"
+        )
+        return
+    actions[actions.index(profile)] = {
+        "action": "jvagent/pageindex_read",
+        "context": {
+            **{
+                key: value
+                for key, value in context.items()
+                if key not in {"model", "model_action_type"}
+            },
+            "native_search_model": model,
+            "native_callback_model": model,
+            "native_ingestion_model": model,
+        },
+    }
+    report["mappings"]["jvagent/pageindex_action"] = "jvagent/pageindex_read"
+    report["required_review"].append(
+        "PageIndex uses a read-only skill tool; review legacy write and list callers, "
+        "explicitly enable qualified ingestion and callback routes, and verify retained collection and webhook bindings"
+    )
+
+
+def plan_harness_migration(
+    app_root: Path,
+    agent_name: str,
+    *,
+    skill: str | Sequence[str] | None = None,
+    pageindex_model: str | None = None,
+    operator_managed_skills: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Return a redacted plan and candidate without graph or env resolution.
+
+    Candidate is deliberately separate from the printable report: retained
+    Action configuration and instructions can contain secrets.
+    """
+    root = app_root.resolve(strict=True)
+    parts = agent_name.split("/")
+    if len(parts) != 2 or not all(_name(part) for part in parts):
+        raise ValueError("agent must be namespace/name")
+    source = (root / "agents" / parts[0] / parts[1] / "agent.yaml").resolve(strict=True)
+    if not source.is_relative_to(root):
+        raise ValueError("Agent configuration escapes the app root")
+    with source.open("rb") as stream:
+        raw = stream.read(1_000_001)
+    if len(raw) > 1_000_000:
+        raise ValueError("Agent configuration exceeds migration size limit")
+    try:
+        document = yaml.safe_load(raw)
+    except (yaml.YAMLError, RecursionError, UnicodeDecodeError):
+        raise ValueError("Agent configuration is invalid YAML") from None
+    if not isinstance(document, dict) or document.get("agent") != agent_name:
+        raise ValueError(
+            "Agent configuration identity does not match the requested agent"
+        )
+    actions = document.get("actions")
+    if not isinstance(actions, list) or any(
+        not isinstance(a, dict) or not isinstance(a.get("action"), str) for a in actions
+    ):
+        raise ValueError("actions must be a list of declarations")
+    owners = [
+        a
+        for a in actions
+        if a.get("action") in {"jvagent/orchestrator", "jvagent/native_harness"}
+    ]
+    report: dict[str, Any] = {
+        "schema": _SCHEMA,
+        "source": str(source.relative_to(root)),
+        "source_digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+        "status": "blocked",
+        "blockers": [],
+        "mappings": {},
+        "bounded_defaults": [],
+        "preserved_action_count": max(0, len(actions) - 1),
+        "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+        "required_review": [
+            "Skills, scripts, Action tools and channel compatibility",
+            "Credentials and native provider settings",
+            "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+            "Fresh isolated bootstrap and actual-provider browser rehearsal",
+        ],
+    }
+    blockers = report["blockers"]
+    if len(owners) != 1:
+        blockers.append("Exactly one declared execution owner is required")
+        return report, None
+    owner = owners[0]
+    if owner["action"] == "jvagent/native_harness":
+        report["status"] = "already_native"
+        return report, None
+    for action in actions:
+        if action["action"] != "jvagent/code_execution":
+            continue
+        configured = action.get("context", {})
+        if (
+            not isinstance(configured, dict)
+            or type(configured.get("enabled", False)) is not bool
+        ):
+            blockers.append("Code execution Action declaration requires review")
+        elif configured.get("enabled", False):
+            from jvagent.harness.script_sandbox import NativeScriptSandbox
+
+            try:
+                NativeScriptSandbox.from_action_context(configured)
+            except (ValueError, TypeError):
+                blockers.append(
+                    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate"
+                )
+            else:
+                report["required_review"].append(
+                    "Native script workspace durability, artifact delivery and retained-state migration remain required"
+                )
+    if set(owner) - {"action", "context"}:
+        blockers.append("Execution Action has unqualified declaration fields")
+    context = owner.get("context", {})
+    if not isinstance(context, dict) or any(
+        not isinstance(k, str) or not _name(k) for k in context
+    ):
+        blockers.append("Execution Action context must contain ordinary named settings")
+        return report, None
+    for key in sorted(set(context) - _KNOWN):
+        blockers.append(f"Unmapped execution setting: {key}")
+    mode = context.get("skill_runtime", "legacy")
+    if not isinstance(mode, str) or mode not in {"legacy", "capability_pilot"}:
+        blockers.append("Unknown execution driver")
+    if "planning" in context:
+        if type(context["planning"]) is not bool:
+            blockers.append("planning requires a boolean native capability declaration")
+        elif context["planning"]:
+            report["required_review"].append(
+                "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
+            )
+    if operator_managed_skills:
+        _retire_skill_hub(actions, report)
+    intro = _migrate_intro(actions, context, report)
+    _migrate_pageindex_profile(actions, pageindex_model, report)
+    _retire_controls(context, report, mode, actions)
+    retire_vision = migrate_vision(context, actions, report)
+    tier = context.get("tool_tier", "standard")
+    clock_actions = [a for a in actions if a["action"] == "jvagent/agent_utils"]
+    add_clock = False
+    if not isinstance(tier, str) or tier.strip().lower() not in {
+        "minimal",
+        "standard",
+        "full",
+    }:
+        blockers.append("Core tool tier requires explicit native service migration")
+    elif len(clock_actions) > 1:
+        blockers.append("Clock service declarations are ambiguous")
+    else:
+        tier = tier.strip().lower()
+        if tier == "minimal" and clock_actions:
+            declared = clock_actions[0].get("context", {})
+            if not isinstance(declared, dict) or declared.get("enabled") is not False:
+                blockers.append(
+                    "Minimal tool tier with an active clock service requires explicit skill-policy review"
+                )
+        if tier != "minimal":
+            if clock_actions:
+                configured_clock = clock_actions[0].get("context", {})
+                if (
+                    not isinstance(configured_clock, dict)
+                    or configured_clock.get("enabled", True) is not True
+                ):
+                    blockers.append(
+                        "Clock service is disabled or invalid; explicit declaration review is required"
+                    )
+            else:
+                add_clock = True
+                report["added_actions"] = ["jvagent/agent_utils"]
+        report["mappings"]["tool_tier"] = "declared clock service"
+        report.setdefault("retired_settings", {})[
+            "tool_tier"
+        ] = "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+        report["required_review"].append(
+            "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions"
+        )
+    if mode == "capability_pilot":
+        for key in ("activation_budget", "max_duration_seconds"):
+            if key in context:
+                blockers.append(f"Mixed driver limit requires explicit review: {key}")
+    skill_settings = migrate_skill_selection(
+        root, source.parent, context, skill, report, actions=actions
+    )
+    model = context.get("model")
+    model_action = context.get("model_action_type", "OpenAILanguageModelAction")
+    if (
+        not isinstance(model, str)
+        or not isinstance(model_action, str)
+        or model_action not in _MODEL_ACTIONS
+    ):
+        blockers.append("A qualified explicit OpenAI model declaration is required")
+    elif model_action == "LiteLLMLanguageModelAction" and not model.startswith(
+        "openai/"
+    ):
+        blockers.append("Only OpenAI-prefixed LiteLLM models have a qualified mapping")
+    else:
+        bare = model.removeprefix("openai/").removeprefix("openai:")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", bare):
+            blockers.append("Model declaration requires an explicit provider migration")
+    selected_service, retired_service, service_timeout = _plan_model_service(
+        actions, context, model_action, retire_vision, report
+    )
+    target: dict[str, Any] = {
+        k: copy.deepcopy(context[k]) for k in _DIRECT if k in context
+    }
+    if intro is not None:
+        target["first_user_instructions"] = intro
+    if "stream_reasoning_trace" in context:
+        if type(context["stream_reasoning_trace"]) is not bool:
+            blockers.append("stream_reasoning_trace requires a boolean")
+        else:
+            target["publish_reasoning"] = context["stream_reasoning_trace"]
+            report["mappings"]["stream_reasoning_trace"] = "publish_reasoning"
+            report["required_review"].append(
+                "Only completed provider-supplied reasoning text is published when enabled; models without it emit no reasoning text. Provider signatures and opaque metadata are not published."
+            )
+    width = context.get("max_concurrent_tools", 1)
+    if type(width) is not int or width not in (0, 1):
+        blockers.append(
+            "Legacy tool concurrency requires an integer zero/one ceiling; wider batches need qualified native policy migration"
+        )
+    else:
+        # The legacy default and explicit zero clamp to one. Preserve that
+        # execution ceiling through the SDK, not another dispatcher.
+        target["tool_execution_mode"] = "sequential"
+        report["mappings"]["max_concurrent_tools"] = "tool_execution_mode"
+        if "max_concurrent_tools" not in context:
+            report["bounded_defaults"].append("tool_execution_mode")
+    try:
+        for old, (new, default) in _LIMITS.items():
+            value = context.get(old, 0)
+            if "cost_usd" in old:
+                if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                    raise ValueError(f"{old}: invalid dollar limit")
+                try:
+                    amount = Decimal(str(value))
+                except InvalidOperation:
+                    raise ValueError(f"{old}: invalid dollar limit") from None
+                if not amount.is_finite() or amount < 0:
+                    raise ValueError(f"{old}: invalid dollar limit")
+                target[new] = str(amount) if amount else default
+                use_default = not amount
+            else:
+                target[new] = (
+                    _number(value, old, integer=old == "activation_budget") or default
+                )
+                use_default = not value
+                if old == "activation_budget" and old in context:
+                    # The legacy loop clamps zero to one; zero never meant
+                    # unlimited here. Do not widen this explicit ceiling.
+                    target[new] = max(1, value)
+                    use_default = False
+            if use_default:
+                report["bounded_defaults"].append(new)
+            if old in context:
+                report["mappings"][old] = new
+        target["max_tokens"] = 100_000
+        report["bounded_defaults"].append("max_tokens")
+        if mode == "capability_pilot":
+            for old, new, default in (
+                ("pilot_max_model_requests", "max_requests", 32),
+                ("pilot_max_total_tokens", "max_tokens", 100_000),
+                ("pilot_max_runtime_seconds", "timeout_seconds", 300),
+                ("pilot_max_tool_calls", "max_tool_calls", 48),
+                ("pilot_max_output_tokens", "max_output_tokens", 20_000),
+            ):
+                value = _number(
+                    context.get(old, default), old, integer=new != "timeout_seconds"
+                )
+                if not value:
+                    raise ValueError(f"{old}: limit must be positive")
+                target[new] = value
+                report["mappings"][old] = new
+                if new in report["bounded_defaults"]:
+                    report["bounded_defaults"].remove(new)
+        settings = {
+            "temperature": context.get("model_temperature", 0.2),
+            "max_tokens": context.get("model_max_tokens", 8192),
+            "max_retries": 0,
+        }
+        if service_timeout is not None:
+            settings["timeout"] = service_timeout
+        if isinstance(settings["max_tokens"], bool):
+            raise ValueError("model_max_tokens requires an integer")
+        if settings["max_tokens"] == 0:
+            settings["max_tokens"] = 8192
+        if not context.get("model_max_tokens"):
+            report["bounded_defaults"].append("model_settings.max_tokens")
+        from jvagent.harness.model_settings import validate_model_settings
+
+        target["model_settings"] = validate_model_settings(settings)
+        if settings["max_tokens"] <= 0:
+            raise ValueError("model_max_tokens must be positive")
+    except (ValueError, TypeError, ImportError):
+        blockers.append(
+            "Model settings or limits require valid finite native values and the native SDK extra"
+        )
+    if "tool_call_timeout" in context:
+        from jvagent.tooling.tool import validate_tool_timeout
+
+        value = context["tool_call_timeout"]
+        try:
+            if type(value) in (int, float) and value == 0:
+                report.setdefault("retired_settings", {})[
+                    "tool_call_timeout"
+                ] = "Retired disabled legacy tool timer; Action-owned SDK deadlines remain independent"
+                report["mappings"]["tool_call_timeout"] = "retired inactive control"
+            else:
+                deadline = validate_tool_timeout(value)
+                if deadline is None:
+                    raise ValueError
+                target["tool_timeout_seconds"] = deadline
+                report["mappings"]["tool_call_timeout"] = "tool_timeout_seconds"
+        except ValueError:
+            blockers.append(
+                "tool_call_timeout requires a finite nonnegative numeric declaration"
+            )
+        report["required_review"].append(
+            "Tool deadlines use public SDK function-body and MCP RPC clocks; capability loading and connection setup retain SDK run/initialization bounds, not the legacy wrapper clock"
+        )
+    from jvagent.cli.harness_migration_channels import migrate_channel_overrides
+
+    migrate_channel_overrides(context, target, report, retire_kinds=_RETIRE)
+    action_settings: dict[str, set[str]] = {}
+    for action in actions:
+        name = action["action"]
+        settings = action.get("context")
+        if isinstance(settings, dict):
+            retired = _NATIVE_ACTION_MODEL_SETTINGS.get(name, set()) & settings.keys()
+            if retired:
+                action_settings.setdefault(name, set()).update(retired)
+    if action_settings:
+        report["retired_action_model_settings"] = {
+            name: sorted(keys) for name, keys in sorted(action_settings.items())
+        }
+        report["required_review"].append(
+            "Review independent Reply composition or MCP selector callers before cutover; native turns own model execution"
+        )
+
+    if blockers:
+        return report, None
+    target.update(model="openai:" + bare, **skill_settings)
+    identity = document.get("context", {})
+    if not isinstance(identity, dict):
+        blockers.append("Agent identity context must be a mapping")
+        return report, None
+    instructions = []
+    for key, label in (("alias", "Agent identity"), ("role", "Role")):
+        if key in identity:
+            if not isinstance(identity[key], str):
+                blockers.append("Agent identity instructions require literal text")
+                return report, None
+            instructions.append(f"{label}: {identity[key]}")
+    extra = context.get("system_prompt_extra", "")
+    if not isinstance(extra, str):
+        blockers.append("system_prompt_extra requires literal text")
+        return report, None
+    instructions.append(extra or "Help the user using the available skill.")
+    if "max_statement_length" in context:
+        try:
+            length = _number(
+                context["max_statement_length"], "max_statement_length", integer=True
+            )
+        except ValueError:
+            blockers.append(
+                "max_statement_length requires a finite nonnegative integer"
+            )
+            return report, None
+        if length:
+            instructions.append(
+                f"Keep final replies within {length} characters when practical."
+            )
+        report["mappings"][
+            "max_statement_length"
+        ] = "instructions; no response truncation"
+    target["instructions"] = "\n\n".join(instructions)
+    if retire_vision:
+        target["input_media_types"] = list(IMAGE_TYPES)
+    report["mappings"].update(
+        model="model",
+        model_action_type="native provider",
+        system_prompt_extra="instructions",
+        model_temperature="model_settings.temperature",
+        model_max_tokens="model_settings.max_tokens",
+    )
+    report["mappings"].update({key: key for key in _DIRECT if key in context})
+    report["mappings"].update(
+        {key: "native execution owner" for key in ("skill_runtime",) if key in context}
+    )
+    candidate = copy.deepcopy(document)
+    candidate["actions"][actions.index(owner)] = {
+        "action": "jvagent/native_harness",
+        "context": target,
+    }
+    for action in candidate["actions"]:
+        settings = action.get("context")
+        if isinstance(settings, dict):
+            for key in action_settings.get(action["action"], ()):
+                settings.pop(key, None)
+    if retired_service:
+        candidate["actions"] = [
+            a for a in candidate["actions"] if a.get("action") != selected_service
+        ]
+        report["preserved_action_count"] -= 1
+    if retire_vision:
+        candidate["actions"] = [
+            a for a in candidate["actions"] if a.get("action") != "jvagent/vision"
+        ]
+        report["preserved_action_count"] -= 1
+    if add_clock:
+        candidate["actions"].append(
+            {"action": "jvagent/agent_utils", "context": {"enabled": True}}
+        )
+    report["status"] = "candidate"
+    return report, candidate
+
+
+def handle_harness_migrate(args: list[str], app_root: str) -> int:
+    """Print a safe dry run; write a new private candidate only when requested."""
+    parser = argparse.ArgumentParser(prog="jvagent harness-migrate")
+    parser.add_argument("--agent", required=True)
+    parser.add_argument(
+        "--skill",
+        action="append",
+        help="Explicit installed skill; repeat for a finite catalog",
+    )
+    parser.add_argument(
+        "--pageindex-model",
+        help="Replace the reviewed legacy PageIndex tree profile with an explicit OpenAI SDK model",
+    )
+    parser.add_argument(
+        "--operator-managed-skills",
+        action="store_true",
+        help="Retire legacy SkillHub in favor of operator-reviewed assets and the explicit native catalog",
+    )
+    parser.add_argument("--output", help="New candidate YAML file; never overwrites")
+    parser.add_argument(
+        "--state-snapshot",
+        help="Private retained-state JSON snapshot; offline preflight only",
+    )
+    options = parser.parse_args(args)
+    try:
+        report, candidate = plan_harness_migration(
+            Path(app_root),
+            options.agent,
+            skill=options.skill,
+            pageindex_model=options.pageindex_model,
+            operator_managed_skills=options.operator_managed_skills,
+        )
+        if options.state_snapshot:
+            from jvagent.cli.harness_migration_state import inspect_state_snapshot
+
+            state = inspect_state_snapshot(Path(options.state_snapshot))
+            report["state_preflight"] = state
+            if state["blockers"]:
+                report["blockers"].append(
+                    "Retained state requires reconciliation before configuration cutover"
+                )
+                report["status"] = "blocked"
+                candidate = None
+        if options.output and candidate is not None:
+            output = Path(options.output).expanduser().absolute()
+            fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    yaml.safe_dump(candidate, stream, sort_keys=False)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except BaseException:
+                output.unlink(missing_ok=True)
+                raise
+            report["candidate_written"] = True
+        print(json.dumps(report, indent=2))
+        return 2 if report["status"] == "blocked" else 0
+    except (OSError, ValueError):
+        print(
+            json.dumps(
+                {
+                    "schema": _SCHEMA,
+                    "status": "blocked",
+                    "blockers": [
+                        "Unable to plan or create a new candidate; verify paths, identity, YAML and output availability"
+                    ],
+                }
+            )
+        )
+        return 2

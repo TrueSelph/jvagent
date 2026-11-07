@@ -1,0 +1,14 @@
+{
+  "blockers": [
+    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+    "Setting requires qualified native policy migration: channel_overrides",
+    "Setting requires qualified native policy migration: vision",
+    "Setting requires qualified native policy migration: lock_active_flow",
+    "Selected skill 7 needs reviewed native interview policy",
+    "Model service has unqualified callers or provider declarations; review before removal"
+  ],
+  "selected_skill_count": 10,
+  "format_admitted_count": 10,
+  "source_digest": "sha256:90d91241ce537656dfeb8574deba5e6c3be071ddad1aba68d36fab6c01ed2ab8",
+  "scope": "Offline format assessment only; retained-state/native tool/channel qualification remains separate."
+}

@@ -368,3 +368,32 @@ async def test_agent_get_access_control_action_heals_when_multiple(
     mock_find_records.assert_awaited_once_with("agent1", "AccessControlAction")
     mock_heal.assert_awaited_once()
     mock_get.assert_awaited_once_with("ac1")
+
+
+@pytest.mark.asyncio
+@patch(
+    "jvagent.action.identity.load_action_from_record",
+    new_callable=AsyncMock,
+    return_value=None,
+)
+@patch(
+    "jvagent.action.identity.find_records_by_archetype",
+    new_callable=AsyncMock,
+    return_value=[{"id": "persisted-ac-record"}],
+)
+async def test_agent_does_not_treat_unloadable_configured_access_control_as_absent(
+    _mock_find_records, _mock_load_action
+):
+    """A stale ACL record is a resolution failure, never unrestricted access."""
+    from jvagent.core.agent import Agent
+
+    agent = Agent(
+        namespace="jvagent",
+        name="t",
+        id="agent1",
+        alias="",
+        description="",
+    )
+
+    with pytest.raises(RuntimeError, match="configured AccessControlAction"):
+        await agent.get_access_control_action()

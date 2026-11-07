@@ -33,7 +33,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_invalid_name_returns_full_name_validator_error(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
     visitor = SimpleNamespace(utterance="my name is Eldon")
@@ -51,7 +51,7 @@ async def test_invalid_name_returns_full_name_validator_error(signup_action):
 @pytest.mark.asyncio
 async def test_invalid_slot_returns_available_times_guidance(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
@@ -72,7 +72,7 @@ async def test_invalid_slot_returns_available_times_guidance(signup_action):
 @pytest.mark.asyncio
 async def test_batch_reports_all_validation_failures(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
     visitor = SimpleNamespace(
@@ -110,7 +110,7 @@ async def test_batch_reports_all_validation_failures(signup_action):
 @pytest.mark.asyncio
 async def test_batch_failure_single_directive(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
     visitor = SimpleNamespace(
@@ -150,7 +150,7 @@ async def test_signup_phone_local_seven_digits_accepted_with_country_code(
     assert phone.validator_args.get("exact_length") == 10
     assert "ask for country" not in (phone.hint or "").lower()
 
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon@mail.com")
@@ -172,7 +172,7 @@ async def test_signup_phone_local_seven_digits_accepted_with_country_code(
 @pytest.mark.asyncio
 async def test_signup_phone_too_short_returns_length_reask(signup_action):
     action, contract = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, contract))
     action._save_session = AsyncMock()
     visitor = SimpleNamespace(utterance="123")

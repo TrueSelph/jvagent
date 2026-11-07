@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch
 
@@ -37,16 +38,16 @@ async def test_add_interaction_unlocked_rereads_under_lock(test_db):
 
         with patch.object(
             Conversation,
-            "get",
-            new=AsyncMock(return_value=fresh),
-        ) as get_mock:
+            "find",
+            new=AsyncMock(return_value=[fresh]),
+        ) as find_mock:
             async with conversation_mutation_lock(conv.id):
                 interaction = await conv._add_interaction_unlocked(
                     utterance="hello",
                     session_id="",
                 )
 
-        get_mock.assert_awaited()
+        find_mock.assert_awaited_once_with({"id": conv.id})
         assert interaction.utterance == "hello"
         assert conv.interaction_count == 1
     finally:
@@ -180,3 +181,40 @@ async def test_persist_task_appends_when_id_missing(caplog):
     assert len(conv.tasks) == 1
     assert conv.tasks[0]["id"] == "task_missing12345"
     assert any("appending" in r.message.lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True])
+async def test_waiting_request_reloads_chain_and_spend_outside_identity_cache(
+    test_db: Path, monkeypatch: pytest.MonkeyPatch, deferred: bool
+) -> None:
+    """A pre-lock request cache must not overwrite the preceding turn's state."""
+    from jvspatial.core.context import (
+        begin_request_identity_map,
+        end_request_identity_map,
+    )
+
+    monkeypatch.setenv("JVSPATIAL_ENABLE_DEFERRED_SAVES", str(deferred).lower())
+    conv = await Conversation.create(session_id=_sid(), user_id="u", channel="default")
+    token = begin_request_identity_map()
+    try:
+        waiting = await Conversation.get(conv.id)
+        writer_token = begin_request_identity_map()
+        try:
+            # A separate request writes after the waiter resolved its session.
+            writer = (await Conversation.find({"id": conv.id}))[0]
+            first = await writer.add_interaction(utterance="first")
+            writer.native_spend = {"conversation": {"test_receipt": "paid"}}
+            await writer.save()
+        finally:
+            end_request_identity_map(writer_token)
+        assert waiting.interaction_count == 0
+        second = await waiting.add_interaction(utterance="second")
+        persisted = (await Conversation.find({"id": conv.id}))[0]
+        assert persisted.interaction_count == 2
+        assert persisted.last_interaction_id == second.id
+        assert persisted.native_spend == {"conversation": {"test_receipt": "paid"}}
+        assert (await second.get_previous_interaction()).id == first.id
+    finally:
+        end_request_identity_map(token)
+        await conv.delete(cascade=True)

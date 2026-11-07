@@ -410,6 +410,17 @@ class TaskHandle:
         self._store = store
         self._task = task
 
+    def _restore_after_persist_failure(self, previous: Task) -> None:
+        """Restore the handle and conversation view when its write fails."""
+
+        self._task.__dict__.clear()
+        self._task.__dict__.update(previous.__dict__)
+        raw = list(getattr(self._store._conversation, "tasks", []) or [])
+        index = self._store._find_task_index(previous.id)
+        if index is not None:
+            raw[index] = previous.to_dict()
+            self._store._conversation.tasks = raw
+
     @property
     def id(self) -> str:
         return self._task.id
@@ -466,9 +477,14 @@ class TaskHandle:
 
     async def set_snapshot(self, snapshot: Dict[str, Any]) -> None:
         """Persist durable runtime state for the task's owner (ADR-0026)."""
+        previous = Task.from_dict(self._task.to_dict())
         self._task.snapshot = dict(snapshot or {})
         self._task._touch()
-        await self._store._persist_task(self._task)
+        try:
+            await self._store._persist_task(self._task)
+        except BaseException:
+            self._restore_after_persist_failure(previous)
+            raise
 
     async def set_seed(self, seed: Dict[str, Any]) -> None:
         """Persist the opaque restart payload (ADR-0026)."""
@@ -490,33 +506,69 @@ class TaskHandle:
         self._task.transition("active")
         await self._store._persist_task(self._task)
 
-    async def complete(self, result: Optional[str] = None) -> None:
+    async def complete(
+        self,
+        result: Optional[str] = None,
+        *,
+        snapshot: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Transition -> completed."""
+        previous = Task.from_dict(self._task.to_dict())
+        if snapshot is not None:
+            self._task.snapshot = dict(snapshot)
         self._task.transition("completed")
         if result is not None:
             self._task.data["result"] = result
-        await self._store._persist_task(self._task)
+        try:
+            await self._store._persist_task(self._task)
+        except BaseException:
+            self._restore_after_persist_failure(previous)
+            raise
         await self._store._emit_task_callback(self._task, "completed")
 
-    async def fail(self, reason: Optional[str] = None) -> None:
+    async def fail(
+        self,
+        reason: Optional[str] = None,
+        *,
+        snapshot: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Transition -> failed. Cascades: dependents blocked on this task are
         abandoned (they can never satisfy their prerequisite)."""
+        previous = Task.from_dict(self._task.to_dict())
+        if snapshot is not None:
+            self._task.snapshot = dict(snapshot)
         self._task.transition("failed")
         if reason is not None:
             self._task.data["failure_reason"] = reason
-        await self._store._persist_task(self._task)
+        try:
+            await self._store._persist_task(self._task)
+        except BaseException:
+            self._restore_after_persist_failure(previous)
+            raise
         await self._store._emit_task_callback(self._task, "failed")
         await self._store._cascade_abandon_dependents(
             self._task.id, reason=f"prerequisite {self._task.id} failed"
         )
 
-    async def cancel(self, reason: Optional[str] = None) -> None:
+    async def cancel(
+        self,
+        reason: Optional[str] = None,
+        *,
+        snapshot: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Transition -> cancelled. Cascades: dependents blocked on this task are
         abandoned (they can never satisfy their prerequisite)."""
+        previous = Task.from_dict(self._task.to_dict())
+        if snapshot is not None:
+            self._task.snapshot = dict(snapshot)
         self._task.transition("cancelled")
         if reason is not None:
             self._task.data["cancel_reason"] = reason
-        await self._store._persist_task(self._task)
+        try:
+            await self._store._persist_task(self._task)
+        except BaseException:
+            self._restore_after_persist_failure(previous)
+            raise
         await self._store._emit_task_callback(self._task, "cancelled")
         await self._store._cascade_abandon_dependents(
             self._task.id, reason=f"prerequisite {self._task.id} cancelled"
@@ -539,10 +591,17 @@ class TaskHandle:
         await self._store._persist_task(self._task)
         await self._store._emit_task_callback(self._task, "parked")
 
-    async def resume_parked(self) -> None:
+    async def resume_parked(self, *, snapshot: Optional[Dict[str, Any]] = None) -> None:
         """Transition parked -> active (ADR-0034 rehydrate)."""
+        previous = Task.from_dict(self._task.to_dict())
+        if snapshot is not None:
+            self._task.snapshot = dict(snapshot)
         self._task.transition("active")
-        await self._store._persist_task(self._task)
+        try:
+            await self._store._persist_task(self._task)
+        except BaseException:
+            self._restore_after_persist_failure(previous)
+            raise
         await self._store._emit_task_callback(self._task, "resumed")
 
     async def update(self, **data: Any) -> None:
@@ -763,13 +822,24 @@ class TaskStore:
     # --- Internal persistence ---
 
     async def _persist(self) -> None:
+        """Persist the mutated Conversation task list.
+
+        TaskStore updates ``conversation.tasks`` directly. On jvspatial entities
+        that assignment does not mark deferred-save state dirty, so ``flush()``
+        alone may return without writing anything. Save first, then flush to
+        complete either immediate or deferred persistence.
+        """
+
+        save = getattr(self._conversation, "save", None)
+        saved = inspect.iscoroutinefunction(save)
+        if saved:
+            await save()
         flush = getattr(self._conversation, "flush", None)
         if inspect.iscoroutinefunction(flush):
             await flush()
             return
-        save = getattr(self._conversation, "save", None)
-        if inspect.iscoroutinefunction(save):
-            await save()
+        if not saved:
+            raise TaskError("conversation must provide asynchronous save() or flush()")
 
     async def _persist_task(self, task: Task) -> None:
         """Persist a mutated task back into conversation.tasks by ID."""
@@ -872,22 +942,27 @@ class TaskStore:
         task_type: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
         task_id: Optional[str] = None,
+        initial_status: Literal["pending", "active"] = "pending",
         blocked_on: Optional[List[str]] = None,
         resumes: Optional[str] = None,
         order: int = 0,
         seed: Optional[Dict[str, Any]] = None,
         snapshot: Optional[Dict[str, Any]] = None,
     ) -> TaskHandle:
-        """Create a new pending task.
+        """Create a pending or active task with its initial snapshot.
 
         ``blocked_on``/``resumes``/``seed``/``order``/``snapshot`` wire the task into
         the work graph (ADR-0026): a prerequisite is created with ``resumes`` pointing
-        at its parent and the parent gains it as a blocker.
+        at its parent and the parent gains it as a blocker. ``initial_status`` avoids
+        a second persistence write when a task is admitted directly into execution.
         """
+        if initial_status not in {"pending", "active"}:
+            raise TaskError("initial_status must be 'pending' or 'active'")
         task = Task(
             id=task_id or _new_id("task_"),
             title=title,
             description=description,
+            status=initial_status,
             task_type=task_type or "",
             owner_action=owner_action,
             data=dict(data or {}),

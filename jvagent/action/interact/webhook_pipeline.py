@@ -162,6 +162,9 @@ async def _run_background_actions_inner(walker: InteractWalker) -> None:
 
 def sanitize_visitor_data_for_log(visitor_data: Dict[str, Any]) -> Dict[str, Any]:
     """Sanitize visitor.data for safe logging (no PII bloat, no media/base64)."""
+    from jvagent.core.host_context import public_turn_metadata
+
+    visitor_data = public_turn_metadata(visitor_data)
     if not visitor_data:
         return {}
     out: Dict[str, Any] = {}
@@ -314,7 +317,9 @@ def build_interaction_log_data(
     if visitor_data:
         log_data["interact_data"] = sanitize_visitor_data_for_log(visitor_data)
 
-    return log_data, message
+    from jvagent.logging.capabilities import redact_download_links
+
+    return redact_download_links(log_data), redact_download_links(message)
 
 
 async def emit_interaction_log(

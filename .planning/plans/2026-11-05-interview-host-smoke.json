@@ -1,0 +1,151 @@
+{
+  "parent_revision": "git-commit:749ccf28cf6c1580c22e7a7fa63f0864ecfe94d2",
+  "source_blobs": {
+    "jvagent/action/interview/engine.py": "git-blob:6d6c5cd16ff4f3d20eb9e026fab7c13fc805401c",
+    "jvagent/action/orchestrator/__init__.py": "git-blob:9bf97b02d7eab9a7c4a61558d4345aa32e93ff31",
+    "tests/harness/native/test_import_isolation.py": "git-blob:793628b915b89d3837cbd4e89af1d7c68f8bbfdf",
+    "tests/harness/native/test_postgres_store.py": "git-blob:b3a7dbf8bbf7ba8c9aeb2dd4861dce0c70068b69",
+    ".github/workflows/test-jvagent.yaml": "git-blob:1a5d09eefc10121059aab2ffcd60b603688ed7d1"
+  },
+  "scenario": "InterviewAction hosted, native MCP read only; interview execution remains unqualified",
+  "fixture": {
+    "api": "http://127.0.0.1:8135",
+    "ui": "http://127.0.0.1:3135",
+    "database": "jvagent_interview_host",
+    "caller": "disposable administrator",
+    "instrumentation": "daemon observer of loaded module names; no runtime monkeypatches"
+  },
+  "interaction_id": "n.Interaction.d8c062f1f0724736ab73f7a5",
+  "utterance": "Use the MCP tool to look up rehearsal REHEARSAL-47 and tell me the room and start time.",
+  "reply": "Rehearsal REHEARSAL-47 is in room Cedar and starts at 14:30.",
+  "closed": true,
+  "emitted": true,
+  "native_run": {
+    "usage": {
+      "requests": 2,
+      "input_tokens": 620,
+      "output_tokens": 48
+    },
+    "output": "Rehearsal REHEARSAL-47 is in room Cedar and starts at 14:30.",
+    "run_id": "600dff4528b746a5a0f6e7ff8303b8de",
+    "status": "delivered",
+    "history_source": {},
+    "usage_complete": true
+  },
+  "usage": {
+    "last_updated": "2026-11-05T11:39:11.821716+00:00",
+    "total_tokens": 668,
+    "prompt_tokens": 620,
+    "total_cost_usd": 0.001624,
+    "litellm_cost_usd": 0.0,
+    "model_call_count": 2,
+    "completion_tokens": 48,
+    "reported_cost_usd": 0.0,
+    "cache_write_tokens": 0,
+    "estimated_cost_usd": 0.001624,
+    "model_attempt_count": 0,
+    "cached_prompt_tokens": 0,
+    "total_duration_seconds": 0.0,
+    "unknown_cost_call_count": 0,
+    "failed_model_attempt_count": 0,
+    "cancelled_model_attempt_count": 0,
+    "model_attempt_duration_seconds": 0.0
+  },
+  "started_at": "2026-11-05T07:39:03.939928",
+  "completed_at": "2026-11-05T07:39:11.821619",
+  "backend_duration_seconds": 7.881691,
+  "events": [
+    "run_started",
+    "model_request_started",
+    "model_request_completed",
+    "tool_call_started",
+    "tool_call_completed",
+    "model_request_started",
+    "model_request_completed",
+    "run_completed"
+  ],
+  "tool_effects": [
+    {
+      "run_id": "600dff4528b746a5a0f6e7ff8303b8de",
+      "status": "completed",
+      "ended_at": "2026-11-05T11:39:07.681968Z",
+      "tool_name": "mcp_records__lookup_record",
+      "started_at": "2026-11-05T11:39:07.632329Z",
+      "tool_call_id": "call_PMBan1kHVD1nJiDs4PTBv3So",
+      "effect_summary": null,
+      "idempotency_key": null
+    }
+  ],
+  "snapshot_count": 6,
+  "tasks": [],
+  "conversation_contexts": [
+    {
+      "new_user": true
+    }
+  ],
+  "module_observations": [
+    {
+      "observed_at": "2026-11-05T11:37:49.436392+00:00",
+      "modules": [],
+      "legacy_execution_modules": []
+    },
+    {
+      "observed_at": "2026-11-05T11:37:50.659583+00:00",
+      "modules": [
+        "jvagent.action.orchestrator",
+        "jvagent.action.orchestrator.constants"
+      ],
+      "legacy_execution_modules": []
+    },
+    {
+      "observed_at": "2026-11-05T11:39:04.113782+00:00",
+      "modules": [
+        "jvagent.action.orchestrator",
+        "jvagent.action.orchestrator.constants",
+        "jvagent.action.orchestrator.host_context",
+        "jvagent.harness.runtime"
+      ],
+      "legacy_execution_modules": [
+        "jvagent.harness.runtime"
+      ]
+    },
+    {
+      "observed_at": "2026-11-05T11:39:07.811137+00:00",
+      "modules": [
+        "jvagent.action.orchestrator",
+        "jvagent.action.orchestrator.constants",
+        "jvagent.action.orchestrator.host_context",
+        "jvagent.action.orchestrator.turn_cache",
+        "jvagent.harness.runtime"
+      ],
+      "legacy_execution_modules": [
+        "jvagent.harness.runtime"
+      ]
+    }
+  ],
+  "legacy_loop_loaded": false,
+  "legacy_tool_executor_loaded": false,
+  "legacy_host_runtime_loaded": true,
+  "legacy_host_runtime_isolation_gate": "FAIL: shared ingress/outbox still instantiates HarnessRuntime",
+  "server_pid": 27934,
+  "server_exit_confirmed": true,
+  "checks": {
+    "native_and_real_postgres_py311": "195 passed, 121 warnings, 20.12s",
+    "native_and_real_postgres_py312": "195 passed, 121 warnings, 21.30s",
+    "interview_and_import_slice": "283 passed, 3.17s",
+    "legacy_interview_loader_orchestrator": "1201 passed, 7 skipped, 13 warnings, 12.42s",
+    "database_deadline_slices": "6 passed each on Python 3.11 and 3.12; five fault deadlines unchanged at 200ms"
+  },
+  "ci_parent": {
+    "revision": "749ccf28",
+    "native_py311": "FAIL: normal cold DDL exceeded the shared 200ms fixture deadline",
+    "other_checks": "8 passed",
+    "evidence": "https://github.com/TrueSelph/jvagent/actions/runs/42018965306/job/127216575008"
+  },
+  "limitations": [
+    "Hosting/import compatibility only, no interview fields/session activation/continuation exercised.",
+    "Cold import isolation passes; actual HTTP execution still imports/uses legacy HarnessRuntime through shared ingress and response journaling. Do not certify native runtime isolation.",
+    "Legacy skill resolver warns requires-tools is unknown during interview discovery; native admission enforces it separately. Resolver consolidation remains open.",
+    "No ordinary-member browser, interview write/extension-hook, shared-host extraction or distributed recovery qualification."
+  ]
+}

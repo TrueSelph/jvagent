@@ -37,6 +37,30 @@ This matrix is the recommended baseline for new apps and refreshed templates.
 - expected keys inside those sections are validated by type where applicable
 - any other key path is flagged as an unexpected key at startup
 
+### Action startup failures
+
+Every `agent.yaml` Action declaration must resolve and construct successfully.
+Use `info.yaml`'s `package.name`, for example `jvagent/access_control_action`,
+rather than a catalog shorthand. Invalid references, duplicate declarations,
+conflicting singleton declarations and failed construction now raise `ConfigError`
+instead of silently dropping a service. This also applies to declarations for
+currently disabled Actions; remove unused invalid declarations or install/fix the
+package. See `jvagent/action/loader/action_loader.py:1212` and `:1299`.
+
+Action declarations are loaded before update cleanup removes persisted Actions
+(`jvagent/core/agent_loader.py:806`, `:820`). Failed registration or declared-agent
+installation aborts bootstrap (`agent_loader.py:848`, `app_loader.py:511`). Failed
+Action initialization also aborts CLI server startup, the `bootstrap` command and
+default embedded bootstrap (`jvagent/cli/server_config.py:739`,
+`jvagent/cli/server.py:521`, `jvagent/embed/bootstrap.py:163`). Embed hosts explicitly
+using `run_action_startup=False` still own deferred initialization.
+
+These checks do not make graph updates transactional or fence other running
+workers. Restore correct declarations and perform a controlled restart/update;
+do not infer that an already-running worker is stopped by another process's
+failed bootstrap. The [rebuild evidence](../.planning/plans/2026-11-04-harness-rebuild-progress.md)
+records the tested profile and remaining deployment gates.
+
 ## Prefix Rules
 
 - **`JVSPATIAL_*`**: framework/system concerns (database, JWT, file storage, CORS, graph REST, deferred saves, logging DB, serverless).

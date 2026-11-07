@@ -54,7 +54,7 @@ def credential_path(email: str) -> Path:
 
 
 def mcp_google_workspace_auth_url(
-    account: str = "integral",
+    account: str = "default",
     service: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:

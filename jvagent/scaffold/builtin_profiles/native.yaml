@@ -1,0 +1,25 @@
+# Native execution and JV response delivery; no model-service or legacy loop.
+actions:
+  - action: jvagent/native_harness
+    context:
+      enabled: true
+      model: openai:gpt-4.1
+      model_settings:
+        temperature: 0.2
+        max_tokens: 8192
+        max_retries: 0
+      skill_directory: agents/__JVAGENT_SCAFFOLD_AGENT_REF__/skills/conversation  # pragma: allowlist secret
+      instructions: >-
+        You are __JVAGENT_SCAFFOLD_AGENT_TITLE__.
+        Help the user using the configured skill and available tools.
+      max_requests: 20
+      max_tool_calls: 40
+      max_tokens: 100000
+      max_output_tokens: 20000
+      timeout_seconds: 180
+      max_run_cost_usd: "2.00"
+      max_conversation_cost_usd: "20.00"
+
+  - action: jvagent/reply
+    context:
+      enabled: true

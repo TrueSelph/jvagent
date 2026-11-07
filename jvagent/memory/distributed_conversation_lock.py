@@ -8,6 +8,8 @@ For AWS Lambda and other multi-worker deployments, set one of:
   (requires ``boto3``, table with string partition key ``lock_key``).
 
 If neither is configured, falls back to :class:`~jvagent.memory.lock_manager.MemoryLockManager`.
+If either backend is configured but its client dependency is missing, lock
+acquisition fails closed instead of silently downgrading to a process-local lock.
 """
 
 from __future__ import annotations
@@ -19,9 +21,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional, Tuple
-
-from jvspatial import create_task
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -105,24 +105,65 @@ def _lease_renew_interval(ttl: int) -> float:
     return max(1.0, ttl / 3.0)
 
 
-async def _run_lease_heartbeat(renew, interval: float, conversation_id: str) -> None:
-    """Loop: sleep ``interval``, then ``await renew()`` while the lock is held.
+async def _run_lease_heartbeat(
+    renew: Callable[[], Awaitable[Optional[bool]]],
+    interval: float,
+    conversation_id: str,
+    *,
+    ttl: Optional[float] = None,
+    owner_task: Optional["asyncio.Task[Any]"] = None,
+) -> None:
+    """Renew a lease and cancel its owner before ownership can become uncertain.
 
-    Cancelled by the lock context on release. A failed renewal is logged and the
-    loop continues — a transient blip shouldn't drop the lease early.
+    ``renew`` may return ``False`` when the backend proves this token no longer
+    owns the lease. ``None`` remains a successful result for backends whose
+    renewal API has no return value. Transient failures are retried, but only
+    until the last confirmed lease renewal approaches expiry.
     """
+    last_success = asyncio.get_running_loop().time()
     while True:
         await asyncio.sleep(interval)
         try:
-            await renew()
+            remaining = None
+            if ttl is not None:
+                remaining = (
+                    ttl - interval - (asyncio.get_running_loop().time() - last_success)
+                )
+                if remaining <= 0:
+                    raise TimeoutError("lease renewal safety deadline reached")
+            if remaining is None:
+                renewed = await renew()
+            else:
+                # Keep renewal in this task: wait_for can lose cancellation
+                # racing a completed child result on supported Python 3.11.
+                async with asyncio.timeout(remaining):
+                    renewed = await renew()
+            if renewed is False:
+                logger.error("distributed lease lost for %s", conversation_id)
+                if owner_task is not None and not owner_task.done():
+                    owner_task.cancel("conversation lock lease lost")
+                return
+            last_success = asyncio.get_running_loop().time()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.debug(
-                "conversation lock renew failed for %s (%s)",
+                "distributed lease renew failed for %s (%s)",
                 conversation_id,
                 type(exc).__name__,
             )
+            if ttl is not None and asyncio.get_running_loop().time() - last_success >= (
+                ttl - interval
+            ):
+                logger.error(
+                    "distributed lease renewal deadline exceeded for %s",
+                    conversation_id,
+                )
+                if owner_task is not None and not owner_task.done():
+                    owner_task.cancel(
+                        "conversation lock lease renewal deadline exceeded"
+                    )
+                return
 
 
 _REQUIRE_DISTRIBUTED_LOCK_ENV = "JVAGENT_REQUIRE_DISTRIBUTED_CONVERSATION_LOCK"
@@ -209,14 +250,10 @@ async def _redis_conversation_lock(
     try:
         import redis.asyncio as redis  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s is set but redis is not installed; "
-            "install redis>=5 or unset the URL to use the in-process lock",
-            _REDIS_URL_ENV,
+        raise RuntimeError(
+            f"{_REDIS_URL_ENV} is configured but redis>=5 is unavailable; "
+            "install the Redis client or remove the distributed-lock setting"
         )
-        async with _fallback_memory_lock(conversation_id):
-            yield
-        return
 
     ttl = _lock_ttl_seconds()
     key = f"{_LOCK_PREFIX}{conversation_id}"
@@ -269,13 +306,17 @@ async def _redis_conversation_lock(
             await asyncio.sleep(delay)
             delay = min(delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await client.eval(renew_script, 1, key, token, str(ttl))
+        async def _renew() -> bool:
+            return bool(await client.eval(renew_script, 1, key, token, str(ttl)))
 
-        heartbeat = await create_task(
-            _run_lease_heartbeat(_renew, _lease_renew_interval(ttl), conversation_id),
-            name="conversation_lock_heartbeat",
-            concurrent=True,
+        heartbeat = asyncio.create_task(
+            _run_lease_heartbeat(
+                _renew,
+                _lease_renew_interval(ttl),
+                conversation_id,
+                ttl=ttl,
+                owner_task=asyncio.current_task(),
+            )
         )
         yield
     finally:
@@ -310,14 +351,10 @@ async def _dynamo_conversation_lock(
         import boto3  # type: ignore[import-untyped]
         from botocore.exceptions import ClientError  # type: ignore[import-untyped]
     except ImportError:
-        logger.warning(
-            "%s is set but boto3 is not installed; "
-            "pip install boto3 or unset the table to use the in-process lock",
-            _DYNAMO_TABLE_ENV,
+        raise RuntimeError(
+            f"{_DYNAMO_TABLE_ENV} is configured but boto3 is unavailable; "
+            "install boto3 or remove the distributed-lock setting"
         )
-        async with _fallback_memory_lock(conversation_id):
-            yield
-        return
 
     ttl_sec = _dynamo_ttl_seconds()
     lock_key = f"conversation:{conversation_id}"
@@ -376,19 +413,28 @@ async def _dynamo_conversation_lock(
                     code,
                 )
 
-    def renew() -> None:
+    def renew() -> bool:
         # Extend expires_at only while we still hold it (holder == token).
         now = int(time.time())
-        client.update_item(
-            TableName=table_name,
-            Key={"lock_key": {"S": lock_key}},
-            UpdateExpression="SET expires_at = :e",
-            ConditionExpression="holder = :t",
-            ExpressionAttributeValues={
-                ":e": {"N": str(now + ttl_sec)},
-                ":t": {"S": token},
-            },
-        )
+        try:
+            client.update_item(
+                TableName=table_name,
+                Key={"lock_key": {"S": lock_key}},
+                UpdateExpression="SET expires_at = :e",
+                ConditionExpression="holder = :t",
+                ExpressionAttributeValues={
+                    ":e": {"N": str(now + ttl_sec)},
+                    ":t": {"S": token},
+                },
+            )
+        except ClientError as exc:
+            if (
+                exc.response.get("Error", {}).get("Code")
+                == "ConditionalCheckFailedException"
+            ):
+                return False
+            raise
+        return True
 
     # AUDIT-memory HIGH-05: same bounded wait + backoff as the Redis path.
     dyn_max_wait = max(ttl_sec + 5, 60)
@@ -419,15 +465,17 @@ async def _dynamo_conversation_lock(
             await asyncio.sleep(dyn_delay)
             dyn_delay = min(dyn_delay * 1.5, 0.5)
 
-        async def _renew() -> None:
-            await asyncio.to_thread(renew)
+        async def _renew() -> bool:
+            return await asyncio.to_thread(renew)
 
-        heartbeat = await create_task(
+        heartbeat = asyncio.create_task(
             _run_lease_heartbeat(
-                _renew, _lease_renew_interval(ttl_sec), conversation_id
-            ),
-            name="conversation_lock_heartbeat",
-            concurrent=True,
+                _renew,
+                _lease_renew_interval(ttl_sec),
+                conversation_id,
+                ttl=ttl_sec,
+                owner_task=asyncio.current_task(),
+            )
         )
         yield
     finally:
@@ -438,13 +486,3 @@ async def _dynamo_conversation_lock(
             except asyncio.CancelledError:
                 pass
         await asyncio.to_thread(release)
-
-
-@asynccontextmanager
-async def _fallback_memory_lock(conversation_id: str) -> AsyncIterator[None]:
-    from jvagent.memory.lock_manager import get_conversation_lock_manager
-
-    lock_mgr = get_conversation_lock_manager()
-    lock = await lock_mgr.acquire(conversation_id)
-    async with lock:
-        yield

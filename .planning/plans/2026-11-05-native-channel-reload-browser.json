@@ -1,0 +1,4 @@
+{
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n3 conversations\n\nNATIVE-CHANNEL-FINAL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-CHANNEL-FINAL-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 1.9s · 1.6 tok/s\n1 tool call\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.6k tokens · 3.1s · 14.5 tok/s\nCopy\nRefresh\nAdd Attachment\nSend message",
+  "url": "http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0"
+}

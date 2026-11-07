@@ -12,6 +12,11 @@ from typing import Any, Mapping, Optional, Protocol, Tuple
 
 CONTRACT_VERSION = "1.0.0"
 
+
+class OutputTokenLimitReached(RuntimeError):
+    """The provider stopped a final output at its token ceiling."""
+
+
 FORBIDDEN_HOST_DOMAIN_KEYS = frozenset(
     {
         "workspace_id",
@@ -24,6 +29,7 @@ FORBIDDEN_HOST_DOMAIN_KEYS = frozenset(
 
 FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
+        "visitor",
         "authority",
         "trust_tier",
         "capability_token",
@@ -37,11 +43,14 @@ FORBIDDEN_AUTHORITY_KEYS = frozenset(
         "effect_key",
         "logical_step_key",
         "work_execution_context",
+        "native_history_import",
+        "effect_recovery",
+        "deferred_tool_results",
     }
 )
 
 # Keys hosts may stash on walker/visitor data for resident tool callbacks.
-# Kept as a frozenset so Integral (and other embeds) can round-trip a durable
+# Kept as a frozenset so embedded hosts can round-trip a durable
 # WorkExecutionContext without inventing a second channel.
 HOST_WORK_EXECUTION_KEYS = frozenset(
     {
@@ -260,6 +269,10 @@ class EventEnvelope:
     def __post_init__(self) -> None:
         if self.sequence < 1:
             raise HarnessContractError("event sequence must be >= 1")
+        if not self.session_id:
+            raise HarnessContractError("event session_id must not be empty")
+        if self.cursor != f"{self.session_id}:{self.sequence}":
+            raise HarnessContractError("event cursor must match session and sequence")
 
 
 @dataclass(frozen=True)

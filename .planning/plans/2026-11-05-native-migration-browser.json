@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-06T00:17:31.646Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n2 conversations\n\nNATIVE-MIGRATION-CHECK: Look up REHEARSAL-47 using the installed skill and tell me its room and start time.\n\nNATIVE-MIGRATION-CHECK: Use the installed skilNATIVE-MIGRATION-CHECK: Use the installed skill to look up REHEARSAL-47 and tell me its room and start time.l to look up REHEARSAL-47 and tell me its room and start time.\n\nLogout\nMI\nMigrated Native Harness\nAGENT\nsession ID\ntoken\n\nNATIVE-MIGRATION-CHECK: Look up REHEARSAL-47 using the installed skill and tell me its room and start time.\n\n1 tool call\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 749 tokens · 2.2s · 20.8 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "requests": [
+    {
+      "url": "http://127.0.0.1:8138/api/agents/n.Agent.d0ea2e001389405fbb983601/interact",
+      "status": 200,
+      "duration_ms": 5158
+    },
+    {
+      "url": "http://127.0.0.1:8138/api/agents/n.Agent.d0ea2e001389405fbb983601/interact",
+      "status": 200,
+      "duration_ms": 3612.899999976158
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

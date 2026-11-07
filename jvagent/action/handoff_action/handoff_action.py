@@ -541,7 +541,7 @@ def _one_contact(contact: Optional[str]) -> str:
 
 
 def _dispatch_user_id() -> str:
-    from jvagent.tooling.tool_executor import get_dispatch_context
+    from jvagent.tooling.context import get_dispatch_context
 
     ctx = get_dispatch_context()
     return (getattr(ctx, "user_id", "") or "").strip()
@@ -579,7 +579,7 @@ def _sender_contact(channel: str) -> str:
         participant_phone_from_payload,
         whatsapp_payload_from_visitor_data,
     )
-    from jvagent.tooling.tool_executor import get_tool_visitor
+    from jvagent.tooling.context import get_tool_visitor
 
     user_id = _dispatch_user_id()
     if not user_id:
@@ -601,7 +601,7 @@ def _sender_contact(channel: str) -> str:
 
 def _dispatch_channel() -> str:
     """Visitor channel for this tool call (``""`` when unbound)."""
-    from jvagent.tooling.tool_executor import get_dispatch_context
+    from jvagent.tooling.context import get_dispatch_context
 
     ctx = get_dispatch_context()
     return (getattr(ctx, "channel", "") or "").strip().lower()
@@ -1154,7 +1154,7 @@ def _handoff_whatsapp_context_snapshot(
         raw_author_from_payload,
         whatsapp_payload_from_visitor_data,
     )
-    from jvagent.tooling.tool_executor import get_tool_visitor
+    from jvagent.tooling.context import get_tool_visitor
 
     user_id = _dispatch_user_id()
     channel = (visitor_channel or _dispatch_channel() or "").strip()
@@ -1574,7 +1574,7 @@ class HandoffAction(Action):
         contact: Optional[str],
         contact_declined: bool = False,
     ) -> ToolResult:
-        from jvagent.tooling.tool_executor import get_tool_visitor as _get_visitor
+        from jvagent.tooling.context import get_tool_visitor as _get_visitor
 
         _visitor = _get_visitor()
         current_interaction_id = str(
@@ -1585,7 +1585,7 @@ class HandoffAction(Action):
         active = await self._active_mode()
         continuing_handoff = bool(active)
         if not active:
-            from jvagent.tooling.tool_executor import get_tool_visitor
+            from jvagent.tooling.context import get_tool_visitor
 
             visitor = get_tool_visitor()
             utterance = str(getattr(visitor, "utterance", "") or "").strip()
@@ -1621,7 +1621,7 @@ class HandoffAction(Action):
         )
         provided_clean = _sanitize_contact(contact, customer_contact_kind=kind)
         if continuing_handoff and not provided_clean:
-            from jvagent.tooling.tool_executor import get_tool_visitor
+            from jvagent.tooling.context import get_tool_visitor
 
             visitor = get_tool_visitor()
             utterance = str(getattr(visitor, "utterance", "") or "").strip()
@@ -1642,7 +1642,7 @@ class HandoffAction(Action):
                 participant_phone_from_payload,
                 whatsapp_payload_from_visitor_data,
             )
-            from jvagent.tooling.tool_executor import get_tool_visitor
+            from jvagent.tooling.context import get_tool_visitor
 
             visitor = get_tool_visitor()
             payload = whatsapp_payload_from_visitor_data(
@@ -1714,7 +1714,7 @@ class HandoffAction(Action):
                 participant_phone_from_payload,
                 whatsapp_payload_from_visitor_data,
             )
-            from jvagent.tooling.tool_executor import get_tool_visitor
+            from jvagent.tooling.context import get_tool_visitor
 
             visitor = get_tool_visitor()
             payload = whatsapp_payload_from_visitor_data(
@@ -1865,7 +1865,7 @@ class HandoffAction(Action):
         answer: Annotated[str, "Full staff answer text."],
     ) -> ToolResult:
         """Save staff's answer for these pend_ ids and send it to the customer when a contact is on file; never post the customer text yourself."""
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         utterance = str(getattr(visitor, "utterance", "") or "")
@@ -2010,7 +2010,7 @@ class HandoffAction(Action):
         answer: Annotated[str, "Full answer to store."],
     ) -> ToolResult:
         """Update the stored answer for one existing handoff chunk, using the chunk id from a Handoff chunk event line."""
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         utterance = str(getattr(visitor, "utterance", "") or "")
@@ -2169,7 +2169,7 @@ class HandoffAction(Action):
 
         Sender must be listed in AccessControlAction ``HandoffAction.staff``.
         """
-        from jvagent.tooling.tool_executor import (
+        from jvagent.tooling.context import (
             get_dispatch_context,
             get_tool_visitor,
         )
@@ -2224,7 +2224,7 @@ class HandoffAction(Action):
             raw_author_from_payload,
             whatsapp_payload_from_visitor_data,
         )
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         user_id = _dispatch_user_id()
         visitor = get_tool_visitor()
@@ -2678,7 +2678,7 @@ class HandoffAction(Action):
     async def _add_pending(self, message: str, contact: str = "") -> Dict[str, Any]:
         """Create an independent HandoffQuestion node and verify it is listable."""
         from jvagent.action.handoff_action.store import HandoffQuestion
-        from jvagent.tooling.tool_executor import get_dispatch_context
+        from jvagent.tooling.context import get_dispatch_context
 
         ctx = get_dispatch_context()
         channel = (getattr(ctx, "channel", "") or "default").strip() or "default"
@@ -2810,7 +2810,7 @@ class HandoffAction(Action):
 
     async def _conversation(self) -> Any:
         """Current conversation from the tool visitor, when one is bound."""
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         if visitor is None:
@@ -2903,7 +2903,7 @@ class HandoffAction(Action):
 
     async def _group_payload(self) -> Dict[str, Any]:
         """WhatsApp payload on the current visitor, or ``{}``."""
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         data = getattr(visitor, "data", None) if visitor else None
@@ -2949,7 +2949,7 @@ class HandoffAction(Action):
         return numbers
 
     async def _pending_debug_ids(self) -> str:
-        from jvagent.tooling.tool_executor import get_dispatch_context
+        from jvagent.tooling.context import get_dispatch_context
 
         ctx = get_dispatch_context()
         agent = await self.get_agent()
@@ -2992,7 +2992,7 @@ class HandoffAction(Action):
 
     async def _record_event(self, event: str) -> None:
         """Store one handoff event on this interaction and save it."""
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         text = (event or "").strip()
         if not text:

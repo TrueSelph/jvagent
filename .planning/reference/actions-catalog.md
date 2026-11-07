@@ -60,6 +60,7 @@ Bases:
 
 | Action | Class | Base | Weight | Purpose |
 |---|---|---|---:|---|
+| jvagent/native_harness | `NativeHarnessAction` | `InteractAction` | -200 | Explicit native development entrypoint; selected skills and official skill-based subagents. See [native guide](../../jvagent/action/native_harness/README.md) and qualification limits. |
 | jvagent/orchestrator | `OrchestratorInteractAction` | `InteractAction` | -200 | Single orchestrator (Orchestrator pattern). One `execute()` per turn: deterministic continuation check, then a bounded think-act-observe loop over a unified tool surface (routing = tool selection). ADR-0012/0013/0014/0015/0016. See [`../docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) |
 | jvagent/intro | `IntroInteractAction` | `InteractAction` | -300 | First-message self-introduction. Contributes a response-shaping *parameter* (not a directive) so ReplyAction weaves the greeting into the same reply as the answer (coexists with the executive; fires on `visitor.new_user`) |
 | jvagent/interview | `InterviewAction` | `Action` | — | Interview tool bundle (`interview__*` tools). Base SOP at action-root `SKILL.md` (extends target, not discovered). Agent interview skills: `agents/.../skills/<name>/` with `extends: action:jvagent/interview` + `interview:` frontmatter (ADR-0023) |
@@ -75,6 +76,7 @@ Bases: `InteractAction` — `interact/base.py:27`. See `.planning/architecture.m
 
 | Action | Class | Base | Purpose |
 |---|---|---|---|
+| jvagent/pageindex_read | `PageIndexReadAction` | `PageIndexAction` | Direct retrieval tool profile without legacy model dependencies. See [read profile](../../jvagent/action/pageindex_read/README.md). |
 | jvagent/pageindex | `PageIndexAction` | `Action` | Document indexing + FTS + semantic search (`pageindex__search`, `pageindex__assimilate`, …) |
 
 ### 1.4 Messaging / broadcast
@@ -147,8 +149,8 @@ See [`../docs/task-tracking.md`](../../docs/task-tracking.md).
 |---|---|---|---|
 | jvagent/access_control | `AccessControlAction` | `Action` | Multi-channel RBAC (per-user, per-action) |
 | jvagent/mcp | `MCPAction` | `Action` | Model Context Protocol server integration + sandbox. `get_tools()` surfaces each server's tools as `mcp_<server>__<tool>` with per-user dispatch; the Orchestrator consumes them via its `tool_servers` config |
-| jvagent/agent_utils | `AgentUtils` | `Action` | Agent utilities (schema/metadata/discovery) |
-| jvagent/file_interface | `FileInterfaceAction` | `Action` | Per-user sandboxed file I/O as first-class tools (`file_interface__read_file`/`write_file`/`list_directory`/…), same `<agent>/<user>` slice as the MCP filesystem + code_execution (ADR-0017) |
+| jvagent/agent_utils | `AgentUtils` | `Action` | Agent utilities; fresh permissioned `get_current_datetime` clock (`jvagent/action/agent_utils/agent_utils.py:19`) |
+| jvagent/file_interface | `FileInterfaceAction` | `Action` | Per-user sandboxed file I/O as first-class tools (`file_interface__read_file`/`write_file`/`list_directory`/…), same `<agent>/<user>` slice as MCP + code_execution (ADR-0017). Native bounded snapshot sharing uses the [artifact download profile](../runbooks/native-artifact-downloads.md); source: `jvagent/action/file_interface/sharing.py:39` |
 | jvagent/code_execution | `CodeExecutionAction` | `Action` | Multitenant sandboxed `bash` (`code_execution__bash`); the substrate Claude-spec skills run their bundled scripts in. cwd = caller's own per-user slice; pluggable executor (subprocess default). **Off by default** (ADR-0017) |
 | jvagent/skill_hub | `SkillHubAction` | `Action` | Search / install / remove skill bundles from the skills.sh ecosystem (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`) |
 

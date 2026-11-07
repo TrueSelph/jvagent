@@ -5,6 +5,7 @@ import pytest
 from jvagent.action.model.cost_estimator import (
     cache_rates_for_provider,
     estimate_cost,
+    request_cost_reservation_usd,
     split_cached_prompt_tokens,
 )
 
@@ -21,6 +22,59 @@ def test_estimate_cost_uses_provider_specific_prices():
 def test_estimate_cost_unknown_provider_returns_zero():
     usage = {"prompt_tokens": 1000, "completion_tokens": 1000}
     assert estimate_cost("any-model", "unknown-provider", usage) == 0.0
+
+
+def test_ollama_cloud_cost_uses_published_model_rates_but_local_stays_free():
+    usage = {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000}
+    assert estimate_cost("glm-5.3:cloud", "ollama", usage) == pytest.approx(5.8)
+    assert estimate_cost("glm-5.3", "ollama", usage) == 0.0
+    cached = {
+        "prompt_tokens": 1_000_000,
+        "completion_tokens": 0,
+        "cached_tokens": 1_000_000,
+    }
+    assert estimate_cost("glm-5.3:cloud", "ollama", cached) == pytest.approx(0.26)
+
+
+def test_request_cost_reservation_ignores_cache_discount_and_adds_safety_margin():
+    reservation = request_cost_reservation_usd(
+        "ollama",
+        "glm-5.3:cloud",
+        input_tokens=100_000,
+        output_tokens=20_000,
+    )
+    assert reservation == pytest.approx(
+        (100_000 * 1.4 + 20_000 * 4.4) / 1_000_000 * 1.25
+    )
+
+
+def test_request_cost_reservation_returns_unknown_for_unpriced_model():
+    assert (
+        request_cost_reservation_usd(
+            "unknown-provider",
+            "unknown-model",
+            input_tokens=100,
+            output_tokens=100,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "input_tokens,output_tokens,safety_multiplier",
+    [(-1, 1, 1.25), (1, -1, 1.25), (True, 1, 1.25), (1, 1, 0.5)],
+)
+def test_request_cost_reservation_rejects_invalid_limits(
+    input_tokens, output_tokens, safety_multiplier
+):
+    with pytest.raises(ValueError, match="reservation limits"):
+        request_cost_reservation_usd(
+            "openai",
+            "gpt-4o-mini",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            safety_multiplier=safety_multiplier,
+        )
 
 
 # --- prompt-cache pricing --------------------------------------------------
@@ -113,6 +167,29 @@ def test_cache_counters_are_clamped_to_prompt_tokens():
     )
 
 
+@pytest.mark.parametrize(
+    "read_key,write_key",
+    [
+        ("cached_read_tokens", "cached_write_tokens"),
+        ("cached_prompt_tokens", "cache_write_tokens"),
+    ],
+)
+def test_normalized_cache_counters_are_split_and_priced(
+    read_key: str, write_key: str
+) -> None:
+    usage = {
+        "prompt_tokens": 100,
+        "completion_tokens": 10,
+        read_key: 40,
+        write_key: 20,
+    }
+    assert split_cached_prompt_tokens(usage) == (40, 40, 20)
+
+    expected = (40 / 1_000_000) * 2.50 + (40 / 1_000_000) * 1.25
+    expected += (20 / 1_000_000) * 2.50 + (10 / 1_000_000) * 10.00
+    assert estimate_cost("gpt-4o", "openai", usage) == pytest.approx(expected)
+
+
 def test_split_tolerates_junk_values():
     assert split_cached_prompt_tokens({"prompt_tokens": "x"}) == (0, 0, 0)
     assert split_cached_prompt_tokens({"prompt_tokens": 10, "cached_tokens": None}) == (
@@ -120,3 +197,25 @@ def test_split_tolerates_junk_values():
         0,
         0,
     )
+
+
+@pytest.mark.parametrize("cloud", [False, True])
+def test_ollama_pricing_never_probes_a_live_model_endpoint(
+    cloud: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from jvagent.action.model import cost_estimator
+
+    probe = Mock(side_effect=AssertionError("pricing must not contact a provider"))
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(get_model_info=probe))
+    monkeypatch.setattr(cost_estimator, "_litellm_pricing_cache", {})
+    cost = estimate_cost(
+        "glm-5.3:cloud" if cloud else "glm-5.3",
+        "ollama",
+        {"prompt_tokens": 1_000_000, "completion_tokens": 1_000_000},
+    )
+    assert cost == pytest.approx(5.8 if cloud else 0.0)
+    probe.assert_not_called()

@@ -89,6 +89,57 @@ class WhatsAppAdapter(ChannelAdapter):
             )
             return False
 
+        native_origin = False
+        if message.interaction_id:
+            from jvagent.memory.interaction import Interaction
+
+            interaction = await Interaction.get(message.interaction_id)
+            if (message.metadata or {}).get("native_replay") is not None or (
+                interaction is not None and interaction.native_run
+            ):
+                if interaction is None:
+                    return False
+                run = None
+                if interaction.native_run.get("run_id"):
+                    from jvagent.harness.step_store import InteractionStepStore
+
+                    run = await InteractionStepStore(interaction).get_run(
+                        run_id=interaction.native_run["run_id"]
+                    )
+                facts = run.metadata if run is not None else {}
+                # A host admission/recovery notice deliberately has no SDK run.
+                # Authorize its immediate send from live adapter proof only;
+                # retained messages cannot recreate that authority on replay.
+                if run is None and (
+                    not interaction.native_run
+                    or interaction.native_run.get("status") == "blocked"
+                ):
+                    from jvagent.tooling.channel_identity import (
+                        verified_channel_metadata,
+                    )
+
+                    try:
+                        facts = verified_channel_metadata(
+                            channels=frozenset({"whatsapp"})
+                        )
+                    except ValueError:
+                        return False
+                native_origin = (
+                    facts.get("jv_verified_channel_sender") == message.user_id
+                    and facts.get("jv_verified_channel")
+                    == message.channel
+                    == "whatsapp"
+                    and facts.get("jv_interaction_id") == message.interaction_id
+                    and facts.get("jv_agent_id") == self.action.agent_id
+                    and facts.get("jv_user_id") == message.user_id
+                    and facts.get("jv_session_id") == message.session_id
+                )
+                if not native_origin:
+                    logger.warning(
+                        "WhatsApp native reply lacks authenticated sender origin"
+                    )
+                    return False
+
         media_url = message.metadata.get("media_url")
         media_type = message.metadata.get("media_type")
         cloud_message = message.metadata.get("whatsapp_cloud_message")
@@ -122,7 +173,9 @@ class WhatsAppAdapter(ChannelAdapter):
         # Extract is_group from message.metadata.whatsapp_payload
         whatsapp_payload = message.metadata.get("whatsapp_payload", {})
         is_group = whatsapp_payload.get("isGroup")
-        if is_group is None and len(message.user_id) > 10:
+        if native_origin:
+            is_group = message.user_id.endswith("@g.us")
+        elif is_group is None and len(message.user_id) > 10:
             is_group = True
 
         # Raw Meta Cloud API payload (escape hatch for any message type)

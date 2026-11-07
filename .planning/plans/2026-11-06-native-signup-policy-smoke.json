@@ -1,0 +1,1147 @@
+{
+  "parent_revision": "git-commit:8414257d01f57785af27718993249434b50a97dc",
+  "scope": "Actual OpenAI GPT-4.1, disposable PostgreSQL and jvchat; conversation-only hooks; no external booking/email action",
+  "source_sha256": {
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "sha256:1bae5b82461ab4230dec74b2c5dfd3ea57df04eaff35582efa2fd5731478e933",
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "sha256:d89f877503833ae3789be3a411d303453b64bba8fe4f74c6c980a186b03aaa77"
+  },
+  "initial_cohort_indices": [
+    0,
+    1,
+    2
+  ],
+  "final_source_cohort_indices": [
+    3,
+    4,
+    5
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.d02de2f608c0481d94643539",
+      "utterance": "Start the training signup. My full name is Jane Doe and I want Saturday at 9 PM. Validate that exact time without changing AM or PM.",
+      "response": "I've saved your name as Jane Doe.\n\nHowever, \"Saturday at 9 PM\" isn't an available training time. Please pick from the available training slots:\n- Monday 9:00 AM \u2013 11:00 AM\n- Monday 2:00 PM \u2013 4:00 PM\n- Wednesday 9:00 AM \u2013 11:00 AM\n- Wednesday 2:00 PM \u2013 4:00 PM\n- Friday 10:00 AM \u2013 12:00 PM\n- Saturday 9:00 AM \u2013 12:00 PM\n\nWhich of these times works for you?",
+      "started_at": "2026-11-06T21:09:19.068881",
+      "completed_at": "2026-11-06T21:09:27.451608",
+      "elapsed_seconds": 8.382727,
+      "usage": {
+        "last_updated": "2026-11-07T01:09:27.451734+00:00",
+        "total_tokens": 6939,
+        "prompt_tokens": 6762,
+        "total_cost_usd": 0.01494,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 177,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.01494,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 4.007,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.007,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 3,
+          "input_tokens": 6762,
+          "output_tokens": 177
+        },
+        "output": "I've saved your name as Jane Doe.\n\nHowever, \"Saturday at 9 PM\" isn't an available training time. Please pick from the available training slots:\n- Monday 9:00 AM \u2013 11:00 AM\n- Monday 2:00 PM \u2013 4:00 PM\n- Wednesday 9:00 AM \u2013 11:00 AM\n- Wednesday 2:00 PM \u2013 4:00 PM\n- Friday 10:00 AM \u2013 12:00 PM\n- Saturday 9:00 AM \u2013 12:00 PM\n\nWhich of these times works for you?",
+        "run_id": "corr-ccebcd4f19a442618caa74290d37a406",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:09:27.405347+00:00",
+                "total_tokens": 6939,
+                "prompt_tokens": 6762,
+                "total_cost_usd": 0.01494,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 3,
+                "completion_tokens": 177,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.01494,
+                "model_attempt_count": 3,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 4.007,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 4.007,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-ccebcd4f19a442618caa74290d37a406"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-ccebcd4f19a442618caa74290d37a406",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_68c898ffd9dc4afe",
+          "jv_worker_pid": "86634",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:09d2af761c6c4aae9319a85e8d36858a",
+          "jv_interaction_id": "n.Interaction.d02de2f608c0481d94643539",
+          "jv_conversation_id": "n.Conversation.008bc5c315a448f8afc16774",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:09:20.811302Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_68c898ffd9dc4afe",
+        "registration_id": "af7f2d6a-04b7-4fed-9596-02aedf44c5b6"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-ccebcd4f19a442618caa74290d37a406",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:09:23.343254Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-07T01:09:23.243174Z",
+          "tool_call_id": "sha256:0b3b2589877e48563efd60c0cab1e267fe38d48f3aec371adae09c77a54ff2ba",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-ccebcd4f19a442618caa74290d37a406/sha256:0b3b2589877e48563efd60c0cab1e267fe38d48f3aec371adae09c77a54ff2ba"
+        },
+        {
+          "run_id": "corr-ccebcd4f19a442618caa74290d37a406",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:09:24.988391Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T01:09:24.843689Z",
+          "tool_call_id": "sha256:1652dfbdd9b10ff7b1fd9dd2b8aab398520bfec084d980966aa29744568dbf37",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-ccebcd4f19a442618caa74290d37a406/sha256:1652dfbdd9b10ff7b1fd9dd2b8aab398520bfec084d980966aa29744568dbf37"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"signup-interview\", \"fields\": {}, \"field_reference\": [{\"key\": \"user_name\", \"prompt\": \"What's your full name?\", \"guidance\": \"A real person's first and last name (e.g. \\\"Jane Doe\\\", \\\"Li Wei\\\"). Not an acknowledgement, filler, or conversational reply. If the user says \\\"ok\\\", \\\"sure\\\", or repeats a filler word, do not store it \\u2014 ask again for their name.\", \"required\": true, \"hint\": \"Ask for first and last name (and middle names if they have them) as they appear on an ID. On clarify, explain you need a real full name \\u2014 not filler.\"}, {\"key\": \"available_times\", \"prompt\": \"What times are you available to train?\", \"guidance\": \"Preferred training slot from the available times list. pre_processor shows slots \\u2014 user must pick one of the listed options.\", \"required\": true}, {\"key\": \"training_format\", \"prompt\": \"For your Saturday session, will you attend in person or join virtually?\", \"guidance\": \"Only asked when the user picked a Saturday slot. Accept clear answers like \\\"in person\\\", \\\"onsite\\\", \\\"virtual\\\", \\\"online\\\", or \\\"remote\\\".\", \"required\": true}, {\"key\": \"user_email\", \"prompt\": \"What is your email?\", \"guidance\": \"Valid email for training contact. post_processor may append a note for @mail.com work addresses after save.\", \"required\": true}, {\"key\": \"employer_name\", \"prompt\": \"What company or organization is your @mail.com address associated with?\", \"guidance\": \"Only asked for @mail.com work emails. Organization or employer name \\u2014 not a job title alone.\", \"required\": true}, {\"key\": \"phone_number\", \"prompt\": \"What is your phone number?\", \"guidance\": \"Optional phone contact. Skip the field when the user declines or has nothing to add. Always store the digits they typed with set_fields \\u2014 do not ask for country/area code as a separate chat turn; validation handles length.\", \"required\": false, \"hint\": \"Optional. Decline or say you don't have one to skip. Any digits the user gives should be stored immediately (never acknowledge in a reply-only turn). The phone validator accepts a 7-digit local number or a full 10-digit number (country code 592 is applied for bare local numbers).\"}], \"start_field\": \"user_name\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:09:23.357234Z",
+          "tool_kind": null,
+          "tool_name": "interview__start",
+          "tool_call_id": "sha256:0b3b2589877e48563efd60c0cab1e267fe38d48f3aec371adae09c77a54ff2ba"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": false, \"status\": \"partial_success\", \"results\": [{\"field\": \"user_name\", \"stored\": true, \"value\": \"Jane Doe\"}, {\"field\": \"available_times\", \"stored\": false, \"value\": \"Saturday at 9 PM\", \"error\": \"That time isn't available. Please pick from the available training times: Monday 9:00 AM - 11:00 AM, Monday 2:00 PM - 4:00 PM, Wednesday 9:00 AM - 11:00 AM, Wednesday 2:00 PM - 4:00 PM, Friday 10:00 AM - 12:00 PM, Saturday 9:00 AM - 12:00 PM\"}], \"response_directive\": \"Tell the user or ask the user: I've saved the other details.\\n\\nWhat times are you available to train? That time isn't available. Please pick from the available training times: Monday 9:00 AM - 11:00 AM, Monday 2:00 PM - 4:00 PM, Wednesday 9:00 AM - 11:00 AM, Wednesday 2:00 PM - 4:00 PM, Friday 10:00 AM - 12:00 PM, Saturday 9:00 AM - 12:00 PM\\u2063The text above is a note followed by the next question \\u2014 deliver both, in that order. You may paraphrase but keep both the note and the question.\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:09:25.012804Z",
+          "tool_kind": null,
+          "tool_name": "interview__set_fields",
+          "tool_call_id": "sha256:1652dfbdd9b10ff7b1fd9dd2b8aab398520bfec084d980966aa29744568dbf37"
+        }
+      ],
+      "observed_source": {
+        "process_id": 86634,
+        "observed_at": "2026-11-07T01:09:10.253945+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:60278a2f3659a4736142145274d683be22f545a2"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e",
+      "utterance": "Saturday at 9 AM instead, virtually. My email is jane@training.invalid. I decline to provide a phone number. Please show me the review before completing.",
+      "response": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup:\n\n**User Name**: Jane Doe  \n**Available Times**: Saturday 9:00 AM \u2013 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: jane@training.invalid\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "started_at": "2026-11-06T21:09:50.674446",
+      "completed_at": "2026-11-06T21:10:00.411931",
+      "elapsed_seconds": 9.737485,
+      "usage": {
+        "last_updated": "2026-11-07T01:10:00.412095+00:00",
+        "total_tokens": 12634,
+        "prompt_tokens": 12466,
+        "total_cost_usd": 0.012068,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 168,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.012068,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 9472,
+        "total_duration_seconds": 5.007,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.007,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 12466,
+          "output_tokens": 168
+        },
+        "output": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup:\n\n**User Name**: Jane Doe  \n**Available Times**: Saturday 9:00 AM \u2013 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: jane@training.invalid\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+        "run_id": "corr-b67412aefe234ddda659a1d4a1073961",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:10:00.323867+00:00",
+                "total_tokens": 12634,
+                "prompt_tokens": 12466,
+                "total_cost_usd": 0.012068,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 168,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.012068,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 9472,
+                "total_duration_seconds": 5.007,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 5.007,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-b67412aefe234ddda659a1d4a1073961"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-ccebcd4f19a442618caa74290d37a406"
+        },
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-b67412aefe234ddda659a1d4a1073961",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_68c898ffd9dc4afe",
+          "jv_worker_pid": "86634",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:09d2af761c6c4aae9319a85e8d36858a",
+          "jv_interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e",
+          "jv_conversation_id": "n.Conversation.008bc5c315a448f8afc16774",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:09:51.557469Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_68c898ffd9dc4afe",
+        "registration_id": "18679fff-292f-4832-a50c-38fb9a83e74e"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-b67412aefe234ddda659a1d4a1073961",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:09:53.512372Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T01:09:53.335689Z",
+          "tool_call_id": "sha256:0295bb9baaa07a3acbc61a5ff648c1d8b0fb72657c7752ee3f1dbc5d16779793",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-b67412aefe234ddda659a1d4a1073961/sha256:0295bb9baaa07a3acbc61a5ff648c1d8b0fb72657c7752ee3f1dbc5d16779793"
+        },
+        {
+          "run_id": "corr-b67412aefe234ddda659a1d4a1073961",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:09:55.870685Z",
+          "tool_name": "interview__skip_field",
+          "started_at": "2026-11-07T01:09:55.746999Z",
+          "tool_call_id": "sha256:998305c67ba4018aee1fc490f9dd496be9621cd20fbb4133e20be9b631be984c",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-b67412aefe234ddda659a1d4a1073961/sha256:998305c67ba4018aee1fc490f9dd496be9621cd20fbb4133e20be9b631be984c"
+        },
+        {
+          "run_id": "corr-b67412aefe234ddda659a1d4a1073961",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:09:57.887666Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-07T01:09:57.739383Z",
+          "tool_call_id": "sha256:db3193c937480d8c8d8c4d3c88bffcb5b9fbe5b90c041e1c30670feedf218209",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-b67412aefe234ddda659a1d4a1073961/sha256:db3193c937480d8c8d8c4d3c88bffcb5b9fbe5b90c041e1c30670feedf218209"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"available_times\", \"stored\": true, \"value\": \"Saturday at 9 AM\"}, {\"field\": \"training_format\", \"stored\": true, \"value\": \"virtual\"}, {\"field\": \"user_email\", \"stored\": true, \"value\": \"jane@training.invalid\"}], \"response_directive\": \"Call interview__next_field.\", \"next_field_key\": \"phone_number\", \"next_tool\": \"interview__next_field\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:09:53.532542Z",
+          "tool_kind": null,
+          "tool_name": "interview__set_fields",
+          "tool_call_id": "sha256:0295bb9baaa07a3acbc61a5ff648c1d8b0fb72657c7752ee3f1dbc5d16779793"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"field\": \"phone_number\", \"skipped_fields\": [\"phone_number\"], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:09:55.898725Z",
+          "tool_kind": null,
+          "tool_name": "interview__skip_field",
+          "tool_call_id": "sha256:998305c67ba4018aee1fc490f9dd496be9621cd20fbb4133e20be9b631be984c"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup.\\n\\n**User Name**: Jane Doe\\n\\n**Available Times**: Saturday 9:00 AM - 12:00 PM\\n\\n**Training Format**: Virtual\\n\\n**User Email**: jane@training.invalid\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"user_name\": \"Jane Doe\", \"available_times\": \"Saturday 9:00 AM - 12:00 PM\", \"training_format\": \"Virtual\", \"user_email\": \"jane@training.invalid\"}, \"skipped_fields\": [\"phone_number\"], \"summary\": \"**User Name**: Jane Doe\\n\\n**Available Times**: Saturday 9:00 AM - 12:00 PM\\n\\n**Training Format**: Virtual\\n\\n**User Email**: jane@training.invalid\", \"confirm\": \"manual\", \"custom_message\": \"Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup.\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:09:57.930195Z",
+          "tool_kind": null,
+          "tool_name": "interview__review",
+          "tool_call_id": "sha256:db3193c937480d8c8d8c4d3c88bffcb5b9fbe5b90c041e1c30670feedf218209"
+        }
+      ],
+      "observed_source": {
+        "process_id": 86634,
+        "observed_at": "2026-11-07T01:09:10.253945+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:60278a2f3659a4736142145274d683be22f545a2"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.ca5eb4dd84494a63b773134c",
+      "utterance": "Yes, I confirm those details. Record my signup.",
+      "response": "Thank you, Jane Doe! Your training signup details are now recorded locally. No booking or notification has been made. Your preferred time is Saturday 9:00 AM \u2013 12:00 PM, and you'll attend virtually.",
+      "started_at": "2026-11-06T21:10:14.883991",
+      "completed_at": "2026-11-06T21:10:19.545225",
+      "elapsed_seconds": 4.661234,
+      "usage": {
+        "last_updated": "2026-11-07T01:10:19.545326+00:00",
+        "total_tokens": 7546,
+        "prompt_tokens": 7486,
+        "total_cost_usd": 0.005852,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 60,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005852,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 6400,
+        "total_duration_seconds": 2.194,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.194,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 7486,
+          "output_tokens": 60
+        },
+        "output": "Thank you, Jane Doe! Your training signup details are now recorded locally. No booking or notification has been made. Your preferred time is Saturday 9:00 AM \u2013 12:00 PM, and you'll attend virtually.",
+        "run_id": "corr-7b2951d44be248799f2af009d4cc9131",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:10:19.483278+00:00",
+                "total_tokens": 7546,
+                "prompt_tokens": 7486,
+                "total_cost_usd": 0.005852,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 60,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005852,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 6400,
+                "total_duration_seconds": 2.194,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.194,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-7b2951d44be248799f2af009d4cc9131"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-b67412aefe234ddda659a1d4a1073961"
+        },
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-7b2951d44be248799f2af009d4cc9131",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_68c898ffd9dc4afe",
+          "jv_worker_pid": "86634",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:09d2af761c6c4aae9319a85e8d36858a",
+          "jv_interaction_id": "n.Interaction.ca5eb4dd84494a63b773134c",
+          "jv_conversation_id": "n.Conversation.008bc5c315a448f8afc16774",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:10:15.527966Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_68c898ffd9dc4afe",
+        "registration_id": "1aae9f72-fdfa-463b-93dd-a3ebff298cbd"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-7b2951d44be248799f2af009d4cc9131",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:10:17.441602Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-07T01:10:17.313666Z",
+          "tool_call_id": "sha256:15f1f1213b23520d1a1849755827bc406db76b131efa56723a9ff8f8243b09da",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-7b2951d44be248799f2af009d4cc9131/sha256:15f1f1213b23520d1a1849755827bc406db76b131efa56723a9ff8f8243b09da"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Tell the user or ask the user: Thank you, Jane Doe! Your training signup details are recorded locally. No booking or notification has been made. Your preferred times were: Saturday 9:00 AM - 12:00 PM. Format: Virtual.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\", \"completion_result\": {\"ok\": true, \"status\": \"ok\", \"response_directive\": \"Tell the user or ask the user: Thank you, Jane Doe! Your training signup details are recorded locally. No booking or notification has been made. Your preferred times were: Saturday 9:00 AM - 12:00 PM. Format: Virtual.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\"}, \"fields\": {\"user_name\": \"Jane Doe\", \"user_email\": \"jane@training.invalid\", \"available_times\": \"Saturday 9:00 AM - 12:00 PM\", \"training_format\": \"Virtual\"}}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:10:17.463920Z",
+          "tool_kind": null,
+          "tool_name": "interview__complete",
+          "tool_call_id": "sha256:15f1f1213b23520d1a1849755827bc406db76b131efa56723a9ff8f8243b09da"
+        }
+      ],
+      "observed_source": {
+        "process_id": 86634,
+        "observed_at": "2026-11-07T01:09:10.253945+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:60278a2f3659a4736142145274d683be22f545a2"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.aa1133b680994b59b7514008",
+      "utterance": "Start the training signup. My full name is Jane Doe and I want Saturday at 9 PM. Validate that exact time without changing AM or PM.",
+      "response": "I've saved your name as Jane Doe.\n\nHowever, \"Saturday at 9 PM\" isn't an available training slot. Please pick from the available training times:\n- Monday 9:00 AM \u2013 11:00 AM\n- Monday 2:00 PM \u2013 4:00 PM\n- Wednesday 9:00 AM \u2013 11:00 AM\n- Wednesday 2:00 PM \u2013 4:00 PM\n- Friday 10:00 AM \u2013 12:00 PM\n- Saturday 9:00 AM \u2013 12:00 PM\n\nWhich of these times would you like to choose for your training?",
+      "started_at": "2026-11-06T21:18:36.546036",
+      "completed_at": "2026-11-06T21:18:45.563465",
+      "elapsed_seconds": 9.017429,
+      "usage": {
+        "last_updated": "2026-11-07T01:18:45.563595+00:00",
+        "total_tokens": 6944,
+        "prompt_tokens": 6762,
+        "total_cost_usd": 0.009028,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 182,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009028,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 3968,
+        "total_duration_seconds": 4.461,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.461,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 3,
+          "input_tokens": 6762,
+          "output_tokens": 182
+        },
+        "output": "I've saved your name as Jane Doe.\n\nHowever, \"Saturday at 9 PM\" isn't an available training slot. Please pick from the available training times:\n- Monday 9:00 AM \u2013 11:00 AM\n- Monday 2:00 PM \u2013 4:00 PM\n- Wednesday 9:00 AM \u2013 11:00 AM\n- Wednesday 2:00 PM \u2013 4:00 PM\n- Friday 10:00 AM \u2013 12:00 PM\n- Saturday 9:00 AM \u2013 12:00 PM\n\nWhich of these times would you like to choose for your training?",
+        "run_id": "corr-4343e694aabd479c862c095221e0c03a",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:18:45.519195+00:00",
+                "total_tokens": 6944,
+                "prompt_tokens": 6762,
+                "total_cost_usd": 0.009028,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 3,
+                "completion_tokens": 182,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.009028,
+                "model_attempt_count": 3,
+                "cached_prompt_tokens": 3968,
+                "total_duration_seconds": 4.461,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 4.461,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-4343e694aabd479c862c095221e0c03a"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-4343e694aabd479c862c095221e0c03a",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_905a32ad7e864a19",
+          "jv_worker_pid": "87391",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:8c2793b5ae254d17a5bca71755043925",
+          "jv_interaction_id": "n.Interaction.aa1133b680994b59b7514008",
+          "jv_conversation_id": "n.Conversation.087a79f0e57a4fe88833f041",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:18:38.338896Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_905a32ad7e864a19",
+        "registration_id": "7fec6bda-7121-4516-9d46-1bfe2e3d88dd"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-4343e694aabd479c862c095221e0c03a",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:18:40.276705Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-07T01:18:40.177753Z",
+          "tool_call_id": "sha256:7298e770417e0d46fe17679672d071be9d59311f3a5675cb60ab486caf2098bb",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-4343e694aabd479c862c095221e0c03a/sha256:7298e770417e0d46fe17679672d071be9d59311f3a5675cb60ab486caf2098bb"
+        },
+        {
+          "run_id": "corr-4343e694aabd479c862c095221e0c03a",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:18:42.562557Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T01:18:42.410327Z",
+          "tool_call_id": "sha256:a714aee7e156c22c99b81b1f72915dd99d27c3d95cb8cd0b0302eaca68faa38f",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-4343e694aabd479c862c095221e0c03a/sha256:a714aee7e156c22c99b81b1f72915dd99d27c3d95cb8cd0b0302eaca68faa38f"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"signup-interview\", \"fields\": {}, \"field_reference\": [{\"key\": \"user_name\", \"prompt\": \"What's your full name?\", \"guidance\": \"A real person's first and last name (e.g. \\\"Jane Doe\\\", \\\"Li Wei\\\"). Not an acknowledgement, filler, or conversational reply. If the user says \\\"ok\\\", \\\"sure\\\", or repeats a filler word, do not store it \\u2014 ask again for their name.\", \"required\": true, \"hint\": \"Ask for first and last name (and middle names if they have them) as they appear on an ID. On clarify, explain you need a real full name \\u2014 not filler.\"}, {\"key\": \"available_times\", \"prompt\": \"What times are you available to train?\", \"guidance\": \"Preferred training slot from the available times list. pre_processor shows slots \\u2014 user must pick one of the listed options.\", \"required\": true}, {\"key\": \"training_format\", \"prompt\": \"For your Saturday session, will you attend in person or join virtually?\", \"guidance\": \"Only asked when the user picked a Saturday slot. Accept clear answers like \\\"in person\\\", \\\"onsite\\\", \\\"virtual\\\", \\\"online\\\", or \\\"remote\\\".\", \"required\": true}, {\"key\": \"user_email\", \"prompt\": \"What is your email?\", \"guidance\": \"Valid email for training contact. post_processor may append a note for @mail.com work addresses after save.\", \"required\": true}, {\"key\": \"employer_name\", \"prompt\": \"What company or organization is your @mail.com address associated with?\", \"guidance\": \"Only asked for @mail.com work emails. Organization or employer name \\u2014 not a job title alone.\", \"required\": true}, {\"key\": \"phone_number\", \"prompt\": \"What is your phone number?\", \"guidance\": \"Optional phone contact. Skip the field when the user declines or has nothing to add. Always store the digits they typed with set_fields \\u2014 do not ask for country/area code as a separate chat turn; validation handles length.\", \"required\": false, \"hint\": \"Optional. Decline or say you don't have one to skip. Any digits the user gives should be stored immediately (never acknowledge in a reply-only turn). The phone validator accepts a 7-digit local number or a full 10-digit number (country code 592 is applied for bare local numbers).\"}], \"start_field\": \"user_name\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:18:40.289596Z",
+          "tool_kind": null,
+          "tool_name": "interview__start",
+          "tool_call_id": "sha256:7298e770417e0d46fe17679672d071be9d59311f3a5675cb60ab486caf2098bb"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": false, \"status\": \"partial_success\", \"results\": [{\"field\": \"user_name\", \"stored\": true, \"value\": \"Jane Doe\"}, {\"field\": \"available_times\", \"stored\": false, \"value\": \"Saturday at 9 PM\", \"error\": \"That time isn't available. Please pick from the available training times: Monday 9:00 AM - 11:00 AM, Monday 2:00 PM - 4:00 PM, Wednesday 9:00 AM - 11:00 AM, Wednesday 2:00 PM - 4:00 PM, Friday 10:00 AM - 12:00 PM, Saturday 9:00 AM - 12:00 PM\"}], \"response_directive\": \"Tell the user or ask the user: I've saved the other details.\\n\\nWhat times are you available to train? That time isn't available. Please pick from the available training times: Monday 9:00 AM - 11:00 AM, Monday 2:00 PM - 4:00 PM, Wednesday 9:00 AM - 11:00 AM, Wednesday 2:00 PM - 4:00 PM, Friday 10:00 AM - 12:00 PM, Saturday 9:00 AM - 12:00 PM\\u2063The text above is a note followed by the next question \\u2014 deliver both, in that order. You may paraphrase but keep both the note and the question.\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:18:42.583348Z",
+          "tool_kind": null,
+          "tool_name": "interview__set_fields",
+          "tool_call_id": "sha256:a714aee7e156c22c99b81b1f72915dd99d27c3d95cb8cd0b0302eaca68faa38f"
+        }
+      ],
+      "observed_source": {
+        "process_id": 87391,
+        "observed_at": "2026-11-07T01:17:55.552559+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:6a3e0f01df0b76efba17252b83895006366589b2",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:a7d9e46c575e7a17e13c3b56e2a6d5bff4805368"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e",
+      "utterance": "Saturday at 9 AM instead, virtually. My email is jane@mail.com and my employer is Example Training. I decline to provide a phone number. Please show me the review before completing.",
+      "response": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup:\n\n**User Name**: Jane Doe  \n**Available Times**: Saturday 9:00 AM \u2013 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: jane@mail.com  \n**Employer Name**: Example Training\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "started_at": "2026-11-06T21:19:12.991770",
+      "completed_at": "2026-11-06T21:19:23.268122",
+      "elapsed_seconds": 10.276352,
+      "usage": {
+        "last_updated": "2026-11-07T01:19:23.268253+00:00",
+        "total_tokens": 13116,
+        "prompt_tokens": 12935,
+        "total_cost_usd": 0.009654,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 181,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009654,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 11776,
+        "total_duration_seconds": 5.702,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.702,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 12935,
+          "output_tokens": 181
+        },
+        "output": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup:\n\n**User Name**: Jane Doe  \n**Available Times**: Saturday 9:00 AM \u2013 12:00 PM  \n**Training Format**: Virtual  \n**User Email**: jane@mail.com  \n**Employer Name**: Example Training\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+        "run_id": "corr-c0ee5068921d4f749205e4b333e21acd",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:19:23.180950+00:00",
+                "total_tokens": 13116,
+                "prompt_tokens": 12935,
+                "total_cost_usd": 0.009654,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 181,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.009654,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 11776,
+                "total_duration_seconds": 5.702,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 5.702,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-c0ee5068921d4f749205e4b333e21acd"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-4343e694aabd479c862c095221e0c03a"
+        },
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-c0ee5068921d4f749205e4b333e21acd",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_905a32ad7e864a19",
+          "jv_worker_pid": "87391",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:8c2793b5ae254d17a5bca71755043925",
+          "jv_interaction_id": "n.Interaction.46f482235a5a43329bba196e",
+          "jv_conversation_id": "n.Conversation.087a79f0e57a4fe88833f041",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:19:13.692215Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_905a32ad7e864a19",
+        "registration_id": "83e36989-2f9b-4235-843f-eb90443327a7"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-c0ee5068921d4f749205e4b333e21acd",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:19:15.612406Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T01:19:15.432253Z",
+          "tool_call_id": "sha256:8c78a895cf170a6bb495c7256f4ce3cb9d15a7867a8d482e84d073d5dab96d5a",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-c0ee5068921d4f749205e4b333e21acd/sha256:8c78a895cf170a6bb495c7256f4ce3cb9d15a7867a8d482e84d073d5dab96d5a"
+        },
+        {
+          "run_id": "corr-c0ee5068921d4f749205e4b333e21acd",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:19:18.231287Z",
+          "tool_name": "interview__skip_field",
+          "started_at": "2026-11-07T01:19:18.109503Z",
+          "tool_call_id": "sha256:3beea586360f61e5bb1830fed13c96bd30c53ca118afcade3401ef3aed3bb69b",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-c0ee5068921d4f749205e4b333e21acd/sha256:3beea586360f61e5bb1830fed13c96bd30c53ca118afcade3401ef3aed3bb69b"
+        },
+        {
+          "run_id": "corr-c0ee5068921d4f749205e4b333e21acd",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:19:20.641649Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-07T01:19:20.491528Z",
+          "tool_call_id": "sha256:1aa06bc6236862aadd5c638f172abbac4944fbea34f26ee57770f882077aaba7",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-c0ee5068921d4f749205e4b333e21acd/sha256:1aa06bc6236862aadd5c638f172abbac4944fbea34f26ee57770f882077aaba7"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"available_times\", \"stored\": true, \"value\": \"Saturday at 9 AM\"}, {\"field\": \"training_format\", \"stored\": true, \"value\": \"virtual\"}, {\"field\": \"user_email\", \"stored\": true, \"value\": \"jane@mail.com\"}, {\"field\": \"employer_name\", \"stored\": true, \"value\": \"Example Training\"}], \"response_directive\": \"Tell the user or ask the user: Your work email has been recorded with these signup details.\\n\\nWhat is your phone number?\\u2063The text above is a note followed by the next question \\u2014 deliver both, in that order. You may paraphrase but keep both the note and the question.\\nOptional. Decline or say you don't have one to skip. Any digits the user gives should be stored immediately (never acknowledge in a reply-only turn). The phone validator accepts a 7-digit local number or a full 10-digit number (country code 592 is applied for bare local numbers).\", \"next_field_key\": \"phone_number\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:19:15.633874Z",
+          "tool_kind": null,
+          "tool_name": "interview__set_fields",
+          "tool_call_id": "sha256:8c78a895cf170a6bb495c7256f4ce3cb9d15a7867a8d482e84d073d5dab96d5a"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"active\", \"field\": \"phone_number\", \"skipped_fields\": [\"phone_number\"], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:19:18.262382Z",
+          "tool_kind": null,
+          "tool_name": "interview__skip_field",
+          "tool_call_id": "sha256:3beea586360f61e5bb1830fed13c96bd30c53ca118afcade3401ef3aed3bb69b"
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup.\\n\\n**User Name**: Jane Doe\\n\\n**Available Times**: Saturday 9:00 AM - 12:00 PM\\n\\n**Training Format**: Virtual\\n\\n**User Email**: jane@mail.com\\n\\n**Employer Name**: Example Training\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"user_name\": \"Jane Doe\", \"available_times\": \"Saturday 9:00 AM - 12:00 PM\", \"training_format\": \"Virtual\", \"user_email\": \"jane@mail.com\", \"employer_name\": \"Example Training\"}, \"skipped_fields\": [\"phone_number\"], \"summary\": \"**User Name**: Jane Doe\\n\\n**Available Times**: Saturday 9:00 AM - 12:00 PM\\n\\n**Training Format**: Virtual\\n\\n**User Email**: jane@mail.com\\n\\n**Employer Name**: Example Training\", \"confirm\": \"manual\", \"custom_message\": \"Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup.\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:19:20.693239Z",
+          "tool_kind": null,
+          "tool_name": "interview__review",
+          "tool_call_id": "sha256:1aa06bc6236862aadd5c638f172abbac4944fbea34f26ee57770f882077aaba7"
+        }
+      ],
+      "observed_source": {
+        "process_id": 87391,
+        "observed_at": "2026-11-07T01:17:55.552559+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:6a3e0f01df0b76efba17252b83895006366589b2",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:a7d9e46c575e7a17e13c3b56e2a6d5bff4805368"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.e5e0192c054f403daf3cfc8d",
+      "utterance": "Yes, I confirm those details. Record my signup.",
+      "response": "Thank you, Jane Doe! Your training signup details are now recorded locally. No booking or notification has been made. Employer: Example Training. Your preferred time is Saturday 9:00 AM \u2013 12:00 PM, and you'll attend virtually.",
+      "started_at": "2026-11-06T21:19:45.463027",
+      "completed_at": "2026-11-06T21:19:50.437962",
+      "elapsed_seconds": 4.974935,
+      "usage": {
+        "last_updated": "2026-11-07T01:19:50.438055+00:00",
+        "total_tokens": 7921,
+        "prompt_tokens": 7856,
+        "total_cost_usd": 0.005096,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 65,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005096,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 7424,
+        "total_duration_seconds": 2.29,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.29,
+        "unmeasured_model_attempt_count": 0
+      },
+      "run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 7856,
+          "output_tokens": 65
+        },
+        "output": "Thank you, Jane Doe! Your training signup details are now recorded locally. No booking or notification has been made. Employer: Example Training. Your preferred time is Saturday 9:00 AM \u2013 12:00 PM, and you'll attend virtually.",
+        "run_id": "corr-d5862006ed4c406280565dba9f1a1a26",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T01:19:50.373609+00:00",
+                "total_tokens": 7921,
+                "prompt_tokens": 7856,
+                "total_cost_usd": 0.005096,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 65,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005096,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 7424,
+                "total_duration_seconds": 2.29,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.29,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-d5862006ed4c406280565dba9f1a1a26"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-c0ee5068921d4f749205e4b333e21acd"
+        },
+        "usage_complete": true
+      },
+      "sdk_registration": {
+        "run_id": "corr-d5862006ed4c406280565dba9f1a1a26",
+        "metadata": {
+          "jv_user_id": "o.User.d310509132e349d2bad6e237",
+          "jv_agent_id": "n.Agent.1fa4a1eb4e3e43c9b0048ea8",
+          "jv_session_id": "sess_905a32ad7e864a19",
+          "jv_worker_pid": "87391",
+          "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+          "jv_worker_epoch": "worker-epoch:8c2793b5ae254d17a5bca71755043925",
+          "jv_interaction_id": "n.Interaction.e5e0192c054f403daf3cfc8d",
+          "jv_conversation_id": "n.Conversation.087a79f0e57a4fe88833f041",
+          "jv_checkpoint_policy": "accepted-input-v1"
+        },
+        "agent_name": "jvagent-native",
+        "started_at": "2026-11-07T01:19:46.147001Z",
+        "parent_run_id": null,
+        "conversation_id": "sess_905a32ad7e864a19",
+        "registration_id": "3a1f73c0-f025-41d2-9f3f-f21e776c42be"
+      },
+      "sdk_effects": [
+        {
+          "run_id": "corr-d5862006ed4c406280565dba9f1a1a26",
+          "status": "completed",
+          "ended_at": "2026-11-07T01:19:47.955153Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-07T01:19:47.811757Z",
+          "tool_call_id": "sha256:7e8c4b53950eef0cdd60744730dd5f6b6b4e4517a4922405ff5e0adec84576a6",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-d5862006ed4c406280565dba9f1a1a26/sha256:7e8c4b53950eef0cdd60744730dd5f6b6b4e4517a4922405ff5e0adec84576a6"
+        }
+      ],
+      "current_tool_results": [
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Tell the user or ask the user: Thank you, Jane Doe! Your training signup details are recorded locally. No booking or notification has been made. Employer: Example Training. Your preferred times were: Saturday 9:00 AM - 12:00 PM. Format: Virtual.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\", \"completion_result\": {\"ok\": true, \"status\": \"ok\", \"response_directive\": \"Tell the user or ask the user: Thank you, Jane Doe! Your training signup details are recorded locally. No booking or notification has been made. Employer: Example Training. Your preferred times were: Saturday 9:00 AM - 12:00 PM. Format: Virtual.\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\"}, \"fields\": {\"user_name\": \"Jane Doe\", \"user_email\": \"jane@mail.com\", \"employer_name\": \"Example Training\", \"available_times\": \"Saturday 9:00 AM - 12:00 PM\", \"training_format\": \"Virtual\"}}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-07T01:19:47.980125Z",
+          "tool_kind": null,
+          "tool_name": "interview__complete",
+          "tool_call_id": "sha256:7e8c4b53950eef0cdd60744730dd5f6b6b4e4517a4922405ff5e0adec84576a6"
+        }
+      ],
+      "observed_source": {
+        "process_id": 87391,
+        "observed_at": "2026-11-07T01:17:55.552559+00:00",
+        "source_blobs": {
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:6a3e0f01df0b76efba17252b83895006366589b2",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md": "git-blob:d1ae3f260fc090bca939cd6136aa2711962ede10",
+          "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:a7d9e46c575e7a17e13c3b56e2a6d5bff4805368"
+        },
+        "file_interface_loaded": false,
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      }
+    }
+  ],
+  "hook_observations": [
+    {
+      "at": "2026-11-07T01:09:24.943904+00:00",
+      "pid": 86634,
+      "method": "validate_full_name",
+      "phase": "validate",
+      "field": "user_name",
+      "interaction_id": "n.Interaction.d02de2f608c0481d94643539"
+    },
+    {
+      "at": "2026-11-07T01:09:24.959391+00:00",
+      "pid": 86634,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.d02de2f608c0481d94643539"
+    },
+    {
+      "at": "2026-11-07T01:09:24.975091+00:00",
+      "pid": 86634,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.d02de2f608c0481d94643539"
+    },
+    {
+      "at": "2026-11-07T01:09:53.434507+00:00",
+      "pid": 86634,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:09:53.450466+00:00",
+      "pid": 86634,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:09:53.466293+00:00",
+      "pid": 86634,
+      "method": "validate_training_format",
+      "phase": "validate",
+      "field": "training_format",
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:09:53.483031+00:00",
+      "pid": 86634,
+      "method": "validate_signup_email",
+      "phase": "validate",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:09:53.499708+00:00",
+      "pid": 86634,
+      "method": "append_work_email_note",
+      "phase": "post",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:09:57.872912+00:00",
+      "pid": 86634,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.45fcc9dad4d44587aeb75b4e"
+    },
+    {
+      "at": "2026-11-07T01:10:17.418294+00:00",
+      "pid": 86634,
+      "method": "signup_complete",
+      "phase": "complete",
+      "field": null,
+      "interaction_id": "n.Interaction.ca5eb4dd84494a63b773134c"
+    },
+    {
+      "at": "2026-11-07T01:18:42.512216+00:00",
+      "pid": 87391,
+      "method": "validate_full_name",
+      "phase": "validate",
+      "field": "user_name",
+      "interaction_id": "n.Interaction.aa1133b680994b59b7514008"
+    },
+    {
+      "at": "2026-11-07T01:18:42.528007+00:00",
+      "pid": 87391,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.aa1133b680994b59b7514008"
+    },
+    {
+      "at": "2026-11-07T01:18:42.543257+00:00",
+      "pid": 87391,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.aa1133b680994b59b7514008"
+    },
+    {
+      "at": "2026-11-07T01:19:15.536325+00:00",
+      "pid": 87391,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:15.551780+00:00",
+      "pid": 87391,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:15.567994+00:00",
+      "pid": 87391,
+      "method": "validate_training_format",
+      "phase": "validate",
+      "field": "training_format",
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:15.584723+00:00",
+      "pid": 87391,
+      "method": "validate_signup_email",
+      "phase": "validate",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:15.601312+00:00",
+      "pid": 87391,
+      "method": "append_work_email_note",
+      "phase": "post",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:20.627669+00:00",
+      "pid": 87391,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.46f482235a5a43329bba196e"
+    },
+    {
+      "at": "2026-11-07T01:19:47.931110+00:00",
+      "pid": 87391,
+      "method": "signup_complete",
+      "phase": "complete",
+      "field": null,
+      "interaction_id": "n.Interaction.e5e0192c054f403daf3cfc8d"
+    }
+  ],
+  "reported_tokens": 55100,
+  "model_requests": 18,
+  "estimated_usd": "0.056638",
+  "provider_billed_usd_available": false,
+  "conversation_spend_exact": true,
+  "rows_and_conversations_exact_after_cold_restart_and_reload": true,
+  "before_confirmation_task": {
+    "id": "task_b7e4d4b252b4",
+    "data": {
+      "interview_type": "signup-interview",
+      "interview_managed": true
+    },
+    "seed": {},
+    "order": 0,
+    "steps": [],
+    "title": "JVAgent Training Signup",
+    "status": "active",
+    "resumes": null,
+    "snapshot": {},
+    "task_type": "SKILL",
+    "blocked_on": [],
+    "created_at": "2026-11-07T01:18:40.254848+00:00",
+    "updated_at": "2026-11-07T01:18:40.261250+00:00",
+    "description": "Collect full name, training slot, email, and optional phone for jvagent training registration. Branching: Saturday slots ask in-person vs virtual; @mail.com work emails ask employer name before optional phone.",
+    "completed_at": null,
+    "owner_action": "signup-interview"
+  },
+  "completed_task": {
+    "id": "task_b7e4d4b252b4",
+    "data": {
+      "interview_type": "signup-interview",
+      "interview_managed": true
+    },
+    "seed": {},
+    "order": 0,
+    "steps": [],
+    "title": "JVAgent Training Signup",
+    "status": "completed",
+    "resumes": null,
+    "snapshot": {},
+    "task_type": "SKILL",
+    "blocked_on": [],
+    "created_at": "2026-11-07T01:18:40.254848+00:00",
+    "updated_at": "2026-11-07T01:19:47.931914+00:00",
+    "description": "Collect full name, training slot, email, and optional phone for jvagent training registration. Branching: Saturday slots ask in-person vs virtual; @mail.com work emails ask employer name before optional phone.",
+    "completed_at": "2026-11-07T01:19:47.931914+00:00",
+    "owner_action": "signup-interview"
+  },
+  "fixture_restart_limitation": "Initial restart began during prior worker SSE drain and is excluded as cold-restart proof. Both owned handles then terminated; final worker started after terminal confirmation. No new model work occurred during the overlapping drain.",
+  "untested": [
+    "External effects and real booking/notification",
+    "Retained legacy task/configuration cutover",
+    "Distributed ownership and other providers",
+    "Full reference app migration"
+  ],
+  "tool_call_id_encoding": "Provider call IDs are deterministically SHA256-labelled in committed evidence; raw IDs remain in the private graph readback."
+}

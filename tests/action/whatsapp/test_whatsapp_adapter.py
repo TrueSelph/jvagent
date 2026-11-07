@@ -74,6 +74,31 @@ async def test_adapter_routes_whatsapp_cloud_message(adapter_and_api):
 
 
 @pytest.mark.asyncio
+async def test_unbound_native_marker_needs_no_optional_sdk(
+    adapter_and_api, monkeypatch
+):
+    import sys
+
+    from jvagent.memory.interaction import Interaction
+
+    interaction = Interaction(user_id="16505551234", session_id="s1")
+    await interaction.save()
+    monkeypatch.setitem(sys.modules, "jvagent.harness.step_store", None)
+    adapter, api = adapter_and_api
+    assert (
+        await adapter.send(
+            _msg(
+                interaction_id=interaction.id,
+                content="Hello",
+                metadata={"native_replay": False},
+            )
+        )
+        is False
+    )
+    assert not api.text_calls and not api.cloud_calls
+
+
+@pytest.mark.asyncio
 async def test_adapter_routes_cta_url_metadata(adapter_and_api):
     adapter, api = adapter_and_api
     ok = await adapter.send(

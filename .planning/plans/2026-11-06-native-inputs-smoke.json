@@ -1,0 +1,822 @@
+{
+  "observed_at": "2026-11-06T17:13:20.023705+00:00",
+  "parent_revision": "git-commit:cc02d8b97fadbc05284f3176b42fa6dd599cdcc5",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-inputs-smoke",
+    "backend": 8162,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    },
+    "upload_method": "Browser-generated synthetic File objects through the actual composer file-input change handler; OS picker paths were refused by the tool workspace restriction. No fabricated model response or backend patch.",
+    "binary_sha256": {
+      "image/png": "sha256:d516fcac0f30ca9ab091ba5de5655f0316c3352da8257ab1737547c6bd08b095",
+      "application/pdf": "sha256:8ad6118016ecf3d1c010fb5098995e9d2cd5a9d8f9b9a302f72283ebfeede159"
+    },
+    "text_note_sha256": "sha256:da32eb2dadc8468299816b895d1b4e8077c06393e30494948f06b9a980f20cb5"
+  },
+  "runtime_observer": {
+    "process_id": 39932,
+    "observed_at": "2026-11-06T17:13:19.783079+00:00",
+    "source_blobs": {
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:d884ce8cd9e7467d069ad9be9d7cbc12b0013329",
+      "jvagent/harness/inputs.py": "git-blob:ac741adc2a4e75ec1e03ced4b664aaaaa5a2a016",
+      "jvagent/harness/native.py": "git-blob:d52b42c6b520324db2b4ff9bc09395e779a4e05e"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 38723,
+      "observed_at": "2026-11-06T16:57:13.871678+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:18433c046bcc8ee70f7a712902ff4c56b22cc0b0",
+        "jvagent/harness/inputs.py": "git-blob:ac741adc2a4e75ec1e03ced4b664aaaaa5a2a016",
+        "jvagent/harness/native.py": "git-blob:d52b42c6b520324db2b4ff9bc09395e779a4e05e"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 39137,
+      "observed_at": "2026-11-06T17:00:08.591617+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:18433c046bcc8ee70f7a712902ff4c56b22cc0b0",
+        "jvagent/harness/inputs.py": "git-blob:ac741adc2a4e75ec1e03ced4b664aaaaa5a2a016",
+        "jvagent/harness/native.py": "git-blob:d52b42c6b520324db2b4ff9bc09395e779a4e05e"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 39679,
+      "observed_at": "2026-11-06T17:03:44.558799+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:88c90e1bb72b80c1bf79e2a64ebbec1c1bca0595",
+        "jvagent/harness/inputs.py": "git-blob:ac741adc2a4e75ec1e03ced4b664aaaaa5a2a016",
+        "jvagent/harness/native.py": "git-blob:d52b42c6b520324db2b4ff9bc09395e779a4e05e"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 39932,
+      "observed_at": "2026-11-06T17:06:13.051420+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:d884ce8cd9e7467d069ad9be9d7cbc12b0013329",
+        "jvagent/harness/inputs.py": "git-blob:ac741adc2a4e75ec1e03ced4b664aaaaa5a2a016",
+        "jvagent/harness/native.py": "git-blob:d52b42c6b520324db2b4ff9bc09395e779a4e05e"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.a540012228b746af87014edc",
+      "scenario": "initial_multimodal_read",
+      "request_outcome": "passed",
+      "utterance": "Inspect all three attachments. Report the image's code and shape color, the PDF's reference and amount, and the text note's warehouse and quantity. Base your answer on the actual files.",
+      "response": "Here are the requested details from the attachments:\n\n1. Image (panel.png):\n   - Code: ORCHID-47\n   - Shape color: Blue\n\n2. PDF (record.pdf):\n   - Reference: CEDAR-86\n   - Amount: 147.25\n\n3. Text note (note.txt):\n   - Warehouse: NORTH-19\n   - Quantity: 38",
+      "started_at": "2026-11-06T12:59:15.717885-04:00",
+      "completed_at": "2026-11-06T12:59:19.726017-04:00",
+      "duration_seconds": 4.008132,
+      "run_status": "delivered",
+      "worker_pid": "38723",
+      "sdk_digest": "sha256:264db46f0ffb9fd62d733a7a5142ec4fa7f55a9f49733db22052b0f333b3657d",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 70413,
+      "persisted_binary_receipts": [
+        {
+          "media_type": "image/png",
+          "size_bytes": 13527,
+          "sha256": "sha256:d516fcac0f30ca9ab091ba5de5655f0316c3352da8257ab1737547c6bd08b095"
+        },
+        {
+          "media_type": "application/pdf",
+          "size_bytes": 666,
+          "sha256": "sha256:8ad6118016ecf3d1c010fb5098995e9d2cd5a9d8f9b9a302f72283ebfeede159"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T16:59:19.726060+00:00",
+        "total_tokens": 857,
+        "prompt_tokens": 774,
+        "total_cost_usd": 0.002212,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 83,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002212,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.947,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.947,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 857,
+            "prompt_tokens": 774,
+            "completion_tokens": 83,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002212,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-0815c4af37ed4930b7ea4676739850dc",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-0815c4af37ed4930b7ea4676739850dc:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.d0e79770b98649b2b384e305",
+      "scenario": "restart_new_attachment_details",
+      "request_outcome": "passed",
+      "utterance": "After the backend restart, inspect the original attachments again. What exact wording is below the image code, what title is printed on the PDF, and what heading starts the text note? These details were not in your last answer; do not infer them.",
+      "response": "Here are the exact details from the original attachments:\n\n1. Image (panel.png):\n   - Wording below the image code: Blue square\n\n2. PDF (record.pdf):\n   - Title printed on the PDF: Synthetic attachment record\n\n3. Text note (note.txt):\n   - Heading that starts the text note: Synthetic inventory note",
+      "started_at": "2026-11-06T13:00:44.643134-04:00",
+      "completed_at": "2026-11-06T13:00:47.813608-04:00",
+      "duration_seconds": 3.170474,
+      "run_status": "delivered",
+      "worker_pid": "39137",
+      "sdk_digest": "sha256:0558467aa851bd072ce8759aac5d6fd8ef636565c266728003a5c69fc951fced",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 78548,
+      "persisted_binary_receipts": [
+        {
+          "media_type": "image/png",
+          "size_bytes": 13527,
+          "sha256": "sha256:d516fcac0f30ca9ab091ba5de5655f0316c3352da8257ab1737547c6bd08b095"
+        },
+        {
+          "media_type": "application/pdf",
+          "size_bytes": 666,
+          "sha256": "sha256:8ad6118016ecf3d1c010fb5098995e9d2cd5a9d8f9b9a302f72283ebfeede159"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T17:00:47.813673+00:00",
+        "total_tokens": 983,
+        "prompt_tokens": 913,
+        "total_cost_usd": 0.002386,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 70,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002386,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.861,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.861,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 983,
+            "prompt_tokens": 913,
+            "completion_tokens": 70,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002386,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-98ffe25ee5364a909775f414706aa3cb",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-98ffe25ee5364a909775f414706aa3cb:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.ebea707dcd4549efa78252a1",
+      "scenario": "retained_false_enabled_claim_without_attachment",
+      "request_outcome": "retained_semantic_failure",
+      "utterance": "Describe the uploaded image. If this input format is not enabled, refuse the request rather than guessing.",
+      "response": "Image input is enabled. Please upload the image you would like me to describe.",
+      "started_at": "2026-11-06T13:01:56.949768-04:00",
+      "completed_at": "2026-11-06T13:01:58.866009-04:00",
+      "duration_seconds": 1.916241,
+      "run_status": "delivered",
+      "worker_pid": "39137",
+      "sdk_digest": "sha256:3ae7918e4741dd2c3a8349d3b981f6a0e7b4108214539df4828fabe2635f8b00",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 11907,
+      "persisted_binary_receipts": [],
+      "usage": {
+        "last_updated": "2026-11-06T17:01:58.866044+00:00",
+        "total_tokens": 279,
+        "prompt_tokens": 261,
+        "total_cost_usd": 0.000666,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 18,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000666,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.581,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.581,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 279,
+            "prompt_tokens": 261,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000666,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-332d31edcbd94a02bdc4ed171dfcd1fb",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-332d31edcbd94a02bdc4ed171dfcd1fb:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.6b87459f01044dba8077c767",
+      "scenario": "host_policy_denied_image_before_model",
+      "request_outcome": "expected_input_refusal",
+      "utterance": "Describe this uploaded image.",
+      "response": "The attachments could not be processed. Attachment formats must be enabled in the agent's input_media_types setting. Supported formats are inline PNG, JPEG, WebP, GIF, PDF or UTF-8 text files, at most 5 MiB each and 10 MiB total across 20 files. Remote attachment URLs are not supported by this native profile. Start a new conversation with the corrected attachments.",
+      "started_at": "2026-11-06T13:04:23.914932-04:00",
+      "completed_at": "2026-11-06T13:04:24.013747-04:00",
+      "duration_seconds": 0.098815,
+      "run_status": "blocked",
+      "worker_pid": null,
+      "sdk_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "snapshot_count": 0,
+      "serialized_step_bytes": 2,
+      "persisted_binary_receipts": [],
+      "usage": {
+        "last_updated": "2026-11-06T17:04:24.013788+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": []
+    },
+    {
+      "id": "n.Interaction.95d60f72d81b48d48b4123d2",
+      "scenario": "retained_misleading_image_as_text_suggestion",
+      "request_outcome": "retained_semantic_failure",
+      "utterance": "Describe the uploaded image. If this input format is not enabled, refuse the request rather than guessing.",
+      "response": "I do not see any uploaded image or file in your message. Please upload an image in a supported format (such as text/plain), and I will describe it for you. If you need help with another type of file, let me know!",
+      "started_at": "2026-11-06T13:04:53.793579-04:00",
+      "completed_at": "2026-11-06T13:04:56.416351-04:00",
+      "duration_seconds": 2.622772,
+      "run_status": "delivered",
+      "worker_pid": "39679",
+      "sdk_digest": "sha256:f04a7deb95a608223b171addbc53999a2a6fa34b237e5cc5ec98a65ba189ab36",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 12457,
+      "persisted_binary_receipts": [],
+      "usage": {
+        "last_updated": "2026-11-06T17:04:56.416391+00:00",
+        "total_tokens": 329,
+        "prompt_tokens": 278,
+        "total_cost_usd": 0.000964,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 51,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000964,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.621,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.621,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 329,
+            "prompt_tokens": 278,
+            "completion_tokens": 51,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000964,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-186b8ea317bf4dc98276c451fc196938",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-186b8ea317bf4dc98276c451fc196938:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.8a4c2a76b59e4a47b6dc8f2c",
+      "scenario": "explicit_policy_refusal_without_attachment",
+      "request_outcome": "passed",
+      "utterance": "Describe the uploaded image. If this input format is not enabled, refuse the request rather than guessing.",
+      "response": "Currently, image input is not enabled. I cannot view or describe images. If you have a text-based file, please upload it, and I can assist you with that.",
+      "started_at": "2026-11-06T13:07:11.656416-04:00",
+      "completed_at": "2026-11-06T13:07:14.250499-04:00",
+      "duration_seconds": 2.594083,
+      "run_status": "delivered",
+      "worker_pid": "39932",
+      "sdk_digest": "sha256:04332702d5eac4a279450975482e6cd313b826518c7254f177c84e96aaed0ba7",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 12627,
+      "persisted_binary_receipts": [],
+      "usage": {
+        "last_updated": "2026-11-06T17:07:14.250539+00:00",
+        "total_tokens": 334,
+        "prompt_tokens": 297,
+        "total_cost_usd": 0.00089,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 37,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00089,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.663,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.663,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 334,
+            "prompt_tokens": 297,
+            "completion_tokens": 37,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00089,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ef0ba67302c64e0ba1c2f692b266a286",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-ef0ba67302c64e0ba1c2f692b266a286:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.86e690e792de47e394f9136e",
+      "scenario": "final_multimodal_read",
+      "request_outcome": "passed",
+      "utterance": "Inspect all three attachments. Report the image's code and shape color, the PDF's reference and amount, and the text note's warehouse and quantity. Base your answer on the actual files.",
+      "response": "Here are the details from the three attachments:\n\n1. Image (panel.png):\n   - Code: ORCHID-47\n   - Shape color: Blue\n\n2. PDF (record.pdf):\n   - Reference: CEDAR-86\n   - Amount: 147.25\n\n3. Text note (note.txt):\n   - Warehouse: NORTH-19\n   - Quantity: 38",
+      "started_at": "2026-11-06T13:08:11.634199-04:00",
+      "completed_at": "2026-11-06T13:08:13.455754-04:00",
+      "duration_seconds": 1.821555,
+      "run_status": "delivered",
+      "worker_pid": "39932",
+      "sdk_digest": "sha256:5c94c99ce32aaf3bc439b5b0a16e1f54c52b79a89440b6edf054053476e34d8d",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 71233,
+      "persisted_binary_receipts": [
+        {
+          "media_type": "image/png",
+          "size_bytes": 13527,
+          "sha256": "sha256:d516fcac0f30ca9ab091ba5de5655f0316c3352da8257ab1737547c6bd08b095"
+        },
+        {
+          "media_type": "application/pdf",
+          "size_bytes": 666,
+          "sha256": "sha256:8ad6118016ecf3d1c010fb5098995e9d2cd5a9d8f9b9a302f72283ebfeede159"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T17:08:13.455788+00:00",
+        "total_tokens": 918,
+        "prompt_tokens": 835,
+        "total_cost_usd": 0.002334,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 83,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002334,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.486,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.486,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 918,
+            "prompt_tokens": 835,
+            "completion_tokens": 83,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002334,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-54cf47c8010748a0850a1fff41970216",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-54cf47c8010748a0850a1fff41970216:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.e7e89cd87768424983db4dbf",
+      "spend": {},
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.6df51f5e6e484c99a6d7398b",
+      "spend": {
+        "usd": "0.004598",
+        "tokens": 1840,
+        "requests": 2,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.ce3ee56cccae47b5b0b13dd7",
+      "spend": {
+        "usd": "0.000666",
+        "tokens": 279,
+        "requests": 1,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.9f211c66f86b40f49b13a8dd",
+      "spend": {
+        "usd": "0.000964",
+        "tokens": 329,
+        "requests": 1,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.90184c077bef4fde964e11af",
+      "spend": {
+        "usd": "0.002334",
+        "tokens": 918,
+        "requests": 1,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.32beeb5d618146339cd8636d",
+      "spend": {
+        "usd": "0.000890",
+        "tokens": 334,
+        "requests": 1,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "reload_audit": {
+    "label": "reload",
+    "interaction_hashes": {
+      "n.Interaction.a540012228b746af87014edc": "sha256:7e92df3f851be41d3d5df3284ca2f4127fd3ee3607010500c5acd0017532f0bf",
+      "n.Interaction.d0e79770b98649b2b384e305": "sha256:d1397be054968c1152060017fb0371575f24a2dd682a56fef73ed6b90404acfb",
+      "n.Interaction.6b87459f01044dba8077c767": "sha256:0e5b11106093b4b26e7fca96e61ef5ac2f8de1092eb321de99960ca0a7ece93c",
+      "n.Interaction.ebea707dcd4549efa78252a1": "sha256:bfeaef8a2ff8297760a3b92cda13982219b670b5286603f35825d733dacf5707",
+      "n.Interaction.95d60f72d81b48d48b4123d2": "sha256:566078f4e44ac69ff0124563dfcc00487f8286b54c326a92d498e915064893ba",
+      "n.Interaction.8a4c2a76b59e4a47b6dc8f2c": "sha256:98d266c32561ceb6d67cf3ffe2bbe3e6e70864fe123f79d895063cdeec899b93",
+      "n.Interaction.86e690e792de47e394f9136e": "sha256:3d44a2345bb49255aa92c5b7f35149e6362d6591b9feb30a9cd5d5fb4e0727bc"
+    },
+    "interaction_count": 7,
+    "registration_count": 6,
+    "conversations": {
+      "n.Conversation.e7e89cd87768424983db4dbf": {
+        "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {},
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.6df51f5e6e484c99a6d7398b": {
+        "native_spend_digest": "sha256:11b3e2aa7aee17a967f29d4685044be6ee40fcd27af27ece9751f5fe523be44b",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_c212ec7896e64bfb": {
+            "spent": {
+              "usd": "0.004598",
+              "tokens": 1840,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:00:47.588333+00:00"
+          },
+          "default|run|*|corr-0815c4af37ed4930b7ea4676739850dc": {
+            "spent": {
+              "usd": "0.002212",
+              "tokens": 857,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T16:59:19.491637+00:00"
+          },
+          "default|run|*|corr-98ffe25ee5364a909775f414706aa3cb": {
+            "spent": {
+              "usd": "0.002386",
+              "tokens": 983,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:00:47.588333+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.ce3ee56cccae47b5b0b13dd7": {
+        "native_spend_digest": "sha256:9a051fe9a44e2264df9db8ba71e34ffc743f4168ee128303dd6fc5311f57a253",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_7498ad4c56184bbe": {
+            "spent": {
+              "usd": "0.000666",
+              "tokens": 279,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:01:58.640898+00:00"
+          },
+          "default|run|*|corr-332d31edcbd94a02bdc4ed171dfcd1fb": {
+            "spent": {
+              "usd": "0.000666",
+              "tokens": 279,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:01:58.640898+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.9f211c66f86b40f49b13a8dd": {
+        "native_spend_digest": "sha256:234714d8c1dc5970c6f925047b4871d9cfe45d3aee651c6e7130cc9cadecbbdf",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_1ca94ade37d8465a": {
+            "spent": {
+              "usd": "0.000964",
+              "tokens": 329,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:04:56.198804+00:00"
+          },
+          "default|run|*|corr-186b8ea317bf4dc98276c451fc196938": {
+            "spent": {
+              "usd": "0.000964",
+              "tokens": 329,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:04:56.198804+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.90184c077bef4fde964e11af": {
+        "native_spend_digest": "sha256:993eb2b62a6bd22555b3ad089032504ffc9ab5bd3f5d230927be778865d62b97",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_bee72a99d1104994": {
+            "spent": {
+              "usd": "0.002334",
+              "tokens": 918,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:08:13.228084+00:00"
+          },
+          "default|run|*|corr-54cf47c8010748a0850a1fff41970216": {
+            "spent": {
+              "usd": "0.002334",
+              "tokens": 918,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:08:13.228084+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.32beeb5d618146339cd8636d": {
+        "native_spend_digest": "sha256:ea8ff464dee77c4113dd3b94b81c5fd7664b3b0b56c839574edccf9c551a37de",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_175fc3047e6342da": {
+            "spent": {
+              "usd": "0.000890",
+              "tokens": 334,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:07:14.038827+00:00"
+          },
+          "default|run|*|corr-ef0ba67302c64e0ba1c2f692b266a286": {
+            "spent": {
+              "usd": "0.000890",
+              "tokens": 334,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:07:14.038827+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "first_restart_audit": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.a540012228b746af87014edc": "sha256:7e92df3f851be41d3d5df3284ca2f4127fd3ee3607010500c5acd0017532f0bf"
+    },
+    "interaction_count": 1,
+    "registration_count": 1,
+    "conversations": {
+      "n.Conversation.6df51f5e6e484c99a6d7398b": {
+        "native_spend_digest": "sha256:c101b43bedb21a6eb2b9015ce22d902f85a0a4d4cbfddaeab1efcc1c3be68d03",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_c212ec7896e64bfb": {
+            "spent": {
+              "usd": "0.002212",
+              "tokens": 857,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T16:59:19.491637+00:00"
+          },
+          "default|run|*|corr-0815c4af37ed4930b7ea4676739850dc": {
+            "spent": {
+              "usd": "0.002212",
+              "tokens": 857,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T16:59:19.491637+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "original_five_interactions_unchanged": true,
+  "totals": {
+    "interactions": 7,
+    "model_turns": 6,
+    "delivered_model_replies": 6,
+    "expected_zero_attempt_refusals": 1,
+    "retained_semantic_failures": 2,
+    "provider_requests": 6,
+    "provider_reported_tokens": 3700,
+    "estimated_cost_usd": "0.009452",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Only local GPT-4.1 PNG/PDF/plain-text actual-provider input is qualified. Other admitted MIME formats have deterministic envelope coverage only.",
+    "The first policy-negative setup failed to attach a file. Its no-file response exposed a false enabled claim; an intermediate generic MIME policy produced a second misleading reply. Both are retained failures. Explicit image/PDF facts repair the final same-query response.",
+    "Typed binary data is still inline in graph snapshots. Official media offloading, retention, maximum-size and long-session qualification remain open.",
+    "Invalid inputs require a new conversation; same-session rejected-input recovery is not qualified.",
+    "Remote/channel-specific media downloads, legacy vision flag migration, other providers and final engine deletion/release remain open."
+  ]
+}

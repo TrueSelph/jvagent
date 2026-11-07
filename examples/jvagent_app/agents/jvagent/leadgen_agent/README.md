@@ -10,8 +10,8 @@ through the standard MCP interface — all without external credentials.
 | Capability | Where |
 |---|---|
 | **Conversational lead capture** (proactive, value-tied contact gap-fill) | `jvagent/leadgen` + skill `product_inquiry_leads` |
-| **FAQ answering** (pricing, trial, onboarding, integrations, security) | skill `product_faq` → `storefront__faq` |
-| **Product search / recommendation** | skill `product_search` → `storefront__search_products` |
+| **FAQ answering** (pricing, trial, onboarding, integrations, security) | skill `product-faq` → `storefront__faq` |
+| **Product search / recommendation** | skill `product-search` → `storefront__search_products` |
 | **First-message intro** woven into the reply (no double-greeting) | `jvagent/intro_interact_action` |
 | **Return-visit recall** (same user, new session) | `leadgen__retrieve` over the per-user `LeadRecord` |
 | **Destination-agnostic sync** to a creds-free flat file | `jvagent/mcp` `leadfile` server + action-level `sync_destinations` |
@@ -28,8 +28,8 @@ leadgen_agent/
 ├── actions/contrib/storefront/     # mock FAQ + product-catalog tools (dummy data)
 └── skills/
     ├── product_inquiry_leads/      # leadgen skill (fields, aliases, gap-fill)
-    ├── product_faq/                # SOP → storefront__faq
-    └── product_search/             # SOP → storefront__search_products
+    ├── product-faq/                # SOP → storefront__faq
+    └── product-search/             # SOP → storefront__search_products
 ```
 
 ## Model floor

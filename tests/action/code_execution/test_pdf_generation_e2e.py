@@ -14,7 +14,7 @@ import pytest
 from jvagent.action.code_execution.code_execution_action import CodeExecutionAction
 from jvagent.action.code_execution.executor import ExecRequest, SubprocessExecutor
 
-_SKILL_DIR = Path("jvagent/skills/pdf_generation")
+_SKILL_DIR = Path("jvagent/skills/pdf-generation")
 
 
 class _Visitor:

@@ -1,0 +1,617 @@
+{
+  "parent_revision": "git-commit:9f387cb6f773ec15603f83b20605de6eff993e58",
+  "source_blobs": {
+    "jvagent/action/file_interface/_core.py": "git-blob:f0c4d89f289d05ef8ef07563dcff282f4b388162",
+    "jvagent/action/file_interface/file_interface_action.py": "git-blob:312cd4f6b3f66521a7b1421d3a0d10cff2a8b701",
+    "tests/action/file_interface/test_bounded_file_reads.py": "git-blob:d3b5cc45b506a2622b95f12ca770131e572bc9f3",
+    "tests/harness/native/test_file_read_adapter.py": "git-blob:f22130de449b5214370eb670d1ecafb248046f3c"
+  },
+  "fixture": "/private/tmp/jvagent-native-file-read-smoke",
+  "new_empty_graph": true,
+  "file_bytes": 180025,
+  "configured_read_max_bytes": 4096,
+  "runtime_before_formatting_restart": {
+    "process_id": 68056,
+    "observed_at": "2026-11-06T06:58:10.679437+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/_core.py": "git-blob:9e9b2103fb134322628a5ad90c9826b25b91dc77",
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:6542c50ea01c1900df07177eccc7276399ba9b05"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_final": {
+    "process_id": 68451,
+    "observed_at": "2026-11-06T07:04:41.970541+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/_core.py": "git-blob:f0c4d89f289d05ef8ef07563dcff282f4b388162",
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:312cd4f6b3f66521a7b1421d3a0d10cff2a8b701"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.2973305dd95f42799e1e7435",
+      "utterance": "Read only the first two lines of schedule.txt using the file tool and tell me its room and start time.",
+      "response": "The room is Maple and the start time is 16:45.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 819,
+          "output_tokens": 39
+        },
+        "output": "The room is Maple and the start time is 16:45.",
+        "run_id": "corr-ae3e386139c041b982c3bac1b2ab9353",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 4.195126,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 403,
+            "prompt_tokens": 380,
+            "completion_tokens": 23,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000944,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ae3e386139c041b982c3bac1b2ab9353",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-ae3e386139c041b982c3bac1b2ab9353:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 455,
+            "prompt_tokens": 439,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001006,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ae3e386139c041b982c3bac1b2ab9353",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-ae3e386139c041b982c3bac1b2ab9353:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.901024,
+          "started_at": "2026-11-06T06:55:49.838008+00:00",
+          "completed_at": "2026-11-06T06:55:51.739032+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-ae3e386139c041b982c3bac1b2ab9353",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.160298,
+          "started_at": "2026-11-06T06:55:51.914566+00:00",
+          "completed_at": "2026-11-06T06:55:53.074864+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-ae3e386139c041b982c3bac1b2ab9353",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "trace": [
+        {
+          "content": "file_interface__read_file",
+          "message_id": "o.ResponseMessage.415d289da98e4780ac37e603",
+          "segment_id": "call_EZRvzh5CwWkp4aDfsGBqjN33",
+          "started_at": "2026-11-06T06:55:51.814599+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:55:51.814604+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"schedule.txt\", \"content\": \"Room: Maple\\nStart: 16:45\\n\"}",
+          "message_id": "o.ResponseMessage.07b9b74a1c1141d3bd14b20f",
+          "segment_id": "call_EZRvzh5CwWkp4aDfsGBqjN33",
+          "started_at": "2026-11-06T06:55:51.840020+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:55:51.840024+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "registrations": 1
+    },
+    {
+      "id": "n.Interaction.8169d1f270314f99b06f557f",
+      "utterance": "Now read the whole schedule.txt without head or tail. If the tool refuses, report the refusal.",
+      "response": "The read failed: the tool refused to read the whole schedule.txt file.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1022,
+          "output_tokens": 36
+        },
+        "output": "The read failed: the tool refused to read the whole schedule.txt file.",
+        "run_id": "corr-7ee22d6e6315431686674d52534be737",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-ae3e386139c041b982c3bac1b2ab9353"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 3.62052,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 500,
+            "prompt_tokens": 481,
+            "completion_tokens": 19,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001114,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7ee22d6e6315431686674d52534be737",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-7ee22d6e6315431686674d52534be737:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 558,
+            "prompt_tokens": 541,
+            "completion_tokens": 17,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001218,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7ee22d6e6315431686674d52534be737",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-7ee22d6e6315431686674d52534be737:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.309755,
+          "started_at": "2026-11-06T06:56:24.267126+00:00",
+          "completed_at": "2026-11-06T06:56:25.576881+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-7ee22d6e6315431686674d52534be737",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.27367,
+          "started_at": "2026-11-06T06:56:25.741689+00:00",
+          "completed_at": "2026-11-06T06:56:27.015359+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-7ee22d6e6315431686674d52534be737",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "trace": [
+        {
+          "content": "file_interface__read_file",
+          "message_id": "o.ResponseMessage.d73f5d471fa5430fb24fd3ec",
+          "segment_id": "call_WpPDyy9SLfOHMROFfsyvP2KE",
+          "started_at": "2026-11-06T06:56:25.625907+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:56:25.625911+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": false, \"error\": \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded\", \"max_bytes\": 4096}",
+          "message_id": "o.ResponseMessage.5fdc6218fef6416f9b627363",
+          "segment_id": "call_WpPDyy9SLfOHMROFfsyvP2KE",
+          "started_at": "2026-11-06T06:56:25.664844+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:56:25.664849+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "registrations": 1
+    },
+    {
+      "id": "n.Interaction.87df20cc5d7443d4b1fc7ce6",
+      "utterance": "Read linked.txt using the file tool. If it fails, state the failure and do not try another path.",
+      "response": "The read failed: the tool could not access linked.txt.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1232,
+          "output_tokens": 33
+        },
+        "output": "The read failed: the tool could not access linked.txt.",
+        "run_id": "corr-7ad7e14da93049b383914498381f4082",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-7ee22d6e6315431686674d52534be737"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 4.45105,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 605,
+            "prompt_tokens": 586,
+            "completion_tokens": 19,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001324,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7ad7e14da93049b383914498381f4082",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-7ad7e14da93049b383914498381f4082:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 660,
+            "prompt_tokens": 646,
+            "completion_tokens": 14,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001404,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7ad7e14da93049b383914498381f4082",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-7ad7e14da93049b383914498381f4082:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.143682,
+          "started_at": "2026-11-06T06:57:12.864045+00:00",
+          "completed_at": "2026-11-06T06:57:14.007727+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-7ad7e14da93049b383914498381f4082",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.263734,
+          "started_at": "2026-11-06T06:57:14.659735+00:00",
+          "completed_at": "2026-11-06T06:57:15.923469+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-7ad7e14da93049b383914498381f4082",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "trace": [
+        {
+          "content": "file_interface__read_file",
+          "message_id": "o.ResponseMessage.f87e070482b04027bdef8992",
+          "segment_id": "call_rPcn8lbjnRgXdTyLTHSR1Axp",
+          "started_at": "2026-11-06T06:57:14.351117+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:57:14.351123+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": false, \"error\": \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded\", \"max_bytes\": 4096}",
+          "message_id": "o.ResponseMessage.306c37cf38c34c5bb119dde7",
+          "segment_id": "call_rPcn8lbjnRgXdTyLTHSR1Axp",
+          "started_at": "2026-11-06T06:57:14.398879+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:57:14.398884+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "registrations": 1
+    },
+    {
+      "id": "n.Interaction.f8c3403b9a524897a046be87",
+      "utterance": "Read the first two lines of schedule.txt again through the file tool and confirm the room and start time.",
+      "response": "The room is Maple and the start time is 16:45, as confirmed from the first two lines of schedule.txt.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1433,
+          "output_tokens": 50
+        },
+        "output": "The room is Maple and the start time is 16:45, as confirmed from the first two lines of schedule.txt.",
+        "run_id": "corr-b9d1020f492647e0807a65b82dfbc2b0",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-7ad7e14da93049b383914498381f4082"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "interaction_seconds": 4.793144,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 710,
+            "prompt_tokens": 687,
+            "completion_tokens": 23,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001558,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-b9d1020f492647e0807a65b82dfbc2b0",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-b9d1020f492647e0807a65b82dfbc2b0:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 773,
+            "prompt_tokens": 746,
+            "completion_tokens": 27,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001708,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-b9d1020f492647e0807a65b82dfbc2b0",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-b9d1020f492647e0807a65b82dfbc2b0:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.357529,
+          "started_at": "2026-11-06T06:59:33.001766+00:00",
+          "completed_at": "2026-11-06T06:59:34.359295+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-b9d1020f492647e0807a65b82dfbc2b0",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.654082,
+          "started_at": "2026-11-06T06:59:34.564112+00:00",
+          "completed_at": "2026-11-06T06:59:36.218194+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-b9d1020f492647e0807a65b82dfbc2b0",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "trace": [
+        {
+          "content": "file_interface__read_file",
+          "message_id": "o.ResponseMessage.f32eb39fb0fd4ae8aefbedea",
+          "segment_id": "call_i9pJ06Zo2IOBopb2cEkSdGWF",
+          "started_at": "2026-11-06T06:59:34.444384+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:59:34.444388+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"schedule.txt\", \"content\": \"Room: Maple\\nStart: 16:45\\n\"}",
+          "message_id": "o.ResponseMessage.8c66d861973344098e708c76",
+          "segment_id": "call_i9pJ06Zo2IOBopb2cEkSdGWF",
+          "started_at": "2026-11-06T06:59:34.482032+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T06:59:34.482036+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "registrations": 1
+    }
+  ],
+  "conversation": {
+    "id": "n.Conversation.6dfdcb536f9e451fbe1c443b",
+    "tasks": [],
+    "native_spend": {
+      "default|conversation|*|sess_0efe836ce9f3407d": {
+        "spent": {
+          "usd": "0.010276",
+          "tokens": 4664,
+          "requests": 8,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-12-06T06:59:36.247356+00:00"
+      },
+      "default|run|*|corr-7ad7e14da93049b383914498381f4082": {
+        "spent": {
+          "usd": "0.002728",
+          "tokens": 1265,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T06:57:15.934898+00:00"
+      },
+      "default|run|*|corr-7ee22d6e6315431686674d52534be737": {
+        "spent": {
+          "usd": "0.002332",
+          "tokens": 1058,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T06:56:27.022958+00:00"
+      },
+      "default|run|*|corr-ae3e386139c041b982c3bac1b2ab9353": {
+        "spent": {
+          "usd": "0.001950",
+          "tokens": 858,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T06:55:53.081081+00:00"
+      },
+      "default|run|*|corr-b9d1020f492647e0807a65b82dfbc2b0": {
+        "spent": {
+          "usd": "0.003266",
+          "tokens": 1483,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T06:59:36.247356+00:00"
+      }
+    }
+  },
+  "totals": {
+    "requests": 8,
+    "provider_reported_tokens": 4664,
+    "estimated_cost_usd": "0.010276"
+  },
+  "foreign_content_absent_from_all_interaction_records": true,
+  "large_file_filler_absent_from_all_interaction_records": true,
+  "restart_cache_loss_changed_state": false,
+  "prior_interactions_unchanged_after_final_call": true,
+  "actions": [
+    {
+      "id": "n.NativeHarnessAction.72a92e995827428887ad72e6",
+      "entity": "NativeHarnessAction",
+      "native_read_max_bytes": null
+    },
+    {
+      "id": "n.FileInterfaceAction.7c14ac62e746464897bceff8",
+      "entity": "FileInterfaceAction",
+      "native_read_max_bytes": 4096
+    },
+    {
+      "id": "n.ReplyAction.4aa5fee602d84f6e83447761",
+      "entity": "ReplyAction",
+      "native_read_max_bytes": null
+    }
+  ],
+  "limitations": [
+    "No live S3 qualification",
+    "No external writes or scripts admitted",
+    "No atomic defense against concurrent hostile OS symlink replacement; upstream provider filesystem boundary remains a release gate",
+    "No hard deadline for a blocked storage worker",
+    "Browser end-to-end timing unmeasured; SDK/Interaction timings recorded",
+    "Legacy direct file helper remains unchanged for transitional callers"
+  ],
+  "tests": {
+    "native_real_pg_311": {
+      "passed": 464,
+      "seconds": 83.34
+    },
+    "native_real_pg_312": {
+      "passed": 464,
+      "seconds": 87.56
+    },
+    "expanded_formatted_file_native_pageindex_311": {
+      "passed": 30,
+      "seconds": 1.02
+    },
+    "focused_file_native_312": {
+      "passed": 24,
+      "seconds": 0.72
+    },
+    "transitional_file_pageindex_311_before_final_two_isolation_cases": {
+      "passed": 22,
+      "skipped": 1,
+      "seconds": 0.76
+    },
+    "initial_missing_helper_cases": {
+      "failed": 9
+    }
+  }
+}

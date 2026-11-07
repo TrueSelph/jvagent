@@ -1,0 +1,18 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_unmapped_or_inactive_controls_block_output[system_prompt] ________
+tests/cli/test_harness_migrate.py:110: in test_unmapped_or_inactive_controls_block_output
+    assert report["status"] == "blocked" and candidate is None
+E   AssertionError: assert ('candidate' == 'blocked'
+E
+E     - blocked
+E     + candidate)
+=============================== warnings summary ===============================
+../../../../../../private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/cli/test_harness_migrate.py::test_unmapped_or_inactive_controls_block_output[system_prompt]
+1 failed, 1 warning in 0.45s

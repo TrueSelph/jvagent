@@ -17,6 +17,7 @@ from jvspatial.api.exceptions import ResourceNotFoundError
 from jvagent.action.response.response_bus import ResponseBus
 from jvagent.action.response.streaming import (
     create_sse_response,
+    format_sse_chunk,
     stream_messages,
 )
 from jvagent.core.agent import Agent
@@ -154,6 +155,40 @@ async def _authorize_session(
     )
 
 
+async def _authorize_reply(
+    request: Request, agent: Agent, session_id: str
+) -> tuple[str, bool]:
+    from jvagent.core.execution_owner import uses_native_harness
+
+    native = await uses_native_harness(agent)
+    if not native:
+        uid, bound = _authenticate(request, agent.id)
+        await _authorize_session(agent, uid, bound, session_id)
+        return uid, False
+    from jvspatial.api.exceptions import AuthenticationError, AuthorizationError
+
+    from jvagent.action.interact.session_token import resolve_interact_identity
+    from jvagent.tooling.access import is_tool_allowed
+
+    identity = await resolve_interact_identity(
+        request=request,
+        agent=agent,
+        agent_id=agent.id,
+        session_id=session_id,
+        user_id=None,
+        native=True,
+    )
+    if identity.reject or identity.via == "none" or not identity.verified_user_id:
+        raise AuthenticationError(message="Session authentication is no longer valid.")
+    uid = identity.verified_user_id
+    await _authorize_session(agent, uid, None, session_id)
+    if not await is_tool_allowed(
+        agent, label="interact", user_id=uid, channel="default"
+    ):
+        raise AuthorizationError(message="Session access is no longer permitted.")
+    return uid, True
+
+
 # ── Publish ──────────────────────────────────────────────────────────────────
 
 
@@ -186,8 +221,6 @@ async def reply_publish_endpoint(
     Returns:
         Delivery status.
     """
-    uid, bound_session_id = _authenticate(request, agent_id)
-
     if not session_id:
         from jvspatial.api.exceptions import InvalidInputError
 
@@ -197,7 +230,7 @@ async def reply_publish_endpoint(
         )
 
     agent, bus = await _get_agent_and_bus(agent_id)
-    await _authorize_session(agent, uid, bound_session_id, session_id)
+    uid, _ = await _authorize_reply(request, agent, session_id)
 
     # Bind publish identity to the authenticated caller — never trust a
     # caller-supplied user_id (agent-attributed spoof).
@@ -224,6 +257,7 @@ async def reply_publish_endpoint(
         stream=False,
         user_id=publish_user_id,
         streaming_complete=True,
+        metadata={"is_proactive": True},
     )
     return {
         "ok": True,
@@ -273,7 +307,8 @@ async def reply_subscribe_endpoint(
     """
     # Authenticate, then authorize the caller for this specific session
     # before serving any data (prevents cross-session disclosure / drain).
-    uid, bound_session_id = _authenticate(request, agent_id)
+    agent, bus = await _get_agent_and_bus(agent_id)
+    uid, native = await _authorize_reply(request, agent, session_id)
 
     logger.info(
         "reply/subscribe: agent=%s session=%s stream=%s user=%s",
@@ -283,22 +318,50 @@ async def reply_subscribe_endpoint(
         uid,
     )
 
-    agent, bus = await _get_agent_and_bus(agent_id)
-    await _authorize_session(agent, uid, bound_session_id, session_id)
-
     if stream:
         # ── SSE: long-lived push ──
         # This connection is expected to sit idle for minutes at a time, so it
         # needs keepalives (proxies drop silent streams at 60-100s) and a
         # bounded backlog replay: streaming subscribers never drain the session
         # queue, so an unbounded replay re-sends everything on every reconnect.
+        history = None
+        if native:
+            from jvagent.action.response.native_replay import replay_completed_replies
+
+            memory = await agent.get_memory()
+            conversation = await memory.get_conversation_by_session(session_id)
+            history = replay_completed_replies(conversation, user_id=uid)
+        source = stream_messages(
+            session_id,
+            bus,
+            keepalive_seconds=SUBSCRIBE_KEEPALIVE_SECONDS,
+            max_replay=SUBSCRIBE_MAX_REPLAY,
+            history=history,
+        )
+
+        async def authorized_messages() -> Any:
+            from jvspatial.api.exceptions import AuthenticationError, AuthorizationError
+
+            try:
+                async for frame in source:
+                    if native:
+                        try:
+                            await _authorize_reply(request, agent, session_id)
+                        except (AuthenticationError, AuthorizationError):
+                            yield format_sse_chunk(
+                                {
+                                    "type": "error",
+                                    "code": "session_access_revoked",
+                                    "message": "Session access is no longer valid.",
+                                }
+                            )
+                            return
+                    yield frame
+            finally:
+                await source.aclose()
+
         return create_sse_response(
-            stream_messages(
-                session_id,
-                bus,
-                keepalive_seconds=SUBSCRIBE_KEEPALIVE_SECONDS,
-                max_replay=SUBSCRIBE_MAX_REPLAY,
-            ),
+            authorized_messages(),
             headers={"X-Session-ID": session_id},
         )
 

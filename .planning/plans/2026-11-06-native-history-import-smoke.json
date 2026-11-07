@@ -1,0 +1,696 @@
+{
+  "parent_revision": "git:afa0427deda32075d752ee670073f002a7e6c484",
+  "legacy_rows_preserved": {
+    "n.Interaction.f01162d563f1421180556519": true,
+    "n.Interaction.5d53bffe926b4952aa3f26e1": true,
+    "n.Interaction.d99e43e8223c46919012a527": true,
+    "n.Interaction.152222674e654a43a31ab18d": true,
+    "n.Interaction.cfdac9b5f4be44b3961d5920": true,
+    "n.Interaction.70c8f2a3bcc74da4bccd3f41": true,
+    "n.Interaction.4921a6c6b5764991baada442": true,
+    "n.Interaction.c6982b5a4e274ec8ac61d0c8": true,
+    "n.Interaction.67a7811ed2b34d0d862f104a": true,
+    "n.Interaction.0b5d4e0075734d7eb6ac0212": true,
+    "n.Interaction.b2e58223cf28442989d22224": true,
+    "n.Interaction.090fe82c9f4f409c95ad5726": true,
+    "n.Interaction.36c25e74bb504befa67105e1": true,
+    "n.Interaction.935fc2d6399341c598ab3222": true,
+    "n.Interaction.7512d280a6c540c48b562f04": true,
+    "n.Interaction.b8666e1237e8424aaa0690cc": true
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+      "last_interaction_id": "n.Interaction.f154d40f77e649b195aad6e7",
+      "count": 7,
+      "legacy_ledger_usd": 0.031304,
+      "native_spend": {
+        "default|conversation|*|sess_45c2d961da974964": {
+          "spent": {
+            "usd": "0.052038",
+            "tokens": 16116,
+            "requests": 9,
+            "unpriced_requests": 7
+          },
+          "expires_at": "2026-12-06T05:06:23.469112+00:00"
+        },
+        "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": {
+          "spent": {
+            "usd": "0.000996",
+            "tokens": 480,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T04:56:40.004611+00:00"
+        },
+        "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": {
+          "spent": {
+            "usd": "0.001042",
+            "tokens": 503,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T05:06:23.469112+00:00"
+        }
+      },
+      "spend_idempotency_marker_counts": {
+        "default|conversation|*|sess_45c2d961da974964": 3,
+        "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": 1,
+        "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": 1
+      },
+      "import": {
+        "actor": "o.User.5853585ffa054d278a5862c9",
+        "digest": "sha256:7c60656ce269797168360f444d460af036337ba7c2fcbe33948de05cba1d6bf1",
+        "status": "applied",
+        "user_id": "o.User.5853585ffa054d278a5862c9",
+        "version": "published-text-import-v1",
+        "baseline": {
+          "usd": "0.05",
+          "tokens": 15133,
+          "requests": 7,
+          "estimated": true
+        },
+        "budget_key": "default|conversation|*|sess_45c2d961da974964",
+        "created_at": "2026-11-06T04:46:48.668000+00:00",
+        "session_id": "sess_45c2d961da974964",
+        "frontier_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+        "model_events": 7,
+        "counter_digest": "sha256:0b64cd0c341da02aec3e32a49fafdad08a7d6c6335c2a4ed5a0c0cabc3f6ee6d",
+        "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+        "interaction_ids": [
+          "n.Interaction.5d53bffe926b4952aa3f26e1",
+          "n.Interaction.152222674e654a43a31ab18d",
+          "n.Interaction.cfdac9b5f4be44b3961d5920",
+          "n.Interaction.4921a6c6b5764991baada442",
+          "n.Interaction.67a7811ed2b34d0d862f104a"
+        ],
+        "messages_digest": "sha256:d194a6f2bf64c989a00655396eb59197117852f754faff6e17fffe6c5736e3a5",
+        "legacy_ledger_usd": "0.031304",
+        "naive_timestamp_zone": "UTC",
+        "operator_frontier_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+        "reported_tokens_minimum": 15133
+      }
+    },
+    {
+      "id": "n.Conversation.e0d0a31effc74a0c8217ab04",
+      "last_interaction_id": "n.Interaction.f01162d563f1421180556519",
+      "count": 6,
+      "legacy_ledger_usd": 0.044932,
+      "native_spend": {},
+      "spend_idempotency_marker_counts": {},
+      "import": {}
+    },
+    {
+      "id": "n.Conversation.1adc6b371d364a5bb746147c",
+      "last_interaction_id": "n.Interaction.b2e58223cf28442989d22224",
+      "count": 5,
+      "legacy_ledger_usd": 0.035402,
+      "native_spend": {},
+      "spend_idempotency_marker_counts": {},
+      "import": {
+        "actor": "o.User.5853585ffa054d278a5862c9",
+        "digest": "sha256:6f87355f1cdafe26da968076e19ebc8fcdc8302b485fd390ab3eb3a0a4a5893d",
+        "status": "rolled_back",
+        "user_id": "o.User.5853585ffa054d278a5862c9",
+        "version": "published-text-import-v1",
+        "baseline": {
+          "usd": "0.05",
+          "tokens": 17161,
+          "requests": 8,
+          "estimated": true
+        },
+        "budget_key": "default|conversation|*|sess_809524662d0047b9",
+        "created_at": "2026-11-06T04:57:37.007621+00:00",
+        "session_id": "sess_809524662d0047b9",
+        "frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "model_events": 8,
+        "counter_digest": "sha256:2001e6f47b12c8ddd5b49f26ae696e93cf5cc9d17d98cf6b01dc5fc4268da971",
+        "rollback_actor": "o.User.5853585ffa054d278a5862c9",
+        "rolled_back_at": "2026-11-06T04:57:37.086425+00:00",
+        "conversation_id": "n.Conversation.1adc6b371d364a5bb746147c",
+        "interaction_ids": [
+          "n.Interaction.d99e43e8223c46919012a527",
+          "n.Interaction.70c8f2a3bcc74da4bccd3f41",
+          "n.Interaction.c6982b5a4e274ec8ac61d0c8",
+          "n.Interaction.0b5d4e0075734d7eb6ac0212",
+          "n.Interaction.b2e58223cf28442989d22224"
+        ],
+        "messages_digest": "sha256:f643d15fbff6b73c6e23d0bf612e054f8e13f4046f98313c1d267dcba7eb7cdd",
+        "legacy_ledger_usd": "0.035402",
+        "naive_timestamp_zone": "UTC",
+        "operator_frontier_id": "n.Interaction.b2e58223cf28442989d22224",
+        "reported_tokens_minimum": 17161
+      }
+    }
+  ],
+  "native_interactions": [
+    {
+      "id": "n.Interaction.c0ab72349fd94c54975781a4",
+      "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+      "utterance": "What project code did I ask you to remember earlier? Reply with the code only.",
+      "response": "CEDAR-47",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-06T00:56:37.840961",
+      "completed_at": "2026-11-06T00:56:40.175261",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 474,
+          "output_tokens": 6
+        },
+        "output": "CEDAR-47",
+        "run_id": "corr-8cdc7021b32147a7a89ff8a546be0077",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "imported_published_text",
+          "migration_digest": "sha256:7c60656ce269797168360f444d460af036337ba7c2fcbe33948de05cba1d6bf1",
+          "historical_spend_estimated": true
+        },
+        "usage_complete": true
+      },
+      "observability_metrics": [
+        {
+          "data": {
+            "model": "gpt-4.1-2025-04-14",
+            "usage": {
+              "total_tokens": 480,
+              "prompt_tokens": 474,
+              "completion_tokens": 6,
+              "cache_write_tokens": 0,
+              "cached_prompt_tokens": 0
+            },
+            "provider": "openai",
+            "cost_record": {
+              "amount": 0.000996,
+              "source": "pydantic_ai_pricing",
+              "currency": "USD",
+              "estimated": true,
+              "pricing_version": null
+            },
+            "usage_status": "provider_reported",
+            "native_run_id": "corr-8cdc7021b32147a7a89ff8a546be0077",
+            "native_step_index": 1,
+            "native_spend_receipt": true,
+            "native_receipt_origin": "spend_snapshot"
+          },
+          "event_type": "model_call"
+        },
+        {
+          "data": {
+            "outcome": "completed",
+            "duration": 1.915987,
+            "started_at": "2026-11-06T04:56:38.080805+00:00",
+            "completed_at": "2026-11-06T04:56:39.996792+00:00",
+            "usage_status": "receipt_recorded",
+            "native_run_id": "corr-8cdc7021b32147a7a89ff8a546be0077",
+            "duration_scope": "sdk_model_request",
+            "native_step_index": 1,
+            "native_attempt_origin": "step_events_v1"
+          },
+          "event_type": "model_attempt"
+        }
+      ],
+      "run_registration_count": 1,
+      "snapshots": [
+        {
+          "state": "complete",
+          "message_count": 11,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta"
+            ]
+          ]
+        },
+        {
+          "state": "complete",
+          "message_count": 12,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta",
+              "instruction-baseline",
+              "instruction-delta"
+            ],
+            [
+              "text"
+            ]
+          ]
+        },
+        {
+          "state": "complete",
+          "message_count": 12,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta",
+              "instruction-baseline",
+              "instruction-delta"
+            ],
+            [
+              "text"
+            ]
+          ]
+        }
+      ],
+      "effect_count": 0
+    },
+    {
+      "id": "n.Interaction.f154d40f77e649b195aad6e7",
+      "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+      "utterance": "Repeat the remembered project code, with no other words.",
+      "response": "CEDAR-47",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-06T01:06:20.589916",
+      "completed_at": "2026-11-06T01:06:23.615235",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 497,
+          "output_tokens": 6
+        },
+        "output": "CEDAR-47",
+        "run_id": "corr-b8a2bbaf7925407882c037168de7a825",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-8cdc7021b32147a7a89ff8a546be0077"
+        },
+        "usage_complete": true
+      },
+      "observability_metrics": [
+        {
+          "data": {
+            "model": "gpt-4.1-2025-04-14",
+            "usage": {
+              "total_tokens": 503,
+              "prompt_tokens": 497,
+              "completion_tokens": 6,
+              "cache_write_tokens": 0,
+              "cached_prompt_tokens": 0
+            },
+            "provider": "openai",
+            "cost_record": {
+              "amount": 0.001042,
+              "source": "pydantic_ai_pricing",
+              "currency": "USD",
+              "estimated": true,
+              "pricing_version": null
+            },
+            "usage_status": "provider_reported",
+            "native_run_id": "corr-b8a2bbaf7925407882c037168de7a825",
+            "native_step_index": 1,
+            "native_spend_receipt": true,
+            "native_receipt_origin": "spend_snapshot"
+          },
+          "event_type": "model_call"
+        },
+        {
+          "data": {
+            "outcome": "completed",
+            "duration": 2.047641,
+            "started_at": "2026-11-06T05:06:21.398027+00:00",
+            "completed_at": "2026-11-06T05:06:23.445668+00:00",
+            "usage_status": "receipt_recorded",
+            "native_run_id": "corr-b8a2bbaf7925407882c037168de7a825",
+            "duration_scope": "sdk_model_request",
+            "native_step_index": 1,
+            "native_attempt_origin": "step_events_v1"
+          },
+          "event_type": "model_attempt"
+        }
+      ],
+      "run_registration_count": 1,
+      "snapshots": [
+        {
+          "state": "complete",
+          "message_count": 13,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta",
+              "instruction-baseline",
+              "instruction-delta"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ]
+          ]
+        },
+        {
+          "state": "complete",
+          "message_count": 14,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta",
+              "instruction-baseline",
+              "instruction-delta"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ]
+          ]
+        },
+        {
+          "state": "complete",
+          "message_count": 14,
+          "imported_prefix_equal": true,
+          "part_kinds": [
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt",
+              "capability-load-delta",
+              "instruction-baseline",
+              "instruction-delta"
+            ],
+            [
+              "text"
+            ],
+            [
+              "user-prompt"
+            ],
+            [
+              "text"
+            ]
+          ]
+        }
+      ],
+      "effect_count": 0
+    }
+  ],
+  "clone": {
+    "source_fixture": "/private/tmp/jvagent-bench-legacy",
+    "target_fixture": "/private/tmp/jvagent-native-history-import-smoke",
+    "target_database": "jvagent_native_history_import_20261106",
+    "copied_counts": {
+      "node": 30,
+      "edge": 29,
+      "object": 1
+    },
+    "copied_collection_digests": {
+      "node": "sha256:fd879edb91dc507fd683941ed0221056e4ef265c4ff6702b703cb47066fb8e07",
+      "edge": "sha256:25a22bd3c3a21a5dfbebffa005cc39b6d6720a72a1777c95e004f2509b24c44c",
+      "object": "sha256:bdcbb8ab9f99b2aab69ca8ca570bae4519f9446e091d1c0ab6429cb0b6a042ee"
+    },
+    "refresh_tokens_copied": false,
+    "jwt_key_rotated": true,
+    "raw_data_exported": false
+  },
+  "runtime": {
+    "process_id": 57947,
+    "python_executable": "/private/tmp/jvagent-unified-test-311/bin/python",
+    "observed_at": "2026-11-06T05:07:12.392589+00:00",
+    "source_blobs": {
+      "jvagent/harness/history_import.py": "git-blob:8ee073af23a9759b8f66610fbf6b843c7ad4590d",
+      "jvagent/harness/recovery.py": "git-blob:37b39e88143409f0b87d716909781cda02be1535",
+      "jvagent/harness/contracts.py": "git-blob:2ab3b7658be8dc3ff5e3e0e6f5c5cf52306d0acb",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+      "jvagent/memory/conversation.py": "git-blob:45337d4919d6d1997037801b7b96f300784e4465",
+      "jvagent/memory/distributed_conversation_lock.py": "git-blob:ff05f3109378b4b3191c515399e0068a38ec886d",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:db16a0f149924242ead705f4d1963366c3fa4235",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:682699e8f474ee73fe197e42615a337138bcb2a3",
+      "tests/harness/native/test_history_import.py": "git-blob:1c08044c1df74497ded0ef16bfef59527c7f8aad",
+      "tests/memory/test_lease_renewal.py": "git-blob:895e0cedec306ef81b7ba1488efa83c1ac6e9e94"
+    },
+    "modules": [],
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "duration": {
+    "per_interaction": [
+      {
+        "id": "n.Interaction.c0ab72349fd94c54975781a4",
+        "interaction_seconds": 2.3343,
+        "sdk_model_seconds": 1.915987
+      },
+      {
+        "id": "n.Interaction.f154d40f77e649b195aad6e7",
+        "interaction_seconds": 3.025319,
+        "sdk_model_seconds": 2.047641
+      }
+    ],
+    "browser_end_to_end_seconds": null
+  },
+  "accounting": {
+    "new_provider_requests": 2,
+    "new_provider_reported_tokens": 983,
+    "new_cost_usd_estimated": "0.002038",
+    "historical_operator_estimate_usd": "0.05",
+    "historical_retained_ledger_usd": "0.031304",
+    "conversation_total_usd": "0.052038",
+    "conversation_requests": 9,
+    "conversation_tokens": 16116,
+    "historical_unpriced_requests": 7,
+    "provider_invoice_verified": false
+  },
+  "checks": {
+    "native311": {
+      "passed": 443,
+      "warnings": 294,
+      "seconds": 74.28
+    },
+    "native312": {
+      "passed": 443,
+      "warnings": 294,
+      "seconds": 90.82
+    },
+    "focused_import": {
+      "passed": 34
+    },
+    "all_files_hooks": "passed after formatting/staging, with final evidence-file gate required again before commit",
+    "memory": {
+      "passed": 200,
+      "skipped": 2,
+      "seconds": 4.48,
+      "interrupted_initial_run_excluded": true
+    },
+    "lease312": {
+      "passed": 12
+    },
+    "lease_cancellation_regression": {
+      "before": "fails: renewal swallowed heartbeat cancellation",
+      "after": {
+        "terminal_after_cancel": true,
+        "renew_calls": 1,
+        "cancelled": true
+      }
+    }
+  },
+  "scope": "Completed retained default-channel ordinary text with reviewed reply/use_skill traces only. No old tool/run replay, invoice pricing or legacy engine deletion claim.",
+  "initial_runtime_observation": {
+    "process_id": 56650,
+    "python_executable": "/private/tmp/jvagent-unified-test-311/bin/python",
+    "observed_at": "2026-11-06T04:59:22.139423+00:00",
+    "source_blobs": {
+      "jvagent/harness/history_import.py": "git-blob:8ee073af23a9759b8f66610fbf6b843c7ad4590d",
+      "jvagent/harness/recovery.py": "git-blob:37b39e88143409f0b87d716909781cda02be1535",
+      "jvagent/harness/contracts.py": "git-blob:2ab3b7658be8dc3ff5e3e0e6f5c5cf52306d0acb",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+      "jvagent/memory/conversation.py": "git-blob:45337d4919d6d1997037801b7b96f300784e4465",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:db16a0f149924242ead705f4d1963366c3fa4235",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:682699e8f474ee73fe197e42615a337138bcb2a3",
+      "tests/harness/native/test_history_import.py": "git-blob:1c08044c1df74497ded0ef16bfef59527c7f8aad"
+    },
+    "modules": [],
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  }
+}

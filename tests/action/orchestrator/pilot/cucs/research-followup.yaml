@@ -1,0 +1,42 @@
+schema: jvagent.use-case/v1
+id: pilot.research.follow-up
+title: Research follow-up reuses evidence only under matching Action versions
+priority: P0
+tags: [pydantic-pilot, research, follow-up]
+given:
+  channel: default
+  new_user: false
+turns:
+  - id: research
+    when:
+      user: Research the pilot.
+    then:
+      loop:
+        tools_called:
+          - web_search__search
+          - web_fetch__fetch
+      publish:
+        contains:
+          - https://example.com/evidence
+  - id: follow-up
+    when:
+      user: Can you confirm that finding?
+    then:
+      loop:
+        tools_called:
+          - web_search__search
+          - web_fetch__fetch
+      publish:
+        contains:
+          - https://example.com/evidence
+  - id: changed-action-version
+    when:
+      user: Research the pilot.
+    then:
+      loop:
+        tools_called:
+          - web_search__search
+          - web_fetch__fetch
+      publish:
+        contains:
+          - https://example.com/evidence

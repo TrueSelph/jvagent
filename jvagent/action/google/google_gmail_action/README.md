@@ -26,7 +26,7 @@ This is an **OAuth client JSON** (client id + secret). It is **not** a service-a
    The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
 8. Click **Create**. Download the JSON (client id + secret).
 9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
-10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=gmail`.
+10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=gmail`.
 
 ## Set `.env`
 
@@ -75,7 +75,7 @@ Admin REST handlers under `/actions/{action_id}/...` (send, list, profile) authe
 
 ### Authorization
 
-1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=gmail`.
+1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=gmail`.
 2. Complete Google consent. The callback stores `MCPOAuthToken` and hydrates google-workspace-mcp XDG credential files.
 3. Gmail tools and EmailAction both use that token. Re-auth if refresh fails.
 

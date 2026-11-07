@@ -1,0 +1,316 @@
+{
+  "tested_parent": "git-commit:e48dc1c2fde6942402fc0c600ef7239fc174a405",
+  "model": "openai:gpt-4.1",
+  "backend_port": 8170,
+  "jvchat_port": 3140,
+  "acceptance": {
+    "scope": "Actual fixed-payload callback POST through existing SDK mutation adapter",
+    "required": [
+      "actual GPT-4.1 browser tool call",
+      "real HTTPS echo through IP-pinned helper, original Host and SNI, default TLS validation",
+      "SDK terminal effect and durable response/usage",
+      "cold restart and history-only acknowledgement without another POST",
+      "named host denial prevents a new POST",
+      "unchanged reload"
+    ],
+    "unqualified": [
+      "durable background callback scheduling, retries, cancellation acknowledgement and delivery reconciliation",
+      "customer-specific endpoints or human-channel delivery",
+      "hard DNS worker deadline and production load",
+      "all httpcore DEBUG transport logging"
+    ],
+    "optimization_claim": false
+  },
+  "runtime_probe_epochs": {
+    "epoch1": {
+      "process_id": 73251,
+      "observed_at": "2026-11-06T22:31:46.410816+00:00",
+      "source_blobs": {
+        "jvagent/core/callback.py": "git-blob:fd7edc1dc5ed0c501b9d02c90814b0958c2d5401"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch2": {
+      "process_id": 73472,
+      "observed_at": "2026-11-06T22:35:52.537426+00:00",
+      "source_blobs": {
+        "jvagent/core/callback.py": "git-blob:fd7edc1dc5ed0c501b9d02c90814b0958c2d5401"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch3": {
+      "process_id": 73776,
+      "observed_at": "2026-11-06T22:40:21.219828+00:00",
+      "source_blobs": {
+        "jvagent/core/callback.py": "git-blob:ee30d0212174824ee3a997722da8d38baab772b1"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  },
+  "temporary_app_assets": {
+    "actions/contrib/callback_probe/callback_probe.py": "import json\nfrom typing import Any\nfrom jvagent.action.base import Action\nfrom jvagent.harness.mutation_tools import NativeMutationTool\nfrom jvagent.harness.contracts import IdempotencyClass\nfrom jvagent.tooling.context import require_tool_visitor\nfrom jvagent.core.callback import _post_webhook_pinned_async\nclass ProbeSendTool(NativeMutationTool):\n    effect_summary = \"jv:mutation:callback-probe:v1\"\nclass CallbackProbeAction(Action):\n    async def get_native_tools(self) -> list[ProbeSendTool]:\n        return [ProbeSendTool(name=\"callback_probe__post\",description=\"Post the fixed synthetic transport marker to HTTPBin once and verify its echo. No model-selected URL or payload.\",parameters_schema={\"type\":\"object\",\"properties\":{},\"additionalProperties\":False},execute=self.probe,binds_visitor=True,effect_class=\"write\",idempotency_class=IdempotencyClass.NON_RETRYABLE,requires_tool_permission=True)]\n    async def probe(self, *, visitor: Any) -> str:\n        if visitor is not require_tool_visitor(): raise ValueError(\"Host scope is required\")\n        payload={\"probe\":\"jvagent-callback-transport-20261106\"}\n        response=await _post_webhook_pinned_async(\"https://httpbin.org/post\",payload,timeout=10)\n        response.raise_for_status()\n        if response.json().get(\"json\") != payload: raise RuntimeError(\"Diagnostic echo did not acknowledge the probe\")\n        return json.dumps({\"ok\":True,\"http_status\":response.status_code,\"echo_matches\":True,\"probe\":payload[\"probe\"]})\n",
+    "actions/contrib/callback_probe/info.yaml": "package:\n  archetype: CallbackProbeAction\n  author: jvagent\n  dependencies:\n    jvagent: ~0.0.1\n  meta:\n    group: contrib\n    title: Synthetic callback transport probe\n    type: action\n  name: contrib/callback_probe\n  version: 1.0.0\n",
+    "actions/contrib/callback_probe/__init__.py": "from .callback_probe import CallbackProbeAction\n",
+    "skills/callback-probe/SKILL.md": "---\nname: callback-probe\ndescription: Run the fixed synthetic HTTPS callback transport diagnostic when asked\nrequires-actions: [CallbackProbeAction]\nrequires-tools: [callback_probe__post]\nallowed-tools: [callback_probe__post]\n---\nCall callback_probe__post once when asked to run the diagnostic. It only sends a fixed synthetic marker to HTTPBin. Report success only from ok=true and echo_matches=true; never invent an acknowledgement. If permission is denied, report that without claiming a send. For questions about the prior result, use history and do not send again unless explicitly requested.\n"
+  },
+  "turns": [
+    {
+      "scenario": "real_https_echo",
+      "functional_expectation": "passed",
+      "interaction_id": "n.Interaction.c439655b68fc45bfb731872a",
+      "session_id": "sess_b49d1aa6770c4fc7",
+      "utterance": "Run the fixed callback transport diagnostic once. Tell me whether the HTTPS endpoint acknowledged the synthetic probe and what HTTP status it returned.",
+      "response": "The HTTPS endpoint acknowledged the synthetic probe. HTTP status returned: 200.",
+      "run_status": "delivered",
+      "reason": null,
+      "duration_seconds": 7.105953,
+      "model_requests": 2,
+      "provider_reported_tokens": 846,
+      "estimated_cost_usd": "0.001872",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "callback_probe__post",
+          "status": "completed",
+          "summary": "jv:mutation:callback-probe:v1",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "73251"
+      ]
+    },
+    {
+      "scenario": "cold_restart_history_only",
+      "functional_expectation": "passed",
+      "interaction_id": "n.Interaction.2acd0267fa6649fc8a282a7d",
+      "session_id": "sess_b49d1aa6770c4fc7",
+      "utterance": "What HTTP status did the previous callback diagnostic return, and did its echo match? Answer from the saved result; do not send another probe.",
+      "response": "The previous callback diagnostic returned HTTP status 200, and its echo matched the synthetic probe.",
+      "run_status": "delivered",
+      "reason": null,
+      "duration_seconds": 5.101113,
+      "model_requests": 1,
+      "provider_reported_tokens": 506,
+      "estimated_cost_usd": "0.001132",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "73472"
+      ]
+    },
+    {
+      "scenario": "named_host_denial_no_post",
+      "functional_expectation": "passed",
+      "interaction_id": "n.Interaction.99ce9b1e413d42b7803a1528",
+      "session_id": "sess_b49d1aa6770c4fc7",
+      "utterance": "Run a new fixed callback diagnostic once now. If host permission denies it, report the denial and do not claim that a POST was sent.",
+      "response": "Your current permissions do not allow that write operation.",
+      "run_status": "failed",
+      "reason": "mutation_access_denied",
+      "duration_seconds": 2.476049,
+      "model_requests": 1,
+      "provider_reported_tokens": 553,
+      "estimated_cost_usd": "0.001184",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "callback_probe__post",
+          "status": "failed",
+          "summary": "MutationAccessDenied('Mutation access denied')",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "73472"
+      ]
+    },
+    {
+      "scenario": "final_source_restored_permission_echo",
+      "functional_expectation": "passed",
+      "interaction_id": "n.Interaction.3b3d2f3c94e54173ac2eb077",
+      "session_id": "sess_a7b5af880f13448f",
+      "utterance": "Run the fixed callback transport diagnostic once and report the actual HTTPS echo acknowledgement and HTTP status.",
+      "response": "The fixed callback transport diagnostic was successful:\n- HTTPS echo acknowledgement: received and matches\n- HTTP status: 200",
+      "run_status": "delivered",
+      "reason": null,
+      "duration_seconds": 6.406563,
+      "model_requests": 2,
+      "provider_reported_tokens": 840,
+      "estimated_cost_usd": "0.001908",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "callback_probe__post",
+          "status": "completed",
+          "summary": "jv:mutation:callback-probe:v1",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "73776"
+      ]
+    }
+  ],
+  "totals": {
+    "browser_turns": 4,
+    "functional_expectations_passed": 4,
+    "delivered_runs": 3,
+    "expected_denied_runs": 1,
+    "actual_https_posts": 2,
+    "model_requests": 6,
+    "provider_reported_tokens": 2745,
+    "estimated_cost_usd": "0.006096",
+    "provider_reported_cost_usd": "0",
+    "unknown_cost_calls": 0,
+    "terminal_effects": 3,
+    "completed_effects": 2,
+    "failed_effects": 1
+  },
+  "actual_callback_observations": [
+    {
+      "pid": 73251,
+      "at": "2026-11-06T22:30:28.187599+00:00",
+      "status": 200,
+      "pinned_request_host": "54.172.45.38",
+      "host_header": "httpbin.org",
+      "sni_hostname": "httpbin.org",
+      "echo_matches": true
+    },
+    {
+      "pid": 73776,
+      "at": "2026-11-06T22:38:09.699470+00:00",
+      "status": 200,
+      "pinned_request_host": "3.221.253.123",
+      "host_header": "httpbin.org",
+      "sni_hostname": "httpbin.org",
+      "echo_matches": true
+    }
+  ],
+  "callback_tls_policy": "Default certificate verification, original-host SNI and Host, fixed HTTPS public echo; no verification override",
+  "conversation_readback": [
+    {
+      "id": "n.Conversation.d865594edbb3427bb5c36086",
+      "spent": {
+        "usd": "0.001908",
+        "tokens": 840,
+        "requests": 2,
+        "unpriced_requests": 0
+      },
+      "task_count": 0,
+      "reconciles": true
+    },
+    {
+      "id": "n.Conversation.0f3c3e2fcf5b40a5903fa808",
+      "spent": {
+        "usd": "0.004188",
+        "tokens": 1905,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "task_count": 0,
+      "reconciles": true
+    }
+  ],
+  "raw_record_comparisons": [
+    {
+      "scenario": "cold_restart_and_denial_policy",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:39b4f9cb257cf74917d0a459c8cb6cb9ce8cc7cf96797c172a01dac85954a11e",
+      "after_digest": "sha256:39b4f9cb257cf74917d0a459c8cb6cb9ce8cc7cf96797c172a01dac85954a11e"
+    },
+    {
+      "scenario": "cold_restart_and_denial_policy",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:f595fb2105000c4471debb54e94966262787735f7b16fa324df47a6e475e6061",
+      "after_digest": "sha256:f595fb2105000c4471debb54e94966262787735f7b16fa324df47a6e475e6061"
+    },
+    {
+      "scenario": "restore_policy_final_source_restart",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:12469123b1c31cbc03d0fdf17e3c7e992d00498aac49cbee4647edc7c01d000b",
+      "after_digest": "sha256:12469123b1c31cbc03d0fdf17e3c7e992d00498aac49cbee4647edc7c01d000b"
+    },
+    {
+      "scenario": "restore_policy_final_source_restart",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:bcc36728ebfb8fc94e6269fc997a92989cf5f3979d51ab00da6bb6a483adeac2",
+      "after_digest": "sha256:bcc36728ebfb8fc94e6269fc997a92989cf5f3979d51ab00da6bb6a483adeac2"
+    },
+    {
+      "scenario": "reload",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:e47d11169f20665efe5ffb21cb76889113d9eedaf796548b683611856384a29f",
+      "after_digest": "sha256:e47d11169f20665efe5ffb21cb76889113d9eedaf796548b683611856384a29f"
+    },
+    {
+      "scenario": "reload",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:fffb08988325e501e67820243dc10b965720a68f94824d3d19017cded669eeef",
+      "after_digest": "sha256:fffb08988325e501e67820243dc10b965720a68f94824d3d19017cded669eeef"
+    }
+  ],
+  "all_three_prior_turns_and_conversation_unchanged_after_final_source_probe": true,
+  "operator_policy_changes": [
+    {
+      "named_post_permission_denied": true,
+      "interaction_and_conversation_rows_unchanged": true
+    },
+    {
+      "named_post_permission_denied": false,
+      "interaction_and_conversation_rows_unchanged": true
+    }
+  ],
+  "verification": {
+    "callback_cases": 32,
+    "new_transport_cases": 20,
+    "initial_before_fix": {
+      "failed": 12,
+      "passed": 2
+    },
+    "dns_and_logging_mutations_fail": true,
+    "callable_filter_before_guard_fails": true,
+    "native_host_pg_docker_clock_and_callback": {
+      "python311": {
+        "passed": 784,
+        "duration_seconds": 99.93
+      },
+      "python312": {
+        "passed": 784,
+        "duration_seconds": 102.08
+      }
+    },
+    "unmanaged_mypy_remaining_parent_errors": 1,
+    "publication": "Clean pinned all-files hooks and normal full pre-push required separately; see commit/PR evidence"
+  },
+  "reference_migration_blockers_remaining": 9,
+  "limitations": [
+    "No durable background callback scheduling, delivery acknowledgement, retry/idempotency or unknown-write recovery qualification",
+    "Echo acknowledgement is not human-channel delivery or customer-endpoint qualification",
+    "Live transport profile is IPv4 HTTPS; HTTP/IPv6 and redirects are MockTransport cases",
+    "Userinfo authentication and IDNA endpoints remain unqualified",
+    "HTTPX summaries and module errors are covered, not all httpcore DEBUG transport diagnostics",
+    "DNS runs off-loop; hard worker deadlines and queue capacity remain open",
+    "No performance improvement, legacy removal or enterprise qualification claimed"
+  ]
+}

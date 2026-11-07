@@ -1,3 +1,4 @@
+import * as attachments from "../utils/interactAttachments";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { useStreaming, ATTACHMENT_ONLY_USER_PROMPT } from "./useStreaming";
@@ -8,7 +9,8 @@ vi.mock("../config/api", () => ({
   },
 }));
 
-vi.mock("../utils/storage", () => ({
+vi.mock("../utils/storage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../utils/storage")>(),
   saveMessages: vi.fn(),
   getMessages: vi.fn(() => []),
   syncUserIdFromAccessToken: vi.fn(() => "user-1"),
@@ -25,7 +27,11 @@ const mockSaveMessages = vi.mocked(saveMessages);
 describe("useStreaming thought handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetMessages.mockReturnValue([]);
+    const disk = new Map<string, unknown[]>();
+    mockGetMessages.mockImplementation(session => disk.get(session) ?? []);
+    mockSaveMessages.mockImplementation((session, messages) => {
+      disk.set(session, structuredClone(messages));
+    });
   });
 
   it("streams thought chunks and finalizes thought streaming state", async () => {
@@ -92,7 +98,7 @@ describe("useStreaming thought handling", () => {
     expect(thought?.category).toBe("thought");
     expect(thought?.content).toBe("Thinking...");
     expect(thought?.streaming).toBe(false);
-    expect(result.current.messages.some((m) => m.role === "user")).toBe(true);
+    expect(result.current.messages.find((m) => m.role === "user")?.interactionId).toBe("int-1");
   });
 
   it("merges thought adhoc flush into the streaming row instead of duplicating", async () => {
@@ -443,4 +449,149 @@ describe("useStreaming thought handling", () => {
     expect(assistants).toHaveLength(1);
     expect(assistants[0]?.content).toBe("Ships Tuesday.");
   });
+});
+
+describe("session transcript transitions", () => {
+  it("clears a new conversation despite a late first-stream preserve hint", () => {
+    const { result, rerender } = renderHook(
+      ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+      { initialProps: { session: "session-a" as string | undefined } },
+    );
+    act(() => result.current.loadMessages([
+      { id: "old", role: "user", content: "old private transcript", timestamp: new Date().toISOString() },
+    ]));
+    expect(result.current.messages).toHaveLength(1);
+    act(() => result.current.preserveNextTransition("session-a"));
+    rerender({ session: undefined });
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.sessionId).toBeUndefined();
+  });
+
+  it("never carries another conversation's transcript across sidebar selection", () => {
+    const { result, rerender } = renderHook(
+      ({ session }) => useStreaming("agent-1", session),
+      { initialProps: { session: "session-a" } },
+    );
+    act(() => result.current.loadMessages([
+      { id: "old", role: "user", content: "old private transcript", timestamp: new Date().toISOString() },
+    ]));
+    act(() => result.current.preserveNextTransition("session-b"));
+    rerender({ session: "session-b" });
+    expect(result.current.messages).toEqual([]);
+  });
+});
+
+it("preserves the live first-turn transcript when the server assigns its session", async () => {
+  mockStreamInteract.mockImplementation(async (_agent, _request, onChunk) => {
+    onChunk({ type: "start", interaction_id: "live-turn", session_id: "live-session" });
+    onChunk({ type: "final", interaction: {
+      id: "live-turn", utterance: "first message", actions: [], directives: [],
+      parameters: [], model_log: [], messages: [], streamed: true,
+    } });
+  });
+  const { result, rerender } = renderHook(
+    ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+    { initialProps: { session: undefined as string | undefined } },
+  );
+  await act(async () => { await result.current.sendMessage("first message"); });
+  act(() => result.current.preserveNextTransition("live-session"));
+  rerender({ session: "live-session" });
+  expect(result.current.messages.some(message => message.content === "first message")).toBe(true);
+});
+
+it.each(["new-before-start", "sidebar", "stop"] as const)(
+  "retires %s requests before late chunks or cleanup can affect the next request",
+  async (mode) => {
+    const streams: Array<{
+      chunk: Parameters<typeof apiClient.streamInteract>[2];
+      error: Parameters<typeof apiClient.streamInteract>[3];
+      signal: Parameters<typeof apiClient.streamInteract>[4];
+      finish: () => void;
+    }> = [];
+    mockStreamInteract.mockImplementation((_agent, _request, chunk, error, signal) =>
+      new Promise<void>(finish => streams.push({ chunk, error, signal, finish })),
+    );
+    const { result, rerender } = renderHook(
+      ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+      { initialProps: { session: mode === "new-before-start" ? undefined : "session-a" } },
+    );
+    let oldRequest!: Promise<string | undefined>;
+    act(() => { oldRequest = result.current.sendMessage("old request"); });
+    expect(streams).toHaveLength(1);
+    act(() => {
+      if (mode === "sidebar") rerender({ session: "session-b" });
+      else if (mode === "stop") result.current.stopStreaming();
+      else result.current.clearMessages();
+    });
+    expect(streams[0].signal?.aborted).toBe(true);
+    expect(result.current.isStreaming).toBe(false);
+    let newRequest!: Promise<string | undefined>;
+    act(() => { newRequest = result.current.sendMessage("new request"); });
+    expect(streams).toHaveLength(2);
+    await act(async () => {
+      streams[0].chunk({ type: "start", session_id: "late-session", interaction_id: "late-turn" });
+      streams[0].error?.(new Error("late error"));
+      streams[0].finish();
+      expect(await oldRequest).toBeUndefined();
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.sessionId).not.toBe("late-session");
+    expect(result.current.messages.some(message => message.content === "new request")).toBe(true);
+    await act(async () => {
+      streams[1].chunk({ type: "start", session_id: "fresh-session", interaction_id: "fresh-turn" });
+      streams[1].finish();
+      expect(await newRequest).toBe("fresh-session");
+    });
+    expect(result.current.isStreaming).toBe(false);
+  },
+);
+
+it("does not submit an attachment after its conversation was reset during preparation", async () => {
+  vi.clearAllMocks();
+  let finish!: (value: Awaited<ReturnType<typeof attachments.prepareOutgoingAttachments>>) => void;
+  const prepare = vi.spyOn(attachments, "prepareOutgoingAttachments").mockImplementationOnce(
+    () => new Promise(resolve => { finish = resolve; }),
+  );
+  try {
+    const { result } = renderHook(() => useStreaming("agent-1"));
+    let pending!: Promise<string | undefined>;
+    act(() => { pending = result.current.sendMessage("file", { files: [new File(["data"], "input.txt")] }); });
+    expect(result.current.isStreaming).toBe(true);
+    act(() => result.current.clearMessages());
+    await act(async () => {
+      finish({ data: {}, previews: [] });
+      expect(await pending).toBeUndefined();
+    });
+    expect(mockStreamInteract).not.toHaveBeenCalled();
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.isStreaming).toBe(false);
+  } finally {
+    prepare.mockRestore();
+  }
+});
+
+it("publishes first-session identity before completion without aborting its initial binding", async () => {
+  let chunk!: Parameters<typeof apiClient.streamInteract>[2];
+  let finish!: () => void;
+  let signal: AbortSignal | undefined;
+  mockStreamInteract.mockImplementation((_agent, _request, onChunk, _error, requestSignal) => {
+    chunk = onChunk;
+    signal = requestSignal;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  const { result, rerender } = renderHook(
+    ({ session }: { session: string | undefined }) => useStreaming("agent-1", session),
+    { initialProps: { session: undefined as string | undefined } },
+  );
+  let pending!: Promise<string | undefined>;
+  act(() => { pending = result.current.sendMessage("first turn"); });
+  act(() => chunk({ type: "start", session_id: "assigned-session", interaction_id: "assigned-turn" }));
+  expect(result.current.sessionId).toBe("assigned-session");
+  act(() => result.current.preserveNextTransition("assigned-session"));
+  rerender({ session: "assigned-session" });
+  expect(signal?.aborted).toBe(false);
+  expect(result.current.isStreaming).toBe(true);
+  act(() => result.current.stopStreaming());
+  await act(async () => { finish(); expect(await pending).toBeUndefined(); });
 });

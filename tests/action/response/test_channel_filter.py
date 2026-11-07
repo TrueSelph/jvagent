@@ -16,6 +16,7 @@ from jvagent.action.response.channel_filter import ChannelFilter
 from jvagent.action.response.message import ResponseMessage
 from jvagent.action.response.response_bus import ResponseBus
 from jvagent.action.whatsapp.whatsapp_filter import WhatsAppFilter
+from jvagent.memory.interaction import Interaction
 
 
 class TestChannelFilter:
@@ -406,6 +407,38 @@ class TestResponseBusFilterIntegration:
         mock_adapter.send.assert_called_once()
         sent_message = mock_adapter.send.call_args[0][0]
         assert sent_message.content == "*Bold* text"
+
+    @pytest.mark.asyncio
+    async def test_fail_fast_filter_rejection_never_reaches_queue_or_subscriber(self):
+        bus = ResponseBus()
+
+        class RejectingFilter(ChannelFilter):
+            def __init__(self):
+                super().__init__(channels=["whatsapp"], fail_fast=True)
+
+            async def filter(self, message: ResponseMessage) -> None:
+                raise RuntimeError("policy filter unavailable")
+
+        await bus.register_channel_filter(RejectingFilter())
+        received = []
+        await bus.subscribe("session-1", received.append)
+        interaction = Interaction()
+
+        message = await bus.publish(
+            session_id="session-1",
+            interaction_id="interaction-filter-reject",
+            user_id="user-1",
+            content="must not escape",
+            channel="whatsapp",
+            stream=False,
+            interaction=interaction,
+        )
+
+        assert message.content == ""
+        assert received == []
+        assert "session-1" not in bus._session_queues
+        assert interaction.has_emitted() is False
+        assert interaction.response is None
 
     @pytest.mark.asyncio
     async def test_publish_stream_chunk_no_filter_no_adapter(self):

@@ -1,0 +1,435 @@
+{
+  "tested_parent": "git-commit:555712083cc30b3178167e47568b55deb4fbff93",
+  "model": "openai:gpt-4.1",
+  "backend_port": 8169,
+  "jvchat_port": 3140,
+  "acceptance": {
+    "scope": "Exact channel projection of a finite native catalog",
+    "required": [
+      "ordinary arithmetic still works when one configured skill is excluded",
+      "excluded capability/tool requests cannot execute",
+      "eligible clock skill remains subject to independent host denial",
+      "restored permission actual clock read",
+      "cold restart and reload preserve records and spending",
+      "script asset scope excludes closed-channel skills in host wiring regression"
+    ],
+    "unqualified": [
+      "WhatsApp sends, external delivery and authenticated channel origin",
+      "legacy channel override migration",
+      "channel changes within an active conversation",
+      "inactive malformed SDK names beyond policy projection"
+    ],
+    "optimization_claim": false
+  },
+  "runtime_probe_epochs": {
+    "epoch1": {
+      "process_id": 69987,
+      "observed_at": "2026-11-06T22:00:13.065951+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:4987dc035a22360c2a53033a544a3d43200491d0",
+        "jvagent/harness/skill_assets.py": "git-blob:ba7a34ddaa9a4e4ea7e95e7191a403b5524ec5a1",
+        "jvagent/harness/skill_catalog.py": "git-blob:d54f0d938669fba1e03e1f36c450e9185a2c0032"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch2": {
+      "process_id": 70263,
+      "observed_at": "2026-11-06T22:02:44.622064+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:4987dc035a22360c2a53033a544a3d43200491d0",
+        "jvagent/harness/skill_assets.py": "git-blob:ba7a34ddaa9a4e4ea7e95e7191a403b5524ec5a1",
+        "jvagent/harness/skill_catalog.py": "git-blob:d54f0d938669fba1e03e1f36c450e9185a2c0032"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch3": {
+      "process_id": 70436,
+      "observed_at": "2026-11-06T22:06:00.415475+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:4987dc035a22360c2a53033a544a3d43200491d0",
+        "jvagent/harness/skill_assets.py": "git-blob:ba7a34ddaa9a4e4ea7e95e7191a403b5524ec5a1",
+        "jvagent/harness/skill_catalog.py": "git-blob:d54f0d938669fba1e03e1f36c450e9185a2c0032"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "epoch4": {
+      "process_id": 70863,
+      "observed_at": "2026-11-06T22:11:04.054855+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:4987dc035a22360c2a53033a544a3d43200491d0",
+        "jvagent/core/clock.py": "git-blob:c98943fa26af88292d1008bf5223d6f6b6614d26",
+        "jvagent/harness/skill_assets.py": "git-blob:ba7a34ddaa9a4e4ea7e95e7191a403b5524ec5a1",
+        "jvagent/harness/skill_catalog.py": "git-blob:d54f0d938669fba1e03e1f36c450e9185a2c0032"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  },
+  "turns": [
+    {
+      "scenario": "ordinary_math_with_closed_member",
+      "functional_outcome": "passed expectation",
+      "interaction_id": "n.Interaction.5ec8b8bd72f449a9aaf76edb",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "What is 17 times 19? Please answer directly.",
+      "response": "17 times 19 is 323.",
+      "run_status": "delivered",
+      "history_source": {},
+      "duration_seconds": 6.774186,
+      "model_requests": 2,
+      "provider_reported_tokens": 575,
+      "estimated_cost_usd": "0.001306",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "69987"
+      ]
+    },
+    {
+      "scenario": "closed_clock_model_refusal",
+      "functional_outcome": "passed expectation",
+      "interaction_id": "n.Interaction.0fcafe7d602145b88f27bdab",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "Please load the regional-clock capability and call get_current_datetime to tell me the exact app time. If it is unavailable, say so rather than guessing.",
+      "response": "The regional-clock capability is not available to load, so I cannot provide the exact app time.",
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-6a7aa941fd474ef58c52283a6e0e9adf"
+      },
+      "duration_seconds": 2.79939,
+      "model_requests": 1,
+      "provider_reported_tokens": 382,
+      "estimated_cost_usd": "0.00089",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "69987"
+      ]
+    },
+    {
+      "scenario": "eligible_clock_host_denial",
+      "functional_outcome": "passed expectation",
+      "interaction_id": "n.Interaction.7d1cdffcf85e4e26840c69b8",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "Please load regional-clock and call get_current_datetime once. If access is denied, stop and explain that restriction without guessing the time.",
+      "response": "Access to the app clock is denied, so I cannot provide the exact current time.",
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-ecc10e12984c40928d5bbbc6e55fd0d7"
+      },
+      "duration_seconds": 7.672964,
+      "model_requests": 3,
+      "provider_reported_tokens": 1796,
+      "estimated_cost_usd": "0.00388",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "get_current_datetime",
+          "status": "failed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 9,
+      "worker_pids": [
+        "70263"
+      ]
+    },
+    {
+      "scenario": "restored_permission_stale_model_denial",
+      "functional_outcome": "failed expectation",
+      "interaction_id": "n.Interaction.3abf09628b1840e1816a8738",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "Please try get_current_datetime once now and report the exact app date, time and timezone from its result.",
+      "response": "Access to the app clock is denied, so I cannot retrieve or report the exact app date, time, or timezone.",
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-d77b1b36f9d4464e916968372ed3da4f"
+      },
+      "duration_seconds": 4.659656,
+      "model_requests": 1,
+      "provider_reported_tokens": 719,
+      "estimated_cost_usd": "0.001594",
+      "unknown_cost_calls": 0,
+      "effects": [],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "70436"
+      ]
+    },
+    {
+      "scenario": "explicit_retry_default_timezone_failure",
+      "functional_outcome": "failed expectation",
+      "interaction_id": "n.Interaction.6acef3f4316846e391b67d83",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "An administrator has restored the clock permission. Please actually retry get_current_datetime now, even though the previous attempt was denied. Use the current tool result to decide whether it works.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "run_status": "failed",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-13d2110e0e3148f386a697c580d5ac0a"
+      },
+      "duration_seconds": 2.54196,
+      "model_requests": 1,
+      "provider_reported_tokens": 772,
+      "estimated_cost_usd": "0.001616",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "get_current_datetime",
+          "status": "failed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 3,
+      "worker_pids": [
+        "70436"
+      ]
+    },
+    {
+      "scenario": "clock_fix_same_session_recovery",
+      "functional_outcome": "passed expectation",
+      "interaction_id": "n.Interaction.f3faac2773994e789d20cc85",
+      "session_id": "sess_15a335291441464a",
+      "utterance": "The clock configuration has been repaired. Please retry get_current_datetime once now and report the exact current date, time and timezone from the tool result.",
+      "response": "The exact current app date, time, and timezone are: Friday, November 6, 2026, 18:08:04 (6:08:04 PM), timezone UTC-4.",
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "accepted_input",
+        "source_run_id": "corr-625cecd5c044496fafe933f57445836e"
+      },
+      "duration_seconds": 6.693779,
+      "model_requests": 2,
+      "provider_reported_tokens": 1744,
+      "estimated_cost_usd": "0.003818",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "get_current_datetime",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 6,
+      "worker_pids": [
+        "70863"
+      ],
+      "persisted_actual_clock_result": "ISO 8601: 2026-11-06T18:08:04.048882-04:00\nDate: Friday, November 06, 2026\nTime: 18:08:04\nTimezone: -04",
+      "response_matches_exact_clock_seconds_and_offset": true
+    },
+    {
+      "scenario": "clock_fix_fresh_session",
+      "functional_outcome": "passed expectation",
+      "interaction_id": "n.Interaction.cfc5bed1e09943e7a7686d06",
+      "session_id": "sess_f47f86270d18476b",
+      "utterance": "Please read the current app clock and tell me its exact date, time and timezone.",
+      "response": "The current app clock reads:\n- Date: Friday, November 6, 2026\n- Time: 18:09:46\n- Timezone: UTC-4",
+      "run_status": "delivered",
+      "history_source": {},
+      "duration_seconds": 6.30957,
+      "model_requests": 3,
+      "provider_reported_tokens": 1169,
+      "estimated_cost_usd": "0.00274",
+      "unknown_cost_calls": 0,
+      "effects": [
+        {
+          "tool": "load_capability",
+          "status": "completed",
+          "terminal_event_count": 1
+        },
+        {
+          "tool": "get_current_datetime",
+          "status": "completed",
+          "terminal_event_count": 1
+        }
+      ],
+      "sdk_runs": 1,
+      "sdk_snapshots": 9,
+      "worker_pids": [
+        "70863"
+      ],
+      "persisted_actual_clock_result": "ISO 8601: 2026-11-06T18:09:46.600681-04:00\nDate: Friday, November 06, 2026\nTime: 18:09:46\nTimezone: -04",
+      "response_matches_exact_clock_seconds_and_offset": true
+    }
+  ],
+  "totals": {
+    "turns": 7,
+    "functional_expectations_passed": 5,
+    "retained_failed_expectations": 2,
+    "delivered_runs": 6,
+    "failed_runs": 1,
+    "model_requests": 13,
+    "provider_reported_tokens": 7157,
+    "estimated_cost_usd": "0.015844",
+    "provider_reported_cost_usd": "0",
+    "unknown_cost_calls": 0,
+    "terminal_effects": 7,
+    "completed_effects": 5,
+    "failed_effects": 2
+  },
+  "conversation_readback": [
+    {
+      "id": "n.Conversation.bef683346b424622b9badf64",
+      "spent": {
+        "usd": "0.013104",
+        "tokens": 5988,
+        "requests": 10,
+        "unpriced_requests": 0
+      },
+      "task_count": 0,
+      "ledger_reconciles": true
+    },
+    {
+      "id": "n.Conversation.9993b94781f748ae8af368de",
+      "spent": {
+        "usd": "0.002740",
+        "tokens": 1169,
+        "requests": 3,
+        "unpriced_requests": 0
+      },
+      "task_count": 0,
+      "ledger_reconciles": true
+    }
+  ],
+  "raw_record_comparisons": [
+    {
+      "scenario": "enable_and_deny_restart",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:c466151614d3a9116dfb225e6a931cb6a57dd346404950f373a218e840f0767f",
+      "after_digest": "sha256:c466151614d3a9116dfb225e6a931cb6a57dd346404950f373a218e840f0767f"
+    },
+    {
+      "scenario": "enable_and_deny_restart",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:2162493d2d82341c8196e355d457550da0a4a2ee35c82779fa65a54ed1eeb79e",
+      "after_digest": "sha256:2162493d2d82341c8196e355d457550da0a4a2ee35c82779fa65a54ed1eeb79e"
+    },
+    {
+      "scenario": "permission_restore_restart",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:50a666690ca7623ea43fe551fb6739003e617971722b6a28b75f80f86023e82c",
+      "after_digest": "sha256:50a666690ca7623ea43fe551fb6739003e617971722b6a28b75f80f86023e82c"
+    },
+    {
+      "scenario": "permission_restore_restart",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:282b97dfeee7f2141c6762101df022a7df43f04d236e86bcf278c54f6d0a3992",
+      "after_digest": "sha256:282b97dfeee7f2141c6762101df022a7df43f04d236e86bcf278c54f6d0a3992"
+    },
+    {
+      "scenario": "clock_fix_restart",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:d7cfe0b3b3c8edd0906e987f19f3a427fa90c29bf76b6b25e58258305d7b623a",
+      "after_digest": "sha256:d7cfe0b3b3c8edd0906e987f19f3a427fa90c29bf76b6b25e58258305d7b623a"
+    },
+    {
+      "scenario": "clock_fix_restart",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:465bbe738fdf712ca747ae5b46eda15ebff5d566afa0f8b162f3c5ecca0349a5",
+      "after_digest": "sha256:465bbe738fdf712ca747ae5b46eda15ebff5d566afa0f8b162f3c5ecca0349a5"
+    },
+    {
+      "scenario": "final_reload",
+      "entity_group": "rows",
+      "equal": true,
+      "before_digest": "sha256:fd317bb028b074d6905cdd691bf5ac2c16ddb1c97388fbbc4608cb9eea1feb41",
+      "after_digest": "sha256:fd317bb028b074d6905cdd691bf5ac2c16ddb1c97388fbbc4608cb9eea1feb41"
+    },
+    {
+      "scenario": "final_reload",
+      "entity_group": "conversations",
+      "equal": true,
+      "before_digest": "sha256:c02db55870df549b18c21d21285637f624946eca98dc68a6d037d69917a40efd",
+      "after_digest": "sha256:c02db55870df549b18c21d21285637f624946eca98dc68a6d037d69917a40efd"
+    }
+  ],
+  "recovery_mutates_only_predecessor_usage_timestamp": [
+    {
+      "interaction_id": "n.Interaction.6acef3f4316846e391b67d83",
+      "only_changed_field": "context.usage.last_updated",
+      "before": "2026-11-06T22:05:09.164063+00:00",
+      "after": "2026-11-06T22:08:00.684926+00:00",
+      "all_other_fields_equal": true
+    }
+  ],
+  "operator_policy_changes": [
+    {
+      "operation": "enable-deny",
+      "interaction_and_conversation_rows_unchanged": true,
+      "clock_denied": true
+    },
+    {
+      "operation": "allow",
+      "interaction_and_conversation_rows_unchanged": true,
+      "clock_denied": false
+    }
+  ],
+  "closed_clock_absent_from_initial_provider_tool_definitions": true,
+  "default_app_timezone_remains_unset": true,
+  "verification": {
+    "channel_cases": 16,
+    "clock_cases": 14,
+    "new_clock_regressions": 5,
+    "native_host_real_postgres_docker_and_clock": {
+      "python311": {
+        "passed": 752,
+        "duration_seconds": 99.61
+      },
+      "python312": {
+        "passed": 752,
+        "duration_seconds": 103.33
+      }
+    },
+    "migration_scaffold_slice": {
+      "passed": 181
+    },
+    "unmanaged_mypy_parent_equivalent_errors": 9,
+    "publication": "Clean pinned all-files pre-commit and normal full pre-push required separately; see PR checks"
+  },
+  "reference_blockers_remaining": 9,
+  "limitations": [
+    "One stale-denial model reply remains a failed recovery expectation",
+    "The None-timezone service failure is retained before the fix; two final actual reads succeed",
+    "Channel selection is not authenticated origin or host permission",
+    "No external message is sent; WhatsApp write/delivery qualification remains open",
+    "Host script binding is deterministic wiring evidence, not a new Docker smoke",
+    "Previously staged user files and cross-channel conversation reuse are not qualified",
+    "Inactive SDK format validation remains an offline/eligible-member gate",
+    "Recovery refreshes one predecessor usage.last_updated; all its other fields remain exact",
+    "No optimization comparison, legacy removal or enterprise qualification is claimed"
+  ]
+}

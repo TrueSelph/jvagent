@@ -1,0 +1,661 @@
+{
+  "parent_revision": "git-commit:5739cf5df86693b60604439cbfa5998e8e4073e3",
+  "source_blobs": {
+    "jvagent/action/interact/endpoints.py": "git-blob:5976d9a6f9f554c6d31820f3732ef44d59f36492",
+    "jvagent/action/interact/interact_walker.py": "git-blob:e0d7993bee804b4951c14ab5d88e927f44222b8f",
+    "jvagent/action/interact/webhook_pipeline.py": "git-blob:a8529d3fd3dbb99a91bf013fff10a4fdc70867ee",
+    "jvagent/action/native_harness/README.md": "git-blob:b38636282682915358614f350bff3999f6da4319",
+    "jvagent/action/response/response_bus.py": "git-blob:3f3af94706f84129bd252e323dd56bc7a20ed353",
+    "jvagent/core/host_context.py": "git-blob:ac1a2ef575746aa07a76274a7484a07fd0d1ebd7",
+    "jvagent/embed/interact.py": "git-blob:ee3c2e3e27cf574f236671621c726b7252285a4f",
+    "tests/action/interact/test_fast_stream_delivery.py": "git-blob:b446496cd9492971b3dae784d231fcf624905e38",
+    "tests/action/interact/test_native_host_context.py": "git-blob:7698a557264928c214b9d107eab799b73b08dc6f",
+    "tests/action/interact/test_sanitize_visitor_data.py": "git-blob:28bfb5d777def0a847101cb27a5f37c00730c463",
+    "tests/action/response/test_host_metadata.py": "git-blob:acfe2ef6b7b970e37d702288c5cf64908a09ab54",
+    "tests/test_embed_stream.py": "git-blob:574919101a2c0eb77838aeacd240596b41d64584"
+  },
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "api": "http://127.0.0.1:8136",
+    "ui": "http://127.0.0.1:3136",
+    "database": "jvagent_native_host_context",
+    "auth_mode": "required",
+    "caller": "disposable administrator",
+    "model": "openai:gpt-4.1",
+    "signer": "fixed synthetic policy envelopes served from a temporary loopback fixture; signing key never passed to browser; signer stopped after tests"
+  },
+  "browser_preconditions": [
+    {
+      "scenario": "valid_signed_host",
+      "browser_started_at_utc": "2026-11-05T12:46:02.437Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "replay_while_unexpired",
+      "browser_started_at_utc": "2026-11-05T12:47:37.513Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "foreign_agent",
+      "browser_started_at_utc": "2026-11-05T12:49:05.423Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": false
+    },
+    {
+      "scenario": "foreign_user",
+      "browser_started_at_utc": "2026-11-05T12:49:06.675Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": false
+    },
+    {
+      "scenario": "foreign_session",
+      "browser_started_at_utc": "2026-11-05T12:49:07.926Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": false
+    },
+    {
+      "scenario": "expired",
+      "browser_started_at_utc": "2026-11-05T12:49:09.157Z",
+      "signature_valid": true,
+      "unexpired_through_response": false,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "tampered",
+      "browser_started_at_utc": "2026-11-05T12:49:10.377Z",
+      "signature_valid": false,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "mismatched_request",
+      "browser_started_at_utc": "2026-11-05T12:49:11.625Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": false,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "null",
+      "browser_started_at_utc": "2026-11-05T12:49:12.851Z",
+      "malformed_or_null": true
+    },
+    {
+      "scenario": "malformed",
+      "browser_started_at_utc": "2026-11-05T12:49:14.067Z",
+      "malformed_or_null": true
+    },
+    {
+      "scenario": "valid_deferred",
+      "browser_started_at_utc": "2026-11-05T13:05:31.701Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "replay_deferred",
+      "browser_started_at_utc": "2026-11-05T13:07:22.897Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "valid_private",
+      "browser_started_at_utc": "2026-11-05T13:16:25.159Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    },
+    {
+      "scenario": "valid_log_private",
+      "browser_started_at_utc": "2026-11-05T13:24:12.315Z",
+      "signature_valid": true,
+      "unexpired_through_response": true,
+      "signed_request_id_matches": true,
+      "caller_scope_matches": true
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+      "utterance": "For a caller identity setup check, reply only READY.",
+      "reply": "READY",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 271,
+          "output_tokens": 3
+        },
+        "output": "READY",
+        "run_id": "corr-de2ec428cb1e4624bd1d079a9ede8000",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T12:43:55.649189+00:00",
+        "total_tokens": 274,
+        "prompt_tokens": 271,
+        "total_cost_usd": 0.000566,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 3,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000566,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:43:51.538786",
+      "completed_at": "2026-11-05T08:43:55.649140",
+      "backend_duration_seconds": 4.110354,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.de541b181db94195859c0009",
+      "utterance": "Please confirm host context.",
+      "reply": "Host context confirmed.",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 285,
+          "output_tokens": 6
+        },
+        "output": "Host context confirmed.",
+        "run_id": "corr-9e3559d56f4441828b74657e4f784cdf",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-de2ec428cb1e4624bd1d079a9ede8000"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T12:45:29.665955+00:00",
+        "total_tokens": 291,
+        "prompt_tokens": 285,
+        "total_cost_usd": 0.000618,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 6,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000618,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:45:26.499200",
+      "completed_at": "2026-11-05T08:45:29.665907",
+      "backend_duration_seconds": 3.166707,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.6854e6595de0437c91b6021e",
+      "utterance": "Please confirm host context.",
+      "reply": "VERIFIED-HOST-CEDAR",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 322,
+          "output_tokens": 9
+        },
+        "output": "VERIFIED-HOST-CEDAR",
+        "run_id": "corr-462b4a7aa4d443a694ee2b8923f9be1e",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-9e3559d56f4441828b74657e4f784cdf"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T12:46:04.671267+00:00",
+        "total_tokens": 331,
+        "prompt_tokens": 322,
+        "total_cost_usd": 0.000716,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 9,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000716,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:46:02.511957",
+      "completed_at": "2026-11-05T08:46:04.671208",
+      "backend_duration_seconds": 2.159251,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+      "utterance": "Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.",
+      "reply": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 732,
+          "output_tokens": 44
+        },
+        "output": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+        "run_id": "corr-1a19775ac159424e90237376e09f915b",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-462b4a7aa4d443a694ee2b8923f9be1e"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T12:50:58.283584+00:00",
+        "total_tokens": 776,
+        "prompt_tokens": 732,
+        "total_cost_usd": 0.001816,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001816,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:50:54.159892",
+      "completed_at": "2026-11-05T08:50:58.283537",
+      "backend_duration_seconds": 4.123645,
+      "snapshot_count": 6,
+      "tool_effects": [
+        {
+          "run_id": "corr-1a19775ac159424e90237376e09f915b",
+          "status": "completed",
+          "ended_at": "2026-11-05T12:50:56.360372Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T12:50:56.298798Z",
+          "tool_call_id": "call_pOSP5x5MigCTRbKx8Qx3Jgdb",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.81bbac17a9304291b99d585a",
+      "utterance": "Please confirm deferred host context.",
+      "reply": "DEFERRED-HOST-CEDAR",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 444,
+          "output_tokens": 10
+        },
+        "output": "DEFERRED-HOST-CEDAR",
+        "run_id": "corr-5c8d611dd1c84ec9b03f4f07e3e356d1",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-1a19775ac159424e90237376e09f915b"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T13:05:35.112317+00:00",
+        "total_tokens": 454,
+        "prompt_tokens": 444,
+        "total_cost_usd": 0.000968,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 10,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000968,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T09:05:31.768792",
+      "completed_at": "2026-11-05T09:05:35.112272",
+      "backend_duration_seconds": 3.34348,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.1368b7c7615b4335920de2ab",
+      "utterance": "Please confirm private host context.",
+      "reply": "PRIVATE-HOST-CEDAR",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 464,
+          "output_tokens": 8
+        },
+        "output": "PRIVATE-HOST-CEDAR",
+        "run_id": "corr-a59cd86ed8494672b7b434857c269440",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-5c8d611dd1c84ec9b03f4f07e3e356d1"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T13:16:28.933239+00:00",
+        "total_tokens": 472,
+        "prompt_tokens": 464,
+        "total_cost_usd": 0.000992,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 8,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000992,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T09:16:25.234543",
+      "completed_at": "2026-11-05T09:16:28.933191",
+      "backend_duration_seconds": 3.698648,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.7be361cc7c354e76bc486a1a",
+      "utterance": "Please confirm log-private host context.",
+      "reply": "LOG-PRIVATE-HOST-CEDAR",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 488,
+          "output_tokens": 10
+        },
+        "output": "LOG-PRIVATE-HOST-CEDAR",
+        "run_id": "corr-c63a71d8db694e5993cc62c15b5183b2",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-a59cd86ed8494672b7b434857c269440"
+        },
+        "usage_complete": true
+      },
+      "closed": true,
+      "emitted": true,
+      "usage": {
+        "last_updated": "2026-11-05T13:24:15.721305+00:00",
+        "total_tokens": 498,
+        "prompt_tokens": 488,
+        "total_cost_usd": 0.001056,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 10,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001056,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T09:24:12.463729",
+      "completed_at": "2026-11-05T09:24:15.721267",
+      "backend_duration_seconds": 3.257538,
+      "snapshot_count": 3,
+      "tool_effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    }
+  ],
+  "nonce_ledger_phases": [
+    {
+      "phase": "immediate_writes",
+      "active_nonce_count": 1,
+      "entries_without_nonce_values": [
+        {
+          "run_id": "f45feffbd9fd49e2bf53f666631440a2",
+          "expires_at": 1793882998,
+          "correlation_id": "corr-462b4a7aa4d443a694ee2b8923f9be1e"
+        }
+      ],
+      "binding_matches_signed_model_run": true,
+      "signed_reply": "VERIFIED-HOST-CEDAR"
+    },
+    {
+      "phase": "deferred_writes",
+      "active_nonce_count": 1,
+      "entries_without_nonce_values": [
+        {
+          "run_id": "a0377686d5bb4e1a80882f18cd560ccb",
+          "expires_at": 1793884228,
+          "correlation_id": "corr-5c8d611dd1c84ec9b03f4f07e3e356d1"
+        }
+      ],
+      "binding_matches_signed_model_run": true,
+      "signed_reply": "DEFERRED-HOST-CEDAR"
+    },
+    {
+      "phase": "deferred_writes_private_egress",
+      "active_nonce_count": 1,
+      "entries_without_nonce_values": [
+        {
+          "run_id": "8bd60b8fa3e5496dbc644e4050ffc3a9",
+          "expires_at": 1793884816,
+          "correlation_id": "corr-a59cd86ed8494672b7b434857c269440"
+        }
+      ],
+      "binding_matches_signed_model_run": true,
+      "signed_reply": "PRIVATE-HOST-CEDAR"
+    },
+    {
+      "phase": "deferred_writes_private_egress_and_logs",
+      "active_nonce_count": 1,
+      "entries_without_nonce_values": [
+        {
+          "run_id": "271f3abc73664f3cb381a234e6a89045",
+          "expires_at": 1793885332,
+          "correlation_id": "corr-c63a71d8db694e5993cc62c15b5183b2"
+        }
+      ],
+      "binding_matches_signed_model_run": true,
+      "signed_reply": "LOG-PRIVATE-HOST-CEDAR"
+    }
+  ],
+  "fresh_fixture_totals": {
+    "model_call_count": 8,
+    "total_tokens": 3096,
+    "estimated_cost_usd": 0.006732,
+    "unknown_cost_call_count": 0
+  },
+  "parent_failure": {
+    "interaction_id": "n.Interaction.0ed661bf2034471ebe4e3281",
+    "native_run": {
+      "usage": {
+        "requests": 1,
+        "input_tokens": 417,
+        "output_tokens": 11
+      },
+      "output": "HOST-CONTEXT-VALIDATION-CHECK",
+      "run_id": "corr-1466354e8ea54337896305b92aa773a2",
+      "status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-72e46227e37c4803b925ce9cb6ccb51d"
+      },
+      "usage_complete": true
+    },
+    "closed": true,
+    "emitted": true,
+    "usage": {
+      "last_updated": "2026-11-05T12:36:20.360757+00:00",
+      "total_tokens": 428,
+      "prompt_tokens": 417,
+      "total_cost_usd": 0.000922,
+      "litellm_cost_usd": 0.0,
+      "model_call_count": 1,
+      "completion_tokens": 11,
+      "reported_cost_usd": 0.0,
+      "cache_write_tokens": 0,
+      "estimated_cost_usd": 0.000922,
+      "model_attempt_count": 0,
+      "cached_prompt_tokens": 0,
+      "total_duration_seconds": 0.0,
+      "unknown_cost_call_count": 0,
+      "failed_model_attempt_count": 0,
+      "cancelled_model_attempt_count": 0,
+      "model_attempt_duration_seconds": 0.0
+    },
+    "backend_duration_seconds": 2.472756
+  },
+  "all_round_model_totals": {
+    "model_call_count": 9,
+    "total_tokens": 3524,
+    "estimated_cost_usd": 0.007654,
+    "unknown_cost_call_count": 0
+  },
+  "rejections": {
+    "streaming": 10,
+    "nonstreaming_host_validation": 1,
+    "fixture_schema_errors_excluded": 1,
+    "persisted_interaction_count_after_rejections_before_final_positive": 5,
+    "persisted_interaction_count_after_final_positive": 7,
+    "native_model_execution_for_rejected_requests": "not started; common bootstrap returns before Interaction creation and Action traversal; no provider receipt is expected"
+  },
+  "egress_privacy": {
+    "pre_fix_envelope_echo_confirmed": true,
+    "pre_fix_values_redacted_in_browser_evidence": true,
+    "final_signed_model_reply_has_no_host_envelope_or_associated_request_id_in_metadata": true,
+    "unrelated_application_run_id_retained_by_regression": true
+  },
+  "module_probe_read_at_utc": "2026-11-05T13:25:47.965700+00:00",
+  "post_finalization_module_probe": {
+    "process_id": 43046,
+    "observed_at": "2026-11-05T13:24:10.226991+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T13:25:47.820323+00:00"
+  },
+  "limitations": [
+    "Administrator on explicitly required public auth; ordinary-member, foreign bearer/session capability, popup and actual-provider embedded workflows remain unqualified.",
+    "Development public auth still defaults off; unknown configured modes also resolve off. This cohort does not qualify those configurations or migration of that setting.",
+    "The initial automation arm used an unsupported tool argument and was not applied; its unsigned request and cost are retained as the second fresh-fixture turn.",
+    "The first nonstreaming probe supplied forbidden agent_id in the body and failed schema validation; it is retained separately, not counted as host-policy validation.",
+    "Missing signing secret, nonce storage outage and strict-flush failure are deterministic regressions, not browser deployment fault injection.",
+    "Queued embed admission beyond five seconds is a mutation-checked deterministic test; live embed transport cancellation, heartbeats and timeout ownership remain open.",
+    "Costs are pricing estimates; provider token receipts are known; usage request timing is unmeasured. Browser fetch and backend Interaction durations are distinct.",
+    "Explicit transitional execution paths remain pending migration/deletion; no enterprise qualification or efficiency comparison is claimed."
+  ]
+}

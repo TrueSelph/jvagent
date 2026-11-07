@@ -72,7 +72,9 @@ async def test_pageindex_llm_webhook_mints_new_path():
     )
     assert "?api_key=test_mock_api_key" in url
     kwargs = generate_key.call_args.kwargs
-    assert kwargs["allowed_endpoints"] == [ALLOWED_WEBHOOK_ENDPOINT_GLOB]
+    assert kwargs["allowed_endpoints"] == [
+        "/api/pageindex/interact/webhook/n.Agent.test123"
+    ]
     assert kwargs["permissions"] == [WEBHOOK_PERMISSION]
     service.generate_key.assert_awaited_once()
 

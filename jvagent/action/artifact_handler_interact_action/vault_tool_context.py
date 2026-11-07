@@ -26,10 +26,7 @@ class _InterviewShim:
         self._action = action
 
     async def get_action(self, name: str) -> Any:
-        try:
-            return await self._action.get_action(name)
-        except Exception:
-            return None
+        return await self._action.get_action(name)
 
 
 class VaultToolContext:

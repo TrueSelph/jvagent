@@ -1,0 +1,236 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_bootstrap_scheduler_dispatches_on_serving_loop[False] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11e728290>
+tmp_path = PosixPath('/private/var/folders/5w/9kl274kx0ws67rs2k5mn5vxc0000gn/T/pytest-of-eldonmarks/pytest-865/test_bootstrap_scheduler_dispa0')
+serverless = False
+
+    @pytest.mark.parametrize("serverless", [False, True])
+    def test_bootstrap_scheduler_dispatches_on_serving_loop(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, serverless: bool
+    ) -> None:
+        pytest.importorskip("schedule")
+        from jvspatial.api.integrations.scheduler.models import (
+            ScheduleConfig,
+            ScheduledTask,
+            SchedulerConfig,
+        )
+        from jvspatial.api.integrations.scheduler.scheduler import SchedulerService
+
+        from jvagent import stress_seed_graph
+
+        seed = stress_seed_graph.StressSeedConfig(1, 1)
+        scheduler = SchedulerService(SchedulerConfig(interval=0.01))
+        state: dict = {}
+
+        async def probe() -> None:
+            state["dispatch_loop"] = asyncio.get_running_loop()
+            state["delivered"].set()
+
+        async def bootstrap(server: object, **kwargs: object) -> bool:
+            state["bootstrap_loop"] = asyncio.get_running_loop()
+            state["delivered"] = asyncio.Event()
+            await scheduler.register_task(
+                ScheduledTask(
+                    task_id="cli-loop-probe",
+                    task_type="async_function",
+                    function_ref=probe,
+                    schedule=ScheduleConfig(schedule_spec="every 1 seconds"),
+                )
+            )
+            scheduler.start(interval=0.01)
+            return True
+
+        async def seed_graph(config: stress_seed_graph.StressSeedConfig) -> None:
+            assert config is seed
+            assert asyncio.get_running_loop() is state["bootstrap_loop"]
+            state["seeded"] = True
+
+        async def run_async(**kwargs: object) -> None:
+            assert asyncio.get_running_loop() is state["bootstrap_loop"]
+            expected = {
+                "reload": False,
+                "timeout_graceful_shutdown": 30,
+            }
+            if serverless:
+                expected["workers"] = 1
+            assert kwargs == expected
+            assert state["seeded"] is True
+            await asyncio.wait_for(state["delivered"].wait(), timeout=5)
+            assert state["dispatch_loop"] is state["bootstrap_loop"]
+
+        # The synchronous API models Uvicorn creating its own loop. Restoring the
+        # old CLI implementation must fail the loop-identity assertion above.
+        server = SimpleNamespace(
+            lifecycle_manager=SimpleNamespace(add_startup_hook=MagicMock()),
+            run_async=run_async,
+            run=lambda **kwargs: asyncio.run(run_async(**kwargs)),
+        )
+        monkeypatch.setattr(cli_server, "create_server_from_config", lambda **kw: server)
+        monkeypatch.setattr(cli_server, "pre_startup_bootstrap", bootstrap)
+        monkeypatch.setattr(cli_server, "is_serverless_mode", lambda: serverless)
+        monkeypatch.setattr(stress_seed_graph, "execute_stress_seed_graph", seed_graph)
+        try:
+>           cli_server.run_server(app_root=str(tmp_path), debug=True, stress_seed=seed)
+
+tests/cli/test_server_loop_lifetime.py:79:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+jvagent/cli/server.py:340: in run_server
+    asyncio.run(execute_stress_seed_graph(stress_seed))
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+config = StressSeedConfig(user_memory_nodes=1, interactions_per_user_memory_node=1, agent=None, user_id_prefix='graph_stress', progress_every=100, no_bootstrap=False, pre_startup=False)
+
+    async def seed_graph(config: stress_seed_graph.StressSeedConfig) -> None:
+        assert config is seed
+>       assert asyncio.get_running_loop() is state["bootstrap_loop"]
+E       assert <_UnixSelectorEventLoop running=True closed=False debug=False> is <_UnixSelectorEventLoop running=False closed=True debug=False>
+E        +  where <_UnixSelectorEventLoop running=True closed=False debug=False> = <built-in function get_running_loop>()
+E        +    where <built-in function get_running_loop> = asyncio.get_running_loop
+
+tests/cli/test_server_loop_lifetime.py:51: AssertionError
+----------------------------- Captured stdout call -----------------------------
+19:31:05 | [32mINFO[0m | jvagent.core.bootstrap_logger | [START] Startup: jvagent application
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: cli-loop-probe (every 1 seconds)
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Scheduler started with 0.01s interval
+19:31:05 | [32mINFO[0m | jvagent.cli.server | Graph stress-seed: writing 1 user memory nodes with 1 interactions each to the app database, then starting the server.
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Stopping scheduler...
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Scheduler stopped
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Unregistered scheduled task: cli-loop-probe
+------------------------------ Captured log call -------------------------------
+INFO     jvagent.core.bootstrap_logger:_logging_compat.py:46 [START] Startup: jvagent application
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Registered scheduled task: cli-loop-probe (every 1 seconds)
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Scheduler started with 0.01s interval
+INFO     jvagent.cli.server:_logging_compat.py:46 Graph stress-seed: writing 1 user memory nodes with 1 interactions each to the app database, then starting the server.
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Stopping scheduler...
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Scheduler stopped
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Unregistered scheduled task: cli-loop-probe
+__________ test_bootstrap_scheduler_dispatches_on_serving_loop[True] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11e9986d0>
+tmp_path = PosixPath('/private/var/folders/5w/9kl274kx0ws67rs2k5mn5vxc0000gn/T/pytest-of-eldonmarks/pytest-865/test_bootstrap_scheduler_dispa1')
+serverless = True
+
+    @pytest.mark.parametrize("serverless", [False, True])
+    def test_bootstrap_scheduler_dispatches_on_serving_loop(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, serverless: bool
+    ) -> None:
+        pytest.importorskip("schedule")
+        from jvspatial.api.integrations.scheduler.models import (
+            ScheduleConfig,
+            ScheduledTask,
+            SchedulerConfig,
+        )
+        from jvspatial.api.integrations.scheduler.scheduler import SchedulerService
+
+        from jvagent import stress_seed_graph
+
+        seed = stress_seed_graph.StressSeedConfig(1, 1)
+        scheduler = SchedulerService(SchedulerConfig(interval=0.01))
+        state: dict = {}
+
+        async def probe() -> None:
+            state["dispatch_loop"] = asyncio.get_running_loop()
+            state["delivered"].set()
+
+        async def bootstrap(server: object, **kwargs: object) -> bool:
+            state["bootstrap_loop"] = asyncio.get_running_loop()
+            state["delivered"] = asyncio.Event()
+            await scheduler.register_task(
+                ScheduledTask(
+                    task_id="cli-loop-probe",
+                    task_type="async_function",
+                    function_ref=probe,
+                    schedule=ScheduleConfig(schedule_spec="every 1 seconds"),
+                )
+            )
+            scheduler.start(interval=0.01)
+            return True
+
+        async def seed_graph(config: stress_seed_graph.StressSeedConfig) -> None:
+            assert config is seed
+            assert asyncio.get_running_loop() is state["bootstrap_loop"]
+            state["seeded"] = True
+
+        async def run_async(**kwargs: object) -> None:
+            assert asyncio.get_running_loop() is state["bootstrap_loop"]
+            expected = {
+                "reload": False,
+                "timeout_graceful_shutdown": 30,
+            }
+            if serverless:
+                expected["workers"] = 1
+            assert kwargs == expected
+            assert state["seeded"] is True
+            await asyncio.wait_for(state["delivered"].wait(), timeout=5)
+            assert state["dispatch_loop"] is state["bootstrap_loop"]
+
+        # The synchronous API models Uvicorn creating its own loop. Restoring the
+        # old CLI implementation must fail the loop-identity assertion above.
+        server = SimpleNamespace(
+            lifecycle_manager=SimpleNamespace(add_startup_hook=MagicMock()),
+            run_async=run_async,
+            run=lambda **kwargs: asyncio.run(run_async(**kwargs)),
+        )
+        monkeypatch.setattr(cli_server, "create_server_from_config", lambda **kw: server)
+        monkeypatch.setattr(cli_server, "pre_startup_bootstrap", bootstrap)
+        monkeypatch.setattr(cli_server, "is_serverless_mode", lambda: serverless)
+        monkeypatch.setattr(stress_seed_graph, "execute_stress_seed_graph", seed_graph)
+        try:
+>           cli_server.run_server(app_root=str(tmp_path), debug=True, stress_seed=seed)
+
+tests/cli/test_server_loop_lifetime.py:79:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+jvagent/cli/server.py:340: in run_server
+    asyncio.run(execute_stress_seed_graph(stress_seed))
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+config = StressSeedConfig(user_memory_nodes=1, interactions_per_user_memory_node=1, agent=None, user_id_prefix='graph_stress', progress_every=100, no_bootstrap=False, pre_startup=False)
+
+    async def seed_graph(config: stress_seed_graph.StressSeedConfig) -> None:
+        assert config is seed
+>       assert asyncio.get_running_loop() is state["bootstrap_loop"]
+E       assert <_UnixSelectorEventLoop running=True closed=False debug=False> is <_UnixSelectorEventLoop running=False closed=True debug=False>
+E        +  where <_UnixSelectorEventLoop running=True closed=False debug=False> = <built-in function get_running_loop>()
+E        +    where <built-in function get_running_loop> = asyncio.get_running_loop
+
+tests/cli/test_server_loop_lifetime.py:51: AssertionError
+----------------------------- Captured stdout call -----------------------------
+19:31:05 | [32mINFO[0m | jvagent.core.bootstrap_logger | [START] Startup: jvagent application
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Registered scheduled task: cli-loop-probe (every 1 seconds)
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Scheduler started with 0.01s interval
+19:31:05 | [32mINFO[0m | jvagent.cli.server | Graph stress-seed: writing 1 user memory nodes with 1 interactions each to the app database, then starting the server.
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Stopping scheduler...
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Scheduler stopped
+19:31:05 | [32mINFO[0m | jvspatial.api.integrations.scheduler.scheduler | Unregistered scheduled task: cli-loop-probe
+------------------------------ Captured log call -------------------------------
+INFO     jvagent.core.bootstrap_logger:_logging_compat.py:46 [START] Startup: jvagent application
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Registered scheduled task: cli-loop-probe (every 1 seconds)
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Scheduler started with 0.01s interval
+INFO     jvagent.cli.server:_logging_compat.py:46 Graph stress-seed: writing 1 user memory nodes with 1 interactions each to the app database, then starting the server.
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Stopping scheduler...
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Scheduler stopped
+INFO     jvspatial.api.integrations.scheduler.scheduler:_logging_compat.py:46 Unregistered scheduled task: cli-loop-probe
+=========================== short test summary info ============================
+FAILED tests/cli/test_server_loop_lifetime.py::test_bootstrap_scheduler_dispatches_on_serving_loop[False]
+FAILED tests/cli/test_server_loop_lifetime.py::test_bootstrap_scheduler_dispatches_on_serving_loop[True]
+2 failed, 1 passed in 0.35s

@@ -232,7 +232,17 @@ class LeadRecord(Node):
             record = await cls.find_one(user_node_id=user_node_id)
             if record:
                 return record
-        return await user.node(node=LeadRecord, direction="out")
+        legacy = await user.node(node=LeadRecord, direction="out")
+        if legacy is not None and (
+            (legacy.user_node_id and legacy.user_node_id != user.id)
+            or (
+                not legacy.user_node_id
+                and legacy.user_id
+                and legacy.user_id != user.user_id
+            )
+        ):
+            raise ValueError("Lead profile ownership conflicts with its user edge")
+        return legacy
 
     @classmethod
     async def get_or_create_for_user(

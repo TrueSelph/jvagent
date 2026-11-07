@@ -46,6 +46,22 @@ def test_skill_digest_is_stable_for_skill_md(tmp_path: Path) -> None:
     assert bundle["digest"] == first
 
 
+def test_parse_skill_output_contract_frontmatter(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "research"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: research\ndescription: Evidence-backed research\n"
+        "output-contract: evidence_required\n---\nUse sources.\n",
+        encoding="utf-8",
+    )
+
+    bundle = parse_skill_bundle(skill_dir, source="app")
+
+    assert bundle is not None
+    assert bundle["output_contract"] == "evidence_required"
+    assert "frontmatter key output-contract" not in bundle["unsupported_features"]
+
+
 def test_resolve_agent_skills_reads_app_local_bundle(tmp_path: Path) -> None:
     skill_dir = tmp_path / "agents" / "acme" / "bot" / "skills" / "my_skill"
     skill_dir.mkdir(parents=True)
@@ -466,16 +482,7 @@ class TestShippedFrontmatterFixture:
     file on disk. These assert on the shipped bytes themselves.
     """
 
-    FIXTURE = (
-        Path(__file__).resolve().parents[2]
-        / "examples"
-        / "jvagent_app"
-        / "agents"
-        / "jvagent"
-        / "orchestrator_agent"
-        / "skills"
-        / "smoke_frontmatter"
-    )
+    FIXTURE = Path(__file__).parent / "fixtures/skills/smoke_frontmatter"
 
     def test_fixture_is_still_malformed(self) -> None:
         """Guards the guard: a stripped BOM makes this suite silently weaker."""
@@ -504,14 +511,30 @@ class TestShippedFrontmatterFixture:
         assert "spec: jv" not in content
         assert "allowed_tools:\n" not in content
 
-    def test_fixture_is_exposed_by_the_example_agent(self) -> None:
-        """A fixture no agent loads is not exercising discovery at all."""
+    def test_fixture_is_discovered_in_an_isolated_app(self, tmp_path: Path) -> None:
+        """Exercise disk discovery without exposing malformed test assets in an app."""
+        import shutil
+
+        from jvagent.scaffold.skill_resolve import resolve_agent_skills
+
+        target = tmp_path / "agents/demo/probe/skills/smoke_frontmatter"
+        shutil.copytree(self.FIXTURE, target)
+        assert "smoke_frontmatter" in resolve_agent_skills(
+            str(tmp_path), "demo", "probe"
+        )
+        assert (target / "SKILL.md").read_bytes() == (
+            self.FIXTURE / "SKILL.md"
+        ).read_bytes()
+
+    def test_reference_agent_does_not_select_the_regression_fixture(self) -> None:
         import yaml
 
-        agent_yaml = self.FIXTURE.parents[1] / "agent.yaml"
-        data = yaml.safe_load(agent_yaml.read_text(encoding="utf-8"))
-        skills: list = []
-        for entry in data.get("actions") or []:
-            if isinstance(entry, dict):
-                skills += (entry.get("context") or {}).get("skills") or []
-        assert "smoke_frontmatter" in skills
+        config = (
+            Path(__file__).resolve().parents[2]
+            / "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml"
+        )
+        data = yaml.safe_load(config.read_text())
+        assert all(
+            "smoke_frontmatter" not in (entry.get("context") or {}).get("skills", [])
+            for entry in data["actions"]
+        )

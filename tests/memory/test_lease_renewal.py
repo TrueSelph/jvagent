@@ -8,8 +8,10 @@ while held."""
 from __future__ import annotations
 
 import asyncio
+import builtins
 import sys
 import types
+from typing import Awaitable, Callable
 
 import pytest
 
@@ -59,6 +61,97 @@ async def test_heartbeat_survives_a_failed_renew():
 
     # A transient failure did not kill the loop — it kept renewing.
     assert len(calls) >= 3
+
+
+async def test_heartbeat_preserves_cancel_at_successful_renewal() -> None:
+    """A simultaneous renewal result must not swallow the host's cancellation."""
+    calls = 0
+
+    async def renew() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            heartbeat.cancel()
+        return True
+
+    heartbeat = asyncio.create_task(
+        dcl._run_lease_heartbeat(
+            renew, interval=0.001, conversation_id="cancel-at-renewal", ttl=1.0
+        )
+    )
+    try:
+        done, _ = await asyncio.wait({heartbeat}, timeout=0.1)
+        assert heartbeat in done, "renewal swallowed heartbeat cancellation"
+        assert heartbeat.cancelled()
+        assert calls == 1
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
+async def _run_owner_with_heartbeat(
+    renew: Callable[[], Awaitable[bool | None]],
+    *,
+    ttl: float,
+    interval: float = 0.02,
+) -> None:
+    owner = asyncio.current_task()
+    assert owner is not None
+    heartbeat = asyncio.create_task(
+        dcl._run_lease_heartbeat(
+            renew,
+            interval=interval,
+            conversation_id="c",
+            ttl=ttl,
+            owner_task=owner,
+        )
+    )
+    try:
+        await asyncio.Event().wait()
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
+async def test_heartbeat_cancels_owner_when_backend_proves_lease_lost():
+    async def renew():
+        return False
+
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=1.0))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+
+async def test_heartbeat_cancels_owner_before_unrenewed_lease_expires():
+    async def renew():
+        raise ConnectionError("temporary backend outage")
+
+    started = asyncio.get_running_loop().time()
+    # Keep a meaningful absolute scheduling margin before expiry. Very short
+    # synthetic leases can be overtaken by ordinary full-suite event-loop load.
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.6, interval=0.1))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+    assert asyncio.get_running_loop().time() - started < 0.6
+
+
+async def test_heartbeat_bounds_a_stalled_renewal_by_lease_deadline():
+    async def renew():
+        await asyncio.Event().wait()
+
+    started = asyncio.get_running_loop().time()
+    owner = asyncio.create_task(_run_owner_with_heartbeat(renew, ttl=0.6, interval=0.1))
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+
+    assert asyncio.get_running_loop().time() - started < 0.6
 
 
 async def test_redis_lock_renews_lease_while_held(monkeypatch):
@@ -125,3 +218,64 @@ async def test_redis_lock_stops_renewing_after_release(monkeypatch):
     # No further renewals after the context exits.
     await asyncio.sleep(0.1)
     assert counts["renew"] == renews_at_release
+
+
+async def test_redis_lock_cancels_turn_after_token_loss(monkeypatch):
+    class _FakeRedis:
+        async def set(self, name, value, nx, ex):
+            return True
+
+        async def eval(self, script, numkeys, *args):
+            return 0
+
+        async def close(self):
+            pass
+
+    fake_asyncio = types.ModuleType("redis.asyncio")
+    fake_asyncio.from_url = lambda url, decode_responses=True: _FakeRedis()
+    monkeypatch.setitem(sys.modules, "redis", types.ModuleType("redis"))
+    monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
+    monkeypatch.setattr(dcl, "_lease_renew_interval", lambda ttl: 0.02)
+
+    async def hold_turn():
+        async with dcl.conversation_mutation_lock("conv-lost"):
+            await asyncio.Event().wait()
+
+    turn = asyncio.create_task(hold_turn())
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+
+
+async def test_configured_redis_lock_fails_closed_without_client(monkeypatch):
+    original_import = builtins.__import__
+
+    def _without_redis(name, *args, **kwargs):
+        if name == "redis.asyncio":
+            raise ImportError("redis client unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _without_redis)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
+    monkeypatch.delenv("JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE", raising=False)
+
+    with pytest.raises(RuntimeError, match="redis>=5 is unavailable"):
+        async with dcl.conversation_mutation_lock("conv-no-redis-client"):
+            pytest.fail("must not silently downgrade to a process-local lock")
+
+
+async def test_configured_dynamodb_lock_fails_closed_without_client(monkeypatch):
+    original_import = builtins.__import__
+
+    def _without_boto3(name, *args, **kwargs):
+        if name == "boto3":
+            raise ImportError("boto3 unavailable")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _without_boto3)
+    monkeypatch.delenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", raising=False)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_DYNAMODB_TABLE", "conversation-locks")
+
+    with pytest.raises(RuntimeError, match="boto3 is unavailable"):
+        async with dcl.conversation_mutation_lock("conv-no-boto3"):
+            pytest.fail("must not silently downgrade to a process-local lock")

@@ -1,0 +1,52 @@
+FFFFF.F.                                                                 [100%]
+=================================== FAILURES ===================================
+_______ test_migration_refuses_mutations_before_global_dispatch[flags0] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+_______ test_migration_refuses_mutations_before_global_dispatch[flags1] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+_______ test_migration_refuses_mutations_before_global_dispatch[flags2] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+_______ test_migration_refuses_mutations_before_global_dispatch[flags3] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+_______ test_migration_refuses_mutations_before_global_dispatch[flags4] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+_______ test_migration_refuses_mutations_before_global_dispatch[flags6] ________
+/Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/cli/test_main_dispatch.py:246: in test_migration_refuses_mutations_before_global_dispatch
+    assert exc.value.code == 2
+E   assert 0 == 2
+E    +  where 0 = SystemExit(0).code
+E    +    where SystemExit(0) = <ExceptionInfo SystemExit(0) tblen=2>.value
+=============================== warnings summary ===============================
+../../../../../../private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags0]
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags1]
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags2]
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags3]
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags4]
+FAILED tests/cli/test_main_dispatch.py::test_migration_refuses_mutations_before_global_dispatch[flags6]
+6 failed, 2 passed, 1 warning in 0.14s

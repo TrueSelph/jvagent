@@ -97,7 +97,7 @@ async def test_google_callback_persists_future_expiry(monkeypatch):
         patch("httpx.AsyncClient", _fake_httpx_client(tokens, info)),
     ):
         result = await ep._exchange_google_code(
-            action, "code", record, "integral", service="sheets"
+            action, "code", record, "mailbox", service="sheets"
         )
 
     assert not isinstance(result, ep.HTMLResponse)
@@ -143,7 +143,7 @@ async def test_google_callback_defaults_expiry_when_absent(monkeypatch):
         ),
         patch("httpx.AsyncClient", _fake_httpx_client(tokens, {"email": "o@e.com"})),
     ):
-        await ep._exchange_google_code(action, "code", record, "integral", service="")
+        await ep._exchange_google_code(action, "code", record, "mailbox", service="")
 
     expiry = datetime.fromisoformat(saved["payload"]["expiry"])
     assert expiry > datetime.now(timezone.utc)

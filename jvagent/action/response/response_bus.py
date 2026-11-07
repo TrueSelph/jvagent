@@ -17,14 +17,18 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from jvagent.action.egress_gate import EgressGate, scrub_text
-from jvagent.action.parameters import reply_core_parameters
 from jvagent.action.response.message import ResponseMessage
+from jvagent.action.response.policy import egress_parameters as _egress_parameters
 from jvagent.action.response.thought_formatting import (
     normalize_thought_text_for_publish,
 )
 from jvagent.core.app import App
 
 logger = logging.getLogger(__name__)
+
+
+class ChannelDeliveryError(RuntimeError):
+    """A required channel adapter did not confirm message delivery."""
 
 
 @dataclass
@@ -47,24 +51,6 @@ class AdhocAccumulator:
     # The egress gate for this message. Streaming chunks are released through
     # it so a streamed reply is governed exactly like a non-streamed one.
     gate: Optional[Any] = None
-
-
-def _egress_parameters(interaction: Optional[Any]) -> Optional[List[Any]]:
-    """The rule set governing this message, or None for the framework core."""
-    pool = getattr(interaction, "parameters", None) if interaction is not None else None
-    try:
-        listed = list(pool) if pool else []
-    except TypeError:  # not iterable — treat as absent, not as "no rules"
-        listed = []
-    if not listed:
-        return None  # no pool: vet_egress falls back to the framework core
-    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
-    # it contains no response rules at all — and vet_egress, which filters to
-    # response scope, would then scrub nothing. Union the response core in, or
-    # egress governance silently switches off for exactly those turns that
-    # accumulated parameters. An operator override already in the pool still
-    # wins: resolve_parameters ranks agent tier above the core default.
-    return listed + reply_core_parameters()
 
 
 def _governed(category: str, transient: bool) -> bool:
@@ -246,6 +232,7 @@ class ResponseBus:
 
         Prefer :func:`get_agent_response_bus` so the bus survives Agent cache TTL.
         """
+        self.native_execution: bool = False
         self._session_queues: Dict[str, List[ResponseMessage]] = {}
         self._session_queue_activity: Dict[str, float] = {}
         self._subscribers: Dict[str, List[Callable[[ResponseMessage], Any]]] = {}
@@ -284,11 +271,11 @@ class ResponseBus:
         self._last_cleanup_time: float = 0.0
 
     async def _get_now(self) -> datetime:
-        """Current datetime in app timezone, or UTC if App unavailable."""
+        """UTC wire time, localized consistently with the application clock."""
+        from jvagent.core.app import app_now_aware_utc
+
         app = await App.get()
-        if app:
-            return await app.now()
-        return datetime.now(timezone.utc)
+        return await app_now_aware_utc(app)
 
     def _maybe_cleanup(self) -> None:
         """Lazy cleanup - evict expired entries only. Runs at most once per CLEANUP_INTERVAL_SECONDS.
@@ -404,28 +391,30 @@ class ResponseBus:
     ) -> None:
         """Add message to session queue, enforce bound, notify subscribers.
         Awaits async callbacks so SSE consumer receives messages before walk_task.done() check.
-        Durable outbox append happens before in-process fan-out (HP-06).
+        Transitional agents append their legacy outbox before fan-out. Native
+        execution persists through SDK graph stores; this bus owns transport only.
         """
-        try:
-            from jvagent.action.orchestrator.turn_cache import get_turn_cache
-            from jvagent.harness.runtime import get_runtime
+        if not self.native_execution:
+            try:
+                from jvagent.action.orchestrator.turn_cache import get_turn_cache
+                from jvagent.harness.runtime import get_runtime
 
-            turn = get_turn_cache() or {}
-            snap = turn.get("snapshot")
-            get_runtime().append_event(
-                session_id=session_id,
-                kind=getattr(message, "message_type", "") or "message",
-                message_id=str(
-                    getattr(message, "id", None)
-                    or getattr(message, "message_id", None)
-                    or ""
-                ),
-                correlation_id=str(turn.get("correlation_id") or ""),
-                snapshot_id=str(getattr(snap, "snapshot_id", "") or ""),
-                payload=message.to_dict(),
-            )
-        except Exception:
-            pass
+                turn = get_turn_cache() or {}
+                snap = turn.get("snapshot")
+                get_runtime().append_event(
+                    session_id=session_id,
+                    kind=getattr(message, "message_type", "") or "message",
+                    message_id=str(
+                        getattr(message, "id", None)
+                        or getattr(message, "message_id", None)
+                        or ""
+                    ),
+                    correlation_id=str(turn.get("correlation_id") or ""),
+                    snapshot_id=str(getattr(snap, "snapshot_id", "") or ""),
+                    payload=message.to_dict(),
+                )
+            except Exception:
+                pass
         if session_id not in self._session_queues:
             self._session_queues[session_id] = []
         queue = self._session_queues[session_id]
@@ -478,6 +467,8 @@ class ResponseBus:
         relay_to_adapters: bool,
     ) -> bool:
         """Check if a message can be delivered to the adapter."""
+        if (getattr(message, "metadata", None) or {}).get("native_local_only") is True:
+            return False
         if not self._is_thought_message(message):
             return True
         return relay_to_adapters and bool(getattr(adapter, "deliver_thoughts", False))
@@ -498,8 +489,24 @@ class ResponseBus:
         thought_type: Optional[str] = None,
         segment_id: Optional[str] = None,
         relay_to_adapters: bool = False,
+        message_id: Optional[str] = None,
+        require_adapter_ack: bool = False,
     ) -> ResponseMessage:
-        """Publish user/thought content with optional streaming and adapter relay."""
+        """Publish content, optionally requiring a channel adapter's confirmation.
+
+        ``require_adapter_ack`` is intended for checkpointed output whose caller
+        must leave its durable task pending when a configured adapter rejects it.
+        Queue-based delivery without a channel adapter retains its normal behavior.
+        """
+        from jvagent.core.host_context import public_turn_metadata
+
+        metadata = public_turn_metadata(metadata)
+        if message_id is not None and (
+            not isinstance(message_id, str)
+            or not message_id.startswith("o.ResponseMessage.")
+            or len(message_id) > 256
+        ):
+            raise ValueError("message_id must be a bounded ResponseMessage identifier")
         # Throttled TTL-based cleanup
         self._maybe_cleanup()
 
@@ -508,6 +515,35 @@ class ResponseBus:
         message_segment_id = segment_id
         if message_category == "thought" and not message_segment_id:
             message_segment_id = f"thought-{uuid.uuid4().hex[:10]}"
+        prefiltered_nonstream = False
+
+        # Evaluate non-streaming filters before claiming the interaction's only
+        # user egress. A fail-fast rejection must not latch delivery, persist the
+        # text, or leak it through the subscriber queue after adapter delivery is
+        # skipped below.
+        if not stream:
+            candidate = ResponseMessage(
+                session_id=session_id,
+                user_id=user_id or "",
+                interaction_id=interaction_id or "",
+                content=content,
+                channel=channel,
+                metadata=metadata or {},
+                timestamp=now,
+                category=message_category,
+                thought_type=thought_type,
+                segment_id=message_segment_id,
+            )
+            if candidate.category == "thought":
+                candidate.content = normalize_thought_text_for_publish(
+                    candidate.content
+                )
+            if not await self._apply_channel_filters(candidate, channel):
+                candidate.content = ""
+                return candidate
+            content = candidate.content
+            metadata = candidate.metadata
+            prefiltered_nonstream = True
 
         async def _deliver_flush(
             flush_message: ResponseMessage,
@@ -518,7 +554,7 @@ class ResponseBus:
             if flush_message.category == "thought":
                 full_content = normalize_thought_text_for_publish(full_content)
                 flush_message.content = full_content
-            filter_ok = await self._apply_channel_filters(
+            filter_ok = prefiltered_nonstream or await self._apply_channel_filters(
                 flush_message, flush_message.channel
             )
             if not filter_ok:
@@ -529,7 +565,13 @@ class ResponseBus:
                     relay_to_adapters if relay_override is None else relay_override
                 )
                 if self._can_send_to_adapter(adapter, flush_message, effective_relay):
-                    await self._send_to_adapter(adapter, flush_message)
+                    adapter_delivered = await self._send_to_adapter(
+                        adapter, flush_message
+                    )
+                    if require_adapter_ack and not adapter_delivered:
+                        raise ChannelDeliveryError(
+                            "required channel adapter did not confirm delivery"
+                        )
 
             if (
                 flush_message.category == "user"
@@ -555,6 +597,7 @@ class ResponseBus:
                     segment_id=flush_message.segment_id or "",
                     content=full_content,
                     action_name=(flush_message.metadata or {}).get("action_name"),
+                    message_id=flush_message.id,
                 )
 
         if _governed(message_category, transient):
@@ -569,7 +612,7 @@ class ResponseBus:
         # (ADR-0025). A live user stream may continue after its first chunk set
         # the latch, but every separate non-transient user publish is rejected
         # here at the delivery choke point. A non-stream publish while the
-        # accumulator is already open mints a new Object id; Integral splits
+        # accumulator is already open mints a new Object id; some adapters split
         # bubbles on that id, so it is suppressed even if the first chunk has
         # not latched yet (gate-held / empty).
         #
@@ -607,7 +650,9 @@ class ResponseBus:
                     acc_id = self._adhoc_accumulation[interaction_id].message_id
                 allowed, claimed_user_id = await try_claim_user_egress(
                     interaction_id,
-                    message_id=acc_id or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
+                    message_id=acc_id
+                    or message_id
+                    or f"o.ResponseMessage.{uuid.uuid4().hex[:24]}",
                     session_id=session_id,
                     continue_stream=active_user_stream,
                 )
@@ -988,7 +1033,7 @@ class ResponseBus:
         # Streaming publish() already flushed this turn to subscribers and
         # interaction.response; commit_pending is a safety net for abandoned
         # accumulators. Re-appending or re-emitting the same settled text
-        # duplicates bubbles downstream (integral message-boundary splits on a
+        # duplicates bubbles downstream (some adapters split message boundaries on a
         # second adhoc id carrying the same prose).
         current = (getattr(interaction, "response", "") or "") if interaction else ""
         if full_content and current.strip() and full_content.strip() in current:
@@ -1199,6 +1244,7 @@ class ResponseBus:
         segment_id: str,
         content: str,
         action_name: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> None:
         """Append a thought trace entry to interaction.agent_trace and persist."""
         entry = {
@@ -1209,6 +1255,8 @@ class ResponseBus:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if message_id:
+            entry["message_id"] = message_id
 
         append_fn = getattr(interaction, "append_agent_trace", None)
         changed = False
@@ -1239,12 +1287,15 @@ class ResponseBus:
     async def _send_to_adapter(
         self, adapter: "ChannelAdapter", message: ResponseMessage
     ) -> bool:
-        """Send message to adapter with lightweight retry (max 2 attempts).
+        """Send once, retrying an uncertain exception only for idempotent adapters.
 
         Returns:
-            True if sent successfully, False on permanent failure or exhausted retries.
+            True if sent successfully; False when rejected, uncertain, or exhausted.
         """
         delivered_before = bool(getattr(message, "delivered", False))
+        supports_idempotent_replay = bool(
+            getattr(adapter, "supports_idempotent_replay", False)
+        )
         for attempt in range(2):
             try:
                 if await adapter.send(message):
@@ -1256,6 +1307,14 @@ class ResponseBus:
                 if delivered_before or bool(getattr(message, "delivered", False)):
                     logger.warning(
                         f"Adapter partial delivery for {adapter.channel}; skip retry: {e}"
+                    )
+                    return False
+                if not supports_idempotent_replay:
+                    logger.warning(
+                        "Adapter delivery outcome is uncertain for %s; skip retry "
+                        "because idempotent replay is not declared: %s",
+                        adapter.channel,
+                        e,
                     )
                     return False
                 if attempt == 0:
@@ -1272,6 +1331,8 @@ class ResponseBus:
         session_id: str,
         callback: Callable[[ResponseMessage], Any],
         receive_chunks: bool = False,
+        *,
+        replay_interaction_id: Optional[str] = None,
     ) -> None:
         """Subscribe to messages for a session.
 
@@ -1280,6 +1341,8 @@ class ResponseBus:
             callback: Callback function to call when messages are published
             receive_chunks: If True, receive stream_chunk messages. If False, only receive
                           final and adhoc messages. Default: False
+            replay_interaction_id: Replay the bounded session queue for this Interaction.
+                Used by SSE admission, whose walker can publish before subscription.
         """
         # Initialize each map independently. Guarding only on ``_subscribers``
         # membership left the two maps able to desync (e.g. a cleanup path that
@@ -1292,11 +1355,21 @@ class ResponseBus:
 
         # Use O(1) set lookup for duplicate check instead of O(n) list search
         cb_id = id(callback)
+        newly_subscribed = cb_id not in self._subscriber_ids[session_id]
         if cb_id not in self._subscriber_ids[session_id]:
             self._subscribers[session_id].append(callback)
             self._subscriber_ids[session_id].add(cb_id)
 
         self._subscriber_preferences[callback] = {"receive_chunks": receive_chunks}
+        if newly_subscribed and replay_interaction_id:
+            for message in list(self._session_queues.get(session_id, [])):
+                if message.interaction_id != replay_interaction_id or (
+                    message.message_type == "stream_chunk" and not receive_chunks
+                ):
+                    continue
+                result = callback(message)
+                if asyncio.iscoroutine(result):
+                    await result
 
     async def unsubscribe(
         self, session_id: str, callback: Callable[[ResponseMessage], Any]
@@ -1345,7 +1418,7 @@ class ResponseBus:
 
         # Streaming publish() already enqueued message_type=final under
         # acc.message_id. A second final with a new Object id is a distinct
-        # assistant identity on the wire (Integral splits bubbles on that).
+        # assistant identity on the wire (some adapters split bubbles on that).
         # try_claim_final is process-wide so a second ResponseBus cannot
         # emit another one just because this instance's buffers are empty.
         user_id = getattr(interaction, "user_id", None) if interaction else None

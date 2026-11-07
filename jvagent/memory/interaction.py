@@ -1,5 +1,6 @@
 """Interaction node for representing single exchanges within a conversation."""
 
+import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -168,6 +169,13 @@ class Interaction(DeferredSaveMixin, Node):
     observability_metrics: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description="Aggregated observability events (model calls, embeddings, etc.)",
+    )
+    native_steps: Dict[str, Any] = attribute(
+        default_factory=dict, description="Official Harness step-store records"
+    )
+    native_run: Dict[str, Any] = attribute(
+        default_factory=dict,
+        description="Native execution receipt and typed message history",
     )
     agent_trace: List[Dict[str, Any]] = attribute(
         default_factory=list,
@@ -579,7 +587,7 @@ class Interaction(DeferredSaveMixin, Node):
             The computed usage dict
         """
         from jvagent.action.model.cost_estimator import (
-            estimate_cost,
+            is_valid_cost_usd,
             split_cached_prompt_tokens,
         )
 
@@ -589,11 +597,55 @@ class Interaction(DeferredSaveMixin, Node):
         cached_prompt_tokens = 0
         cache_write_tokens = 0
         model_call_count = 0
+        model_attempt_count = 0
+        failed_model_attempt_count = 0
+        cancelled_model_attempt_count = 0
+        model_attempt_duration_seconds = 0.0
+        unmeasured_model_attempt_count = 0
         estimated_cost_usd = 0.0
+        reported_cost_usd = 0.0
+        litellm_cost_usd = 0.0
+        unknown_cost_call_count = 0
         total_duration_seconds = 0.0
 
         for event in self.observability_metrics or []:
             event_type = event.get("event_type")
+            if event_type == "model_usage_reserve":
+                from decimal import Decimal, InvalidOperation
+
+                try:
+                    reserve_amount = Decimal(event.get("data", {}).get("usd", ""))
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                if reserve_amount.is_finite() and reserve_amount > 0:
+                    estimated_cost_usd += float(reserve_amount)
+                continue
+            if event_type == "model_attempt":
+                model_attempt_count += 1
+                attempt_data = event.get("data", {})
+                if attempt_data.get("outcome") == "failed":
+                    failed_model_attempt_count += 1
+                elif attempt_data.get("outcome") == "cancelled":
+                    cancelled_model_attempt_count += 1
+                # A completed SDK request is not itself a billing receipt.
+                if attempt_data.get("usage_status") == "provider_unreported":
+                    unknown_cost_call_count += 1
+                attempt_duration = attempt_data.get("duration")
+                if (
+                    isinstance(attempt_duration, (int, float))
+                    and not isinstance(attempt_duration, bool)
+                    and math.isfinite(attempt_duration)
+                    and attempt_duration >= 0
+                ):
+                    model_attempt_duration_seconds += float(attempt_duration)
+                    if (
+                        attempt_data.get("native_attempt_origin") == "step_events_v1"
+                        and attempt_data.get("outcome") == "completed"
+                    ):
+                        total_duration_seconds += float(attempt_duration)
+                else:
+                    unmeasured_model_attempt_count += 1
+                continue
             if event_type not in ("model_call", "embedding_call"):
                 continue
 
@@ -621,7 +673,45 @@ class Interaction(DeferredSaveMixin, Node):
 
             model = data.get("model", "")
             provider = data.get("provider", "unknown")
-            estimated_cost_usd += estimate_cost(model, provider, usage, event_type)
+            cost_record = data.get("cost_record")
+            if not isinstance(cost_record, dict):
+                cost_usd = data.get("cost_usd")
+                cost_source = data.get("cost_source")
+                if cost_usd is None:
+                    cost_usd = usage.get("cost_usd")
+                    cost_source = usage.get("cost_source", cost_source)
+                if is_valid_cost_usd(cost_usd):
+                    cost_record = {
+                        "amount": float(cost_usd),
+                        "currency": "USD",
+                        "source": str(cost_source or "provider_reported"),
+                        "estimated": bool(data.get("cost_estimated"))
+                        or cost_source == "jv_cost_estimator",
+                        "pricing_version": None,
+                    }
+                else:
+                    from jvagent.action.model.cost_estimator import (
+                        estimated_cost_record,
+                    )
+
+                    cost_record = estimated_cost_record(
+                        model, provider, usage, event_type
+                    )
+
+            amount = cost_record.get("amount")
+            if amount is None:
+                unknown_cost_call_count += 1
+                continue
+            if not is_valid_cost_usd(amount):
+                unknown_cost_call_count += 1
+                continue
+            amount = float(amount)
+            if cost_record.get("estimated"):
+                estimated_cost_usd += amount
+            else:
+                reported_cost_usd += amount
+                if cost_record.get("source") == "litellm_response_cost":
+                    litellm_cost_usd += amount
 
         now = datetime.now(timezone.utc)
         self.usage = {
@@ -631,7 +721,16 @@ class Interaction(DeferredSaveMixin, Node):
             "cached_prompt_tokens": cached_prompt_tokens,
             "cache_write_tokens": cache_write_tokens,
             "model_call_count": model_call_count,
+            "model_attempt_count": model_attempt_count,
+            "failed_model_attempt_count": failed_model_attempt_count,
+            "cancelled_model_attempt_count": cancelled_model_attempt_count,
+            "model_attempt_duration_seconds": round(model_attempt_duration_seconds, 3),
+            "unmeasured_model_attempt_count": unmeasured_model_attempt_count,
             "estimated_cost_usd": round(estimated_cost_usd, 6),
+            "reported_cost_usd": round(reported_cost_usd, 6),
+            "litellm_cost_usd": round(litellm_cost_usd, 6),
+            "unknown_cost_call_count": unknown_cost_call_count,
+            "total_cost_usd": round(estimated_cost_usd + reported_cost_usd, 6),
             "total_duration_seconds": round(total_duration_seconds, 3),
             "last_updated": now.isoformat(),
         }

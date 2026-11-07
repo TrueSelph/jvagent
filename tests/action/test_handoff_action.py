@@ -2918,11 +2918,17 @@ async def test_concurrent_add_pending_keeps_both_rows(monkeypatch):
     monkeypatch.setattr(a, "_pending_lock", lambda: asyncio.Lock())
     monkeypatch.setattr(b, "_pending_lock", lambda: asyncio.Lock())
 
-    barrier = asyncio.Barrier(2)
+    # asyncio.Barrier requires 3.11; the transitional base still supports 3.10.
+    ready = asyncio.Event()
+    arrived = 0
     real_create = handoff_store.HandoffQuestion.create_question
 
     async def _create_with_barrier(cls, **kwargs):
-        await barrier.wait()
+        nonlocal arrived
+        arrived += 1
+        if arrived == 2:
+            ready.set()
+        await ready.wait()
         return await real_create(**kwargs)
 
     monkeypatch.setattr(

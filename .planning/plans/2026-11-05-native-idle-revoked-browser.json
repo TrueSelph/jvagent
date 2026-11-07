@@ -1,0 +1,8 @@
+{
+  "observed_at": "2026-11-05T23:05:13.425Z",
+  "url": "http://127.0.0.1:3136/login",
+  "has_access": false,
+  "has_refresh": false,
+  "has_user": false,
+  "text": "Saved Accounts\n\n1 account available\n\nSecurity note: Credentials are stored in this browser's local storage as plain text. Anyone with access to this device or browser can view saved passwords. Do not save credentials on shared devices.\nExport JSON\nImport (merge)\nImport (replace all)\n\nbench@example.com\n\nSign in\n\nEnter your jvagent admin credentials\n\nServer URL\nEmail address\nPassword\nDisplay name (optional)\nSign in"
+}

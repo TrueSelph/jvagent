@@ -100,6 +100,10 @@ class InterviewAction(Action):
         "the interview spec and SKILL.md procedure."
     )
     binds_tools_to_visitor: bool = True
+    native_hook_digests: Dict[str, str] = attribute(
+        default_factory=dict,
+        description="Host-reviewed SOP/extension digests for conversation-only native hooks.",
+    )
     parameters: List[Dict[str, Any]] = attribute(
         default_factory=list,
         description=(
@@ -154,6 +158,17 @@ class InterviewAction(Action):
         return lambda name: load_hook_function(spec, name)
 
     # -- tool surface --------------------------------------------------------
+
+    async def get_native_tools(self) -> List[Any]:
+        from .native import build_native_tools
+
+        await self._ensure_specs_loaded()
+        return build_native_tools(self)
+
+    async def get_native_skill_bases(self) -> Dict[str, Any]:
+        from .native import native_skill_bases
+
+        return native_skill_bases()
 
     async def get_tools(self) -> List[Any]:
         await self._ensure_specs_loaded()

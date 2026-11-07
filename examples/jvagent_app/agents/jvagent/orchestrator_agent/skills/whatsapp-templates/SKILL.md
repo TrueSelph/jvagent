@@ -1,0 +1,59 @@
+---
+name: whatsapp-templates
+description: >
+  Send an approved WhatsApp Meta message template (HSM) to the user who just
+  messaged on WhatsApp — e.g. "send me the signup template", "send the welcome
+  template". Only works on inbound WhatsApp turns; refuses web/chat.
+spec: jv
+allowed-channels:
+  - whatsapp
+  - whatsapp_call
+requires-actions:
+  - WhatsAppAction
+allowed-tools:
+  - whatsapp__list_templates
+  - whatsapp__send_template
+tags:
+  - whatsapp
+  - templates
+---
+
+# WhatsApp Templates — Standard Operating Procedure
+
+Use this when the user asks to send a named WhatsApp **message template**
+(approved Meta HSM), not when they want a multi-turn signup interview or a
+Word/PDF document.
+
+## Hard rules
+
+1. **WhatsApp channel only.** Call tools only on this inbound WhatsApp turn.
+   If a tool returns `whatsapp_templates_require_inbound_whatsapp`, tell the user
+   they must request the template via WhatsApp — do not invent a phone number.
+2. **Recipient is fixed.** The tools always send to the same WhatsApp number
+   that messaged this turn. Never ask for or invent a different phone.
+3. Use the **exact template name** the user asked for (normalized to Meta's
+   name, e.g. `signup`). If unsure which names exist, call
+   `whatsapp__list_templates` first.
+
+## Procedure
+
+1. If the user named a template (e.g. "send me the signup template"), call
+   `whatsapp__send_template` with that `template_name`.
+2. If they ask what templates exist, or the name is ambiguous, call
+   `whatsapp__list_templates`, then send the matching one if they pick.
+3. On `ok: true`, briefly confirm acceptance for sending. Do not claim
+   recipient delivery without a verified delivery acknowledgement.
+4. On allowlist or Meta errors, report the failure plainly; do not claim the
+   message was delivered.
+
+Do not activate `signup-interview` for "send the signup template" — that skill
+is a multi-turn registration form, not a Meta HSM.
+
+## Send outcome
+
+An authenticated inbound sender and named host tool permission are required.
+A provider message ID acknowledges acceptance, not recipient delivery or business
+completion. On a missing receipt, timeout, uncertain outcome or duplicate-operation
+refusal, report the uncertainty and do not repeat the send. Recovery requires an
+operator to reconcile the existing operation; changing arguments or switching
+between a flow ID and name is not an authorized retry.

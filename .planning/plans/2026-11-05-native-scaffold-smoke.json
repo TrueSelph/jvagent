@@ -1,0 +1,739 @@
+{
+  "parent_revision": "git-commit:cfb0bc8ee14b01f86aca51d3cc8a98927a78a33e",
+  "observed_at": "2026-11-06T02:11:26.956223+00:00",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-scaffold-smoke",
+    "backend_port": 8141,
+    "ui_port": 3136,
+    "graph": "isolated JsonDB",
+    "generated_from_installed_wheel_cli": true,
+    "agent_yaml_modified_after_scaffold": false,
+    "patched_execution_functions": false
+  },
+  "source_blobs": {
+    "jvagent/cli/app_commands.py": "git-blob:20f3be3acecbaf56e881aa77511320da2acd47d8",
+    "jvagent/cli/agent_commands.py": "git-blob:1d221bf6c07434368325646648a0be47c94fd46c",
+    "jvagent/scaffold/operations.py": "git-blob:8bc2c34389a9d0c5448532a3d22bb6d286515b23",
+    "jvagent/scaffold/yaml_io.py": "git-blob:8cb3c83a637240fedbfbff26889ede0cea0f4f9f",
+    "jvagent/scaffold/builtin_profiles/native.yaml": "git-blob:c8dddb62484d98445ff3dac6758ecdc96c9490dc",
+    "tests/scaffold/test_native_defaults.py": "git-blob:7944c7a547e158f9e43aed16c0421241b4cc174e",
+    "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+    "jvagent/harness/skill_catalog.py": "git-blob:386e20152777b231248a9b62cd376b1891f7e23a",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:f50813bff7bca6d6e2fc80d35cb00ab8ac977332"
+  },
+  "generated_asset_digests": {
+    "app.yaml": "sha256:71d73e926064e89967261125e905812e2f2fa14f36754b491648a6c954891993",
+    "agents/example/assistant/agent.yaml": "sha256:353fe5c77b401d3edc4cdf852f2ea71ce4c145e646f41abb44c7b3743ba5f23a",
+    "agents/example/assistant/skills/conversation/SKILL.md": "sha256:a10c455e2afc92ddd72ae761de4f964fd9a2dbe87760daad992511f065ad4c60",
+    "README.md": "sha256:36be30d6d4e06e46d0fec6438137b6e0fa96a7f0b1b72c70536adb75b3422cbc",
+    "agents/example/assistant/README.md": "sha256:588a192c935da977f0e4bc7352e7e66ebd30afb7d6a32c6bd943fb704dfdfed7"
+  },
+  "package_receipt": {
+    "python_origin": "/private/tmp/jvagent-native-scaffold-311/bin/python",
+    "jvagent_origin": "/private/tmp/jvagent-native-scaffold-311/lib/python3.11/site-packages/jvagent/__init__.py",
+    "wheel_digest": "sha256:b007edf7f486a87b1b495925c8ece25b1b4808f744ee75b00bd93e0ec7999d66",
+    "package_count": 80,
+    "versions": {
+      "jvagent": "0.1.8rc20",
+      "jvspatial": "0.1.1",
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "openai": "3.46.0"
+    },
+    "source_matches": {
+      "jvagent/scaffold/operations.py": true,
+      "jvagent/scaffold/yaml_io.py": true,
+      "jvagent/scaffold/builtin_profiles/native.yaml": true,
+      "jvagent/cli/app_commands.py": true,
+      "jvagent/cli/agent_commands.py": true,
+      "jvagent/harness/native.py": true,
+      "jvagent/harness/skill_catalog.py": true
+    }
+  },
+  "runtime_observation": {
+    "python_executable": "/private/tmp/jvagent-native-scaffold-311/bin/python",
+    "jvagent_origin": "/private/tmp/jvagent-native-scaffold-311/lib/python3.11/site-packages/jvagent/__init__.py",
+    "source_blobs": {
+      "jvagent/scaffold/operations.py": "git-blob:8bc2c34389a9d0c5448532a3d22bb6d286515b23",
+      "jvagent/scaffold/yaml_io.py": "git-blob:8cb3c83a637240fedbfbff26889ede0cea0f4f9f",
+      "jvagent/scaffold/builtin_profiles/native.yaml": "git-blob:c8dddb62484d98445ff3dac6758ecdc96c9490dc",
+      "jvagent/cli/app_commands.py": "git-blob:20f3be3acecbaf56e881aa77511320da2acd47d8",
+      "jvagent/cli/agent_commands.py": "git-blob:1d221bf6c07434368325646648a0be47c94fd46c",
+      "jvagent/cli/harness_migrate.py": "git-blob:3ae6d1d22f20ed971251ffa8b167b048bd90058d",
+      "jvagent/cli/main.py": "git-blob:478df3e3ae6dbb42f46e24c7de78b0802130002e",
+      "jvagent/harness/skill_assets.py": "git-blob:9f78389b24d97ebf2345352a016ef64c945ba42f",
+      "pyproject.toml": "git-blob:eeaa539bcb6ba38d9117cf461e9c00ceca16447a",
+      "uv.lock": "git-blob:5bce62c019de0ec10819d0e8a425c90e03abd843",
+      "jvagent/cli/server.py": "git-blob:a3b18dc5ed131f1d7a4d4157bf1fe5ed6395869c",
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:ea0e0f68e4cc33f9f6237d63d8a5b975e9ca9ad2",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:38c5146f341e7d67112e151ab72dec18a2187964",
+      "jvagent/core/task_dispatch.py": "git-blob:3d354440470af6e5c1a8c3471661358983a3658e",
+      "jvagent/core/app.py": "git-blob:234ac33a77cc8c37f9c43b49cc835faee77bf4f6",
+      "jvagent/action/reply/endpoints.py": "git-blob:3e6587a381dd8cbbbbda46096a68fe09277ea74d",
+      "jvagent/action/reply/reply_action.py": "git-blob:d36ce5ce301ad52a3b2b74895f02cd0c001b92ca",
+      "jvagent/action/response/response_bus.py": "git-blob:55b7f4aff61041aec3d469aed5ed03f3f0995842",
+      "jvagent/action/response/streaming.py": "git-blob:2f21bc5ea1438264f6c18abb28791f20c45f13cc",
+      "jvagent/action/response/native_replay.py": "git-blob:7552ec6a2432c860bfcf2e047ce2720d24038f8d",
+      "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+      "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+      "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+      "jvchat/src/lib/channelMessages.ts": "git-blob:4349931d03b12ce4675814ddc4f84e86f033aeb9",
+      "jvchat/src/lib/threadMessages.ts": "git-blob:8b885c78d888afaf15089611618f607f88da65f8",
+      "jvchat/src/lib/messageObservability.ts": "git-blob:42f8da47d9f982eb0255058d32f166b9bf8588f8",
+      "jvchat/src/components/assistant-ui/message-stats.tsx": "git-blob:bff76ac6f6e76c9fb452d9fae9baf7b9fe68ac3a",
+      "jvagent/action/task_monitor/task_monitor.py": "git-blob:d0f60fda9a8ec92a108ff1cd19e2f35e6e479c40",
+      "jvagent/action/task_monitor/finalize.py": "git-blob:fa26ff72734306780d447825bfdf34924b92f191",
+      "jvagent/action/interact/interact_walker.py": "git-blob:0d3eef8a3bd41030b5900dd2aa305fbf854c1f81",
+      "jvagent/action/interview/native_repeats.py": "git-blob:ae5f03478ffec03963cf9056ffb01f379c7b5def",
+      "jvagent/action/interview/for_each.py": "git-blob:10f1740f26caa5fd456b975d7ff9c305ba73ac03",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+      "jvagent/harness/skill_catalog.py": "git-blob:386e20152777b231248a9b62cd376b1891f7e23a",
+      "jvagent/harness/mcp.py": "git-blob:1e24c92737448967965c37c35f51ad4574467144",
+      "tests/harness/native/test_skill_catalog.py": "git-blob:ae4b0fef0d1894a77720ce47dccaac281794a555",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:8a90f0197e3b4dcdfbe9d7645806a0b51f3055a8",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:d656ef8762f09b0e10742f294c8726084c062d2f",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:f50813bff7bca6d6e2fc80d35cb00ab8ac977332"
+    },
+    "process_id": 30747,
+    "observed_at": "2026-11-06T02:04:16.051585+00:00",
+    "modules": [],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-06T02:11:27.027228+00:00"
+  },
+  "node_entities": {
+    "ReplyAction": 1,
+    "Memory": 1,
+    "ConversationHealthState": 1,
+    "App": 1,
+    "Root": 1,
+    "NativeHarnessAction": 1,
+    "Interaction": 3,
+    "Conversation": 2,
+    "Agents": 1,
+    "User": 2,
+    "Actions": 1,
+    "Agent": 1
+  },
+  "refused_probe_interaction_ids": [],
+  "configured_actions": [
+    {
+      "id": "n.ReplyAction.dbb74a7e6e044f43a0e428b5",
+      "entity": "ReplyAction",
+      "model": "gpt-4o-mini",
+      "skill_directory": null,
+      "skill_directories": null,
+      "max_requests": null,
+      "max_tokens": null,
+      "max_output_tokens": null
+    },
+    {
+      "id": "n.NativeHarnessAction.e70556576a0d4e548828783d",
+      "entity": "NativeHarnessAction",
+      "model": "openai:gpt-4.1",
+      "skill_directory": "agents/example/assistant/skills/conversation",
+      "skill_directories": [],
+      "max_requests": 20,
+      "max_tokens": 100000,
+      "max_output_tokens": 20000
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.569b98925c844566b51f3bf1",
+      "user_id": "o.User.d17b35a9173b4c498f888d57",
+      "session_id": "sess_5528505b3a304c2a",
+      "utterance": "NATIVE-SCAFFOLD-CHECK: What ticket ID did I ask you to remember? Reply with the ID only.",
+      "response": "JUNIPER-64",
+      "native_run": {
+        "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+        "status": "delivered",
+        "history_source": {
+          "source_run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "frontier": "delivered"
+        },
+        "usage_complete": true,
+        "usage": {
+          "requests": 1,
+          "input_tokens": 301,
+          "output_tokens": 8
+        },
+        "output": "JUNIPER-64",
+        "delivery": {
+          "version": 1,
+          "message_id": "o.ResponseMessage.corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "channel": "default",
+          "metadata": {
+            "native_replay": false,
+            "is_proactive": false,
+            "observability": {
+              "usage": {
+                "prompt_tokens": 301,
+                "completion_tokens": 8,
+                "total_tokens": 309,
+                "cached_prompt_tokens": 0,
+                "cache_write_tokens": 0,
+                "model_call_count": 1,
+                "model_attempt_count": 1,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.415,
+                "unmeasured_model_attempt_count": 0,
+                "estimated_cost_usd": 0.000666,
+                "reported_cost_usd": 0.0,
+                "litellm_cost_usd": 0.0,
+                "unknown_cost_call_count": 0,
+                "total_cost_usd": 0.000666,
+                "total_duration_seconds": 1.415,
+                "last_updated": "2026-11-06T02:06:36.108482+00:00"
+              },
+              "model": "gpt-4.1-2025-04-14"
+            }
+          }
+        }
+      },
+      "usage": {
+        "prompt_tokens": 301,
+        "completion_tokens": 8,
+        "total_tokens": 309,
+        "cached_prompt_tokens": 0,
+        "cache_write_tokens": 0,
+        "model_call_count": 1,
+        "model_attempt_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.415,
+        "unmeasured_model_attempt_count": 0,
+        "estimated_cost_usd": 0.000666,
+        "reported_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "unknown_cost_call_count": 0,
+        "total_cost_usd": 0.000666,
+        "total_duration_seconds": 1.415,
+        "last_updated": "2026-11-06T02:06:36.115415+00:00"
+      },
+      "started_at": "2026-11-05T21:06:34.327636-05:00",
+      "completed_at": "2026-11-05T21:06:36.115376-05:00",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 4,
+        "snapshots": 3
+      },
+      "events": [
+        {
+          "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:06:34.528171Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:06:34.560280Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:06:35.974878Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "kind": "run_completed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:06:36.048342Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "3:0:run_completed:"
+        }
+      ],
+      "effects": [],
+      "snapshot_summaries": [
+        {
+          "run_id": "corr-935b7eb5d53b4be4aec10955ddbff0c9",
+          "step_index": 1,
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "timestamp": "2026-11-06T02:06:36.022948Z",
+          "state": "complete",
+          "idempotency_key": "2:1:complete",
+          "messages_count": 4,
+          "messages_digest": "sha256:52ddb040493b4acbe0f59384430dfcdead0cddd7b8e4eaf9603007a2e03355b1",
+          "message_part_counts": {
+            "user-prompt": 2,
+            "capability-load-delta": 1,
+            "instruction-baseline": 1,
+            "instruction-delta": 1,
+            "text": 2
+          },
+          "starter_skill_in_snapshot": true
+        }
+      ],
+      "duration_seconds": 1.78774
+    },
+    {
+      "id": "n.Interaction.30d5ed683bc940b482c72428",
+      "user_id": "user_35bd811b80e549f3a684011fa4aba5db",
+      "session_id": "sess_c6c7b8760d5a43b0",
+      "utterance": "NATIVE-SCAFFOLD-ANONYMOUS-BLOCK: This unauthenticated request must not invoke a model.",
+      "response": "Your request is noted: this is an unauthenticated request and should not invoke a model.",
+      "native_run": {
+        "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true,
+        "usage": {
+          "requests": 1,
+          "input_tokens": 259,
+          "output_tokens": 48
+        },
+        "output": "Your request is noted: this is an unauthenticated request and should not invoke a model. If you have a specific question or need information, please clarify your request or let me know how I can assist you within these constraints.",
+        "delivery": {
+          "version": 1,
+          "message_id": "o.ResponseMessage.corr-c68cca3e5306446585df0aa68b0308f9",
+          "channel": "default",
+          "metadata": {
+            "native_replay": false,
+            "is_proactive": false,
+            "observability": {
+              "usage": {
+                "prompt_tokens": 259,
+                "completion_tokens": 48,
+                "total_tokens": 307,
+                "cached_prompt_tokens": 0,
+                "cache_write_tokens": 0,
+                "model_call_count": 1,
+                "model_attempt_count": 1,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 6.859,
+                "unmeasured_model_attempt_count": 0,
+                "estimated_cost_usd": 0.000902,
+                "reported_cost_usd": 0.0,
+                "litellm_cost_usd": 0.0,
+                "unknown_cost_call_count": 0,
+                "total_cost_usd": 0.000902,
+                "total_duration_seconds": 6.859,
+                "last_updated": "2026-11-06T02:07:40.552453+00:00"
+              },
+              "model": "gpt-4.1-2025-04-14"
+            }
+          }
+        }
+      },
+      "usage": {
+        "prompt_tokens": 259,
+        "completion_tokens": 48,
+        "total_tokens": 307,
+        "cached_prompt_tokens": 0,
+        "cache_write_tokens": 0,
+        "model_call_count": 1,
+        "model_attempt_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 6.859,
+        "unmeasured_model_attempt_count": 0,
+        "estimated_cost_usd": 0.000902,
+        "reported_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "unknown_cost_call_count": 0,
+        "total_cost_usd": 0.000902,
+        "total_duration_seconds": 6.859,
+        "last_updated": "2026-11-06T02:07:40.557747+00:00"
+      },
+      "started_at": "2026-11-05T21:07:33.414081-05:00",
+      "completed_at": "2026-11-05T21:07:40.557712-05:00",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 4,
+        "snapshots": 3
+      },
+      "events": [
+        {
+          "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:07:33.502671Z",
+          "conversation_id": "sess_c6c7b8760d5a43b0",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:07:33.556343Z",
+          "conversation_id": "sess_c6c7b8760d5a43b0",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:07:40.415720Z",
+          "conversation_id": "sess_c6c7b8760d5a43b0",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+          "kind": "run_completed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:07:40.485748Z",
+          "conversation_id": "sess_c6c7b8760d5a43b0",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "3:0:run_completed:"
+        }
+      ],
+      "effects": [],
+      "snapshot_summaries": [
+        {
+          "run_id": "corr-c68cca3e5306446585df0aa68b0308f9",
+          "step_index": 1,
+          "conversation_id": "sess_c6c7b8760d5a43b0",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "timestamp": "2026-11-06T02:07:40.460137Z",
+          "state": "complete",
+          "idempotency_key": "2:1:complete",
+          "messages_count": 2,
+          "messages_digest": "sha256:e3af5ee5d0f318a228ded57a7aa82d11ac135b6fef8c159d3e6575c9de01b3e7",
+          "message_part_counts": {
+            "user-prompt": 1,
+            "capability-load-delta": 1,
+            "instruction-baseline": 1,
+            "instruction-delta": 1,
+            "text": 1
+          },
+          "starter_skill_in_snapshot": true
+        }
+      ],
+      "duration_seconds": 7.143631
+    },
+    {
+      "id": "n.Interaction.9dec4fbdf9bd446788b6d5e5",
+      "user_id": "o.User.d17b35a9173b4c498f888d57",
+      "session_id": "sess_5528505b3a304c2a",
+      "utterance": "NATIVE-SCAFFOLD-CHECK: Remember the ticket ID JUNIPER-64 for this conversation. Reply with that ID only.",
+      "response": "JUNIPER-64",
+      "native_run": {
+        "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true,
+        "usage": {
+          "requests": 1,
+          "input_tokens": 262,
+          "output_tokens": 8
+        },
+        "output": "JUNIPER-64",
+        "delivery": {
+          "version": 1,
+          "message_id": "o.ResponseMessage.corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "channel": "default",
+          "metadata": {
+            "native_replay": false,
+            "is_proactive": false,
+            "observability": {
+              "usage": {
+                "prompt_tokens": 262,
+                "completion_tokens": 8,
+                "total_tokens": 270,
+                "cached_prompt_tokens": 0,
+                "cache_write_tokens": 0,
+                "model_call_count": 1,
+                "model_attempt_count": 1,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.408,
+                "unmeasured_model_attempt_count": 0,
+                "estimated_cost_usd": 0.000588,
+                "reported_cost_usd": 0.0,
+                "litellm_cost_usd": 0.0,
+                "unknown_cost_call_count": 0,
+                "total_cost_usd": 0.000588,
+                "total_duration_seconds": 1.408,
+                "last_updated": "2026-11-06T02:05:19.602082+00:00"
+              },
+              "model": "gpt-4.1-2025-04-14"
+            }
+          }
+        }
+      },
+      "usage": {
+        "prompt_tokens": 262,
+        "completion_tokens": 8,
+        "total_tokens": 270,
+        "cached_prompt_tokens": 0,
+        "cache_write_tokens": 0,
+        "model_call_count": 1,
+        "model_attempt_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.408,
+        "unmeasured_model_attempt_count": 0,
+        "estimated_cost_usd": 0.000588,
+        "reported_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "unknown_cost_call_count": 0,
+        "total_cost_usd": 0.000588,
+        "total_duration_seconds": 1.408,
+        "last_updated": "2026-11-06T02:05:19.608349+00:00"
+      },
+      "started_at": "2026-11-05T21:05:15.652631-05:00",
+      "completed_at": "2026-11-05T21:05:19.608309-05:00",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 4,
+        "snapshots": 3
+      },
+      "events": [
+        {
+          "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:05:18.023354Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:05:18.049354Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T02:05:19.456986Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "kind": "run_completed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T02:05:19.542041Z",
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "tool_call_id": null,
+          "tool_name": null,
+          "error": null,
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "idempotency_key": "3:0:run_completed:"
+        }
+      ],
+      "effects": [],
+      "snapshot_summaries": [
+        {
+          "run_id": "corr-b6bd7809d86f4717a5b43e9d308c31c2",
+          "step_index": 1,
+          "conversation_id": "sess_5528505b3a304c2a",
+          "parent_run_id": null,
+          "agent_name": "jvagent-native",
+          "timestamp": "2026-11-06T02:05:19.519292Z",
+          "state": "complete",
+          "idempotency_key": "2:1:complete",
+          "messages_count": 2,
+          "messages_digest": "sha256:cad76d905f2cd42a98964e1d867f28c522ea475967251a6ca910e22bbb059a2f",
+          "message_part_counts": {
+            "user-prompt": 1,
+            "capability-load-delta": 1,
+            "instruction-baseline": 1,
+            "instruction-delta": 1,
+            "text": 1
+          },
+          "starter_skill_in_snapshot": true
+        }
+      ],
+      "duration_seconds": 3.955678
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.9d9dd624e3fd4ece83261e30",
+      "user_id": "o.User.d17b35a9173b4c498f888d57",
+      "session_id": "sess_5528505b3a304c2a",
+      "public_identity_kind": "bearer",
+      "tasks": [],
+      "budget_counters": {
+        "default|run|*|corr-b6bd7809d86f4717a5b43e9d308c31c2": {
+          "spent": {
+            "usd": "0.000588",
+            "tokens": 270,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        },
+        "default|conversation|*|sess_5528505b3a304c2a": {
+          "spent": {
+            "usd": "0.001254",
+            "tokens": 579,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 2,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-935b7eb5d53b4be4aec10955ddbff0c9": {
+          "spent": {
+            "usd": "0.000666",
+            "tokens": 309,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        }
+      }
+    },
+    {
+      "id": "n.Conversation.7a8359422d5b478f876c9027",
+      "user_id": "user_35bd811b80e549f3a684011fa4aba5db",
+      "session_id": "sess_c6c7b8760d5a43b0",
+      "public_identity_kind": "anonymous",
+      "tasks": [],
+      "budget_counters": {
+        "default|run|*|corr-c68cca3e5306446585df0aa68b0308f9": {
+          "spent": {
+            "usd": "0.000902",
+            "tokens": 307,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        },
+        "default|conversation|*|sess_c6c7b8760d5a43b0": {
+          "spent": {
+            "usd": "0.000902",
+            "tokens": 307,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ]
+}

@@ -17,7 +17,7 @@ reached via discovery meta-tools. Discovery was split into two doors:
 Observed failure: under lean + `block_raw_tool_invocation`, models default to
 `find_tool` (the loop protocol said the list may be PARTIAL → call find_tool).
 Domain SOPs never activate; the model thrashes `find_tool` / `load_tool` and
-never calls the owning skill's propose tools. Hosts (e.g. Integral) compensated
+never calls the owning skill's propose tools. Some hosts compensated
 with per-domain host directives and `pinned_tools` — unsustainable.
 
 Skills were already listed in AVAILABLE SKILLS; the miss was **which discovery

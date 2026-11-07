@@ -96,11 +96,11 @@ async def test_resolve_skills_dirs_includes_action_overlay(tmp_path):
         / "jvagent"
         / "interview"
         / "skills"
-        / "signup_interview"
+        / "signup-interview"
     )
     overlay.mkdir(parents=True)
     (overlay / "SKILL.md").write_text(
-        "---\nname: signup_interview\ndescription: signup\n"
+        "---\nname: signup-interview\ndescription: signup\n"
         "requires-actions:\n  - InterviewAction\n"
         "interview:\n  title: Signup\n  summary: signup\n"
         "  fields: []\n  handlers:\n    complete: noop\n---\n\nbody",
@@ -142,11 +142,11 @@ async def test_discover_specs_loads_action_overlay_signup(tmp_path):
         / "jvagent"
         / "interview"
         / "skills"
-        / "signup_interview"
+        / "signup-interview"
     )
     overlay.mkdir(parents=True)
     (overlay / "SKILL.md").write_text(
-        "---\nname: signup_interview\ndescription: signup\n"
+        "---\nname: signup-interview\ndescription: signup\n"
         "requires-actions:\n  - InterviewAction\n"
         "interview:\n  title: Signup\n  summary: signup\n"
         "  fields: []\n  handlers:\n    complete: noop\n---\n\nbody",
@@ -164,12 +164,12 @@ async def test_discover_specs_loads_action_overlay_signup(tmp_path):
     with patch("jvagent.core.app_context.get_app_root", return_value=str(tmp_path)):
         await action._discover_specs()
 
-    assert action.is_interview_skill("signup_interview")
+    assert action.is_interview_skill("signup-interview")
 
 
 @pytest.mark.asyncio
 async def test_discover_specs_loads_jvagent_app_signup_from_agent_skills():
-    """Regression: signup_interview lives under app-local agents/.../skills/."""
+    """Regression: signup-interview lives under app-local agents/.../skills/."""
     app_root = Path(__file__).resolve().parents[3] / "examples" / "jvagent_app"
     action = InterviewAction()
     action.metadata = {
@@ -183,8 +183,8 @@ async def test_discover_specs_loads_jvagent_app_signup_from_agent_skills():
     with patch("jvagent.core.app_context.get_app_root", return_value=str(app_root)):
         await action._discover_specs()
 
-    assert action.is_interview_skill("signup_interview")
-    spec = action._registry.get("signup_interview")
+    assert action.is_interview_skill("signup-interview")
+    spec = action._registry.get("signup-interview")
     assert spec is not None
     assert "user_name" in [f.key for f in spec.fields]
 

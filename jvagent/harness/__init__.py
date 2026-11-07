@@ -1,5 +1,8 @@
 """Public harness contract types and runtime (ADR-0054)."""
 
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
+
 from jvagent.harness.contracts import (
     CONTRACT_VERSION,
     EventEnvelope,
@@ -19,12 +22,24 @@ from jvagent.harness.contracts import (
     reject_host_domain_fields,
     reject_model_authority_fields,
 )
-from jvagent.harness.runtime import (
-    HarnessRuntime,
-    HarnessStore,
-    get_runtime,
-    reset_runtime,
-)
+
+if TYPE_CHECKING:
+    from jvagent.harness.runtime import (
+        HarnessRuntime,
+        HarnessStore,
+        get_runtime,
+        reset_runtime,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve transitional public runtime exports only when explicitly requested."""
+    if name in {"HarnessRuntime", "HarnessStore", "get_runtime", "reset_runtime"}:
+        value = getattr(import_module("jvagent.harness.runtime"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "CONTRACT_VERSION",

@@ -9,6 +9,8 @@ allowed-tools:
   - code_execution__bash
 requires-actions:
   - CodeExecutionAction
+requires-tools:
+  - code_execution__bash
 license: Apache-2.0
 metadata:
   version: "2"

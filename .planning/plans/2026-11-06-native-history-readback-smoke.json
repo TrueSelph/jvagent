@@ -1,0 +1,663 @@
+{
+  "parent_revision": "git:069b09e09e97187c228a866f6adce25a5d892b9f",
+  "qualified_fixture": "/private/tmp/jvagent-native-history-import-smoke",
+  "ui_origin": "http://127.0.0.1:3140",
+  "fixtures": [
+    {
+      "fixture": "/private/tmp/jvagent-native-history-import-smoke",
+      "runtime": {
+        "process_id": 60775,
+        "observed_at": "2026-11-06T05:37:17.402102+00:00",
+        "source_blobs": {
+          "jvagent/harness/history_import.py": "git-blob:21dcf08c3d308ce0384d3fc56590e36feed013b0",
+          "jvagent/action/response/native_replay.py": "git-blob:d62c8157a68d72ec7a3ccda23ef93ea87123128b",
+          "jvagent/action/native_harness/native_harness_action.py": "git-blob:714e9d423a8b204361150f1c308f150fbf2bd7a8",
+          "jvchat/src/lib/channelMessages.ts": "git-blob:3100a7cf4d22dd3a8d22d1a5ab993ef75cb615d8",
+          "jvchat/src/lib/messageHistory.ts": "git-blob:d550efcbc79e490edaa38cf67d67f74c7e052d91"
+        },
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      },
+      "new_interactions": [
+        {
+          "id": "n.Interaction.ff89e65a1e7546a6b8337f8a",
+          "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+          "utterance": "What rehearsal date did I supply earlier? Reply using ISO date only.",
+          "response": "2026-11-18",
+          "closed": true,
+          "emitted": true,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 523,
+              "output_tokens": 8
+            },
+            "run_id": "corr-3721f101941d42d799f2d39de35d5c59",
+            "status": "delivered",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "corr-b8a2bbaf7925407882c037168de7a825"
+            },
+            "usage_complete": true
+          },
+          "registration_count": 1,
+          "calls": [
+            {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "total_tokens": 531,
+                "prompt_tokens": 523,
+                "completion_tokens": 8,
+                "cache_write_tokens": 0,
+                "cached_prompt_tokens": 0
+              },
+              "provider": "openai",
+              "cost_record": {
+                "amount": 0.00111,
+                "source": "pydantic_ai_pricing",
+                "currency": "USD",
+                "estimated": true,
+                "pricing_version": null
+              },
+              "usage_status": "provider_reported"
+            }
+          ],
+          "attempts": [
+            {
+              "outcome": "completed",
+              "duration": 1.527562,
+              "started_at": "2026-11-06T05:34:07.695420+00:00",
+              "completed_at": "2026-11-06T05:34:09.222982+00:00",
+              "duration_scope": "sdk_model_request"
+            }
+          ],
+          "interaction_seconds": 2.527119
+        }
+      ],
+      "clone": {
+        "source_fixture": "/private/tmp/jvagent-bench-legacy",
+        "target_fixture": "/private/tmp/jvagent-native-history-import-smoke",
+        "target_database": "jvagent_native_history_import_20261106",
+        "copied_counts": {
+          "node": 30,
+          "edge": 29,
+          "object": 1
+        },
+        "copied_collection_digests": {
+          "node": "sha256:fd879edb91dc507fd683941ed0221056e4ef265c4ff6702b703cb47066fb8e07",
+          "edge": "sha256:25a22bd3c3a21a5dfbebffa005cc39b6d6720a72a1777c95e004f2509b24c44c",
+          "object": "sha256:bdcbb8ab9f99b2aab69ca8ca570bae4519f9446e091d1c0ab6429cb0b6a042ee"
+        },
+        "refresh_tokens_copied": false,
+        "jwt_key_rotated": true,
+        "raw_data_exported": false
+      }
+    },
+    {
+      "fixture": "/private/tmp/jvagent-native-history-readback-smoke",
+      "runtime": {
+        "process_id": 60401,
+        "observed_at": "2026-11-06T05:32:05.134557+00:00",
+        "source_blobs": {
+          "jvagent/harness/history_import.py": "git-blob:21dcf08c3d308ce0384d3fc56590e36feed013b0",
+          "jvagent/action/response/native_replay.py": "git-blob:d62c8157a68d72ec7a3ccda23ef93ea87123128b",
+          "jvagent/action/native_harness/native_harness_action.py": "git-blob:714e9d423a8b204361150f1c308f150fbf2bd7a8",
+          "jvchat/src/lib/channelMessages.ts": "git-blob:3100a7cf4d22dd3a8d22d1a5ab993ef75cb615d8",
+          "jvchat/src/lib/messageHistory.ts": "git-blob:d550efcbc79e490edaa38cf67d67f74c7e052d91"
+        },
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      },
+      "new_interactions": [
+        {
+          "id": "n.Interaction.9755602ea8fc4fafafb11342",
+          "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+          "utterance": "What rehearsal date did I supply earlier? Reply using ISO date only.",
+          "response": "The model request could not complete. Please check the service configuration.",
+          "closed": true,
+          "emitted": true,
+          "native_run": {
+            "run_id": "corr-8908fdca12f642868b806aeab76ab6ee",
+            "status": "failed",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "corr-b8a2bbaf7925407882c037168de7a825"
+            },
+            "usage_complete": false
+          },
+          "registration_count": 0,
+          "calls": [],
+          "attempts": [],
+          "interaction_seconds": 0.795192
+        },
+        {
+          "id": "n.Interaction.097ab8df239b4d8f948b4b41",
+          "conversation_id": "n.Conversation.758e98339a9d4140bab9dbef",
+          "utterance": "Reply with exactly READBACK-READY.",
+          "response": "READBACK-READY",
+          "closed": true,
+          "emitted": true,
+          "native_run": {
+            "usage": {
+              "requests": 1,
+              "input_tokens": 236,
+              "output_tokens": 6
+            },
+            "run_id": "corr-c67849e44c694854b54bcaa3edbf1c0d",
+            "status": "delivered",
+            "history_source": {},
+            "usage_complete": true
+          },
+          "registration_count": 1,
+          "calls": [
+            {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "total_tokens": 242,
+                "prompt_tokens": 236,
+                "completion_tokens": 6,
+                "cache_write_tokens": 0,
+                "cached_prompt_tokens": 0
+              },
+              "provider": "openai",
+              "cost_record": {
+                "amount": 0.00052,
+                "source": "pydantic_ai_pricing",
+                "currency": "USD",
+                "estimated": true,
+                "pricing_version": null
+              },
+              "usage_status": "provider_reported"
+            }
+          ],
+          "attempts": [
+            {
+              "outcome": "completed",
+              "duration": 2.027091,
+              "started_at": "2026-11-06T05:27:17.817617+00:00",
+              "completed_at": "2026-11-06T05:27:19.844708+00:00",
+              "duration_scope": "sdk_model_request"
+            }
+          ],
+          "interaction_seconds": 2.807736
+        }
+      ],
+      "clone": {
+        "source": "/private/tmp/jvagent-native-history-import-smoke",
+        "target": "/private/tmp/jvagent-native-history-readback-smoke",
+        "database": "jvagent_native_history_readback_20261106",
+        "collections": {
+          "node": {
+            "count": 31,
+            "digest": "sha256:afce9535a9b6d8285f12c76bf84820009d7dd4859dead9189eb58327c4cedec2"
+          },
+          "edge": {
+            "count": 30,
+            "digest": "sha256:91bb2dd27a78eb6b98bbe18254536166f9b907c6b0c52e424cf2e4a21739836f"
+          },
+          "object": {
+            "count": 2,
+            "digest": "sha256:7c782df24f545e995272ef857b203d64542761c52e68632cf2b3bdf475acbdc4"
+          }
+        },
+        "refresh_tokens_copied": false,
+        "jwt_secret_rotated": true,
+        "bootstrap_or_model_execution": false
+      }
+    },
+    {
+      "fixture": "/private/tmp/jvagent-native-history-readback-retry",
+      "runtime": {
+        "process_id": 60491,
+        "observed_at": "2026-11-06T05:32:05.133111+00:00",
+        "source_blobs": {
+          "jvagent/harness/history_import.py": "git-blob:21dcf08c3d308ce0384d3fc56590e36feed013b0",
+          "jvagent/action/response/native_replay.py": "git-blob:d62c8157a68d72ec7a3ccda23ef93ea87123128b",
+          "jvagent/action/native_harness/native_harness_action.py": "git-blob:714e9d423a8b204361150f1c308f150fbf2bd7a8",
+          "jvchat/src/lib/channelMessages.ts": "git-blob:3100a7cf4d22dd3a8d22d1a5ab993ef75cb615d8",
+          "jvchat/src/lib/messageHistory.ts": "git-blob:d550efcbc79e490edaa38cf67d67f74c7e052d91"
+        },
+        "legacy_execution_modules": [],
+        "runtime_functions_patched": false
+      },
+      "new_interactions": [
+        {
+          "id": "n.Interaction.7ab0f6ce9be74b5696c7791c",
+          "conversation_id": "n.Conversation.4b3b2d9b6e084a3eab5cee4a",
+          "utterance": "What rehearsal date did I supply earlier? Reply using ISO date only.",
+          "response": "The model request could not complete. Please check the service configuration.",
+          "closed": true,
+          "emitted": true,
+          "native_run": {
+            "run_id": "corr-be7faa34edf9482fbac8da6eeca22a40",
+            "status": "failed",
+            "failure_type": "UserError",
+            "failure_origin": "__init__.py:5282:_raise_for_unresolved_workspace",
+            "history_source": {
+              "frontier": "delivered",
+              "source_run_id": "corr-b8a2bbaf7925407882c037168de7a825"
+            },
+            "usage_complete": false
+          },
+          "registration_count": 0,
+          "calls": [],
+          "attempts": [],
+          "interaction_seconds": 0.780753
+        }
+      ],
+      "clone": {
+        "source": "/private/tmp/jvagent-native-history-import-smoke",
+        "target": "/private/tmp/jvagent-native-history-readback-retry",
+        "database": "jvagent_native_history_readback_retry_20261106",
+        "collections": {
+          "node": {
+            "count": 31,
+            "digest": "sha256:afce9535a9b6d8285f12c76bf84820009d7dd4859dead9189eb58327c4cedec2"
+          },
+          "edge": {
+            "count": 30,
+            "digest": "sha256:91bb2dd27a78eb6b98bbe18254536166f9b907c6b0c52e424cf2e4a21739836f"
+          },
+          "object": {
+            "count": 2,
+            "digest": "sha256:631e23bd9193dd6e1d2c1b876d4aa6f50b40b2c16639ef921c2a82bc1e2f50e9"
+          }
+        },
+        "refresh_tokens_copied": false,
+        "jwt_secret_rotated": true,
+        "bootstrap_or_model_execution": false
+      }
+    }
+  ],
+  "audits": {
+    "before": {
+      "label": "before",
+      "interaction_hashes": {
+        "n.Interaction.f01162d563f1421180556519": "sha256:79ace5ed7b423302329f9be8d4ea47b4fe9e5a66ba23d45d5e3838d727ceb52c",
+        "n.Interaction.5d53bffe926b4952aa3f26e1": "sha256:06bd87de87abce462e9580efe4d04daf57d1e2209d2970d635687c1b6025e87b",
+        "n.Interaction.d99e43e8223c46919012a527": "sha256:71eccdb3d61a53cf3650afa76620d9a14107cc57453d5bbb603bad717df45de4",
+        "n.Interaction.152222674e654a43a31ab18d": "sha256:129f3ef07f7632bb77b919802a376c242b933669b15d8e1877ff7bdb0301a01f",
+        "n.Interaction.cfdac9b5f4be44b3961d5920": "sha256:a796a229fa6c7200d7f3eed32078091be5157be70d342c6441fff6819e7611a6",
+        "n.Interaction.70c8f2a3bcc74da4bccd3f41": "sha256:57cab67b97744c62338ad16453f86539ab31939f977843da5e7a8e0595ef38c1",
+        "n.Interaction.4921a6c6b5764991baada442": "sha256:9980176dbb0aa3578338139e65446c85dd1f99b1cac87f826f39950712c7bccd",
+        "n.Interaction.c6982b5a4e274ec8ac61d0c8": "sha256:be871eb86436ceb8ae253e71bcbdffdb3556d7d97ed05a352d55136e1beda0d7",
+        "n.Interaction.67a7811ed2b34d0d862f104a": "sha256:47608bf79c91c5381e95b9b916266b0ff3832267e8fb71c171c3375a3180c47d",
+        "n.Interaction.0b5d4e0075734d7eb6ac0212": "sha256:d3f9ad07f29564b19601d335e233d82d19f8c18f4aba8a15784cdebccdc4b0cc",
+        "n.Interaction.b2e58223cf28442989d22224": "sha256:4f81a666e6a3fbe8d743cd52252f5ef4bd9cc5d66e30b8df8ee616b8009cd594",
+        "n.Interaction.090fe82c9f4f409c95ad5726": "sha256:d014fd034fc306232dc7cc516cd00e70cef9d90d6e991107545353a3f2e7b8f4",
+        "n.Interaction.36c25e74bb504befa67105e1": "sha256:cf1f9f6a531c5f60897ad1a194c565a53db0fb05b9f3d2d00898d7f823d61aed",
+        "n.Interaction.935fc2d6399341c598ab3222": "sha256:ab7115f733418441572229eadc2ee94737b10a3445d0069ba0206b94f02b4a0f",
+        "n.Interaction.7512d280a6c540c48b562f04": "sha256:dbe17f5cccaf49bd943772521ee4dd479c681a76ea085b96f3fbc8c5a862360d",
+        "n.Interaction.b8666e1237e8424aaa0690cc": "sha256:d41ece14dfdb2ad441a3f10e888009b71c6f2bf189bd40c5ac5063562eadd1d2",
+        "n.Interaction.c0ab72349fd94c54975781a4": "sha256:1c3386fed9183c66f596aad213a368bf770acaffa13f0db295a410b61e249bd0",
+        "n.Interaction.f154d40f77e649b195aad6e7": "sha256:75c0df1de9f74a89b5edee226c45c4608b3d15526e050b62a87f41042146a33f"
+      },
+      "interaction_count": 18,
+      "registration_count": 2,
+      "conversations": {
+        "n.Conversation.4b3b2d9b6e084a3eab5cee4a": {
+          "native_spend_digest": "sha256:d9eb16e9007a95d8f80977e6e97930e927a289c1fa404ea3ab28f99b9885ceec",
+          "import_digest": "sha256:b198d380f73fb6a8b1935df1207745deb5ed52bb2e5c7ac4308156b85d309c93",
+          "import_status": "applied",
+          "native_spend": {
+            "default|conversation|*|sess_45c2d961da974964": {
+              "spent": {
+                "usd": "0.052038",
+                "tokens": 16116,
+                "requests": 9,
+                "unpriced_requests": 7
+              },
+              "expires_at": "2026-12-06T05:06:23.469112+00:00"
+            },
+            "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": {
+              "spent": {
+                "usd": "0.000996",
+                "tokens": 480,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T04:56:40.004611+00:00"
+            },
+            "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": {
+              "spent": {
+                "usd": "0.001042",
+                "tokens": 503,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:06:23.469112+00:00"
+            }
+          },
+          "legacy_ledger": 0.031304,
+          "task_count": 0
+        },
+        "n.Conversation.e0d0a31effc74a0c8217ab04": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_status": null,
+          "native_spend": {},
+          "legacy_ledger": 0.044932,
+          "task_count": 0
+        },
+        "n.Conversation.1adc6b371d364a5bb746147c": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:d5ab6a9eb0178ee296cf0bc79ea3fa3299685a1dd9a7d74195cc2d46612421c3",
+          "import_status": "rolled_back",
+          "native_spend": {},
+          "legacy_ledger": 0.035402,
+          "task_count": 0
+        }
+      }
+    },
+    "restored": {
+      "label": "restored",
+      "interaction_hashes": {
+        "n.Interaction.f01162d563f1421180556519": "sha256:79ace5ed7b423302329f9be8d4ea47b4fe9e5a66ba23d45d5e3838d727ceb52c",
+        "n.Interaction.5d53bffe926b4952aa3f26e1": "sha256:06bd87de87abce462e9580efe4d04daf57d1e2209d2970d635687c1b6025e87b",
+        "n.Interaction.d99e43e8223c46919012a527": "sha256:71eccdb3d61a53cf3650afa76620d9a14107cc57453d5bbb603bad717df45de4",
+        "n.Interaction.152222674e654a43a31ab18d": "sha256:129f3ef07f7632bb77b919802a376c242b933669b15d8e1877ff7bdb0301a01f",
+        "n.Interaction.cfdac9b5f4be44b3961d5920": "sha256:a796a229fa6c7200d7f3eed32078091be5157be70d342c6441fff6819e7611a6",
+        "n.Interaction.70c8f2a3bcc74da4bccd3f41": "sha256:57cab67b97744c62338ad16453f86539ab31939f977843da5e7a8e0595ef38c1",
+        "n.Interaction.4921a6c6b5764991baada442": "sha256:9980176dbb0aa3578338139e65446c85dd1f99b1cac87f826f39950712c7bccd",
+        "n.Interaction.c6982b5a4e274ec8ac61d0c8": "sha256:be871eb86436ceb8ae253e71bcbdffdb3556d7d97ed05a352d55136e1beda0d7",
+        "n.Interaction.67a7811ed2b34d0d862f104a": "sha256:47608bf79c91c5381e95b9b916266b0ff3832267e8fb71c171c3375a3180c47d",
+        "n.Interaction.0b5d4e0075734d7eb6ac0212": "sha256:d3f9ad07f29564b19601d335e233d82d19f8c18f4aba8a15784cdebccdc4b0cc",
+        "n.Interaction.b2e58223cf28442989d22224": "sha256:4f81a666e6a3fbe8d743cd52252f5ef4bd9cc5d66e30b8df8ee616b8009cd594",
+        "n.Interaction.090fe82c9f4f409c95ad5726": "sha256:d014fd034fc306232dc7cc516cd00e70cef9d90d6e991107545353a3f2e7b8f4",
+        "n.Interaction.36c25e74bb504befa67105e1": "sha256:cf1f9f6a531c5f60897ad1a194c565a53db0fb05b9f3d2d00898d7f823d61aed",
+        "n.Interaction.935fc2d6399341c598ab3222": "sha256:ab7115f733418441572229eadc2ee94737b10a3445d0069ba0206b94f02b4a0f",
+        "n.Interaction.7512d280a6c540c48b562f04": "sha256:dbe17f5cccaf49bd943772521ee4dd479c681a76ea085b96f3fbc8c5a862360d",
+        "n.Interaction.b8666e1237e8424aaa0690cc": "sha256:d41ece14dfdb2ad441a3f10e888009b71c6f2bf189bd40c5ac5063562eadd1d2",
+        "n.Interaction.c0ab72349fd94c54975781a4": "sha256:1c3386fed9183c66f596aad213a368bf770acaffa13f0db295a410b61e249bd0",
+        "n.Interaction.f154d40f77e649b195aad6e7": "sha256:75c0df1de9f74a89b5edee226c45c4608b3d15526e050b62a87f41042146a33f"
+      },
+      "interaction_count": 18,
+      "registration_count": 2,
+      "conversations": {
+        "n.Conversation.4b3b2d9b6e084a3eab5cee4a": {
+          "native_spend_digest": "sha256:d9eb16e9007a95d8f80977e6e97930e927a289c1fa404ea3ab28f99b9885ceec",
+          "import_digest": "sha256:b198d380f73fb6a8b1935df1207745deb5ed52bb2e5c7ac4308156b85d309c93",
+          "import_status": "applied",
+          "native_spend": {
+            "default|conversation|*|sess_45c2d961da974964": {
+              "spent": {
+                "usd": "0.052038",
+                "tokens": 16116,
+                "requests": 9,
+                "unpriced_requests": 7
+              },
+              "expires_at": "2026-12-06T05:06:23.469112+00:00"
+            },
+            "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": {
+              "spent": {
+                "usd": "0.000996",
+                "tokens": 480,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T04:56:40.004611+00:00"
+            },
+            "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": {
+              "spent": {
+                "usd": "0.001042",
+                "tokens": 503,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:06:23.469112+00:00"
+            }
+          },
+          "legacy_ledger": 0.031304,
+          "task_count": 0
+        },
+        "n.Conversation.e0d0a31effc74a0c8217ab04": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_status": null,
+          "native_spend": {},
+          "legacy_ledger": 0.044932,
+          "task_count": 0
+        },
+        "n.Conversation.1adc6b371d364a5bb746147c": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:d5ab6a9eb0178ee296cf0bc79ea3fa3299685a1dd9a7d74195cc2d46612421c3",
+          "import_status": "rolled_back",
+          "native_spend": {},
+          "legacy_ledger": 0.035402,
+          "task_count": 0
+        }
+      },
+      "original_interactions_unchanged": true,
+      "original_imports_unchanged": true,
+      "readback_unchanged": true
+    },
+    "model": {
+      "label": "model",
+      "interaction_hashes": {
+        "n.Interaction.f01162d563f1421180556519": "sha256:79ace5ed7b423302329f9be8d4ea47b4fe9e5a66ba23d45d5e3838d727ceb52c",
+        "n.Interaction.5d53bffe926b4952aa3f26e1": "sha256:06bd87de87abce462e9580efe4d04daf57d1e2209d2970d635687c1b6025e87b",
+        "n.Interaction.d99e43e8223c46919012a527": "sha256:71eccdb3d61a53cf3650afa76620d9a14107cc57453d5bbb603bad717df45de4",
+        "n.Interaction.152222674e654a43a31ab18d": "sha256:129f3ef07f7632bb77b919802a376c242b933669b15d8e1877ff7bdb0301a01f",
+        "n.Interaction.cfdac9b5f4be44b3961d5920": "sha256:a796a229fa6c7200d7f3eed32078091be5157be70d342c6441fff6819e7611a6",
+        "n.Interaction.70c8f2a3bcc74da4bccd3f41": "sha256:57cab67b97744c62338ad16453f86539ab31939f977843da5e7a8e0595ef38c1",
+        "n.Interaction.4921a6c6b5764991baada442": "sha256:9980176dbb0aa3578338139e65446c85dd1f99b1cac87f826f39950712c7bccd",
+        "n.Interaction.c6982b5a4e274ec8ac61d0c8": "sha256:be871eb86436ceb8ae253e71bcbdffdb3556d7d97ed05a352d55136e1beda0d7",
+        "n.Interaction.67a7811ed2b34d0d862f104a": "sha256:47608bf79c91c5381e95b9b916266b0ff3832267e8fb71c171c3375a3180c47d",
+        "n.Interaction.0b5d4e0075734d7eb6ac0212": "sha256:d3f9ad07f29564b19601d335e233d82d19f8c18f4aba8a15784cdebccdc4b0cc",
+        "n.Interaction.b2e58223cf28442989d22224": "sha256:4f81a666e6a3fbe8d743cd52252f5ef4bd9cc5d66e30b8df8ee616b8009cd594",
+        "n.Interaction.090fe82c9f4f409c95ad5726": "sha256:d014fd034fc306232dc7cc516cd00e70cef9d90d6e991107545353a3f2e7b8f4",
+        "n.Interaction.36c25e74bb504befa67105e1": "sha256:cf1f9f6a531c5f60897ad1a194c565a53db0fb05b9f3d2d00898d7f823d61aed",
+        "n.Interaction.935fc2d6399341c598ab3222": "sha256:ab7115f733418441572229eadc2ee94737b10a3445d0069ba0206b94f02b4a0f",
+        "n.Interaction.7512d280a6c540c48b562f04": "sha256:dbe17f5cccaf49bd943772521ee4dd479c681a76ea085b96f3fbc8c5a862360d",
+        "n.Interaction.b8666e1237e8424aaa0690cc": "sha256:d41ece14dfdb2ad441a3f10e888009b71c6f2bf189bd40c5ac5063562eadd1d2",
+        "n.Interaction.ff89e65a1e7546a6b8337f8a": "sha256:b93184992c6ee73067b8b6a4cf9bea10475a56d981c12405b81b68f2ae0e390f",
+        "n.Interaction.c0ab72349fd94c54975781a4": "sha256:1c3386fed9183c66f596aad213a368bf770acaffa13f0db295a410b61e249bd0",
+        "n.Interaction.f154d40f77e649b195aad6e7": "sha256:75c0df1de9f74a89b5edee226c45c4608b3d15526e050b62a87f41042146a33f"
+      },
+      "interaction_count": 19,
+      "registration_count": 3,
+      "conversations": {
+        "n.Conversation.4b3b2d9b6e084a3eab5cee4a": {
+          "native_spend_digest": "sha256:431f5c600f1e841fbaa74875727ce2d892ee3668f52c7132ff9ec8f4f8b6dbb6",
+          "import_digest": "sha256:b198d380f73fb6a8b1935df1207745deb5ed52bb2e5c7ac4308156b85d309c93",
+          "import_status": "applied",
+          "native_spend": {
+            "default|conversation|*|sess_45c2d961da974964": {
+              "spent": {
+                "usd": "0.053148",
+                "tokens": 16647,
+                "requests": 10,
+                "unpriced_requests": 7
+              },
+              "expires_at": "2026-12-06T05:34:09.234021+00:00"
+            },
+            "default|run|*|corr-3721f101941d42d799f2d39de35d5c59": {
+              "spent": {
+                "usd": "0.001110",
+                "tokens": 531,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:34:09.234021+00:00"
+            },
+            "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": {
+              "spent": {
+                "usd": "0.000996",
+                "tokens": 480,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T04:56:40.004611+00:00"
+            },
+            "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": {
+              "spent": {
+                "usd": "0.001042",
+                "tokens": 503,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:06:23.469112+00:00"
+            }
+          },
+          "legacy_ledger": 0.031304,
+          "task_count": 0
+        },
+        "n.Conversation.e0d0a31effc74a0c8217ab04": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_status": null,
+          "native_spend": {},
+          "legacy_ledger": 0.044932,
+          "task_count": 0
+        },
+        "n.Conversation.1adc6b371d364a5bb746147c": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:d5ab6a9eb0178ee296cf0bc79ea3fa3299685a1dd9a7d74195cc2d46612421c3",
+          "import_status": "rolled_back",
+          "native_spend": {},
+          "legacy_ledger": 0.035402,
+          "task_count": 0
+        }
+      },
+      "original_interactions_unchanged": true,
+      "original_imports_unchanged": true
+    },
+    "reload": {
+      "label": "reload",
+      "interaction_hashes": {
+        "n.Interaction.f01162d563f1421180556519": "sha256:79ace5ed7b423302329f9be8d4ea47b4fe9e5a66ba23d45d5e3838d727ceb52c",
+        "n.Interaction.5d53bffe926b4952aa3f26e1": "sha256:06bd87de87abce462e9580efe4d04daf57d1e2209d2970d635687c1b6025e87b",
+        "n.Interaction.d99e43e8223c46919012a527": "sha256:71eccdb3d61a53cf3650afa76620d9a14107cc57453d5bbb603bad717df45de4",
+        "n.Interaction.152222674e654a43a31ab18d": "sha256:129f3ef07f7632bb77b919802a376c242b933669b15d8e1877ff7bdb0301a01f",
+        "n.Interaction.cfdac9b5f4be44b3961d5920": "sha256:a796a229fa6c7200d7f3eed32078091be5157be70d342c6441fff6819e7611a6",
+        "n.Interaction.70c8f2a3bcc74da4bccd3f41": "sha256:57cab67b97744c62338ad16453f86539ab31939f977843da5e7a8e0595ef38c1",
+        "n.Interaction.4921a6c6b5764991baada442": "sha256:9980176dbb0aa3578338139e65446c85dd1f99b1cac87f826f39950712c7bccd",
+        "n.Interaction.c6982b5a4e274ec8ac61d0c8": "sha256:be871eb86436ceb8ae253e71bcbdffdb3556d7d97ed05a352d55136e1beda0d7",
+        "n.Interaction.67a7811ed2b34d0d862f104a": "sha256:47608bf79c91c5381e95b9b916266b0ff3832267e8fb71c171c3375a3180c47d",
+        "n.Interaction.0b5d4e0075734d7eb6ac0212": "sha256:d3f9ad07f29564b19601d335e233d82d19f8c18f4aba8a15784cdebccdc4b0cc",
+        "n.Interaction.b2e58223cf28442989d22224": "sha256:4f81a666e6a3fbe8d743cd52252f5ef4bd9cc5d66e30b8df8ee616b8009cd594",
+        "n.Interaction.090fe82c9f4f409c95ad5726": "sha256:d014fd034fc306232dc7cc516cd00e70cef9d90d6e991107545353a3f2e7b8f4",
+        "n.Interaction.36c25e74bb504befa67105e1": "sha256:cf1f9f6a531c5f60897ad1a194c565a53db0fb05b9f3d2d00898d7f823d61aed",
+        "n.Interaction.935fc2d6399341c598ab3222": "sha256:ab7115f733418441572229eadc2ee94737b10a3445d0069ba0206b94f02b4a0f",
+        "n.Interaction.7512d280a6c540c48b562f04": "sha256:dbe17f5cccaf49bd943772521ee4dd479c681a76ea085b96f3fbc8c5a862360d",
+        "n.Interaction.b8666e1237e8424aaa0690cc": "sha256:d41ece14dfdb2ad441a3f10e888009b71c6f2bf189bd40c5ac5063562eadd1d2",
+        "n.Interaction.ff89e65a1e7546a6b8337f8a": "sha256:b93184992c6ee73067b8b6a4cf9bea10475a56d981c12405b81b68f2ae0e390f",
+        "n.Interaction.c0ab72349fd94c54975781a4": "sha256:1c3386fed9183c66f596aad213a368bf770acaffa13f0db295a410b61e249bd0",
+        "n.Interaction.f154d40f77e649b195aad6e7": "sha256:75c0df1de9f74a89b5edee226c45c4608b3d15526e050b62a87f41042146a33f"
+      },
+      "interaction_count": 19,
+      "registration_count": 3,
+      "conversations": {
+        "n.Conversation.4b3b2d9b6e084a3eab5cee4a": {
+          "native_spend_digest": "sha256:431f5c600f1e841fbaa74875727ce2d892ee3668f52c7132ff9ec8f4f8b6dbb6",
+          "import_digest": "sha256:b198d380f73fb6a8b1935df1207745deb5ed52bb2e5c7ac4308156b85d309c93",
+          "import_status": "applied",
+          "native_spend": {
+            "default|conversation|*|sess_45c2d961da974964": {
+              "spent": {
+                "usd": "0.053148",
+                "tokens": 16647,
+                "requests": 10,
+                "unpriced_requests": 7
+              },
+              "expires_at": "2026-12-06T05:34:09.234021+00:00"
+            },
+            "default|run|*|corr-3721f101941d42d799f2d39de35d5c59": {
+              "spent": {
+                "usd": "0.001110",
+                "tokens": 531,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:34:09.234021+00:00"
+            },
+            "default|run|*|corr-8cdc7021b32147a7a89ff8a546be0077": {
+              "spent": {
+                "usd": "0.000996",
+                "tokens": 480,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T04:56:40.004611+00:00"
+            },
+            "default|run|*|corr-b8a2bbaf7925407882c037168de7a825": {
+              "spent": {
+                "usd": "0.001042",
+                "tokens": 503,
+                "requests": 1,
+                "unpriced_requests": 0
+              },
+              "expires_at": "2026-11-07T05:06:23.469112+00:00"
+            }
+          },
+          "legacy_ledger": 0.031304,
+          "task_count": 0
+        },
+        "n.Conversation.e0d0a31effc74a0c8217ab04": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_status": null,
+          "native_spend": {},
+          "legacy_ledger": 0.044932,
+          "task_count": 0
+        },
+        "n.Conversation.1adc6b371d364a5bb746147c": {
+          "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "import_digest": "sha256:d5ab6a9eb0178ee296cf0bc79ea3fa3299685a1dd9a7d74195cc2d46612421c3",
+          "import_status": "rolled_back",
+          "native_spend": {},
+          "legacy_ledger": 0.035402,
+          "task_count": 0
+        }
+      },
+      "original_interactions_unchanged": true,
+      "original_imports_unchanged": true,
+      "readback_unchanged": true
+    }
+  },
+  "new_provider_requests_recorded": 2,
+  "new_provider_reported_tokens": 773,
+  "new_cost_usd_estimated": "0.00163",
+  "pre_registration_failures": {
+    "count": 2,
+    "first_failure_unclassified": true,
+    "second_failure": "UserError at _raise_for_unresolved_workspace",
+    "provider_requests_observed": 0,
+    "usage_complete": false,
+    "invoices_verified": false,
+    "classification": "Refusals retained. No false-zero invoice claim; the diagnostic case fails before SDK registration."
+  },
+  "validation": {
+    "native311": {
+      "passed": 457,
+      "seconds": 74.34,
+      "additional_workspace_regression_passed": 1
+    },
+    "native312": {
+      "passed": 458,
+      "seconds": 84.69,
+      "warnings": 296
+    },
+    "frontend": {
+      "passed": 174,
+      "lint": "passed",
+      "build": "passed",
+      "build_seconds": 4.66
+    },
+    "parent_regressions": {
+      "cases": 2,
+      "failed_on_parent": 2,
+      "source_revision": "git:069b09e09e97187c228a866f6adce25a5d892b9f"
+    }
+  },
+  "ui_artifact": {
+    "index.html": "sha256:12bcce2fc7c22bb35fb62b2e8e6cdaceab7e414c39a6f9a72ebbeb1979af0135",
+    "ChatInterface-BqI25HGO.js": "sha256:5b1247dbc6d6531f25cc090b0eaa9ce6c19a5dc97f556e2720bc6d34578d54d0"
+  },
+  "limits": [
+    "No silent workspace relocation; operator-reviewed public-SDK migration remains open.",
+    "No server conversation discovery; browser index seeded without transcript messages.",
+    "Only bounded approved historical text and completed native replies; uncertain/failed delivery, historical tools/cost backfill, attachments, arbitrary cursors and edited-branch/cross-tab reconciliation remain unqualified.",
+    "Source reference client only; bundled wheel frontend and other channel renderers remain open."
+  ]
+}

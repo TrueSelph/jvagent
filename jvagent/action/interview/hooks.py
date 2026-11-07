@@ -567,36 +567,57 @@ def _custom_tools_trusted(spec: InterviewSpec) -> bool:
 
 def load_hook_function(spec: InterviewSpec, function_name: str) -> Optional[Callable]:
     """Load a hook from custom_tools.py or built-in registry."""
+    from .native_hooks import scoped_source
+
+    native, source, digest = scoped_source(spec)
     builtin = BUILTIN_HOOKS.get(function_name)
     if builtin is not None:
+        if native:
+            raise ValueError("Legacy activation seed hooks are not native extensions")
         return builtin
 
-    if not _custom_tools_trusted(spec):
+    if not native and not _custom_tools_trusted(spec):
         return None
 
-    key = f"{spec.name}:{spec.source_dir}"
+    key = (
+        f"{spec.name}:{spec.source_dir}:{digest}"
+        if native
+        else f"{spec.name}:{spec.source_dir}"
+    )
     module = _module_cache.get(key)
     if module is None:
         custom_tools_path = os.path.join(spec.source_dir, "scripts", "custom_tools.py")
-        if not os.path.isfile(custom_tools_path):
+        if not native and not os.path.isfile(custom_tools_path):
             return None
         try:
             loader_spec = importlib.util.spec_from_file_location(
                 f"interview_custom_tools_{spec.name}", custom_tools_path
             )
             if not loader_spec or not loader_spec.loader:
+                if native:
+                    raise RuntimeError("Reviewed interview hook loader is unavailable")
                 return None
             module = importlib.util.module_from_spec(loader_spec)
             module.__dict__["InterviewSession"] = InterviewSession
-            loader_spec.loader.exec_module(module)
+            if native:
+                assert source is not None
+                exec(compile(source, custom_tools_path, "exec"), module.__dict__)
+            else:
+                loader_spec.loader.exec_module(module)
             _module_cache[key] = module
         except Exception as e:
+            if native:
+                raise RuntimeError(
+                    "Reviewed interview hook module failed to load"
+                ) from None
             logger.error(
                 "Failed to load custom_tools from %s: %s", custom_tools_path, e
             )
             return None
 
     func = getattr(module, function_name, None)
+    if native and not callable(func):
+        raise ValueError("Reviewed interview hook is not callable")
     return func if callable(func) else None
 
 

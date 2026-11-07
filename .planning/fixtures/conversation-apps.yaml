@@ -1,0 +1,84 @@
+legacy:
+  app:
+    agents:
+    - jvagent/bench
+    app: bench_legacy
+    context:
+      name: legacy Harness Workload Fixture
+  agent:
+    agent: jvagent/bench
+    context:
+      name: legacy Workload Agent
+      alias: legacy Workload Agent
+      enabled: true
+      interaction_limit: 30
+    actions:
+    - action: jvagent/orchestrator
+      context:
+        enabled: true
+        model: gpt-4.1
+        model_action_type: OpenAILanguageModelAction
+        model_temperature: 0.0
+        model_max_tokens: 8192
+        light_model: ''
+        activation_budget: 20
+        max_turn_cost_usd: 2.0
+        max_conversation_cost_usd: 20.0
+        max_duration_seconds: 180
+        max_statement_length: 0
+        skills_source: app
+        skills:
+        - conversation
+        auto_start_skills_on_new_user:
+        - conversation
+        planning: false
+        vision: false
+        history_limit: 10
+        system_prompt_extra: Answer concisely. Follow the requested format. Recall
+          supplied conversation facts accurately. Say when a requested fact is unavailable;
+          never invent completed work.
+    - action: jvagent/openai_lm
+      context:
+        enabled: true
+        model: gpt-4.1
+        temperature: 0.0
+        max_tokens: 8192
+        max_retries: 0
+    - action: jvagent/reply
+      context:
+        enabled: true
+native:
+  app:
+    agents:
+    - jvagent/bench
+    app: bench_native
+    context:
+      name: native Harness Workload Fixture
+  agent:
+    agent: jvagent/bench
+    context:
+      name: native Workload Agent
+      alias: native Workload Agent
+      enabled: true
+      interaction_limit: 30
+    actions:
+    - action: jvagent/native_harness
+      context:
+        enabled: true
+        model: openai:gpt-4.1
+        model_settings:
+          temperature: 0.0
+          max_tokens: 8192
+          max_retries: 0
+        instructions: Answer concisely. Follow the requested format. Recall supplied
+          conversation facts accurately. Say when a requested fact is unavailable;
+          never invent completed work.
+        skill_directory: __APP_ROOT__/agents/jvagent/bench/skills/conversation
+        max_requests: 20
+        max_tokens: 100000
+        timeout_seconds: 180
+        max_run_cost_usd: '2.00'
+        max_conversation_cost_usd: '20.00'
+    - action: jvagent/reply
+      context:
+        enabled: true

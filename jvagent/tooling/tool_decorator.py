@@ -34,7 +34,7 @@ from __future__ import annotations
 import inspect
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.signature_schema import build_parameters_schema
@@ -63,8 +63,10 @@ class ToolSpec:
     terminal: Optional[bool] = None
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[IdempotencyClass] = None
+    effect_class: Optional[Literal["read", "write", "external"]] = None
     requires_tool_permission: bool = False
     permission_denied_message: Optional[str] = None
+    timeout_seconds: Optional[float] = None
 
 
 def tool(
@@ -76,8 +78,10 @@ def tool(
     terminal: Optional[bool] = None,
     binds_visitor: Optional[bool] = None,
     idempotency_class: Optional[IdempotencyClass] = None,
+    effect_class: Optional[Literal["read", "write", "external"]] = None,
     requires_tool_permission: bool = False,
     permission_denied_message: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> Callable[..., Any]:
     """Mark a method as an agent tool. Usable as ``@tool`` or ``@tool(name=...)``."""
 
@@ -88,8 +92,10 @@ def tool(
         terminal=terminal,
         binds_visitor=binds_visitor,
         idempotency_class=idempotency_class,
+        effect_class=effect_class,
         requires_tool_permission=requires_tool_permission,
         permission_denied_message=permission_denied_message,
+        timeout_seconds=timeout_seconds,
     )
 
     def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -211,6 +217,7 @@ def collect_tools(instance: Any) -> List[Tool]:
             # bleed into the class-level cache.
             parameters_schema=dict(schema),
             execute=member,
+            timeout_seconds=spec.timeout_seconds,
         )
         # Carry orchestrator wrap-step hints when supplied (no-ops otherwise).
         if spec.access_label is not None:
@@ -221,6 +228,8 @@ def collect_tools(instance: Any) -> List[Tool]:
             built.binds_visitor = spec.binds_visitor
         if spec.idempotency_class is not None:
             built.idempotency_class = spec.idempotency_class
+        if spec.effect_class is not None:
+            built.effect_class = spec.effect_class
         built.requires_tool_permission = bool(spec.requires_tool_permission)
         if spec.permission_denied_message:
             built.permission_denied_message = spec.permission_denied_message

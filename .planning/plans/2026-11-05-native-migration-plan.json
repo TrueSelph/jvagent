@@ -1,0 +1,35 @@
+{
+  "schema": "jvagent.native-config-migration.v1",
+  "source": "agents/jvagent/migration/agent.yaml",
+  "source_digest": "sha256:64e3c5ab5f1b8c018c57abfe8f6a76d2ff2802a4c11500d8f6d6da6e0e6a622b",
+  "status": "candidate",
+  "blockers": [],
+  "mappings": {
+    "activation_budget": "max_requests",
+    "max_duration_seconds": "timeout_seconds",
+    "max_turn_cost_usd": "max_run_cost_usd",
+    "max_conversation_cost_usd": "max_conversation_cost_usd",
+    "model": "model",
+    "model_action_type": "native provider",
+    "system_prompt_extra": "instructions",
+    "model_temperature": "model_settings.temperature",
+    "model_max_tokens": "model_settings.max_tokens",
+    "enabled": "enabled"
+  },
+  "bounded_defaults": [
+    "max_tokens"
+  ],
+  "preserved_action_count": 2,
+  "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+  "required_review": [
+    "Skills, scripts, Action tools and channel compatibility",
+    "Credentials and native provider settings",
+    "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+    "Fresh isolated bootstrap and actual-provider browser rehearsal",
+    "Default model service retired; native provider uses OPENAI_API_KEY and zero transport retries"
+  ],
+  "retired_actions": [
+    "jvagent/openai_lm"
+  ],
+  "candidate_written": true
+}

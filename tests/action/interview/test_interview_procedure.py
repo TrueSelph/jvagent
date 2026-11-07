@@ -75,8 +75,8 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
         action_refs=None,
     ):
         return {
-            "signup_interview": {
-                "name": "signup_interview",
+            "signup-interview": {
+                "name": "signup-interview",
                 "description": "signup",
                 "content": composed,
                 "requires_actions": ["InterviewAction"],
@@ -118,18 +118,18 @@ async def test_discover_skill_docs_uses_precomposed_body(monkeypatch):
         for d in discover_skill_docs(agent, skills_source="app", selector="-all")
     }
 
-    assert "Standard Interview Procedure" in docs["signup_interview"].body
-    assert "Intent → tool" in docs["signup_interview"].body
-    assert "Branching" in docs["signup_interview"].body
-    assert "interview__reset" in docs["signup_interview"].requires_tools
-    assert "interview__set_fields" in docs["signup_interview"].requires_tools
-    assert "## Custom instructions" in docs["signup_interview"].body
-    assert "Be friendly." in docs["signup_interview"].body
+    assert "Standard Interview Procedure" in docs["signup-interview"].body
+    assert "Intent → tool" in docs["signup-interview"].body
+    assert "Branching" in docs["signup-interview"].body
+    assert "interview__reset" in docs["signup-interview"].requires_tools
+    assert "interview__set_fields" in docs["signup-interview"].requires_tools
+    assert "## Custom instructions" in docs["signup-interview"].body
+    assert "Be friendly." in docs["signup-interview"].body
     assert docs["plain_skill"].body == "Plain SOP only."
 
 
 def test_signup_skill_custom_instructions_model_owned_flow():
-    """Orchestrator signup_interview SOP matches stripped harness (no prep steering)."""
+    """Orchestrator signup-interview SOP matches stripped harness (no prep steering)."""
     skill_md = SIGNUP_INTERVIEW_SKILL_DIR / "SKILL.md"
     custom_body = skill_md.read_text(encoding="utf-8").split("---", 2)[-1].strip()
     composed = compose_interview_skill_body(custom_body)

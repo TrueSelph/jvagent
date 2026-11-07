@@ -11,7 +11,7 @@ from jvagent.scaffold.skill_resolve import parse_skill_bundle
 
 
 def test_pdf_generation_is_claude_spec():
-    b = parse_skill_bundle(Path("jvagent/skills/pdf_generation"), source="library")
+    b = parse_skill_bundle(Path("jvagent/skills/pdf-generation"), source="library")
     assert b["spec"] == "claude"
 
 

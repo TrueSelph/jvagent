@@ -1,0 +1,456 @@
+{
+  "parent_revision": "git-commit:d2c77aa867321a1d0fb42cf2d8dc458f8b384e80",
+  "source_epochs": [
+    {
+      "process_id": 18301,
+      "observed_at": "2026-11-07T06:27:55.985438+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/documents.py": "git-blob:ca394f74ca8b1bdf57db8d1b18e5ab38fbf5366a",
+        "jvagent/action/pageindex/endpoints.py": "git-blob:e1b29e88049dc845aaaecaa804e36fb5b0cd474e",
+        "jvagent/action/pageindex/md_tree_enriched.py": "git-blob:abd8b626df9580b064331c52e9c990b459246cd3",
+        "jvagent/action/pageindex/native_callback.py": "git-blob:5b2b8a2aae380e1e1dc793ad8629e6d74b4f9c8b",
+        "jvagent/action/pageindex/native_search.py": "git-blob:f0f6cf0fe9a68d7fb398e20e82a3ec9e5d37dfa8",
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:f89b8a6a598f839742deaa4af294c6ddb9c2111b",
+        "jvagent/action/pageindex/native_ingest.py": "git-blob:4a8e4e80d87695e33ceb385f605f65278fe130c6",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 18459,
+      "observed_at": "2026-11-07T06:30:06.979215+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/documents.py": "git-blob:ea0d9f840bda034653592966ce7b39b042a03dec",
+        "jvagent/action/pageindex/endpoints.py": "git-blob:e1b29e88049dc845aaaecaa804e36fb5b0cd474e",
+        "jvagent/action/pageindex/md_tree_enriched.py": "git-blob:55bbc3c695c4abfa34217fb3024e2ee3cdfff220",
+        "jvagent/action/pageindex/native_callback.py": "git-blob:5b2b8a2aae380e1e1dc793ad8629e6d74b4f9c8b",
+        "jvagent/action/pageindex/native_search.py": "git-blob:f0f6cf0fe9a68d7fb398e20e82a3ec9e5d37dfa8",
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:f89b8a6a598f839742deaa4af294c6ddb9c2111b",
+        "jvagent/action/pageindex/native_ingest.py": "git-blob:4a8e4e80d87695e33ceb385f605f65278fe130c6",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "final_source": {
+    "process_id": 18459,
+    "observed_at": "2026-11-07T06:32:49.202673+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/documents.py": "git-blob:ea0d9f840bda034653592966ce7b39b042a03dec",
+      "jvagent/action/pageindex/endpoints.py": "git-blob:e1b29e88049dc845aaaecaa804e36fb5b0cd474e",
+      "jvagent/action/pageindex/md_tree_enriched.py": "git-blob:55bbc3c695c4abfa34217fb3024e2ee3cdfff220",
+      "jvagent/action/pageindex/native_callback.py": "git-blob:5b2b8a2aae380e1e1dc793ad8629e6d74b4f9c8b",
+      "jvagent/action/pageindex/native_search.py": "git-blob:f0f6cf0fe9a68d7fb398e20e82a3ec9e5d37dfa8",
+      "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:f89b8a6a598f839742deaa4af294c6ddb9c2111b",
+      "jvagent/action/pageindex/native_ingest.py": "git-blob:4a8e4e80d87695e33ceb385f605f65278fe130c6",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "frontend_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "fixture": {
+    "graph": "disposable PostgreSQL",
+    "index": "isolated PageIndex JSON",
+    "backend_port": 8187,
+    "frontend_port": 3148
+  },
+  "browser": [
+    {
+      "scenario": "foreign-collection",
+      "status": 422,
+      "elapsed_ms": 141,
+      "body": {
+        "error_code": "validation_error",
+        "message": "Native ingestion requires Markdown or text in this agent's collection",
+        "timestamp": "2026-11-07T06:29:15.288100+00:00",
+        "path": "/api/agents/n.Agent.719a1386b1154bd0ac14adcf/pageindex/documents"
+      }
+    },
+    {
+      "scenario": "unqualified-pdf",
+      "status": 422,
+      "elapsed_ms": 46,
+      "body": {
+        "error_code": "validation_error",
+        "message": "Native ingestion requires Markdown or text in this agent's collection",
+        "timestamp": "2026-11-07T06:29:15.335000+00:00",
+        "path": "/api/agents/n.Agent.719a1386b1154bd0ac14adcf/pageindex/documents"
+      }
+    },
+    {
+      "scenario": "markdown",
+      "status": 200,
+      "elapsed_ms": 5708,
+      "body": {
+        "success": true,
+        "doc_name": "Foundry Orientation Handbook",
+        "root_id": "n.DocumentRootNode.10a616cf84a541d0bbaff355",
+        "doc_description": "This document is a structured instruction set containing a title, node identifier, and a summary presented as a bulleted list of sequential access steps.",
+        "chunks": 0
+      }
+    },
+    {
+      "scenario": "final-markdown",
+      "status": 200,
+      "elapsed_ms": 4803,
+      "body": {
+        "success": true,
+        "doc_name": "Foundry Orientation Final Fixture",
+        "root_id": "n.DocumentRootNode.3e06fcf0a91c46db9566f86e",
+        "doc_description": "The document provides logistical details and instructions for attending a Foundry orientation session, including check-in procedures, required materials, and badge issuance.",
+        "chunks": 1
+      }
+    },
+    {
+      "scenario": "jvchat retrieval",
+      "observed": "load_capability and pageindex__search completed; Maple Hall, FOUNDRY-29, clickable source"
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.592f9fdcae4b41d7b7d7ea83",
+      "channel": "pageindex_markdown_ingestion",
+      "outcome": "completed",
+      "closed": true,
+      "elapsed_seconds": 4.328073,
+      "response": {
+        "doc_name": "Foundry Orientation Handbook",
+        "_root_id": "n.DocumentRootNode.10a616cf84a541d0bbaff355",
+        "doc_description": "This document is a structured instruction set containing a title, node identifier, and a summary presented as a bulleted list of sequential access steps."
+      },
+      "usage": {
+        "model_call_count": 2,
+        "total_tokens": 282,
+        "estimated_cost_usd": 0.001068,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_markdown_ingestion",
+          "parent_run_id": null,
+          "run_id": "614fa9813c24480186bb9cf1dcf302df"
+        },
+        {
+          "agent_name": "pageindex_markdown_ingestion",
+          "parent_run_id": "614fa9813c24480186bb9cf1dcf302df",
+          "run_id": "eb29267f472348189dcb34b579435543"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 146,
+            "prompt_tokens": 91,
+            "completion_tokens": 55,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000622,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 136,
+            "prompt_tokens": 107,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000446,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.001068",
+        "tokens": 282,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.b78ddbe6f55340ad9548438f",
+      "channel": "pageindex_markdown_ingestion",
+      "outcome": "completed",
+      "closed": true,
+      "elapsed_seconds": 3.369753,
+      "response": {
+        "doc_name": "Foundry Orientation Final Fixture",
+        "_root_id": "n.DocumentRootNode.3e06fcf0a91c46db9566f86e",
+        "doc_description": "The document provides logistical details and instructions for attending a Foundry orientation session, including check-in procedures, required materials, and badge issuance."
+      },
+      "usage": {
+        "model_call_count": 2,
+        "total_tokens": 284,
+        "estimated_cost_usd": 0.001066,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_markdown_ingestion",
+          "parent_run_id": null,
+          "run_id": "398143c046ce49b699ed7e77f4720863"
+        },
+        {
+          "agent_name": "pageindex_markdown_ingestion",
+          "parent_run_id": "398143c046ce49b699ed7e77f4720863",
+          "run_id": "89a691d1547e4229b9af664d70367181"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 145,
+            "prompt_tokens": 90,
+            "completion_tokens": 55,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.00062,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 139,
+            "prompt_tokens": 111,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000446,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.001066",
+        "tokens": 284,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.c970b0cd61454e77922ea2ed",
+      "channel": "default",
+      "outcome": "delivered",
+      "closed": true,
+      "elapsed_seconds": 8.223348,
+      "response": "The Foundry Orientation Final Fixture document states that the orientation begins at 08:45 in Maple Hall. You should check in at the north desk using the access code FOUNDRY-29. Be sure to arrive ten minutes early and bring a current photo ID. The coordinator will issue badges for the afternoon workshop[1].\n\nReferences / Sources\n- [1] Foundry Orientation Final Fixture, https://example.com/foundry-orientation",
+      "usage": {
+        "model_call_count": 4,
+        "total_tokens": 4403,
+        "estimated_cost_usd": 0.007816,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "run_id": "corr-f684e2ed86a44c2f98e29018a75dc53c"
+        },
+        {
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-f684e2ed86a44c2f98e29018a75dc53c",
+          "run_id": "01a1b4b3-a7f9-7251-9f48-4ef0a410f4c5"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 315,
+            "prompt_tokens": 294,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000756,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 1762,
+            "prompt_tokens": 1727,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.003734,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 321,
+            "prompt_tokens": 217,
+            "completion_tokens": 104,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001266,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 2005,
+            "prompt_tokens": 1914,
+            "completion_tokens": 91,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "cost_record": {
+            "amount": 0.00206,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.007816",
+        "tokens": 4403,
+        "requests": 4,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "index_readback": [
+    {
+      "root_id": "n.DocumentRootNode.10a616cf84a541d0bbaff355",
+      "doc_name": "Foundry Orientation Handbook",
+      "collection_name": "n.Agent.719a1386b1154bd0ac14adcf",
+      "chunks": 1,
+      "doc_url": "https://example.com/foundry-orientation",
+      "summary": "- Foundry orientation begins at 08:45 in Maple Hall.\n- Check in at the north desk with access code FOUNDRY-29.\n- Arrive ten minutes early and bring a current photo ID.\n- Coordinator will provide badges for the afternoon workshop."
+    },
+    {
+      "root_id": "n.DocumentRootNode.3e06fcf0a91c46db9566f86e",
+      "doc_name": "Foundry Orientation Final Fixture",
+      "collection_name": "n.Agent.719a1386b1154bd0ac14adcf",
+      "chunks": 1,
+      "doc_url": "https://example.com/foundry-orientation",
+      "summary": "- Foundry orientation begins at 08:45 in Maple Hall.\n- Check in at the north desk with access code FOUNDRY-29.\n- Arrive ten minutes early and bring a current photo ID.\n- Coordinator will issue badges for the afternoon workshop."
+    }
+  ],
+  "reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "limits": [
+    "No PDF/Office, live jvforge, or Drive sync qualification.",
+    "Provider dollars estimated from SDK pricing.",
+    "Publication interruption and duplicate upload semantics remain open."
+  ]
+}

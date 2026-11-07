@@ -1,0 +1,74 @@
+"""Reviewed mutation declarations; public SDK persistence owns execution."""
+
+from typing import Any, ClassVar
+
+from jvagent.tooling.context import require_tool_visitor
+from jvagent.tooling.tool import Tool
+from jvagent.tooling.tool_result import ToolResult
+
+MUTATION_EFFECT_PREFIX = "jv:mutation:"
+LEGACY_CONVERSATION_EFFECT = "jv:conversation-mutation:v1"
+
+
+class MutationAccessDenied(PermissionError):
+    """Host policy denied this mutation before its domain write was invoked."""
+
+
+class MutationOutcomeUnknown(RuntimeError):
+    """An external effect lacks a trustworthy acknowledgement; never retry it."""
+
+
+def is_mutation_effect(summary: str | None) -> bool:
+    """Recognize retained conversation writes and new reviewed mutation facts."""
+    return bool(summary) and (
+        summary == LEGACY_CONVERSATION_EFFECT
+        or summary.startswith(MUTATION_EFFECT_PREFIX)
+    )
+
+
+class NativeMutationTool(Tool):
+    """Opt-in contract for reviewed writes, never automatic retry authority.
+
+    Implementations own domain scope and durable acknowledgement. SDK execution
+    must annotate the declared effect before calling this method. A failed run
+    with any such effect cannot recover from its pre-write accepted input.
+    """
+
+    effect_summary: ClassVar[str] = ""
+
+    @property
+    def skill_name_argument(self) -> str | None:
+        """Optional enum argument whose values are owning skill names."""
+        return None
+
+    def required_skill(self, arguments: dict[str, Any]) -> str | None:
+        """Optional domain owner checked by the SDK validator before effects."""
+        return None
+
+    async def recovery_scope(self) -> str | None:
+        """Optional domain resource fingerprint, captured in SDK run metadata."""
+        return None
+
+    async def effect_identity(
+        self, *, run_id: str, tool_call_id: str, arguments: dict[str, Any]
+    ) -> str:
+        """Return an SDK effect key; reviewed domains may bind semantic intent.
+
+        Identity/scope resolution must not perform the domain mutation. Only
+        ``call`` after the SDK intent fence may execute that write.
+        """
+        scope = await self.recovery_scope()
+        return f"{run_id}/{tool_call_id}" + (f"/{scope}" if scope is not None else "")
+
+    async def verify_recovery(self, *, visitor: Any, arguments: dict[str, Any]) -> Any:
+        """Return a verified domain acknowledgement, without executing the write."""
+        raise ValueError("This mutation has no qualified recovery verifier")
+
+    async def call(self, **kwargs: Any) -> ToolResult:
+        if kwargs.get("visitor") is not require_tool_visitor():
+            raise ValueError("Mutation requires the admitted host visitor")
+        result = await super().call(**kwargs)
+        require_tool_visitor()
+        if result.is_error:
+            raise RuntimeError("Mutation did not complete successfully")
+        return result

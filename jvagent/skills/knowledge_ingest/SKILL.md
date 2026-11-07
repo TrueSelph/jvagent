@@ -33,7 +33,7 @@ Multi-step **capture → report → assimilate** work against the internal KB:
 - "Fetch these sources, write a brief, and assimilate the brief"
 
 **Do not use** for one-shot Q&A over an already-indexed KB (`answer` /
-`pageindex_search_with_references`) or open-ended topic research without an
+`pageindex-search-with-references`) or open-ended topic research without an
 ingest step (`research`).
 
 ## Workflow

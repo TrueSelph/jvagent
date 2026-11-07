@@ -22,7 +22,7 @@ async def test_get_status_returns_full_field_reference():
     action = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
     spec = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
     action._registry._specs[spec.name] = spec
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     result = json.loads(
@@ -40,13 +40,13 @@ async def test_prepare_task_lock_turn_reinjects_field_reference():
     action = InterviewAction(metadata={"agent_dir": str(ORCHESTRATOR_AGENT_DIR)})
     spec = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
     action._registry._specs[spec.name] = spec
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._ensure_specs_loaded = AsyncMock()
     action._get_session = AsyncMock(return_value=session)
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     prep = await action.prepare_task_lock_turn(
-        "signup_interview", SimpleNamespace(utterance="")
+        "signup-interview", SimpleNamespace(utterance="")
     )
     assert prep.observations, "expected a server-prep status observation"
     obs = prep.observations[0]
@@ -71,6 +71,6 @@ async def test_prepare_task_lock_turn_no_session_is_noop():
     action._get_session = AsyncMock(return_value=None)
 
     prep = await action.prepare_task_lock_turn(
-        "signup_interview", SimpleNamespace(utterance="")
+        "signup-interview", SimpleNamespace(utterance="")
     )
     assert prep.observations == []

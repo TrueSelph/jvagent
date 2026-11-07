@@ -29,7 +29,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_email_store_chains_to_optional_phone(signup_action):
     action, _spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     action._get_session_and_contract = AsyncMock(return_value=(session, _spec))
@@ -47,7 +47,7 @@ async def test_email_store_chains_to_optional_phone(signup_action):
 @pytest.mark.asyncio
 async def test_work_email_post_tool_delivers_employer_followup(signup_action):
     action, _spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     action._get_session_and_contract = AsyncMock(return_value=(session, _spec))

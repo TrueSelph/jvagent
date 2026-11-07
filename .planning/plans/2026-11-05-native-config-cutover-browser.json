@@ -1,0 +1,29 @@
+{
+  "observed_at": "2026-11-06T02:51:34.773Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-CONFIG-CUTOVER: Thanks. Now just say good night without doing more research.\n\nLogout\nCO\nConfiguration Migration Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-CONFIG-CUTOVER: Hello. Please give a short greeting.\n\n1 tool call\nUsed tool: load_capability\n\nHello! How can I assist you today?\n\ngpt-4.1-2025-04-14 · 2 attempts · 596 tokens · 2.4s · 11.1 tok/s\n\nNATIVE-CONFIG-CUTOVER: Look up REHEARSAL-47 and tell me its room and start time.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 3 attempts · 1.6k tokens · 3.8s · 17.0 tok/s\n\nNATIVE-CONFIG-CUTOVER: Research how Python.org describes Python. Use web search to locate the official description page, fetch it, and give one concise cited finding.\n\n3 tool calls\nUsed tool: load_capability\nUsed tool: web_search__search\nUsed tool: web_fetch__fetch\n\nPython is powerful... and fast; plays well with others; runs everywhere; is friendly & easy to learn; is Open.\n\nPython.org describes Python as \"powerful... and fast; plays well with others; runs everywhere; is friendly & easy to learn; is Open.\" Source 1, observed 2026-11-06 02:44 UTC\ngpt-4.1-2025-04-14 · 4 attempts · 8.5k tokens · 5.5s · 45.0 tok/s\n\nNATIVE-CONFIG-CUTOVER: Thanks. Now just say good night without doing more research.\n\nGood night!\n\ngpt-4.1-2025-04-14 · 1 attempt · 3.9k tokens · 945ms · 5.3 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "resources": [
+    {
+      "url": "http://127.0.0.1:8142/api/agents/n.Agent.adb8849159964b328bf385e4/interact",
+      "duration_ms": 4824.5,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8142/api/agents/n.Agent.adb8849159964b328bf385e4/interact",
+      "duration_ms": 6374.4000000059605,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8142/api/agents/n.Agent.adb8849159964b328bf385e4/interact",
+      "duration_ms": 10604.799999982119,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8142/api/agents/n.Agent.adb8849159964b328bf385e4/interact",
+      "duration_ms": 2907.2999999821186,
+      "initiator": "fetch"
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

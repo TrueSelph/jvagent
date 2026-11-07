@@ -46,6 +46,18 @@ class DocumentRootNode(Node):
         default=None,
         description="Custom key-value metadata for filtering at query time",
     )
+    drive_source_key: Optional[str] = attribute(
+        default=None,
+        description="Server-bound Drive source and content identity",
+    )
+    drive_revision_key: Optional[str] = attribute(
+        default=None,
+        description="Server-bound Drive Action, file and provider version identity",
+    )
+    drive_operation_id: Optional[str] = attribute(
+        default=None,
+        description="Native operation Interaction that published this Drive root",
+    )
     chunks: Optional[int] = attribute(
         default=None,
         description="Number of DocumentNode chunks for this document",

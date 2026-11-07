@@ -35,7 +35,7 @@ def _visitor_with_session(session: InterviewSession) -> SimpleNamespace:
 @pytest.mark.asyncio
 async def test_reset_does_not_call_next_field_internally(signup_action):
     action, _spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     conv = MagicMock()
     conv.context = {}
@@ -57,7 +57,7 @@ async def test_reset_does_not_call_next_field_internally(signup_action):
 @pytest.mark.asyncio
 async def test_get_status_has_no_next_field_payload(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
     visitor = _visitor_with_session(session)
@@ -71,7 +71,7 @@ async def test_get_status_has_no_next_field_payload(signup_action):
 @pytest.mark.asyncio
 async def test_validation_failure_no_next_field_embedded(signup_action):
     action, _spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     visitor = _visitor_with_session(session)
 
     result = json.loads(

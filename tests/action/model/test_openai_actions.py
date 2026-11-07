@@ -5,6 +5,24 @@ import pytest
 from jvagent.action.model.language.openai.openai import OpenAILanguageModelAction
 
 
+def test_openai_payload_preserves_declared_pydantic_sampling_settings():
+    action = OpenAILanguageModelAction()
+    payload = action._build_openai_payload(
+        [{"role": "user", "content": "hello"}],
+        None,
+        stream=False,
+        seed=17,
+        stop=["done"],
+        presence_penalty=0.2,
+        frequency_penalty=0.3,
+    )
+
+    assert payload["seed"] == 17
+    assert payload["stop"] == ["done"]
+    assert payload["presence_penalty"] == 0.2
+    assert payload["frequency_penalty"] == 0.3
+
+
 def test_estimate_cost_uses_effective_model_override():
     action = OpenAILanguageModelAction()
     action.total_cost = 0.0

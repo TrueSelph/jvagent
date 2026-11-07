@@ -35,6 +35,7 @@ from jvagent.action.parameters import (
     reply_core_parameters,
     response_parameters,
 )
+from jvagent.action.response.policy import egress_parameters as _reply_pool
 
 logger = logging.getLogger(__name__)
 
@@ -136,24 +137,6 @@ CHANNEL_FORMATS: Dict[str, str] = {
     "linkedin": "Professional tone; light formatting; raw URLs.",
     "email": "Clear paragraphs; simple structure suitable for HTML rendering.",
 }
-
-
-def _reply_pool(interaction: Any) -> Optional[list]:
-    """Rules governing this reply: the interaction's pool, else the core."""
-    pool = getattr(interaction, "parameters", None) if interaction is not None else None
-    try:
-        listed = list(pool) if pool else []
-    except TypeError:  # not iterable — treat as absent, not as "no rules"
-        listed = []
-    if not listed:
-        return None  # no pool: vet_egress falls back to the framework core
-    # The interaction pool is ORCHESTRATION-scoped by construction, so on its own
-    # it contains no response rules at all — and vet_egress, which filters to
-    # response scope, would then scrub nothing. Union the response core in, or
-    # egress governance silently switches off for exactly those turns that
-    # accumulated parameters. An operator override already in the pool still
-    # wins: resolve_parameters ranks agent tier above the core default.
-    return listed + reply_core_parameters()
 
 
 class ReplyAction(Action):
@@ -350,6 +333,8 @@ class ReplyAction(Action):
         visitor: Optional[Any],
         streaming: bool = False,
         transient: bool = False,
+        message_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Persist and/or publish ``content`` (ported from PersonaAction).
 
@@ -395,27 +380,60 @@ class ReplyAction(Action):
 
         channel = getattr(visitor, "channel", "default") or "default"
         visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
-        await response_bus.publish(
-            session_id=visitor.session_id,
-            content=content,
-            channel=channel,
-            stream=False,
-            metadata=dict(visitor_data),
-            interaction_id=getattr(interaction, "id", None),
-            interaction=interaction,
-            user_id=getattr(interaction, "user_id", None),
-            streaming_complete=True,
-            transient=transient,
-        )
-        return True
+        if getattr(visitor, "_native_execution", False):
+            # Native output metadata is explicit server policy. Forwarding
+            # request data would expose channel adapters' raw-send escape hatches.
+            visitor_data = {}
+        publish_options: Dict[str, Any] = {
+            "session_id": visitor.session_id,
+            "content": content,
+            "channel": channel,
+            "stream": False,
+            "metadata": {**dict(visitor_data), **(metadata or {})},
+            "interaction_id": getattr(interaction, "id", None),
+            "interaction": interaction,
+            "user_id": getattr(interaction, "user_id", None),
+            "streaming_complete": True,
+            "transient": transient,
+        }
+        if message_id is not None:
+            publish_options["message_id"] = message_id
+            publish_options["require_adapter_ack"] = not bool(
+                (metadata or {}).get("native_local_only")
+            )
+        from jvagent.tooling.context import bind_dispatch_context
+
+        with bind_dispatch_context(visitor):
+            message = await response_bus.publish(
+                **publish_options,
+            )
+        # ResponseBus returns an empty-content envelope when it suppresses a
+        # duplicate or a fail-fast channel filter rejects the message. Do not
+        # report those outcomes as confirmed delivery to pilot TaskStore callers.
+        return bool(getattr(message, "content", ""))
 
     async def publish(
-        self, content: str, visitor: Optional[Any] = None, *, transient: bool = False
+        self,
+        content: str,
+        visitor: Optional[Any] = None,
+        *,
+        transient: bool = False,
+        message_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Egress primitive — publish literal ``content`` to the user."""
         interaction = getattr(visitor, "interaction", None)
+        options: Dict[str, Any] = {"transient": transient}
+        if message_id is not None:
+            options["message_id"] = message_id
+        if metadata is not None:
+            options["metadata"] = metadata
         return await self._pipe_response(
-            content, interaction, visitor, streaming=False, transient=transient
+            content,
+            interaction,
+            visitor,
+            streaming=False,
+            **options,
         )
 
     # ------------------------------------------------------------------
@@ -525,6 +543,20 @@ class ReplyAction(Action):
         here (so it lands in ``interaction.directives``) and composed *with* the
         others — never overridden. Both egress tools (reply/respond) funnel here.
         """
+        from jvspatial.api.exceptions import ValidationError
+
+        from jvagent.core.execution_owner import uses_native_harness
+
+        agent = await self.get_agent() if self.agent_id else None
+        if self.agent_id and agent is None:
+            raise ValidationError("Reply execution owner could not be verified")
+        if getattr(visitor, "_native_execution", False) is True or (
+            agent is not None and await uses_native_harness(agent)
+        ):
+            raise ValidationError(
+                "Native reply composition belongs to the harness; publish completed text through ReplyAction"
+            )
+
         interaction = interaction or getattr(visitor, "interaction", None)
         original_text = (text or "").strip()
         base = original_text
@@ -696,17 +728,11 @@ class ReplyAction(Action):
                                 exc_info=True,
                             )
                     return ""
-            # Slim fallback: the identity-shaped compose failed, but the user
-            # still needs a reply — deliver the best plain text we have rather
-            # than going silent. Prefer the original message (now framed as a
-            # relay directive, so `content` may be the user's utterance), then
-            # any queued directive text.
-            fallback = (
-                original_text
-                or (content or "").strip()
-                or self._collect_directive_text(directives, interaction)
-            )
-            fallback = fallback or "Sorry — I hit a problem composing that reply."
+            # Do not publish compose inputs as a fallback. `content` can contain
+            # the user's utterance and internal directive reminders; queued
+            # directives can contain private workflow instructions. A neutral
+            # bounded failure is safer than relaying any prompt material.
+            fallback = "I couldn't complete that reply just now. Please try again."
             try:
                 await self.publish(fallback, visitor, transient=transient)
             except Exception:

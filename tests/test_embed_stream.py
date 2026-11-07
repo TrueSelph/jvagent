@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,6 +16,173 @@ from jvagent.embed.interact import (
 )
 from jvagent.harness.contracts import NativeCaller, TurnRunState
 from jvagent.harness.runtime import reset_runtime
+
+
+@pytest.mark.asyncio
+async def test_native_cancel_aliases_and_repeated_requests_preserve_cleanup() -> None:
+    if not hasattr(asyncio.Task, "cancelling"):
+        pytest.skip("Native execution requires Python 3.11+")
+    started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def work() -> None:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            started.set()
+            await release.wait()
+            finished.set()
+
+    task = asyncio.create_task(work())
+    await _register_interact_task("cancel-thread", task, native=True)
+    await _register_interact_task("cancel-session", task, native=True)
+    await asyncio.sleep(0)
+    try:
+        assert cancel_interact(thread_id="cancel-thread", session_id="cancel-session")
+        await asyncio.wait_for(started.wait(), 1)
+        assert cancel_interact(thread_id="cancel-thread", session_id="cancel-session")
+        assert task.cancelling() == 1
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished.is_set()
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await _clear_interact_task("cancel-thread", task)
+        await _clear_interact_task("cancel-session", task)
+
+
+@pytest.mark.asyncio
+async def test_invalid_host_context_has_same_embed_stream_error(
+    monkeypatch: Any,
+) -> None:
+    from jvagent.action.native_harness import NativeHarnessAction
+    from jvagent.embed import interact_stream
+
+    async def spawn(agent: Any) -> None:
+        return None
+
+    walker = SimpleNamespace(
+        interaction=None,
+        conversation=None,
+        user_id="user",
+        session_id="session",
+        _bootstrap_error="invalid_host_context",
+        spawn=spawn,
+        get_report=AsyncMock(return_value=[{"code": "invalid_host_context"}]),
+    )
+    monkeypatch.setattr(
+        "jvagent.action.interact.interact_walker.InteractWalker",
+        lambda **kwargs: walker,
+    )
+    monkeypatch.setattr(
+        "jvagent.core.cache.get_cached_agent",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                get_actions=AsyncMock(return_value=[NativeHarnessAction()])
+            )
+        ),
+    )
+
+    async def consume() -> list[dict[str, Any]]:
+        return [
+            frame
+            async for frame in interact_stream(agent_id="agent", utterance="hello")
+        ]
+
+    frames = await asyncio.wait_for(consume(), timeout=2)
+    assert frames == [
+        {
+            "type": "error",
+            "code": "invalid_host_context",
+            "message": "Host context could not be verified.",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("admission_delay", [0.0, 5.3])
+async def test_native_fast_embed_reply_replays_only_the_current_interaction(
+    monkeypatch: Any,
+    admission_delay: float,
+) -> None:
+    from jvagent.action.native_harness import NativeHarnessAction
+    from jvagent.action.response.response_bus import ResponseBus
+    from jvagent.embed import interact_stream
+
+    bus = ResponseBus()
+    bus.native_execution = True
+    await bus.publish(
+        channel="web",
+        session_id="native-session",
+        content="Earlier turn",
+        interaction_id="earlier",
+    )
+    interaction = SimpleNamespace(id="native-fast", close_interaction=AsyncMock())
+    walker = SimpleNamespace(
+        interaction=None,
+        conversation=None,
+        user_id="user",
+        session_id="native-session",
+        response_bus=bus,
+        background_actions=[],
+        get_report=AsyncMock(return_value=[]),
+    )
+
+    async def spawn(agent: Any) -> None:
+        await asyncio.sleep(admission_delay)
+        walker.interaction = interaction
+        await bus.publish(
+            channel="web",
+            session_id="native-session",
+            content="Fast native response",
+            interaction_id=interaction.id,
+        )
+
+    walker.spawn = spawn
+    monkeypatch.setattr(
+        "jvagent.action.interact.interact_walker.InteractWalker",
+        lambda **kwargs: walker,
+    )
+    monkeypatch.setattr(
+        "jvagent.core.cache.get_cached_agent",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                get_actions=AsyncMock(return_value=[NativeHarnessAction()])
+            )
+        ),
+    )
+    monkeypatch.setattr("jvspatial.flush_deferred_entities", AsyncMock())
+    monkeypatch.setattr(
+        "jvagent.action.interact.webhook_pipeline.finalize_usage", AsyncMock()
+    )
+    monkeypatch.setattr(
+        "jvagent.action.interact.response_builder.build_interact_response",
+        AsyncMock(return_value={"response": "Fast native response"}),
+    )
+    monkeypatch.setattr(
+        "jvagent.core.conversation_health.service.maybe_score_after_interaction",
+        AsyncMock(),
+    )
+    legacy = AsyncMock(side_effect=AssertionError("Native embed opened legacy runtime"))
+    monkeypatch.setattr("jvagent.harness.runtime.get_runtime", legacy)
+    frames = [
+        frame
+        async for frame in interact_stream(
+            agent_id="agent",
+            utterance="hello",
+            user_id="user",
+            session_id="native-session",
+        )
+    ]
+    messages = [frame["message"] for frame in frames if frame["type"] == "message"]
+    assert len(messages) == 1
+    assert messages[0]["content"] == "Fast native response"
+    assert messages[0]["interaction_id"] == "native-fast"
+    assert frames[-1]["type"] == "final"
+    legacy.assert_not_called()
 
 
 @pytest.mark.asyncio

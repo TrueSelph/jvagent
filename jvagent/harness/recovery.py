@@ -1,0 +1,332 @@
+"""Host admission for a fresh user turn, never automatic execution replay."""
+
+from dataclasses import dataclass
+from datetime import timezone
+from typing import Any, Iterator
+
+from pydantic_ai import DeferredToolResults
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
+from pydantic_ai_harness.step_persistence import continue_run, is_provider_valid
+from pydantic_ai_harness.step_persistence.recovery import inspect_recovery
+
+from jvagent.harness.media_store import NativeMediaError, NativeMediaMissing
+from jvagent.harness.step_store import InteractionStepStore
+
+INPUT_CHECKPOINT_POLICY = "accepted-input-v1"
+RECOVERY_NOTICE = "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn."
+MAX_BLOCKED_NOTICES = 32
+
+
+class NativeHistoryError(RuntimeError):
+    """The predecessor cannot safely supply this conversation's context."""
+
+
+@dataclass
+class NativeHistory:
+    """SDK history and optional public deferred results, with legacy unpacking."""
+
+    messages: list[ModelMessage]
+    source: dict[str, Any]
+    deferred: DeferredToolResults | None = None
+
+    def __iter__(self) -> Iterator[Any]:
+        yield self.messages
+        yield self.source
+
+
+def _host_notice(
+    messages: list[ModelMessage], text: str, *, run_id: str | None = None
+) -> ModelResponse:
+    """Carry only the latest authorized SDK workspace through a host notice.
+
+    Core intentionally uses the most recent response's ref, including None.
+    A synthetic notice must not reset it or resurrect an earlier cleared ref.
+    Original SDK messages remain unchanged.
+    """
+    last = next((m for m in reversed(messages) if isinstance(m, ModelResponse)), None)
+    return ModelResponse(
+        parts=[TextPart(text)],
+        run_id=run_id,
+        workspace_ref=last.workspace_ref if last is not None else None,
+    )
+
+
+async def history_for_new_turn(
+    previous: Any,
+    *,
+    conversation_id: str,
+    user_id: str,
+    session_id: str,
+    conversation: Any = None,
+) -> NativeHistory:
+    """Recover SDK history, then project only confirmed nonexecuting notices."""
+    approval = (
+        getattr(conversation, "native_history_import", {})
+        if conversation is not None
+        else {}
+    )
+    if not isinstance(approval, dict):
+        raise NativeHistoryError("Historical import receipt is malformed")
+    root, notices = await resolve_history_predecessor(
+        previous,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        session_id=session_id,
+        allow_legacy_root=bool(approval),
+        legacy_naive_utc=approval.get("naive_timestamp_zone") == "UTC",
+    )
+    deferred = None
+    if root is not None and root.native_run.get("effect_recovery"):
+        from jvagent.harness.effect_recovery import approved_effect_history
+
+        try:
+            inspected = await approved_effect_history(root, conversation)
+        except (ValueError, TypeError, KeyError, ArithmeticError, NativeMediaMissing):
+            raise NativeHistoryError(
+                "Effect recovery requires reconciliation"
+            ) from None
+        messages, deferred = inspected.messages, inspected.deferred
+        run_source = {
+            "frontier": "operator_verified_effect",
+            "source_run_id": inspected.facts["run_id"],
+            "recovery_digest": inspected.facts["digest"],
+        }
+    elif root is not None and not root.native_run:
+        from jvagent.harness.history_import import imported_history
+
+        try:
+            if (
+                conversation.id != conversation_id
+                or conversation.user_id != user_id
+                or conversation.session_id != session_id
+            ):
+                raise ValueError("Historical import scope mismatch")
+            messages, run_source = await imported_history(conversation, root)
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            raise NativeHistoryError(
+                "Historical import requires reconciliation"
+            ) from None
+    else:
+        try:
+            messages, run_source = await _history_for_run(
+                root,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except (NativeMediaError, NativeMediaMissing):
+            raise NativeHistoryError(
+                "Native media history requires reconciliation"
+            ) from None
+    source: dict[str, Any] = dict(run_source)
+    for item in notices:
+        if deferred is not None:
+            # The SDK must pair its pending call before any later user message.
+            # Only host-validated notice inputs enter this additional content.
+            for result in deferred.calls.values():
+                result.content = [*(result.content or []), item.utterance]
+            continue
+        messages.extend(
+            [
+                ModelRequest(parts=[UserPromptPart(item.utterance)]),
+                _host_notice(messages, RECOVERY_NOTICE),
+            ]
+        )
+    if notices:
+        source = {**source, "blocked_interaction_ids": [item.id for item in notices]}
+    return NativeHistory(messages, source, deferred)
+
+
+async def resolve_history_predecessor(
+    previous: Any,
+    *,
+    conversation_id: str,
+    user_id: str,
+    session_id: str,
+    allow_legacy_root: bool = False,
+    legacy_naive_utc: bool = False,
+) -> tuple[Any, list[Any]]:
+    """Read a bounded host-notice chain; never skip execution or repair edges."""
+    notices: list[Any] = []
+    seen: set[str] = set()
+    while previous is not None:
+        if not previous.native_run and not allow_legacy_root:
+            raise NativeHistoryError(
+                "Previous interaction lacks qualified native history"
+            )
+        if previous.conversation_id != conversation_id or previous.user_id != user_id:
+            raise NativeHistoryError("Native history belongs to another caller")
+        if not previous.native_run:
+            if previous.session_id != session_id:
+                raise NativeHistoryError("Legacy history belongs to another session")
+            break
+        run = previous.native_run
+        if run.get("status") != "blocked":
+            break
+        if len(notices) >= MAX_BLOCKED_NOTICES or previous.id in seen:
+            raise NativeHistoryError("Blocked notice chain requires operator repair")
+        if (
+            set(run) != {"status", "reason", "predecessor_interaction_id"}
+            or run.get("reason") != "predecessor_requires_reconciliation"
+            or previous.session_id != session_id
+            or previous.native_steps != {}
+            or previous.observability_metrics
+            or previous.actions != ["NativeHarnessAction"]
+            or previous.directives
+            or not previous.closed
+            or not previous.has_emitted()
+            or previous.response != RECOVERY_NOTICE
+        ):
+            raise NativeHistoryError(
+                "Blocked interaction is not a qualified host notice"
+            )
+        seen.add(previous.id)
+        predecessor = await previous.get_previous_interaction()
+        if predecessor is None or predecessor.id != run.get(
+            "predecessor_interaction_id"
+        ):
+            raise NativeHistoryError("Blocked notice chain has no matching predecessor")
+        try:
+            started, later = predecessor.started_at, previous.started_at
+            if legacy_naive_utc and not predecessor.native_run:
+                started = (
+                    started.replace(tzinfo=timezone.utc)
+                    if started.tzinfo is None
+                    else started
+                )
+                later = (
+                    later.replace(tzinfo=timezone.utc)
+                    if later.tzinfo is None
+                    else later
+                )
+            if started > later:
+                raise NativeHistoryError("Blocked notice chain has invalid chronology")
+        except TypeError as error:
+            raise NativeHistoryError(
+                "Blocked notice chronology is unavailable"
+            ) from error
+        notices.append(previous)
+        previous = predecessor
+    return previous, list(reversed(notices))
+
+
+async def _history_for_run(
+    previous: Any, *, conversation_id: str, user_id: str, session_id: str
+) -> tuple[list[ModelMessage], dict[str, str]]:
+    """Use delivered history or a terminal failed run's accepted input.
+
+    The latter discards all outputs of the failed run, including paid but
+    undelivered answers. Existing receipts and effect records remain intact.
+    Interrupted workers, unresolved effects and uncertain delivery require
+    explicit reconciliation instead. Admission must hold the conversation lock.
+    """
+    if previous is None:
+        return [], {}
+    if not previous.native_run:
+        raise NativeHistoryError("Previous interaction lacks qualified native history")
+    if previous.conversation_id != conversation_id or previous.user_id != user_id:
+        raise NativeHistoryError("Native history belongs to another caller")
+    run = previous.native_run
+    identity = run.get("run_id")
+    store = InteractionStepStore(previous)
+    record = await store.get_run(run_id=identity)
+    if record is None or record.conversation_id != session_id or record.parent_run_id:
+        raise NativeHistoryError("Native history has no matching root registration")
+    if run.get("status") == "delivered":
+        settled = await store.latest_snapshot(run_id=identity)
+        if settled is None or settled.conversation_id != session_id:
+            raise NativeHistoryError("Native history has no scoped delivery checkpoint")
+        messages = await continue_run(store, run_id=identity)
+        return messages, {"source_run_id": identity, "frontier": "delivered"}
+    if run.get("status") not in {"failed", "cancelled"}:
+        raise NativeHistoryError("Previous native run requires reconciliation")
+    if record.metadata.get("jv_checkpoint_policy") != INPUT_CHECKPOINT_POLICY:
+        raise NativeHistoryError(
+            "Previous native run has no qualified input checkpoint"
+        )
+
+    records = await store.list_runs()
+    owned = {identity}
+    while True:
+        expanded = owned | {r.run_id for r in records if r.parent_run_id in owned}
+        if expanded == owned:
+            break
+        owned = expanded
+    if owned != {r.run_id for r in records}:
+        raise NativeHistoryError("Native history contains unowned execution records")
+    for item in records:
+        if item.conversation_id != session_id:
+            raise NativeHistoryError("Native child belongs to another conversation")
+        events = await store.list_events(run_id=item.run_id)
+        if not events or events[-1].kind not in {"run_completed", "run_failed"}:
+            raise NativeHistoryError("Previous native execution is not terminal")
+        from jvagent.harness.mutation_tools import is_mutation_effect
+
+        for event in events:
+            if event.kind != "tool_call_started" or not event.tool_call_id:
+                continue
+            effect = await store.get_tool_effect(
+                run_id=item.run_id, tool_call_id=event.tool_call_id
+            )
+            if effect is not None and is_mutation_effect(effect.effect_summary):
+                raise NativeHistoryError("Previous mutation requires reconciliation")
+        inspection = await inspect_recovery(store=store, run_id=item.run_id)
+        if inspection.unresolved:
+            raise NativeHistoryError(
+                "Previous native tool effects require reconciliation"
+            )
+
+    snapshot = await store.first_snapshot(run_id=identity)
+    if (
+        snapshot is None
+        or snapshot.state != "complete"
+        or snapshot.conversation_id != session_id
+        or not is_provider_valid(snapshot.messages)
+        or any(
+            isinstance(m, ModelResponse) and m.run_id == identity
+            for m in snapshot.messages
+        )
+        or not any(
+            isinstance(p, UserPromptPart) and p.content == previous.utterance
+            for m in snapshot.messages
+            for p in m.parts
+        )
+    ):
+        raise NativeHistoryError(
+            "Previous native run has no safe accepted-input frontier"
+        )
+    started = [
+        e
+        for e in await store.list_events(run_id=identity)
+        if e.kind == "model_request_started"
+    ]
+    if started and snapshot.timestamp > started[0].timestamp:
+        raise NativeHistoryError(
+            "Native input checkpoint was captured after execution began"
+        )
+
+    from jvagent.harness.accounting import recover_native_usage
+
+    await recover_native_usage(previous, run_id=identity, model="unknown")
+    await previous.save()
+    from jvspatial import flush_deferred_entities
+
+    await flush_deferred_entities(previous, strict=True)
+    from jvagent.harness.reconciliation import has_usage_reserve
+
+    if previous.usage.get("unknown_cost_call_count", 0) and not has_usage_reserve(
+        previous
+    ):
+        raise NativeHistoryError("Previous provider usage requires reconciliation")
+    messages = list(snapshot.messages)
+    if previous.has_emitted() and previous.response:
+        # This is the observed JV response (usually a canned failure notice),
+        # not an unacknowledged model response from the failed run's snapshots.
+        messages.append(_host_notice(messages, previous.response, run_id=identity))
+    return messages, {"source_run_id": identity, "frontier": "accepted_input"}

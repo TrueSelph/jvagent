@@ -1,0 +1,690 @@
+{
+  "browser_page": 19,
+  "isolated_context": "native-interview-flow",
+  "initial": {
+    "ui": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nYes, I confirm these reviewed details. Please complete the interview.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-INTERVIEW-CHECK: Please start this interview. My email is invalid-address. Validate that exact value with the tools.\n\n2 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\n\nThe email address you provided (\"invalid-address\") is not valid. Please provide a valid email address (e.g. name@example.com). What email address should I record?\n\ngpt-4.1-2025-04-14 · 3.7k tokens\n\nMy correct email is native.member@example.com. Please review the saved details before completion.\n\n2 tool calls\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nEmail: native.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 4.8k tokens\n\nYes, I confirm these reviewed details. Please complete the interview.\n\n1 tool call\nUsed tool: interview__complete\n\nThe interview is now complete. Your email has been recorded as: native.member@example.com.\n\ngpt-4.1-2025-04-14 · 3.7k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+    "turns": [
+      {
+        "started_at": "2026-11-05T16:41:09.435Z",
+        "status": 200,
+        "duration_ms": 6886.5999999940395,
+        "events": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+            "session_id": "sess_62f776f578fc477f"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.5746221f21a9461dba02e690",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "adhoc",
+              "content": "interview__start",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_2nrmyiMQnnJX3dXjQqKHMQEd",
+              "metadata": {
+                "tool_name": "interview__start",
+                "native_run_id": "corr-b183aa0b429c40cda7bec664da3cc99d",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {
+                  "interview_type": "conversation"
+                }
+              },
+              "timestamp": "2026-11-05T12:41:12.120467"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.15637b67736d43dd9eaaf978",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_2nrmyiMQnnJX3dXjQqKHMQEd",
+              "metadata": {
+                "tool_name": "interview__start",
+                "native_run_id": "corr-b183aa0b429c40cda7bec664da3cc99d",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+              },
+              "timestamp": "2026-11-05T12:41:12.153126"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.5e5a834ac4cf4c5098ae10d5",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "adhoc",
+              "content": "interview__set_fields",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_6YvYSXetoBs4bU2lzG8IFCEt",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-b183aa0b429c40cda7bec664da3cc99d",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {
+                  "fields": {
+                    "email": "invalid-address"
+                  }
+                }
+              },
+              "timestamp": "2026-11-05T12:41:14.314910"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.ba8741d8446a457c9eb4a08f",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "adhoc",
+              "content": "{\"ok\": false, \"status\": \"validation_failed\", \"results\": [{\"field\": \"email\", \"stored\": false, \"value\": \"invalid-address\", \"error\": \"Ask: Please provide a valid email address (e.g. name@example.com)\"}], \"response_directive\": \"Tell the user or ask the user: What email address should I record? Please provide a valid email address (e.g. name@example.com)\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\"}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_6YvYSXetoBs4bU2lzG8IFCEt",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-b183aa0b429c40cda7bec664da3cc99d",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": false, \"status\": \"validation_failed\", \"results\": [{\"field\": \"email\", \"stored\": false, \"value\": \"invalid-address\", \"error\": \"Ask: Please provide a valid email address (e.g. name@example.com)\"}], \"response_directive\": \"Tell the user or ask the user: What email address should I record? Please provide a valid email address (e.g. name@example.com)\\u2063You may paraphrase slightly but keep the same intent. Do not ask for other information in this reply.\"}"
+              },
+              "timestamp": "2026-11-05T12:41:14.354750"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-b183aa0b429c40cda7bec664da3cc99d",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "adhoc",
+              "content": "The email address you provided (\"invalid-address\") is not valid. Please provide a valid email address (e.g. name@example.com). What email address should I record?",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:41:16.261914"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-b183aa0b429c40cda7bec664da3cc99d",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:41:16.274419"
+            }
+          },
+          {
+            "type": "final",
+            "response": "The email address you provided (\"invalid-address\") is not valid. Please provide a valid email address (e.g. name@example.com). What email address should I record?",
+            "interaction_id": "n.Interaction.adcbdd5448c1469d95c9e821"
+          }
+        ]
+      },
+      {
+        "started_at": "2026-11-05T16:41:59.383Z",
+        "status": 200,
+        "duration_ms": 4541.800000011921,
+        "events": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+            "session_id": "sess_62f776f578fc477f"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.74df44783bc34f51acdbea10",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "adhoc",
+              "content": "interview__set_fields",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_OiXTz4UGWfexPwlD0JVQEtb6",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-a255ddd42dc44baea128ea75a052be56",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {
+                  "fields": {
+                    "email": "native.member@example.com"
+                  }
+                }
+              },
+              "timestamp": "2026-11-05T12:42:01.204729"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.2a222e3aed8045479caa15ec",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"email\", \"stored\": true, \"value\": \"native.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_OiXTz4UGWfexPwlD0JVQEtb6",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-a255ddd42dc44baea128ea75a052be56",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"email\", \"stored\": true, \"value\": \"native.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}"
+              },
+              "timestamp": "2026-11-05T12:42:01.247356"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.5d211bcd57e44f79affe980a",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "adhoc",
+              "content": "interview__review",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_xQxac7RAHtMnR4oRzigTSQyf",
+              "metadata": {
+                "tool_name": "interview__review",
+                "native_run_id": "corr-a255ddd42dc44baea128ea75a052be56",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {}
+              },
+              "timestamp": "2026-11-05T12:42:02.295618"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.09ab72a81cbd49d0b31b9c1f",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Email**: native.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"email\": \"native.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Email**: native.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_xQxac7RAHtMnR4oRzigTSQyf",
+              "metadata": {
+                "tool_name": "interview__review",
+                "native_run_id": "corr-a255ddd42dc44baea128ea75a052be56",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Email**: native.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"email\": \"native.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Email**: native.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}"
+              },
+              "timestamp": "2026-11-05T12:42:02.357534"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-a255ddd42dc44baea128ea75a052be56",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "adhoc",
+              "content": "Please review the details:\n\n**Email**: native.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:42:03.854621"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-a255ddd42dc44baea128ea75a052be56",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:42:03.872179"
+            }
+          },
+          {
+            "type": "final",
+            "response": "Please review the details:\n\n**Email**: native.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+            "interaction_id": "n.Interaction.7ae23a30233e4bfda416923d"
+          }
+        ]
+      },
+      {
+        "started_at": "2026-11-05T16:43:15.805Z",
+        "status": 200,
+        "duration_ms": 5296.9000000059605,
+        "events": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5",
+            "session_id": "sess_62f776f578fc477f"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.bc290716d94f4ba586c17ca1",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5",
+              "message_type": "adhoc",
+              "content": "interview__complete",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_qMkDHS76BsKZqJimjhcCsUwE",
+              "metadata": {
+                "tool_name": "interview__complete",
+                "native_run_id": "corr-b4d623bbde254b36ade085c000e42def",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {}
+              },
+              "timestamp": "2026-11-05T12:43:18.724058"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.f3b009903864405f984a9d22",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"email\": \"native.member@example.com\"}}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_qMkDHS76BsKZqJimjhcCsUwE",
+              "metadata": {
+                "tool_name": "interview__complete",
+                "native_run_id": "corr-b4d623bbde254b36ade085c000e42def",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"email\": \"native.member@example.com\"}}"
+              },
+              "timestamp": "2026-11-05T12:43:18.784656"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-b4d623bbde254b36ade085c000e42def",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5",
+              "message_type": "adhoc",
+              "content": "The interview is now complete. Your email has been recorded as: native.member@example.com.",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:43:20.990670"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-b4d623bbde254b36ade085c000e42def",
+              "session_id": "sess_62f776f578fc477f",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:43:21.017547"
+            }
+          },
+          {
+            "type": "final",
+            "response": "The interview is now complete. Your email has been recorded as: native.member@example.com.",
+            "interaction_id": "n.Interaction.bf48fe63c7a848769b0cded5"
+          }
+        ]
+      }
+    ]
+  },
+  "qualified": {
+    "ui": "jvchat\nAGENT TESTING\nNew Conversation\n2 conversations\n\nYes, I confirm the reviewed email. Please complete the interview.\n\nYes, I confirm these reviewed details. Please complete the interview.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-INTERVIEW-FINAL-CHECK: Please start the contact interview. My email is qualified.member@example.com. Validate it, save it and show me the review. Wait for my confirmation.\n\n3 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details below:\n\nEmail: qualified.member@example.com\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 5.3k tokens\n\nYes, I confirm the reviewed email. Please complete the interview.\n\n1 tool call\nUsed tool: interview__complete\n\nThank you for confirming. The interview is now complete.\n\nYour recorded email: qualified.member@example.com\n\ngpt-4.1-2025-04-14 · 3.4k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+    "turns": [
+      {
+        "started_at": "2026-11-05T16:49:59.198Z",
+        "status": 200,
+        "duration_ms": 7007.5999999940395,
+        "events": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+            "session_id": "sess_21909bf137b841f3"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.323414b6541c4a648f68a71a",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "interview__start",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_Vbu67iZJpHCFZctF3Pj87Vof",
+              "metadata": {
+                "tool_name": "interview__start",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {
+                  "interview_type": "conversation"
+                }
+              },
+              "timestamp": "2026-11-05T12:50:01.708701"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.9ab11dff604d45b5b873c537",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_Vbu67iZJpHCFZctF3Pj87Vof",
+              "metadata": {
+                "tool_name": "interview__start",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"email\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+              },
+              "timestamp": "2026-11-05T12:50:01.753658"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.04b078ba192144308c76d9f7",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "interview__set_fields",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_coWIWEpxoKhqkuvqBSQCeM1C",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {
+                  "fields": {
+                    "email": "qualified.member@example.com"
+                  }
+                }
+              },
+              "timestamp": "2026-11-05T12:50:02.944048"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.79711b6fe3fb46fb8013c44a",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"email\", \"stored\": true, \"value\": \"qualified.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_coWIWEpxoKhqkuvqBSQCeM1C",
+              "metadata": {
+                "tool_name": "interview__set_fields",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"email\", \"stored\": true, \"value\": \"qualified.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}"
+              },
+              "timestamp": "2026-11-05T12:50:02.983101"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.a7339667d5d3467686809e56",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "interview__review",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_hJFpI8uyYclOE5yDZoNPXvXF",
+              "metadata": {
+                "tool_name": "interview__review",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {}
+              },
+              "timestamp": "2026-11-05T12:50:04.029534"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.aca214a9468647c6a2e7c889",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Email**: qualified.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"email\": \"qualified.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Email**: qualified.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_hJFpI8uyYclOE5yDZoNPXvXF",
+              "metadata": {
+                "tool_name": "interview__review",
+                "native_run_id": "corr-4dc4820481144433b110ff85f354d135",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Email**: qualified.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"email\": \"qualified.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Email**: qualified.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}"
+              },
+              "timestamp": "2026-11-05T12:50:04.079507"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-4dc4820481144433b110ff85f354d135",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "adhoc",
+              "content": "Please review the details below:\n\n**Email**: qualified.member@example.com\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:50:06.130823"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-4dc4820481144433b110ff85f354d135",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:50:06.145184"
+            }
+          },
+          {
+            "type": "final",
+            "response": "Please review the details below:\n\n**Email**: qualified.member@example.com\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.",
+            "interaction_id": "n.Interaction.c81912e8034d4e0e8c18afdf"
+          }
+        ]
+      },
+      {
+        "started_at": "2026-11-05T16:51:26.624Z",
+        "status": 200,
+        "duration_ms": 4803.9000000059605,
+        "events": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7",
+            "session_id": "sess_21909bf137b841f3"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.6d50b82e476a480190b06546",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7",
+              "message_type": "adhoc",
+              "content": "interview__complete",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_call",
+              "segment_id": "call_hM2iTIKswaQCc6TwHGNkrtkd",
+              "metadata": {
+                "tool_name": "interview__complete",
+                "native_run_id": "corr-c29f750dda344f90bdb5b215ce5167cc",
+                "native_agent_name": "jvagent-native",
+                "tool_args": {}
+              },
+              "timestamp": "2026-11-05T12:51:29.652650"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.0a2426a4e92d436b878419a8",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7",
+              "message_type": "adhoc",
+              "content": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"email\": \"qualified.member@example.com\"}}",
+              "channel": "default",
+              "category": "thought",
+              "thought_type": "tool_result",
+              "segment_id": "call_hM2iTIKswaQCc6TwHGNkrtkd",
+              "metadata": {
+                "tool_name": "interview__complete",
+                "native_run_id": "corr-c29f750dda344f90bdb5b215ce5167cc",
+                "native_agent_name": "jvagent-native",
+                "tool_result": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"email\": \"qualified.member@example.com\"}}"
+              },
+              "timestamp": "2026-11-05T12:51:29.707435"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-c29f750dda344f90bdb5b215ce5167cc",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7",
+              "message_type": "adhoc",
+              "content": "Thank you for confirming. The interview is now complete.\n\nYour recorded email: qualified.member@example.com",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:51:31.357374"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-c29f750dda344f90bdb5b215ce5167cc",
+              "session_id": "sess_21909bf137b841f3",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T12:51:31.372843"
+            }
+          },
+          {
+            "type": "final",
+            "response": "Thank you for confirming. The interview is now complete.\n\nYour recorded email: qualified.member@example.com",
+            "interaction_id": "n.Interaction.8e0c3fbac8324b8db13ddcd7"
+          }
+        ]
+      }
+    ]
+  },
+  "reload_behavior": "Reload shows the conversation list; selecting the saved conversation restored three responses, tool-call badges and usage. It does not automatically select the active conversation.",
+  "privacy": {
+    "headers_omitted": true,
+    "session_capabilities_removed": true
+  },
+  "limits": [
+    "Initial cohort exposed stale legacy task data.state; later qualified cohort removes it.",
+    "The last confirmation ran after adding terminal denial for graph mutations; earlier review source is separately identified in its receipt."
+  ]
+}

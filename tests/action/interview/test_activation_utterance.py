@@ -52,7 +52,7 @@ async def test_fresh_start_stashes_activation_utterance(mock_task, signup_action
 
     await handle_start(
         signup_action,
-        "signup_interview",
+        "signup-interview",
         visitor,
         user_message=_ACTIVATION,
     )
@@ -72,7 +72,7 @@ async def test_resume_empty_fields_updates_activation_utterance(
 ):
     visitor, conv = _visitor_with_conv()
     session = InterviewSession(
-        interview_type="signup_interview",
+        interview_type="signup-interview",
         status=InterviewStatus.ACTIVE,
         context={ACTIVATION_UTTERANCE_KEY: "old utterance"},
     )
@@ -81,7 +81,7 @@ async def test_resume_empty_fields_updates_activation_utterance(
 
     await handle_start(
         signup_action,
-        "signup_interview",
+        "signup-interview",
         visitor,
         user_message=_RESUME,
     )
@@ -101,7 +101,7 @@ async def test_resume_with_fields_does_not_clobber_activation_utterance(
 ):
     visitor, conv = _visitor_with_conv()
     session = InterviewSession(
-        interview_type="signup_interview",
+        interview_type="signup-interview",
         status=InterviewStatus.ACTIVE,
         fields={"user_name": "Eldon Marks"},
         context={ACTIVATION_UTTERANCE_KEY: _ACTIVATION},
@@ -111,7 +111,7 @@ async def test_resume_with_fields_does_not_clobber_activation_utterance(
 
     await handle_start(
         signup_action,
-        "signup_interview",
+        "signup-interview",
         visitor,
         user_message=_RESUME,
     )

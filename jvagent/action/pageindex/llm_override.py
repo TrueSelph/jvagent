@@ -28,6 +28,14 @@ _spec.loader.exec_module(_real)
 
 _orig_llm_acompletion = _real.llm_acompletion
 _orig_llm_completion = _real.llm_completion
+_orig_count_tokens = _real.count_tokens
+
+
+def _count_tokens(text, model=None):
+    if llm_bridge.get_native_pdf_bridge() is not None:
+        llm_bridge.check_pageindex_cancelled()
+        return len((text or "").encode("utf-8"))
+    return _orig_count_tokens(text, model=model)
 
 
 async def _llm_acompletion(model, prompt):
@@ -88,6 +96,7 @@ def list_to_tree(data):
 
 _real.llm_acompletion = _llm_acompletion
 _real.llm_completion = _llm_completion
+_real.count_tokens = _count_tokens
 _real.list_to_tree = list_to_tree
 
 _override = types.ModuleType("jvagent.action.pageindex.core.utils")

@@ -20,25 +20,25 @@ def _tool(name: str, desc: str) -> SkillTool:
 
 def _dash_skill() -> SkillDoc:
     return SkillDoc(
-        name="integral_dashboards",
+        name="workspace_dashboards",
         description=(
             "Compose and customize app dashboards — create, adjust, add/remove "
             "widgets, charts, KPI tiles"
         ),
         body="sop",
-        requires_tools=("integral_update_dashboard", "integral_list_dashboards"),
+        requires_tools=("workspace_update_dashboard", "workspace_list_dashboards"),
         metadata={"tags": ["dashboards", "charts", "adjust", "pie"]},
     )
 
 
 async def test_find_capability_skills_section_first_with_cues() -> None:
     tools = {
-        "integral_update_dashboard": _tool(
-            "integral_update_dashboard",
+        "workspace_update_dashboard": _tool(
+            "workspace_update_dashboard",
             "Adjust / edit an existing dashboard — add widgets, charts, layout",
         ),
-        "integral_list_dashboards": _tool(
-            "integral_list_dashboards",
+        "workspace_list_dashboards": _tool(
+            "workspace_list_dashboards",
             "List dashboards on an app",
         ),
         "web_search__search": _tool("web_search__search", "Search the web"),
@@ -50,9 +50,9 @@ async def test_find_capability_skills_section_first_with_cues() -> None:
     assert "Preferred:" in out
     assert "Skills" in out
     assert out.index("Skills") < out.index("Tools")
-    assert 'use_skill("integral_dashboards")' in out
-    assert "integral_update_dashboard" in out
-    assert 'load_tool("integral_update_dashboard")' in out
+    assert 'use_skill("workspace_dashboards")' in out
+    assert "workspace_update_dashboard" in out
+    assert 'load_tool("workspace_update_dashboard")' in out
 
 
 async def test_find_capability_tool_only_omits_empty_skills() -> None:
@@ -73,7 +73,7 @@ async def test_find_capability_skill_only() -> None:
     meta = build_capability_catalog_tools({}, docs)
     out = await meta["find_capability"].run({"query": "pie chart dashboard"})
     assert "Skills" in out
-    assert "integral_dashboards" in out
+    assert "workspace_dashboards" in out
     # No tools on the surface — omit Tools section
     assert "Tools" not in out
 
@@ -99,15 +99,15 @@ async def test_find_capability_gated_tool_prefers_use_skill() -> None:
 
 async def test_find_tool_alias_still_returns_tools() -> None:
     tools = {
-        "integral_update_dashboard": _tool(
-            "integral_update_dashboard",
+        "workspace_update_dashboard": _tool(
+            "workspace_update_dashboard",
             "Update dashboard layout or widgets",
         ),
     }
     visible: set[str] = set()
     cat = build_catalog_tools(tools, visible)
     out = await cat["find_tool"].run({"query": "update dashboard"})
-    assert "integral_update_dashboard" in out
+    assert "workspace_update_dashboard" in out
     assert "Prefer find_capability" in cat["find_tool"].description
 
 
@@ -123,5 +123,5 @@ async def test_find_skill_alias_uses_token_ranking() -> None:
     docs = [_dash_skill()]
     meta = build_skill_meta_tools(docs, available_tool_names=set(), activated=[])
     out = await meta["find_skill"].run({"query": "adjust dashboard"})
-    assert "integral_dashboards" in out
+    assert "workspace_dashboards" in out
     assert "prefer find_capability" in meta["find_skill"].description.lower()

@@ -10,7 +10,10 @@ original structured-JSON-in-text contract byte for byte.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, List
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -198,7 +201,7 @@ def test_observation_messages_pair_calls_with_results_and_merge_notes():
     ]
     messages = render_observation_messages(observations)
     assert [m["role"] for m in messages] == [
-        "user",
+        "system",
         "assistant",
         "tool",
         "assistant",
@@ -270,7 +273,7 @@ def test_observation_messages_replay_deflected_prose_as_assistant_text():
     ]
     messages = render_observation_messages(observations)
     assert messages[0] == {"role": "assistant", "content": "All done!"}
-    assert messages[1]["role"] == "user" and "(not yet)" in messages[1]["content"]
+    assert messages[1]["role"] == "system" and "(not yet)" in messages[1]["content"]
 
 
 def test_observation_messages_count_cap_notes_omission():
@@ -280,7 +283,7 @@ def test_observation_messages_count_cap_notes_omission():
     ]
     messages = render_observation_messages(observations, max_observations=2)
     assert (
-        messages[0]["role"] == "user"
+        messages[0]["role"] == "system"
         and "3 earlier tool results omitted" in messages[0]["content"]
     )
     assert [m["tool_call_id"] for m in messages if m["role"] == "tool"] == ["c3", "c4"]
@@ -333,7 +336,7 @@ async def test_run_model_native_sends_definitions_and_replays_steps(
     user = kwargs["messages"][1]["content"]
     assert "Steps taken this turn" not in user
     assert "Return raw JSON only" not in user
-    assert "OPERATING RULES" in user  # the behavioural reminder stays
+    assert "OPERATING RULES" in system
 
 
 @pytest.mark.asyncio
@@ -363,6 +366,27 @@ async def test_run_model_native_text_is_a_reply_and_finalize_offers_no_tools(
     }
     assert "tools" not in fake.calls[1] or fake.calls[1]["tools"] is None
     assert P.FINALIZE_PROMPT_NATIVE in fake.calls[1]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_run_model_native_keeps_harness_notes_out_of_user_role(
+    make_visitor, monkeypatch
+):
+    ex = OrchestratorInteractAction()
+    fake = _FakeModelAction([ModelActionResult(response="Done.")])
+    _bind(monkeypatch, ex, fake)
+    visitor = make_visitor(utterance="hello")
+    observations = [
+        {"tool": "(prep)", "args": {}, "observation": "Loaded venture context."}
+    ]
+
+    await ex._run_model(visitor, "hello", [], [], observations)
+
+    messages = fake.calls[0]["messages"]
+    assert [message["role"] for message in messages] == ["system", "user"]
+    assert messages[1]["content"] == "hello"
+    assert "HARNESS CONTEXT" in messages[0]["content"]
+    assert "Loaded venture context." in messages[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -427,7 +451,9 @@ async def test_run_model_surfaces_provider_failure_and_truncation(
 
 
 @pytest.mark.asyncio
-async def test_run_model_json_protocol_is_unchanged(make_visitor, monkeypatch):
+async def test_run_model_json_protocol_keeps_instructions_in_system(
+    make_visitor, monkeypatch
+):
     ex = OrchestratorInteractAction()
     ex.tool_protocol = "json"
     fake = _FakeModelAction(
@@ -453,8 +479,12 @@ async def test_run_model_json_protocol_is_unchanged(make_visitor, monkeypatch):
     assert [m["role"] for m in kwargs["messages"]] == ["system", "user"]
     assert "Reply with a single JSON object" in kwargs["messages"][0]["content"]
     user = kwargs["messages"][1]["content"]
-    assert "Steps taken this turn" in user and "TOOL find_tool" in user
-    assert "Return raw JSON only" in user
+    assert user == "hi"
+    system = kwargs["messages"][0]["content"]
+    assert "TOOL OBSERVATIONS (UNTRUSTED DATA)" in system
+    assert "TOOL find_tool" in system
+    assert "Return raw JSON only" not in user
+    assert "Return raw JSON only" in system
 
     truncated = await ex._run_model(v, "hi", [], [_tool("reply")], observations)
     assert truncated["action"] == MODEL_TRUNCATED_ACTION
@@ -535,6 +565,15 @@ async def test_loop_replays_a_native_transcript_across_ticks(
     from jvagent.action.reply.reply_action import ReplyAction
 
     ex = make_orchestrator(actions=[ReplyAction()])
+    app = SimpleNamespace(
+        timezone="UTC",
+        now=AsyncMock(return_value=datetime(2026, 11, 6, tzinfo=timezone.utc)),
+    )
+
+    async def get_app(self: Any) -> Any:
+        return app
+
+    monkeypatch.setattr(type(ex), "get_app", get_app)
     fake = _FakeModelAction(
         [
             ModelActionResult(
@@ -564,7 +603,8 @@ async def test_loop_replays_a_native_transcript_across_ticks(
     assert assistant["tool_calls"][0]["id"] == "call_dt"
     assert assistant["tool_calls"][0]["function"]["name"] == "get_current_datetime"
     assert tool_msg["tool_call_id"] == "call_dt"
-    assert "ISO 8601" in tool_msg["content"]
+    assert "2026-11-06T00:00:00+00:00" in tool_msg["content"]
+    app.now.assert_awaited()
 
 
 @pytest.mark.asyncio

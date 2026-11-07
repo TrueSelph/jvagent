@@ -144,6 +144,26 @@ def is_local_file_interface(file_interface: Any) -> bool:
     return "Local" in name or name == "LocalFileInterface"
 
 
+def local_user_storage(
+    fi: Any, agent_id: str, user_id: str, path: str, *, create_root: bool = False
+) -> Any:
+    """Scope the public local provider to the caller's physical directory."""
+    from jvspatial.storage.interfaces.local import LocalFileInterface
+
+    if not isinstance(fi, LocalFileInterface):
+        raise ValueError("A local file storage provider is required")
+    user_root = fi.root_dir / resolve_user_sandbox_relpath(agent_id, user_id)
+    if user_root.resolve() != user_root:
+        raise ValueError("User sandbox cannot be a symbolic link")
+    if not create_root and not user_root.is_dir():
+        raise FileNotFoundError(path)
+    if not (user_root / path).resolve().is_relative_to(user_root):
+        raise ValueError("File escapes the user sandbox")
+    return LocalFileInterface(
+        root_dir=str(user_root), validator=fi.validator, create_root=create_root
+    )
+
+
 def _is_local_provider(file_interface: Any) -> bool:
     return is_local_file_interface(file_interface)
 

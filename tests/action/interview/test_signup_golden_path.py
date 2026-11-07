@@ -46,13 +46,13 @@ async def test_signup_golden_path_activation_to_complete(signup_action):
     action._save_session = _persist
 
     await action.on_skill_activate(
-        "signup_interview",
+        "signup-interview",
         visitor,
         user_message=visitor.utterance,
     )
     session = load_session(conversation)
     assert session is not None
-    assert session.interview_type == "signup_interview"
+    assert session.interview_type == "signup-interview"
 
     name_result = json.loads(
         await action._handle_set_fields(

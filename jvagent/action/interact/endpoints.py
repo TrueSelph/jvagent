@@ -6,6 +6,7 @@ replacing the legacy monolithic interact endpoint.
 
 import asyncio
 import logging
+import time
 from http import HTTPStatus
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
@@ -81,6 +82,23 @@ def _sse_error_event(
         "message": message or _STREAM_CLIENT_ERROR,
         "request_id": request_id,
     }
+
+
+async def _wait_for_stream_message(
+    message_queue: "asyncio.Queue[Any]",
+    last_heartbeat: float,
+    *,
+    poll_interval: float = 0.25,
+    heartbeat_interval: float = 15.0,
+) -> tuple[Any, bool, float]:
+    """Poll the response bus and report when an SSE heartbeat is due."""
+    try:
+        message = await asyncio.wait_for(message_queue.get(), timeout=poll_interval)
+        return message, False, last_heartbeat
+    except asyncio.TimeoutError:
+        now = time.monotonic()
+        heartbeat_due = now - last_heartbeat >= heartbeat_interval
+        return None, heartbeat_due, now if heartbeat_due else last_heartbeat
 
 
 # Import profiling utilities
@@ -206,11 +224,17 @@ async def _issue_session_token(
         getattr(conversation, "channel", None)
     ):
         return None
+    if getattr(walker, "_native_execution", False) is True and getattr(
+        conversation, "public_identity_kind", "unbound"
+    ) not in {"bearer", "anonymous"}:
+        return None
     try:
         secret_before = getattr(conversation, "token_secret", "") or ""
         secret = conversation.ensure_token_secret()
         if not secret_before and secret:
             await conversation.save()
+        if getattr(walker, "_native_execution", False) is True:
+            await flush_deferred_entities(conversation, strict=True)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("session token secret provisioning failed: %s", exc)
         return None
@@ -308,7 +332,11 @@ async def interact_session_refresh_endpoint(
             details={"agent_id": agent_id},
         )
 
+    from jvagent.core.execution_owner import uses_native_harness
+
+    native = await uses_native_harness(agent)
     new_token, claims, err = await refresh_session_token(
+        native=native,
         request=request,
         agent=agent,
         agent_id=agent_id,
@@ -401,42 +429,79 @@ async def interact_session_open_endpoint(
             details={"agent_id": agent_id},
         )
 
-    memory = await agent.get_memory()
-    if memory is None:
-        raise ValidationError(
-            message="Agent has no Memory node",
-            details={"reason": "no_memory", "agent_id": agent_id},
-        )
+    from jvagent.core.execution_owner import uses_native_harness
 
-    try:
-        _user, conversation, resolved_user_id, resolved_session_id, _new = (
-            await memory.get_session(
-                user_id=(user_id or "").strip() or None,
-                session_id=(session_id or "").strip() or None,
-                channel="default",
+    native = await uses_native_harness(agent)
+    identity = await resolve_interact_identity(
+        request=request,
+        agent=agent,
+        agent_id=agent_id,
+        session_id=session_id,
+        user_id=user_id,
+        native=native,
+    )
+    if identity.reject:
+        raise AuthenticationError(
+            message="Session authentication is required or the supplied credentials are invalid."
+        )
+    if native:
+        walker = InteractWalker(
+            agent_id=agent_id,
+            user_id=identity.verified_user_id,
+            session_id=session_id,
+            channel="default",
+            utterance="",
+        )
+        walker._agent = agent
+        walker._public_identity = identity
+        walker._public_identity_request = request
+        code = await walker._bootstrap_interaction(agent, through="open")
+        if code in {"access_denied", "identity_rejected", "session_resolution_error"}:
+            raise AuthenticationError(
+                message="Session authentication is required or the supplied credentials are invalid."
             )
-        )
-    except ValueError as exc:
-        raise ValidationError(
-            message=str(exc),
-            details={"reason": "session_resolution_error"},
-        ) from exc
-    except Exception as exc:
-        logger.error("session/open get_session failed: %s", exc, exc_info=True)
-        raise ValidationError(
-            message="Failed to open session",
-            details={"reason": "init_error"},
-        ) from exc
+        if code != "ready":
+            raise InteractProcessingError()
+        resolved_user_id, resolved_session_id = walker.user_id, walker.session_id
+    else:
+        memory = await agent.get_memory()
+        if memory is None:
+            raise ValidationError(
+                message="Agent has no Memory node",
+                details={"reason": "no_memory", "agent_id": agent_id},
+            )
 
-    walker = type(
-        "SessionOpenWalker",
-        (),
-        {
-            "conversation": conversation,
-            "session_id": resolved_session_id,
-            "user_id": resolved_user_id,
-        },
-    )()
+        try:
+            _user, conversation, resolved_user_id, resolved_session_id, _new = (
+                await memory.get_session(
+                    user_id=identity.verified_user_id
+                    or (user_id or "").strip()
+                    or None,
+                    session_id=(session_id or "").strip() or None,
+                    channel="default",
+                )
+            )
+        except ValueError as exc:
+            raise ValidationError(
+                message=str(exc),
+                details={"reason": "session_resolution_error"},
+            ) from exc
+        except Exception as exc:
+            logger.error("session/open get_session failed: %s", exc, exc_info=True)
+            raise ValidationError(
+                message="Failed to open session",
+                details={"reason": "init_error"},
+            ) from exc
+
+        walker = type(
+            "SessionOpenWalker",
+            (),
+            {
+                "conversation": conversation,
+                "session_id": resolved_session_id,
+                "user_id": resolved_user_id,
+            },
+        )()
     token = await _issue_session_token(walker, agent_id)  # type: ignore[arg-type]
     if not token:
         raise ValidationError(
@@ -680,18 +745,16 @@ async def interact_endpoint(
                     details={"agent_id": agent_id},
                 )
 
-            if not utterance or not utterance.strip():
-                raise ValidationError(
-                    message="utterance is required and cannot be empty",
-                    details={"utterance": utterance},
-                )
-
             # Identity guard (ADR-0020): resolve Mode A bearer / Mode B session
             # token BEFORE spawning the walker (and before any LLM cost). In
             # `off` mode this is a no-op; in `log` mode denials are observed but
             # never enforced; in `required` mode a denial is a 401.
             async with profile.measure("identity_guard"):
+                from jvagent.core.execution_owner import uses_native_harness
+
+                native = await uses_native_harness(agent)
                 identity = await resolve_interact_identity(
+                    native=native,
                     request=request,
                     agent=agent,
                     agent_id=agent_id,
@@ -730,6 +793,22 @@ async def interact_endpoint(
             # client-asserted user_id; otherwise fall back to the client value.
             effective_user_id = identity.verified_user_id or user_id
 
+            if not utterance or not utterance.strip():
+                from jvagent.core.host_context import (
+                    allows_empty_host_utterance,
+                )
+
+                if not allows_empty_host_utterance(
+                    data,
+                    agent_id=agent_id,
+                    user_id=str(effective_user_id or ""),
+                    session_id=str(session_id or ""),
+                ):
+                    raise ValidationError(
+                        message="utterance is required and cannot be empty",
+                        details={"utterance": utterance},
+                    )
+
             # Create walker
             walker = InteractWalker(
                 agent_id=agent_id,
@@ -740,6 +819,10 @@ async def interact_endpoint(
                 user_id=effective_user_id,
                 stream=stream,
             )
+
+            if native:
+                walker._public_identity = identity
+                walker._public_identity_request = request
 
             if stream:
                 # Streaming mode: return SSE response
@@ -777,6 +860,18 @@ async def interact_endpoint(
                                 },
                             )
                     error_code = getattr(walker, "_bootstrap_error", None)
+                    if error_code == "identity_rejected":
+                        raise AuthenticationError(
+                            message="Session authentication is required or the supplied credentials are invalid."
+                        )
+                    if error_code == "invalid_host_context":
+                        raise ValidationError(
+                            message="Host context could not be verified.",
+                            details={
+                                "reason": error_code,
+                                "request_id": profile.request_id,
+                            },
+                        )
                     error_detail = next(
                         (
                             item.get("error")
@@ -947,15 +1042,17 @@ async def _stream_interaction(
             ),
         )
 
-        # Wait for interaction to be created
-        max_wait = 5.0  # Maximum seconds to wait for interaction
-        waited = 0.0
-        while not walker.interaction and waited < max_wait:
+        # Admission can wait behind another active turn. Keep checking task
+        # completion/disconnect rather than mistaking a queued turn for failure.
+        last_admission_heartbeat = time.monotonic()
+        while not walker.interaction and not walk_task.done():
             if request is not None and await request.is_disconnected():
                 walk_task.cancel()
                 return
+            if time.monotonic() - last_admission_heartbeat >= 15.0:
+                yield format_sse_chunk({"type": "heartbeat"})
+                last_admission_heartbeat = time.monotonic()
             await asyncio.sleep(0.1)
-            waited += 0.1
 
         if not walker.interaction:
             try:
@@ -998,6 +1095,28 @@ async def _stream_interaction(
                     "stream": True,
                 },
             )
+            if error_code == "identity_rejected":
+                yield format_sse_chunk(
+                    {
+                        **_sse_error_event(
+                            profile.request_id,
+                            message="Session authentication is required or the supplied credentials are invalid.",
+                        ),
+                        "code": error_code,
+                    }
+                )
+                return
+            if error_code == "invalid_host_context":
+                yield format_sse_chunk(
+                    {
+                        **_sse_error_event(
+                            profile.request_id,
+                            message="Host context could not be verified.",
+                        ),
+                        "code": error_code,
+                    }
+                )
+                return
             stream_msg = "Interaction was not created during traversal."
             if error_code:
                 stream_msg = (
@@ -1043,17 +1162,21 @@ async def _stream_interaction(
             # Use asyncio.Queue to avoid polling delays and improve latency
             message_queue: asyncio.Queue[Any] = asyncio.Queue()
 
-            async def message_callback(message: Any) -> None:
+            def message_callback(message: Any) -> None:
                 """Callback to receive new messages."""
                 if message.interaction_id != interaction.id:
                     return
-                await message_queue.put(message)
+                message_queue.put_nowait(message)
 
             await walker.response_bus.subscribe(
-                walker.session_id, message_callback, receive_chunks=True
+                walker.session_id,
+                message_callback,
+                receive_chunks=True,
+                replay_interaction_id=interaction.id,
             )
 
             try:
+                last_heartbeat = time.monotonic()
                 # Stream messages as they arrive
                 while True:
                     # Exit once walker is done and we've drained the queue
@@ -1088,15 +1211,19 @@ async def _stream_interaction(
                         walk_task.cancel()
                         return
 
-                    try:
-                        message = await asyncio.wait_for(
-                            message_queue.get(), timeout=0.25
-                        )
+                    message, heartbeat_due, last_heartbeat = (
+                        await _wait_for_stream_message(message_queue, last_heartbeat)
+                    )
+                    if message is not None:
                         yield format_sse_chunk(
                             {"type": "message", "message": message.to_dict()}
                         )
-                    except asyncio.TimeoutError:
-                        continue
+                    elif heartbeat_due:
+                        # Long model/tool calls may produce no user messages for
+                        # a while. Keep intermediary proxies and browser fetches
+                        # from treating a healthy in-flight turn as an idle
+                        # connection; the client safely ignores this event.
+                        yield format_sse_chunk({"type": "heartbeat"})
             finally:
                 # Cleanup subscription
                 await walker.response_bus.unsubscribe(
@@ -1247,11 +1374,12 @@ async def _stream_interaction(
         # disconnect propagated as GeneratorExit, or an unexpected error), cancel
         # the walker so it does not keep working on a dropped request.
         if walk_task is not None and not walk_task.done():
-            walk_task.cancel()
+            from jvagent.action.interact.task_cleanup import (
+                cancel_and_drain_interaction,
+            )
+
             try:
-                await walk_task
-            except asyncio.CancelledError:
-                pass  # expected — we just cancelled it
+                await cancel_and_drain_interaction(walk_task)
             except Exception as exc:
                 logger.warning("interact: walker cleanup after cancel failed: %s", exc)
         # Clear profile context

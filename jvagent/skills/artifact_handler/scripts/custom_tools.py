@@ -459,14 +459,17 @@ async def _doc_description_lookup(
 
 
 async def _get_access_control_action(ctx: Any) -> Optional[Any]:
-    """Resolve the AccessControlAction via the interview action."""
+    """Resolve the required AccessControlAction without hiding failures."""
     interview_action = getattr(ctx, "interview", None)
     if interview_action is None:
-        return None
+        raise RuntimeError("vault AccessControlAction context is unavailable")
     try:
-        return await interview_action.get_action("AccessControlAction")
+        access_control = await interview_action.get_action("AccessControlAction")
     except Exception:
-        return None
+        raise RuntimeError("vault AccessControlAction resolution failed") from None
+    if access_control is None:
+        raise RuntimeError("required vault AccessControlAction is unavailable")
+    return access_control
 
 
 async def _get_artifact_handler_action(ctx: Any) -> Optional[Any]:
@@ -530,22 +533,14 @@ async def _ensure_access_group(ctx: Any, user_id: str, session_id: str = "") -> 
     access_control enabled.
     """
     access_control = await _get_access_control_action(ctx)
-    if access_control is None:
-        return
     group = _group_key(user_id)
-    try:
-        await access_control.add_user_to_group(
-            group, user_id, action_label="PageIndexAction"
-        )
-    except Exception:
-        pass
+    await access_control.add_user_to_group(
+        group, user_id, action_label="PageIndexAction"
+    )
     if session_id and session_id != user_id:
-        try:
-            await access_control.add_user_to_group(
-                group, session_id, action_label="PageIndexAction"
-            )
-        except Exception:
-            pass
+        await access_control.add_user_to_group(
+            group, session_id, action_label="PageIndexAction"
+        )
 
 
 async def _migrate_vault_session_key(

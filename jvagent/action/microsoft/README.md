@@ -43,7 +43,7 @@ Then authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/microsoft_365/auth?service=
 | `JVAGENT_PUBLIC_BASE_URL` | Public HTTPS origin of the API (no trailing path). Used to build MCP `auth_url` |
 | `ONEDRIVE_PARENT_FOLDER_ID` | Optional default for OneDrive / Excel parent folder (`root` or a drive **item** id) |
 
-On register, reload, and startup, each `MicrosoftAction` sets `auth_url` to `/api/mcp/microsoft_365/auth?account=integral&service=...`.
+On register, reload, and startup, each `MicrosoftAction` sets `auth_url` to `/api/mcp/microsoft_365/auth?account=default&service=...`.
 
 Register the MCP callback redirect URI exactly in Entra ID under the app’s **Authentication** redirect URIs.
 

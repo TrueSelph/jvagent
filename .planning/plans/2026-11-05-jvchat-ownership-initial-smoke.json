@@ -1,0 +1,379 @@
+{
+  "parent_revision": "git-commit:42e21125db03258709a5cfa162e42ce52008f574",
+  "source_blobs": {
+    "jvchat/src/components/ChatInterface.tsx": "git-blob:02362fde5b42b8382ea816c2b7839820c87807e4",
+    "jvchat/src/hooks/useStreaming.ts": "git-blob:947ed3b881d79820cf05c690ef4a302a51702028",
+    "jvchat/src/hooks/useStreaming.test.tsx": "git-blob:4ffcbc89d36b44732b66a888bf8df3908483b2ba"
+  },
+  "built_assets": {
+    "jvchat/dist/index.html": "sha256:1a151404bc7567966c515272c6be7c58195bd64fbd578789eee29e8aaf95c5d3",
+    "jvchat/dist/assets/ChatInterface-Bqyb8fwN.js": "sha256:0fd9f52ccb5bd39281e653cc49535d1e01808b9e7ff8f004c28392e41813a509"
+  },
+  "observed_at": "2026-11-05T17:38:37.340057+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "ui_server": "Vite production preview; shared packaged bundle not overwritten",
+    "model": "openai:gpt-4.1",
+    "public_http_entrypoint": true,
+    "patched_execution_functions": false
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.3c6f306725e2491f963690c0",
+      "session_id": "sess_717e3828fd3e42dd",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "utterance": "CHAT-OWNER-B: Start a fresh contact interview and ask for my email. Do not fill fields yet.",
+      "response": "What email address should I record?",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2278,
+          "output_tokens": 28
+        },
+        "output": "What email address should I record?",
+        "run_id": "corr-8ae574849429461682c87d0e40131c83",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T17:36:58.568102+00:00",
+        "total_tokens": 2306,
+        "prompt_tokens": 2278,
+        "total_cost_usd": 0.00478,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 28,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00478,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T13:36:53.821774",
+      "completed_at": "2026-11-05T13:36:58.568064",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:53.879963Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:53.908454Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:55.795225Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:55.875454Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_tCp3YKvtVbRcXj3nfFlqRtts",
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "3:1:tool_call_started:call_tCp3YKvtVbRcXj3nfFlqRtts"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:55.921884Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_tCp3YKvtVbRcXj3nfFlqRtts",
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "4:1:tool_call_completed:call_tCp3YKvtVbRcXj3nfFlqRtts"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:55.987296Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:58.295539Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:58.405936Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_717e3828fd3e42dd",
+          "idempotency_key": "7:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-8ae574849429461682c87d0e40131c83",
+          "status": "completed",
+          "ended_at": "2026-11-05T17:36:55.918687Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-05T17:36:55.867425Z",
+          "tool_call_id": "call_tCp3YKvtVbRcXj3nfFlqRtts",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 4.74629
+    },
+    {
+      "id": "n.Interaction.7946f71e351545f9970d86e8",
+      "session_id": "sess_d69e0c866d6f47c5",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "utterance": "CHAT-OWNER-A: Start a contact interview and ask for my email. Do not fill fields yet.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-c13c1d0fd56a47698c8f20c66b8b0d57",
+        "status": "cancelled",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-05T17:36:53.633114+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 1,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T13:36:53.156394",
+      "completed_at": null,
+      "closed": false,
+      "emitted": false,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-c13c1d0fd56a47698c8f20c66b8b0d57",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:53.243232Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_d69e0c866d6f47c5",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-c13c1d0fd56a47698c8f20c66b8b0d57",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:53.284080Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_d69e0c866d6f47c5",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "run_failed",
+          "error": "CancelledError()",
+          "run_id": "corr-c13c1d0fd56a47698c8f20c66b8b0d57",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T17:36:53.593613Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_d69e0c866d6f47c5",
+          "idempotency_key": "2:0:run_failed:"
+        }
+      ],
+      "effects": []
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.0f9831468d7b4d7fba3a650d",
+      "session_id": "sess_717e3828fd3e42dd",
+      "interview": {
+        "fields": {},
+        "status": "active",
+        "context": {},
+        "started_at": "2026-11-05T17:36:55.899645+00:00",
+        "interview_type": "conversation",
+        "skipped_fields": []
+      },
+      "tasks": [
+        {
+          "id": "task_a94e64061a15",
+          "data": {
+            "interview_type": "conversation",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Contact interview",
+          "status": "active",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-05T17:36:55.902288+00:00",
+          "updated_at": "2026-11-05T17:36:55.906835+00:00",
+          "description": "Collect and confirm a contact email without external effects",
+          "completed_at": null,
+          "owner_action": "conversation"
+        }
+      ]
+    },
+    {
+      "id": "n.Conversation.b45be282175543b290b1fde4",
+      "session_id": "sess_d69e0c866d6f47c5",
+      "interview": null,
+      "tasks": []
+    }
+  ],
+  "distinct_sessions": 2,
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:0fa8f6455c2e30178617b54308f04a8ce3b700d8",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+      "jvagent/action/interview/native.py": "git-blob:3e331a83ede3cba5a63e806709f8349524d0c38c",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:cc7fe7f80c54588c6da8314dbaabf356c835b0d3",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937"
+    },
+    "process_id": 61563,
+    "observed_at": "2026-11-05T16:59:54.616701+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T17:38:37.234536+00:00"
+  },
+  "validation": {
+    "jvchat": "128 tests passed; TypeScript/Vite production build passed",
+    "python_static_server": "8 passed, 3.45 seconds",
+    "parent_regression": "three expected failures, ten passes on parent hook",
+    "all_file_hooks": "passed on staged final source, tests and evidence",
+    "push_and_remote_ci": "independent gates"
+  },
+  "limits": [
+    "Initial ownership probe: reset aborted the first stream and the new session worked, but early sidebar indexing was missing. Final source publishes session identity at the start frame and is tested separately.",
+    "No provider-invoiced cost available; aborted request billing remains unknown."
+  ]
+}

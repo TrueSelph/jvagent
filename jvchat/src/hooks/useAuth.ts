@@ -54,21 +54,13 @@ export function useAuth() {
         const fiveMinutes = 5 * 60 * 1000
         if (timeUntilExpiry < fiveMinutes) {
           try {
-            const refreshResponse = await apiClient.refreshToken({ refresh_token: refreshToken })
-            setToken(refreshResponse.access_token)
-            if (refreshResponse.refresh_token) {
-              setRefreshToken(refreshResponse.refresh_token)
-            }
-            // Update user_id if provided in response
-            if (refreshResponse.user?.id) {
-              setUserId(refreshResponse.user.id)
-            }
+            const accessToken = await apiClient.refreshAuthentication()
             console.log('Token refreshed proactively')
 
             // Reschedule next check with new token
             // Decode new token to get its expiration
             try {
-              const newPayload = JSON.parse(atob(refreshResponse.access_token.split('.')[1]))
+              const newPayload = JSON.parse(atob(accessToken.split('.')[1]))
               const newExp = newPayload.exp * 1000
               const newTimeUntilExpiry = newExp - Date.now()
               const checkIn = Math.max(newTimeUntilExpiry - fiveMinutes, 60000) // At least 1 minute

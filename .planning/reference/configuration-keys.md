@@ -14,7 +14,28 @@
 
 Code: [`jvagent/core/config.py:60-150`](../../jvagent/core/config.py) — `ConfigKey` / `ConfigSchema`. Env placeholders in YAML are expanded by [`jvagent/core/env_resolver.py`](../../jvagent/core/env_resolver.py).
 
+### Native execution scheduling
+
+NativeHarnessAction's `tool_execution_mode` defaults to `parallel` and uses the
+public Pydantic AI mode type. `sequential` preserves a migrated legacy one-tool
+ceiling without recreating legacy ticks. See [native scheduling settings](../runbooks/native-tool-execution.md).
+Native `channel_limits` defaults to `{}` and admits only exact-channel tightening
+of run resource ceilings. It grants no channel/tool authority and does not
+migrate legacy prompt overrides. See [native run limits](../runbooks/native-run-limits.md)
+and `jvagent/harness/run_limits.py:47`.
+
+Sources: `jvagent/action/native_harness/native_harness_action.py:121`,
+`jvagent/harness/native.py:635`.
+
 ---
+
+### Native attachment input
+
+`NativeHarnessAction.input_media_types` is an explicit MIME allowlist, default
+`[]`. Client data cannot widen it. See [native attachment settings and bounds](../runbooks/native-attachments.md)
+for supported envelopes, provider scope, refusals and remaining limitations.
+Sources: `jvagent/action/native_harness/native_harness_action.py:114`,
+`jvagent/harness/inputs.py:37`.
 
 ## 2. Core environment variables
 
@@ -175,6 +196,12 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `model` | `gpt-4o-mini` | main/heavy orchestrator model (the reasoning tier when gearing is on) |
 | `model_action_type` | `OpenAILanguageModelAction` | LM action binding for `model` |
 | `tool_protocol` | `auto` | how decisions are exchanged with the model (ADR-0044/0045). `auto`: `native` unless the model's resolved capabilities say it cannot call tools, then `json`. `native`: JSON-Schema'd tool definitions go to the provider, its `tool_calls` are the step, plain text is the reply, and the turn's steps replay as assistant `tool_calls` + `tool` messages. `json`: the original one-JSON-object-per-step text contract (tools listed as prose) — for providers/models without reliable function calling An inferred `supports_tools=False` (LiteLLM provider code, model not in its table) counts as unknown; a provider that refuses native tools demotes the (action, model) pair to `json` for the process (ADR-0051); `protocol_reason` in the activation event says which rule applied |
+| `skill_runtime` | `legacy` | experimental driver selector: `legacy` uses the normal Orchestrator loop; `capability_pilot` selects one Pydantic AI run for the existing `research` skill and its `web_search__search` / `web_fetch__fetch` read operations. Requires `jvagent[pydantic-pilot]`. Unsupported skill semantics, shaping, missing dependencies, or mismatched Action owners fail closed. See [Orchestrator pilot](../../docs/ORCHESTRATOR.md#experimental-capability-pilot) |
+| `pilot_max_model_requests` | `32` | Maximum model requests in one capability-pilot run (1–32) |
+| `pilot_max_tool_calls` | `48` | Maximum tool calls in one capability-pilot run (1–64) |
+| `pilot_max_total_tokens` | `100000` | Maximum combined model tokens in one capability-pilot run |
+| `pilot_max_output_tokens` | `20000` | Maximum generated tokens across one capability-pilot run |
+| `pilot_max_runtime_seconds` | `300` | Wall-clock limit for one capability-pilot run (1–600 seconds) |
 | `transport` (on the LM action) | `httpx` | `httpx` = the action's own wire client; `litellm` = delegate the call to the LiteLLM adapter with this action's model/credentials/endpoint (ADR-0047). `JVAGENT_MODEL_TRANSPORT` env overrides for the whole process. Needs the `litellm` extra |
 | `telemetry_tool_definitions` (on the LM action) | `false` | store the full tool/function definitions sent with each call on the `model_call` observability event, for exact request replay in a debug UI. Off by default: the schemas are identical on every tick of a turn, so an agentic loop persists the same kilobytes once per tick per interaction. Tool **names** (`tool_names`) are recorded either way |
 | `model_capabilities` (on the LM action) | `{}` | operator override of the model's resolved capabilities (ADR-0045): `supports_tools`, `supports_parallel_tools`, `supports_json_mode`, `supports_structured_output`, `supports_vision`, `supports_thinking`, `context_window`, `max_output_tokens`. Wins over LiteLLM metadata and the bundled table |
@@ -182,8 +209,8 @@ See [`docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md) for the full pattern. H
 | `light_model_fallbacks` | `[]` | same, for the light gear |
 | `circuit_breaker_failures` | `3` | consecutive failures of one (action, model) before its circuit opens; `0` disables |
 | `circuit_breaker_cooldown_seconds` | `60` | how long an open circuit is skipped before one probe attempt is allowed |
-| `max_turn_cost_usd` | `0` | per-turn cost ceiling (estimated usage × pricing); at/over it the loop ends `budget_exhausted` and one partial-compose answers. `0` disables |
-| `max_conversation_cost_usd` | `0` | conversation cost ceiling; spend accumulates on `conversation.context._cost_usd_total`; a turn starting over it makes no model call and replies `budget_exhausted_text`. `0` disables |
+| `max_turn_cost_usd` | `0` | per-turn cost ceiling. The capability pilot makes a pessimistic pre-request reservation from serialized request size, the bounded output-token setting, known provider/model pricing, and a safety margin; it blocks when that reservation would cross the ceiling and fails closed when pricing is unknown. Other drivers enforce from observed usage. This is an application estimate, not a provider billing cap. See [`_preflight_pilot_model_cost`](../../jvagent/action/orchestrator/orchestrator_interact_action.py:1322) and [`request_cost_reservation_usd`](../../jvagent/action/model/cost_estimator.py:268). `0` disables |
+| `max_conversation_cost_usd` | `0` | conversation cost ceiling; spend accumulates on `conversation.context._cost_usd_total`. The capability pilot includes prior conversation spend and current-turn usage in each pre-request reservation; other drivers retain their existing observed-usage admission behavior. The estimate is not a provider billing cap. `0` disables |
 | `budget_exhausted_text` | (built-in) | reply when the conversation ceiling is reached |
 | `structured_decisions` | `true` | JSON protocol: send the decision schema (`response_format: json_schema`, or a forced decision tool on Anthropic) when the model supports structured output; else JSON mode |
 | `enforce_json_mode` | `true` | JSON protocol only: request `response_format=json_object`. Ignored under `native` and by providers without a JSON mode (Anthropic) |
@@ -356,7 +383,39 @@ The multitenant sandbox `spec: claude` skills run their bundled scripts in. Surf
 
 ### `jvagent/file_interface` (FileInterfaceAction) & `jvagent/skill_hub` (SkillHubAction)
 
-`file_interface` exposes per-user sandboxed file-I/O tools (`file_interface__read_file`/`write_file`/`list_directory`/…) on the same per-user slice as `code_execution` and the filesystem MCP; `skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/`install_skill`/`list_installed`/`remove_skill`). Both just need `enabled: true`; no further config.
+`file_interface` retains its existing file-I/O tools for transitional callers.
+Native execution exposes `file_interface__read_file` and the reviewed local text
+write `file_interface__write_file` through host-bound adapters
+(`jvagent/action/file_interface/file_interface_action.py:47`).
+Set `native_read_max_bytes` on this Action to a positive integer (default 262144).
+Full/tail reads above the limit fail explicitly; head may finish earlier. Storage
+consumption is bounded by that allowance plus one chunk of at most 8192 bytes to
+detect overflow. Model arguments cannot change the budget. The native read does
+not provision directories. Local storage is re-scoped to the caller's directory
+before using the public provider (`jvagent/action/file_interface/_core.py:162`).
+See [qualification and limitations](../plans/2026-11-06-native-file-read.md).
+
+`native_write_max_bytes` defaults to 262144 and must be positive. The native text
+write additionally requires an enabled/enforcing AccessControlAction with an
+explicit granting entry at `permissions.<channel>.tools.file_interface__write_file`;
+an absent or unnamed policy denies, even when the general Action rule permits.
+The skill must also allow the tool. See [AccessControl rules](../../jvagent/action/access_control/README.md).
+The SDK records the mutation before I/O; local readback must match the submitted
+UTF-8 text before acknowledgement (`file_interface_action.py:89`, `_core.py:256`).
+This is not an exactly-once remote write guarantee. Interrupted/failed writes
+require operator reconciliation; binary writes and other providers are not
+admitted by this adapter. See [write qualification](../plans/2026-11-06-native-file-write.md).
+
+`native_share_max_bytes` defaults to 8388608, with an enforced maximum of 8 MiB.
+The named `file_interface__share_file` grant permits a bounded snapshot and an
+expiring bearer download link. It requires the configured public base URL and
+qualified local storage with generic storage HTTP routes disabled. See the
+[artifact download profile](../runbooks/native-artifact-downloads.md) for the
+contract and limitations. Source: `jvagent/action/file_interface/file_interface_action.py:108`.
+
+`skill_hub` exposes skill-registry management tools (`skill_hub__search_registry`/
+`install_skill`/`list_installed`/`remove_skill`) for transitional callers and needs
+`enabled: true`. Its native execution remains subject to compatibility qualification.
 
 ### Proactive task pipeline (`jvagent/task_monitor`, ADR-0022)
 

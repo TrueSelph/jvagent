@@ -1,0 +1,44 @@
+{
+  "after_planning_before_bootstrap": {
+    "node_table": null,
+    "source": "asserted SQL to_regclass check in tool transcript before first bootstrap"
+  },
+  "candidate_mode": "0o600",
+  "persisted_entity_counts": {
+    "Root": 1,
+    "Agent": 1,
+    "App": 1,
+    "NativeHarnessAction": 1,
+    "MCPAction": 1,
+    "ReplyAction": 1,
+    "Actions": 1,
+    "Agents": 1,
+    "Memory": 1,
+    "User": 1,
+    "Interaction": 2,
+    "Conversation": 2,
+    "ConversationHealthState": 1
+  },
+  "native_actions": [
+    {
+      "id": "n.NativeHarnessAction.0f7ab3fb5a484ee3904c8cfa",
+      "context": {
+        "model": "openai:gpt-4.1",
+        "model_settings": {
+          "max_tokens": 8192,
+          "max_retries": 0,
+          "temperature": 0.0
+        },
+        "skill_directory": "agents/jvagent/migration/skills/summary",
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "max_tokens": 100000,
+        "max_output_tokens": null,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_conversation_cost_usd": "20.00"
+      }
+    }
+  ],
+  "scope": "Fresh isolated graph; not an upgrade of old graph state"
+}

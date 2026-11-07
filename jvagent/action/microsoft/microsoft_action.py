@@ -24,7 +24,7 @@ class MicrosoftAction(Action):
     SCOPES: ClassVar[List[str]] = []
 
     _MCP_SERVER: ClassVar[str] = "microsoft_365"
-    _MCP_ACCOUNT: ClassVar[str] = "integral"
+    _MCP_ACCOUNT: ClassVar[str] = "default"
     _MCP_SERVICE: ClassVar[str] = ""
 
     def _tenant_id(self) -> str:

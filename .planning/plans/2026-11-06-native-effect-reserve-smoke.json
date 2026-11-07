@@ -1,0 +1,1731 @@
+{
+  "observed_at": "2026-11-06T10:00:19.855317+00:00",
+  "parent_revision": "git-commit:2067d7ce8f1d3a1b7da6f29698bbbfd7dc93e456",
+  "source_blobs": {
+    "jvagent/action/endpoints.py": "git-blob:9a04a9b1a1db556b8b005a6e37f11a8cdc92255f",
+    "jvagent/harness/accounting.py": "git-blob:a48e5b723b044b89b1d20fa93da1ec8e1c65d101",
+    "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+    "jvagent/harness/native.py": "git-blob:60bbb5e029475a19feab81a7749758aba37a8957",
+    "jvagent/harness/reconciliation.py": "git-blob:f9fc3337643ffabe6b6f73d1e4ee153bb28a95b0"
+  },
+  "fixture": {
+    "backend": 8152,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "runtime_functions_patched": false
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.b3980abf5f1b4d2fae3d9807",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "Write exactly UNKNOWN-BILLING-73 to uncertain.txt, then confirm the tool acknowledgement.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-6307f2271a65495bb8be0659df42d948",
+        "status": "running",
+        "usage_reserve": {
+          "usd": "0.5",
+          "actor": "o.User.a14ea0352582440993116701",
+          "digest": "sha256:c341980ae6b2e7b3930d0bc7465a12efb006cb5b975c7babc13734500ca6bf2a",
+          "reason": "Permit separately verified effect recovery while retaining unknown billing.",
+          "status": "applied",
+          "version": "native-usage-reserve-v1",
+          "evidence": "Conservative allowance for the SDK request without a completion receipt.",
+          "created_at": "2026-11-06T09:31:45.759238+00:00",
+          "unknown_calls": 1,
+          "approval_digest": "sha256:ab7c11166b2c29a8ba1e07ddd20782d9e654dadeb2c58412e6231776d9485953"
+        },
+        "history_source": {},
+        "effect_recovery": {
+          "actor": "o.User.a14ea0352582440993116701",
+          "facts": {
+            "usage": {
+              "total_tokens": 479,
+              "model_call_count": 1,
+              "reported_cost_usd": 0.0,
+              "estimated_cost_usd": 0.501132,
+              "unknown_cost_call_count": 1
+            },
+            "digest": "sha256:cd49add4f7ed1461fd4d87cdde22d134747d9e9fd43cc7389ac258b4d92a51d5",
+            "run_id": "corr-6307f2271a65495bb8be0659df42d948",
+            "version": "verified-mutation-recovery-v1",
+            "frontier": "complete",
+            "tool_name": "file_interface__write_file",
+            "tool_call_id": "call_vaq7lxUC567kbPzExcLEyuUd",
+            "source_digest": "sha256:c341980ae6b2e7b3930d0bc7465a12efb006cb5b975c7babc13734500ca6bf2a",
+            "usage_reserve": {
+              "usd": "0.5",
+              "actor": "o.User.a14ea0352582440993116701",
+              "digest": "sha256:c341980ae6b2e7b3930d0bc7465a12efb006cb5b975c7babc13734500ca6bf2a",
+              "reason": "Permit separately verified effect recovery while retaining unknown billing.",
+              "status": "applied",
+              "version": "native-usage-reserve-v1",
+              "evidence": "Conservative allowance for the SDK request without a completion receipt.",
+              "created_at": "2026-11-06T09:31:45.759238+00:00",
+              "unknown_calls": 1,
+              "approval_digest": "sha256:ab7c11166b2c29a8ba1e07ddd20782d9e654dadeb2c58412e6231776d9485953"
+            },
+            "effect_summary": "jv:mutation:file-write:v1",
+            "interaction_id": "n.Interaction.b3980abf5f1b4d2fae3d9807",
+            "resource_scope": "sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32",
+            "conversation_id": "n.Conversation.920e6366b2bc4b60bd1bc69e",
+            "verified_result": {
+              "ok": true,
+              "path": "uncertain.txt",
+              "bytes": 18,
+              "sha256": "sha256:9ed9c3de53269b77b4c32e992f49cdb93cfc50fc4c951c72ee57c98984480c7b",
+              "verification": "Current file matches recorded intent; original completion was not observed.",
+              "operator_verified": true
+            },
+            "verification_metadata": {
+              "jv_resource_version": {
+                "size": 18,
+                "created_at": "2026-11-06T05:30:44.155025",
+                "modified_at": "2026-11-06T05:30:44.154854",
+                "content_type": "text/plain"
+              }
+            }
+          },
+          "digest": "sha256:cd49add4f7ed1461fd4d87cdde22d134747d9e9fd43cc7389ac258b4d92a51d5",
+          "reason": "Continue read-only without repeating the write; retain reserved unknown billing.",
+          "status": "approved",
+          "version": "verified-mutation-recovery-v1",
+          "evidence": "Current file hash and resource version independently verified after stopped-worker crash.",
+          "created_at": "2026-11-06T09:32:20.732758+00:00"
+        }
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:32:03.423968+00:00",
+        "total_tokens": 479,
+        "prompt_tokens": 450,
+        "total_cost_usd": 0.501132,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 29,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.501132,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.276,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.276,
+        "unmeasured_model_attempt_count": 1
+      },
+      "seconds": null,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 479,
+            "prompt_tokens": 450,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001132,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-6307f2271a65495bb8be0659df42d948",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-6307f2271a65495bb8be0659df42d948:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [
+        {
+          "run_id": "corr-6307f2271a65495bb8be0659df42d948",
+          "status": "completed",
+          "ended_at": "2026-11-06T09:30:44.157426Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:30:44.138895Z",
+          "tool_call_id": "call_vaq7lxUC567kbPzExcLEyuUd",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-6307f2271a65495bb8be0659df42d948/call_vaq7lxUC567kbPzExcLEyuUd/sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:30:41.694928Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:30:41.788170Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:30:44.063681Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "tool_call_id": "call_vaq7lxUC567kbPzExcLEyuUd",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:30:44.142653Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "tool_call_id": "call_vaq7lxUC567kbPzExcLEyuUd",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:30:44.162151Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:30:44.239318Z"
+        }
+      ],
+      "snapshots": 4,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.d6e3926e6df449cf8156714d",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "Do not repeat the write. Remember recovery code LILY-73 for my next question.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.b3980abf5f1b4d2fae3d9807"
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:31:44.385637+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.070928,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [],
+      "snapshots": 0,
+      "sdk_registrations": 0
+    },
+    {
+      "id": "n.Interaction.c484fea54df2416bb58d3721",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "The billing reserve is in place. Do not repeat the write. Remember a second code TULIP-73.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.d6e3926e6df449cf8156714d"
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:32:19.311578+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.069063,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [],
+      "snapshots": 0,
+      "sdk_registrations": 0
+    },
+    {
+      "id": "n.Interaction.62d9d9f750bc4337bb724cc6",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "Both administrator decisions are now recorded. Confirm the verified state of uncertain.txt without repeating the write, and recall both recovery codes from my blocked messages.",
+      "response": "The verified state of uncertain.txt is confirmed; the file contains exactly UNKNOWN-BILLING-73. \n\nBoth recovery codes from your previous messages are recalled:\n- LILY-73\n- TULIP-73\n\nNo write operation was repeated.",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 638,
+          "output_tokens": 52
+        },
+        "output": "The verified state of uncertain.txt is confirmed; the file contains exactly UNKNOWN-BILLING-73. \n\nBoth recovery codes from your previous messages are recalled:\n- LILY-73\n- TULIP-73\n\nNo write operation was repeated.",
+        "run_id": "corr-f38571e9bf2f4966a798b6b9cc33b318",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "operator_verified_effect",
+          "source_run_id": "corr-6307f2271a65495bb8be0659df42d948",
+          "recovery_digest": "sha256:cd49add4f7ed1461fd4d87cdde22d134747d9e9fd43cc7389ac258b4d92a51d5",
+          "blocked_interaction_ids": [
+            "n.Interaction.d6e3926e6df449cf8156714d",
+            "n.Interaction.c484fea54df2416bb58d3721"
+          ]
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:34:05.450054+00:00",
+        "total_tokens": 690,
+        "prompt_tokens": 638,
+        "total_cost_usd": 0.001692,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 52,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001692,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.971,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.971,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 3.484384,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 690,
+            "prompt_tokens": 638,
+            "completion_tokens": 52,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001692,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-f38571e9bf2f4966a798b6b9cc33b318",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-f38571e9bf2f4966a798b6b9cc33b318:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:34:03.177212Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:34:03.214117Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:34:05.185153Z"
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:34:05.317591Z"
+        }
+      ],
+      "snapshots": 3,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.37a083ffde304b50b49fd451",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "Do not write anything. Reply with BUDGET-CHECK-73.",
+      "response": "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request.",
+      "native_run": {
+        "run_id": "corr-f1e7b68ddec94683adaeda11c013653e",
+        "status": "failed",
+        "failure_type": "SpendLimitExceeded",
+        "usage_reserve": {
+          "usd": "0.000001",
+          "actor": "o.User.a14ea0352582440993116701",
+          "digest": "sha256:f5ed9f6887a637368564d039a728e77a9c3d46a853c974ece40953966b6c3ab2",
+          "reason": "Keep the old unknown record rather than inventing a zero-cost correction.",
+          "status": "applied",
+          "version": "native-usage-reserve-v1",
+          "evidence": "Retained pre-fix SDK start was recorded ahead of the budget gate; conservative residual allowance, not a provider invoice.",
+          "created_at": "2026-11-06T09:40:38.416864+00:00",
+          "unknown_calls": 1
+        },
+        "failure_origin": "_capability.py:739:_refuse",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-f38571e9bf2f4966a798b6b9cc33b318"
+        },
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:40:39.499226+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 1e-06,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 1e-06,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 1,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 1
+      },
+      "seconds": 0.457137,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:35:12.017562Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:35:12.056203Z"
+        },
+        {
+          "kind": "run_failed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:35:12.095949Z"
+        }
+      ],
+      "snapshots": 2,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.38673f61530b45fa90b6c5cd",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "Do not write anything. Reply with BUDGET-FIXED-73.",
+      "response": "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request.",
+      "native_run": {
+        "run_id": "corr-a5464ececb9742db9a8b892759b03a2d",
+        "status": "failed",
+        "failure_type": "SpendLimitExceeded",
+        "failure_origin": "_capability.py:739:_refuse",
+        "history_source": {
+          "frontier": "accepted_input",
+          "source_run_id": "corr-f1e7b68ddec94683adaeda11c013653e"
+        },
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:40:39.688181+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.558029,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:40:39.577949Z"
+        },
+        {
+          "kind": "run_failed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:40:39.625829Z"
+        }
+      ],
+      "snapshots": 1,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.c6082bdafbb9428db1d0051c",
+      "session_id": "sess_0f74f58da41d40a9",
+      "utterance": "The budget has been restored. Write exactly AFTER-UNKNOWN-RECOVERY-73 to next.txt and confirm its acknowledgement.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.38673f61530b45fa90b6c5cd"
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:40:58.224213+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.160111,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [],
+      "snapshots": 0,
+      "sdk_registrations": 0
+    },
+    {
+      "id": "n.Interaction.e975c6256596482880476842",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "Write exactly FINAL-UNKNOWN-74 to final-uncertain.txt, then confirm the tool acknowledgement.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-4b1e074773fa41e79cd0a655c3073ef2",
+        "status": "running",
+        "usage_reserve": {
+          "usd": "0.5",
+          "actor": "o.User.a14ea0352582440993116701",
+          "digest": "sha256:c1cd369da2ece96ad1440c1130bd688cb27776facac3048db565c7ebdb49b3aa",
+          "reason": "Retain unknown billing while independently verifying the completed local write.",
+          "status": "applied",
+          "version": "native-usage-reserve-v1",
+          "evidence": "Conservative allowance for the interrupted SDK request without a provider completion receipt.",
+          "created_at": "2026-11-06T09:49:06.705847+00:00",
+          "unknown_calls": 1,
+          "approval_digest": "sha256:245d925d17c5495e8f2b39a08aebb061e0ff374e0ad0704f71e357c4eb4d5bd2"
+        },
+        "history_source": {},
+        "effect_recovery": {
+          "actor": "o.User.a14ea0352582440993116701",
+          "facts": {
+            "usage": {
+              "total_tokens": 482,
+              "model_call_count": 1,
+              "reported_cost_usd": 0.0,
+              "estimated_cost_usd": 0.501144,
+              "unknown_cost_call_count": 1
+            },
+            "digest": "sha256:e37a5cdaebbde31227971d08445bc591c2b2b6b22ccad7d862b0a8866c1811c8",
+            "run_id": "corr-4b1e074773fa41e79cd0a655c3073ef2",
+            "version": "verified-mutation-recovery-v1",
+            "frontier": "complete",
+            "tool_name": "file_interface__write_file",
+            "tool_call_id": "call_V3Myjjlv48kZCeAknHKQikdt",
+            "source_digest": "sha256:c1cd369da2ece96ad1440c1130bd688cb27776facac3048db565c7ebdb49b3aa",
+            "usage_reserve": {
+              "usd": "0.5",
+              "actor": "o.User.a14ea0352582440993116701",
+              "digest": "sha256:c1cd369da2ece96ad1440c1130bd688cb27776facac3048db565c7ebdb49b3aa",
+              "reason": "Retain unknown billing while independently verifying the completed local write.",
+              "status": "applied",
+              "version": "native-usage-reserve-v1",
+              "evidence": "Conservative allowance for the interrupted SDK request without a provider completion receipt.",
+              "created_at": "2026-11-06T09:49:06.705847+00:00",
+              "unknown_calls": 1,
+              "approval_digest": "sha256:245d925d17c5495e8f2b39a08aebb061e0ff374e0ad0704f71e357c4eb4d5bd2"
+            },
+            "effect_summary": "jv:mutation:file-write:v1",
+            "interaction_id": "n.Interaction.e975c6256596482880476842",
+            "resource_scope": "sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32",
+            "conversation_id": "n.Conversation.bd3da54e2a3149cebe1ce420",
+            "verified_result": {
+              "ok": true,
+              "path": "final-uncertain.txt",
+              "bytes": 16,
+              "sha256": "sha256:7768beec9c048c048c8ba0eefcb601447a4aefc5c97d164cf30254f8e83defa8",
+              "verification": "Current file matches recorded intent; original completion was not observed.",
+              "operator_verified": true
+            },
+            "verification_metadata": {
+              "jv_resource_version": {
+                "size": 16,
+                "created_at": "2026-11-06T05:47:40.236118",
+                "modified_at": "2026-11-06T05:47:40.235961",
+                "content_type": "text/plain"
+              }
+            }
+          },
+          "digest": "sha256:e37a5cdaebbde31227971d08445bc591c2b2b6b22ccad7d862b0a8866c1811c8",
+          "reason": "Read-only continuation; preserve known receipts and the explicit unknown-billing reserve.",
+          "status": "approved",
+          "version": "verified-mutation-recovery-v1",
+          "evidence": "Current file digest and resource version verified after stopped-owner crash.",
+          "created_at": "2026-11-06T09:49:24.855013+00:00"
+        }
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:49:07.490377+00:00",
+        "total_tokens": 482,
+        "prompt_tokens": 452,
+        "total_cost_usd": 0.501144,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 30,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.501144,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.449,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.449,
+        "unmeasured_model_attempt_count": 1
+      },
+      "seconds": null,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 482,
+            "prompt_tokens": 452,
+            "completion_tokens": 30,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001144,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-4b1e074773fa41e79cd0a655c3073ef2",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-4b1e074773fa41e79cd0a655c3073ef2:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [
+        {
+          "run_id": "corr-4b1e074773fa41e79cd0a655c3073ef2",
+          "status": "completed",
+          "ended_at": "2026-11-06T09:47:40.239307Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:47:40.217580Z",
+          "tool_call_id": "call_V3Myjjlv48kZCeAknHKQikdt",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-4b1e074773fa41e79cd0a655c3073ef2/call_V3Myjjlv48kZCeAknHKQikdt/sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:47:38.647476Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:47:38.688251Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:47:40.137591Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "tool_call_id": "call_V3Myjjlv48kZCeAknHKQikdt",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:47:40.221179Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "tool_call_id": "call_V3Myjjlv48kZCeAknHKQikdt",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:47:40.244144Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:47:40.321825Z"
+        }
+      ],
+      "snapshots": 4,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.5006d106c7f8401989e11789",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "Do not repeat the write. Remember recovery code IRIS-74 for later.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.e975c6256596482880476842"
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:48:49.806377+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.072091,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [],
+      "snapshots": 0,
+      "sdk_registrations": 0
+    },
+    {
+      "id": "n.Interaction.6839fd62582b46e9b774062d",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "The reserve is recorded. Do not repeat the write. Remember another code DAISY-74.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.5006d106c7f8401989e11789"
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:49:08.224990+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 0.071887,
+      "receipts": [],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [],
+      "snapshots": 0,
+      "sdk_registrations": 0
+    },
+    {
+      "id": "n.Interaction.932b755bc46d41a3881dd58c",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "Both administrator decisions are recorded. Confirm the verified state of final-uncertain.txt without writing it again, and recall both codes from my blocked messages.",
+      "response": "Acknowledged. The verified state of final-uncertain.txt is confirmed\u2014no further write will be performed.\n\nRecovery codes recalled from your blocked messages:\n- IRIS-74\n- DAISY-74",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 637,
+          "output_tokens": 44
+        },
+        "output": "Acknowledged. The verified state of final-uncertain.txt is confirmed\u2014no further write will be performed.\n\nRecovery codes recalled from your blocked messages:\n- IRIS-74\n- DAISY-74",
+        "run_id": "corr-859b17043d6b4c0e8209e3eb528d6a33",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "operator_verified_effect",
+          "source_run_id": "corr-4b1e074773fa41e79cd0a655c3073ef2",
+          "recovery_digest": "sha256:e37a5cdaebbde31227971d08445bc591c2b2b6b22ccad7d862b0a8866c1811c8",
+          "blocked_interaction_ids": [
+            "n.Interaction.5006d106c7f8401989e11789",
+            "n.Interaction.6839fd62582b46e9b774062d"
+          ]
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:50:41.662870+00:00",
+        "total_tokens": 681,
+        "prompt_tokens": 637,
+        "total_cost_usd": 0.001626,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001626,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.723,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.723,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 3.46578,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 681,
+            "prompt_tokens": 637,
+            "completion_tokens": 44,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001626,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-859b17043d6b4c0e8209e3eb528d6a33",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-859b17043d6b4c0e8209e3eb528d6a33:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:50:39.647503Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:50:39.687518Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:50:41.410420Z"
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:50:41.514279Z"
+        }
+      ],
+      "snapshots": 3,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.16aef0edf78441b3b75f1041",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "Do not write anything. Reply with FINAL-BUDGET-CHECK-74.",
+      "response": "FINAL-BUDGET-CHECK-74",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 756,
+          "output_tokens": 10
+        },
+        "output": "FINAL-BUDGET-CHECK-74",
+        "run_id": "corr-7edc065c84bb4d64b82f873f16914521",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-859b17043d6b4c0e8209e3eb528d6a33"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:51:21.115849+00:00",
+        "total_tokens": 766,
+        "prompt_tokens": 756,
+        "total_cost_usd": 0.001592,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 10,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001592,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.285,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.285,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 1.854662,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 766,
+            "prompt_tokens": 756,
+            "completion_tokens": 10,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001592,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7edc065c84bb4d64b82f873f16914521",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-7edc065c84bb4d64b82f873f16914521:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:19.565538Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:19.607129Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:20.892444Z"
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:20.982190Z"
+        }
+      ],
+      "snapshots": 3,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.96ab28d999564281a7b32fe7",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "The budget is restored. Write exactly FINAL-AFTER-RECOVERY-74 to final-next.txt and confirm the tool acknowledgement.",
+      "response": "Write to final-next.txt acknowledged: FINAL-AFTER-RECOVERY-74.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1698,
+          "output_tokens": 51
+        },
+        "output": "Write to final-next.txt acknowledged: FINAL-AFTER-RECOVERY-74.",
+        "run_id": "corr-ead38c11d1ac46899d984efdbc6c1551",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-7edc065c84bb4d64b82f873f16914521"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:51:36.710197+00:00",
+        "total_tokens": 1749,
+        "prompt_tokens": 1698,
+        "total_cost_usd": 0.003804,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 51,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003804,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.536,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.536,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 3.452982,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 830,
+            "prompt_tokens": 798,
+            "completion_tokens": 32,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001852,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ead38c11d1ac46899d984efdbc6c1551",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-ead38c11d1ac46899d984efdbc6c1551:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 919,
+            "prompt_tokens": 900,
+            "completion_tokens": 19,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001952,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ead38c11d1ac46899d984efdbc6c1551",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-ead38c11d1ac46899d984efdbc6c1551:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [
+        {
+          "run_id": "corr-ead38c11d1ac46899d984efdbc6c1551",
+          "status": "completed",
+          "ended_at": "2026-11-06T09:51:35.160349Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:51:35.132374Z",
+          "tool_call_id": "call_aEseEMVREN9iNf1piil7yjsi",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-ead38c11d1ac46899d984efdbc6c1551/call_aEseEMVREN9iNf1piil7yjsi/sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:33.528574Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:33.563105Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:35.049033Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "tool_call_id": "call_aEseEMVREN9iNf1piil7yjsi",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:51:35.139608Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "tool_call_id": "call_aEseEMVREN9iNf1piil7yjsi",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:51:35.165977Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:35.256651Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:36.307134Z"
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:51:36.439779Z"
+        }
+      ],
+      "snapshots": 6,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.3a9c6def863f431d8be4f0c0",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "Do not write anything. Reply with CACHE-BUDGET-CHECK-74.",
+      "response": "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request.",
+      "native_run": {
+        "run_id": "corr-7c6539a749ef4bb29e9e7c0502ee0b9f",
+        "status": "failed",
+        "failure_type": "SpendLimitExceeded",
+        "failure_origin": "_capability.py:739:_refuse",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-ead38c11d1ac46899d984efdbc6c1551"
+        },
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:56:32.681018+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 1.334871,
+      "receipts": [],
+      "preflight_refusals": [
+        {
+          "reason": "spend_limit_exceeded",
+          "native_run_id": "corr-7c6539a749ef4bb29e9e7c0502ee0b9f",
+          "native_step_index": 1,
+          "provider_admitted": false,
+          "native_refusal_origin": "sdk_spend_admission_v1",
+          "native_request_started_at": "2026-11-06T09:56:11.275134+00:00"
+        }
+      ],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:11.233158Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:11.275134Z"
+        },
+        {
+          "kind": "run_failed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:11.323145Z"
+        }
+      ],
+      "snapshots": 2,
+      "sdk_registrations": 1
+    },
+    {
+      "id": "n.Interaction.ab6b65e93a0b41b89d70d8d9",
+      "session_id": "sess_2d03363758e9427c",
+      "utterance": "The budget is restored. Write exactly VERIFIED-POLICY-74 to policy-next.txt and confirm the acknowledgement.",
+      "response": "Write to policy-next.txt acknowledged: VERIFIED-POLICY-74.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2085,
+          "output_tokens": 46
+        },
+        "output": "Write to policy-next.txt acknowledged: VERIFIED-POLICY-74.",
+        "run_id": "corr-1a8486cc225140a083ede6d40731f560",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "accepted_input",
+          "source_run_id": "corr-7c6539a749ef4bb29e9e7c0502ee0b9f"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T09:56:35.883940+00:00",
+        "total_tokens": 2131,
+        "prompt_tokens": 2085,
+        "total_cost_usd": 0.004538,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 46,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004538,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.417,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.417,
+        "unmeasured_model_attempt_count": 0
+      },
+      "seconds": 3.555043,
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1023,
+            "prompt_tokens": 993,
+            "completion_tokens": 30,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002226,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-1a8486cc225140a083ede6d40731f560",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-1a8486cc225140a083ede6d40731f560:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1108,
+            "prompt_tokens": 1092,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002312,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-1a8486cc225140a083ede6d40731f560",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-1a8486cc225140a083ede6d40731f560:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "preflight_refusals": [],
+      "effects": [
+        {
+          "run_id": "corr-1a8486cc225140a083ede6d40731f560",
+          "status": "completed",
+          "ended_at": "2026-11-06T09:56:34.486033Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:56:34.458235Z",
+          "tool_call_id": "call_NZcuSdqccYX6wItwvnDWE3Ug",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-1a8486cc225140a083ede6d40731f560/call_NZcuSdqccYX6wItwvnDWE3Ug/sha256:5c87f918b96ad592ea9efe92837201f4e9091906df15eb1639724c451619ea32"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:32.711146Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:32.754580Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:34.349191Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "tool_call_id": "call_NZcuSdqccYX6wItwvnDWE3Ug",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:56:34.463332Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "tool_call_id": "call_NZcuSdqccYX6wItwvnDWE3Ug",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:56:34.491339Z"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:34.592794Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 2,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:35.415311Z"
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:56:35.551632Z"
+        }
+      ],
+      "snapshots": 6,
+      "sdk_registrations": 1
+    }
+  ],
+  "final_session": "sess_2d03363758e9427c",
+  "original_sdk_records_unchanged": true,
+  "original_files_unchanged": true,
+  "crash_triggers": [
+    {
+      "pid": 78049,
+      "command_verified": true,
+      "interaction_id": "n.Interaction.b3980abf5f1b4d2fae3d9807",
+      "file": "/private/tmp/jvagent-native-effect-reserve-smoke/files/n.Agent.b2c7e59d88914e4cb472d913/o.User.a14ea0352582440993116701/uncertain.txt",
+      "bytes": 18,
+      "inode": 869072892,
+      "mtime_ns": 1793957444154854336,
+      "sha256": "sha256:9ed9c3de53269b77b4c32e992f49cdb93cfc50fc4c951c72ee57c98984480c7b",
+      "observed_at": "2026-11-06T09:30:44.250745+00:00",
+      "signal": "SIGKILL",
+      "model_request_starts": 2,
+      "second_request_completed": false,
+      "sdk_effect_completed": true,
+      "provider_send_or_billing_not_inferred_from_start_event": true
+    },
+    {
+      "pid": 79392,
+      "command_verified": true,
+      "interaction_id": "n.Interaction.e975c6256596482880476842",
+      "file": "/private/tmp/jvagent-native-effect-reserve-smoke/files/n.Agent.b2c7e59d88914e4cb472d913/o.User.a14ea0352582440993116701/final-uncertain.txt",
+      "bytes": 16,
+      "inode": 869134057,
+      "mtime_ns": 1793958460235960985,
+      "sha256": "sha256:7768beec9c048c048c8ba0eefcb601447a4aefc5c97d164cf30254f8e83defa8",
+      "observed_at": "2026-11-06T09:47:40.330154+00:00",
+      "signal": "SIGKILL",
+      "model_request_starts": 2,
+      "second_request_completed": false,
+      "sdk_effect_completed": true,
+      "provider_send_or_billing_not_inferred_from_start_event": true
+    }
+  ],
+  "totals": {
+    "reported_receipts": 9,
+    "reported_tokens": 6978,
+    "pricing_estimated_usd": "0.015528",
+    "explicit_reserves_usd": "1.000001",
+    "total_estimated_usd": "1.015529",
+    "reserves": 3,
+    "unknown_receipts_retained": 3
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.bd3da54e2a3149cebe1ce420",
+      "session_id": "sess_2d03363758e9427c",
+      "tasks": [],
+      "spend": {
+        "default|conversation|*|sess_2d03363758e9427c": {
+          "spent": {
+            "usd": "0.512704",
+            "tokens": 5809,
+            "requests": 7,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T09:56:35.436941+00:00"
+        },
+        "default|run|*|corr-1a8486cc225140a083ede6d40731f560": {
+          "spent": {
+            "usd": "0.004538",
+            "tokens": 2131,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:56:35.436941+00:00"
+        },
+        "default|run|*|corr-4b1e074773fa41e79cd0a655c3073ef2": {
+          "spent": {
+            "usd": "0.501144",
+            "tokens": 482,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:49:06.709645+00:00"
+        },
+        "default|run|*|corr-7edc065c84bb4d64b82f873f16914521": {
+          "spent": {
+            "usd": "0.001592",
+            "tokens": 766,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:51:20.897073+00:00"
+        },
+        "default|run|*|corr-859b17043d6b4c0e8209e3eb528d6a33": {
+          "spent": {
+            "usd": "0.001626",
+            "tokens": 681,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:50:41.440293+00:00"
+        },
+        "default|run|*|corr-ead38c11d1ac46899d984efdbc6c1551": {
+          "spent": {
+            "usd": "0.003804",
+            "tokens": 1749,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:51:36.324138+00:00"
+        }
+      }
+    },
+    {
+      "id": "n.Conversation.920e6366b2bc4b60bd1bc69e",
+      "session_id": "sess_0f74f58da41d40a9",
+      "tasks": [],
+      "spend": {
+        "default|conversation|*|sess_0f74f58da41d40a9": {
+          "spent": {
+            "usd": "0.502825",
+            "tokens": 1169,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T09:40:38.421564+00:00"
+        },
+        "default|run|*|corr-6307f2271a65495bb8be0659df42d948": {
+          "spent": {
+            "usd": "0.501132",
+            "tokens": 479,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:31:45.762375+00:00"
+        },
+        "default|run|*|corr-f1e7b68ddec94683adaeda11c013653e": {
+          "spent": {
+            "usd": "0.000001",
+            "tokens": 0,
+            "requests": 0,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:40:38.421564+00:00"
+        },
+        "default|run|*|corr-f38571e9bf2f4966a798b6b9cc33b318": {
+          "spent": {
+            "usd": "0.001692",
+            "tokens": 690,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T09:34:05.231784+00:00"
+        }
+      }
+    }
+  ],
+  "read_only_initial_inspection_unchanged": true,
+  "cache_restore_unchanged": true,
+  "runtime_epochs": {
+    "78049": {
+      "process_id": 78049,
+      "observed_at": "2026-11-06T09:29:51.585453+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:37a87bcf89c4a7c5fc54261b8dee6c9826d60edd",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/reconciliation.py": "git-blob:0dc58c1a0739a4daff806b74b96ac7afbf35f0f6"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "78136": {
+      "process_id": 78136,
+      "observed_at": "2026-11-06T09:31:11.857392+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:37a87bcf89c4a7c5fc54261b8dee6c9826d60edd",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/reconciliation.py": "git-blob:0dc58c1a0739a4daff806b74b96ac7afbf35f0f6"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "78278": {
+      "process_id": 78278,
+      "observed_at": "2026-11-06T09:33:50.215340+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:37a87bcf89c4a7c5fc54261b8dee6c9826d60edd",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/reconciliation.py": "git-blob:0dc58c1a0739a4daff806b74b96ac7afbf35f0f6"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "78883": {
+      "process_id": 78883,
+      "observed_at": "2026-11-06T09:40:19.066629+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:37a87bcf89c4a7c5fc54261b8dee6c9826d60edd",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/native.py": "git-blob:a89b48433dbb6370258eeba1951a65de2085cd10",
+        "jvagent/harness/reconciliation.py": "git-blob:0dc58c1a0739a4daff806b74b96ac7afbf35f0f6"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "79392": {
+      "process_id": 79392,
+      "observed_at": "2026-11-06T09:47:26.041795+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:a48e5b723b044b89b1d20fa93da1ec8e1c65d101",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/native.py": "git-blob:60bbb5e029475a19feab81a7749758aba37a8957",
+        "jvagent/harness/reconciliation.py": "git-blob:f9fc3337643ffabe6b6f73d1e4ee153bb28a95b0"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "79466": {
+      "process_id": 79466,
+      "observed_at": "2026-11-06T09:48:12.744068+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:a48e5b723b044b89b1d20fa93da1ec8e1c65d101",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/native.py": "git-blob:60bbb5e029475a19feab81a7749758aba37a8957",
+        "jvagent/harness/reconciliation.py": "git-blob:f9fc3337643ffabe6b6f73d1e4ee153bb28a95b0"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "79691": {
+      "process_id": 79691,
+      "observed_at": "2026-11-06T09:50:29.360033+00:00",
+      "source_blobs": {
+        "jvagent/harness/accounting.py": "git-blob:a48e5b723b044b89b1d20fa93da1ec8e1c65d101",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/native.py": "git-blob:60bbb5e029475a19feab81a7749758aba37a8957",
+        "jvagent/harness/reconciliation.py": "git-blob:f9fc3337643ffabe6b6f73d1e4ee153bb28a95b0"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    "80047": {
+      "process_id": 80047,
+      "observed_at": "2026-11-06T09:55:54.350617+00:00",
+      "source_blobs": {
+        "jvagent/action/endpoints.py": "git-blob:9a04a9b1a1db556b8b005a6e37f11a8cdc92255f",
+        "jvagent/harness/accounting.py": "git-blob:a48e5b723b044b89b1d20fa93da1ec8e1c65d101",
+        "jvagent/harness/effect_recovery.py": "git-blob:f54ea04fb0a7ace0c0fb0f2b0d94b42f70966590",
+        "jvagent/harness/native.py": "git-blob:60bbb5e029475a19feab81a7749758aba37a8957",
+        "jvagent/harness/reconciliation.py": "git-blob:f9fc3337643ffabe6b6f73d1e4ee153bb28a95b0"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  },
+  "operator_api": {
+    "effect_approval_before_reserve": 422,
+    "reserve": 200,
+    "identical_reserve_retry": 200,
+    "identical_receipt_fields": true,
+    "stale_effect_digest_after_reserve": 422,
+    "effect_approval": 200,
+    "identical_effect_retry": 200,
+    "live_budget_update": 200,
+    "member_reserve": 403,
+    "member_effect_approval": 403,
+    "anonymous_inspect": 401
+  },
+  "regressions": {
+    "preflight_parent_test": "fails on falsely unknown billing; /private/tmp/jv-budget-preflight-mutation-final.txt",
+    "warm_action_cache_parent_test": "fails on stale cached entity; /private/tmp/jv-policy-cache-mutation.txt",
+    "mutation_revision": "git-commit:2067d7ce8f1d3a1b7da6f29698bbbfd7dc93e456",
+    "current_native_pg_311": 492,
+    "current_native_pg_312": 492
+  },
+  "limits": [
+    "First cohort retains the initial budget false-unknown defect and the abandoned early-hook checkpoint-loss attempt; no historical facts are silently corrected",
+    "A USD 0.000001 explicit reserve covers the retained pre-fix ambiguous record; it is not an invoice",
+    "Initial live-budget probe on the second cohort contacted the model because of a confirmed stale Action cache; actual cost is included",
+    "One stopped local write only; no distributed/external/multi-effect/child/background recovery qualification",
+    "SDK start without receipt establishes uncertainty, not proof the provider was contacted or billed",
+    "Invoice correction, closed-loop provider reconciliation, interrupted/failed transcript restoration, migration/deletion and enterprise release remain open",
+    "Browser end-to-end time unmeasured; seconds are Interaction durations",
+    "Initial operator fetch during backend startup failed before a request; manual retry is recorded separately"
+  ],
+  "artifact_encoding": {
+    "idempotency_key": "sdk-effect-key: prefix marks opaque SDK keys; remove prefix for original value",
+    "sha256": "sha256: prefix marks raw file hashes; original SQL assertions precede rendering"
+  }
+}

@@ -52,7 +52,11 @@ DISPATCH = frozenset(
         "messenger",
         "stress-seed",
         "stress_seed",
+        "harness-migrate",
     }
+)
+_VALUE_FLAGS = frozenset(
+    {"--dir", "--agent", "--skill", "--output", "--state-snapshot"}
 )
 
 
@@ -79,7 +83,8 @@ def _first_app_root_path(
             "--help",
         ]
     )
-    value_flags = frozenset(["--dir"])
+    value_flags = _VALUE_FLAGS
+    static_flags = static_flags | value_flags
     static_flags = static_flags | frozenset(STRESS_FLAG_NAMES)
     app: Optional[str] = None
     out: list[str] = []
@@ -165,6 +170,24 @@ def main() -> None:
         for handler in root_logger.handlers:
             handler.setLevel(logging.DEBUG)
         logging.getLogger("jvagent").setLevel(logging.DEBUG)
+
+    # Offline migration must refuse global mutation flags before their normal
+    # pre-dispatch processing. Skip flag values so a profile/output named like
+    # a subcommand cannot select another command accidentally.
+    tokens = iter(args)
+    for token in tokens:
+        if token in _VALUE_FLAGS:
+            next(tokens, None)
+        elif token in DISPATCH:
+            if token == "harness-migrate" and set(args) & {
+                "--purge",
+                "--update",
+                "--source",
+                "--merge",
+            }:
+                logger.error("harness-migrate refuses global graph mutation flags")
+                sys.exit(2)
+            break
 
     has_update = "--update" in args
     has_source = "--source" in args
@@ -254,6 +277,10 @@ def main() -> None:
             handle_bundle_command(args[1:], app_root=app_root)
         elif args[0] == "validate":
             sys.exit(run_validate(app_root, strict="--strict" in args))
+        elif args[0] == "harness-migrate":
+            from jvagent.cli.harness_migrate import handle_harness_migrate
+
+            sys.exit(handle_harness_migrate(args[1:], app_root))
         elif args[0] == "chat":
             from jvagent.cli.chat import handle_chat_command
 

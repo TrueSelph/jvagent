@@ -47,7 +47,7 @@ class Agent(Node):
         # Scope uniqueness to Agent entities only. Without the entity
         # discriminator, embedded jvagent deployments that share the
         # ``node`` collection with the host's nodes hit E11000 the moment
-        # any non-Agent node carries ``context.name`` (e.g. integral has
+        # any non-Agent node carries ``context.name`` (for example, an embedder has
         # nodes named "Default"). The partial filter must match every
         # row that the unique constraint applies to — adding
         # ``entity == "Agent"`` keeps the constraint correct without
@@ -222,9 +222,20 @@ class Agent(Node):
                     self.id, actions_manager, archetype
                 )
                 if keeper_id:
-                    return await Action.get(keeper_id)
-            return await load_action_from_record(records[0])
-        return await load_action_from_record(records[0])
+                    action = await Action.get(keeper_id)
+                    if action is not None:
+                        return action
+                    raise RuntimeError(
+                        "configured AccessControlAction could not be loaded"
+                    )
+            action = await load_action_from_record(records[0])
+            if action is not None:
+                return action
+            raise RuntimeError("configured AccessControlAction could not be loaded")
+        action = await load_action_from_record(records[0])
+        if action is not None:
+            return action
+        raise RuntimeError("configured AccessControlAction could not be loaded")
 
     async def get_actions(self, enabled_only: bool = False) -> List[Any]:
         """Get all actions for this agent.
@@ -295,24 +306,24 @@ class Agent(Node):
         Returns:
             ResponseBus instance for this agent
         """
-        # Honor an explicitly injected bus (test seam / deliberate override)
-        # before consulting the process registry. A rematerialized cached Agent
-        # has ``_response_bus is None`` and still resolves to the shared registry
-        # bus below, so the cache-churn fix is preserved.
-        if self._response_bus is not None:
-            return self._response_bus
-
         from jvagent.action.response.response_bus import (
             ResponseBus,
             get_agent_response_bus,
         )
+        from jvagent.core.execution_owner import uses_native_harness
 
-        agent_id = getattr(self, "id", None)
-        if agent_id:
-            bus = await get_agent_response_bus(str(agent_id))
-            self._response_bus = bus
-            return bus
-        self._response_bus = ResponseBus()
+        native = await uses_native_harness(self)
+        # Preserve deliberate injection and the process registry's cache-churn
+        # contract. Refresh ownership from the graph even for an existing bus.
+        if self._response_bus is None:
+            agent_id = getattr(self, "id", None)
+            self._response_bus = (
+                await get_agent_response_bus(str(agent_id))
+                if agent_id
+                else ResponseBus()
+            )
+        if isinstance(self._response_bus, ResponseBus):
+            self._response_bus.native_execution = native
         return self._response_bus
 
     async def send_proactive_message(

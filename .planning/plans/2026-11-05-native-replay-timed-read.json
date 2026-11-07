@@ -1,0 +1,39 @@
+{
+  "status": 200,
+  "first_frame_ms": 102.2999999821186,
+  "all_frames_ms": 177,
+  "frames": [
+    {
+      "id": "o.ResponseMessage.corr-7e43587fc9244758accbd4b23bd28927",
+      "interaction_id": "n.Interaction.fb46b204accb418f9b3ccc9a",
+      "content": "READY",
+      "category": "user",
+      "timestamp": "2026-11-05T22:02:46.773048+00:00",
+      "replayed": true
+    },
+    {
+      "id": "o.ResponseMessage.6e5bd4fbc00d418b877d7016",
+      "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+      "content": "mcp_records__lookup_record",
+      "category": "thought",
+      "timestamp": "2026-11-05T22:03:15.335776+00:00",
+      "replayed": true
+    },
+    {
+      "id": "o.ResponseMessage.40807fb0ae114dbbbdeea30a",
+      "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+      "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+      "category": "thought",
+      "timestamp": "2026-11-05T22:03:15.401473+00:00",
+      "replayed": true
+    },
+    {
+      "id": "o.ResponseMessage.a987b913e33c442794efc95327a811e2",
+      "interaction_id": "n.Interaction.97a0e003139e4104be102cdd",
+      "content": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+      "category": "user",
+      "timestamp": "2026-11-05T22:03:16.837603+00:00",
+      "replayed": true
+    }
+  ]
+}

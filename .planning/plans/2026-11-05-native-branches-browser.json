@@ -1,0 +1,1026 @@
+{
+  "observed_at": "2026-11-05T18:12:26.222Z",
+  "url": "http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0",
+  "requests": [
+    {
+      "started_at": "2026-11-05T18:11:16.382Z",
+      "status": 200,
+      "duration_ms": 9731.90000000596,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+          "session_id": "sess_06071a93260b4a5c",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.41a9e274173244ad85bc8e34",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "interview__start",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_KiagZ1CSY62ojRzSGrtlVsoC",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "interview_type": "conversation"
+              }
+            },
+            "timestamp": "2026-11-05T14:11:19.981489"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.610e2569f9544e8ca4592d98",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"tier\", \"prompt\": \"Premium or standard membership?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"premium_note\", \"prompt\": \"What premium detail should I record?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"standard_note\", \"prompt\": \"What standard detail should I record?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"tier\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_KiagZ1CSY62ojRzSGrtlVsoC",
+            "metadata": {
+              "tool_name": "interview__start",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"interview_type\": \"conversation\", \"fields\": {}, \"field_reference\": [{\"key\": \"tier\", \"prompt\": \"Premium or standard membership?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"premium_note\", \"prompt\": \"What premium detail should I record?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"standard_note\", \"prompt\": \"What standard detail should I record?\", \"guidance\": \"\", \"required\": true}, {\"key\": \"email\", \"prompt\": \"What email address should I record?\", \"guidance\": \"\", \"required\": true}], \"start_field\": \"tier\", \"usage_note\": \"field_reference is the full field catalog (key, prompt, guidance, required). It is sent once here; later tool results carry only outcomes and directives. Re-pull via interview__get_status if lost.\", \"confirm\": \"manual\", \"fresh_session\": true}"
+            },
+            "timestamp": "2026-11-05T14:11:20.033198"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.1a128309c7854d249ef38de0",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "interview__set_fields",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_1RncFrg0tmR7fHSrFu3MZzqc",
+            "metadata": {
+              "tool_name": "interview__set_fields",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "fields": {
+                  "tier": "premium",
+                  "premium_note": "priority workshop access",
+                  "email": "branch.member@example.com"
+                }
+              }
+            },
+            "timestamp": "2026-11-05T14:11:22.235308"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.d233af52d4594a69b3077057",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"tier\", \"stored\": true, \"value\": \"premium\"}, {\"field\": \"premium_note\", \"stored\": true, \"value\": \"priority workshop access\"}, {\"field\": \"email\", \"stored\": true, \"value\": \"branch.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_1RncFrg0tmR7fHSrFu3MZzqc",
+            "metadata": {
+              "tool_name": "interview__set_fields",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"active\", \"results\": [{\"field\": \"tier\", \"stored\": true, \"value\": \"premium\"}, {\"field\": \"premium_note\", \"stored\": true, \"value\": \"priority workshop access\"}, {\"field\": \"email\", \"stored\": true, \"value\": \"branch.member@example.com\"}], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}"
+            },
+            "timestamp": "2026-11-05T14:11:22.283073"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.348c3e22cbf0443c927da8da",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "interview__review",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_8AaeG32UDxqtLgRfeWiOkncW",
+            "metadata": {
+              "tool_name": "interview__review",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {}
+            },
+            "timestamp": "2026-11-05T14:11:23.707125"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.f6d8c7d0d3364a4896154633",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Tier**: premium\\n\\n**Premium Note**: priority workshop access\\n\\n**Email**: branch.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"tier\": \"premium\", \"premium_note\": \"priority workshop access\", \"email\": \"branch.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Tier**: premium\\n\\n**Premium Note**: priority workshop access\\n\\n**Email**: branch.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_8AaeG32UDxqtLgRfeWiOkncW",
+            "metadata": {
+              "tool_name": "interview__review",
+              "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Tier**: premium\\n\\n**Premium Note**: priority workshop access\\n\\n**Email**: branch.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"tier\": \"premium\", \"premium_note\": \"priority workshop access\", \"email\": \"branch.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Tier**: premium\\n\\n**Premium Note**: priority workshop access\\n\\n**Email**: branch.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}"
+            },
+            "timestamp": "2026-11-05T14:11:23.779424"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-3afcb866c4b24dd189b7bf4dbca08a33",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "adhoc",
+            "content": "Please review the details:\n\n**Tier**: premium\n\n**Premium Note**: priority workshop access\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:11:25.999041"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-3afcb866c4b24dd189b7bf4dbca08a33",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:11:26.016342"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_06071a93260b4a5c",
+          "response": "Please review the details:\n\n**Tier**: premium\n\n**Premium Note**: priority workshop access\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+          "interaction": {
+            "id": "n.Interaction.68b04344d4bd454cabaf28ad",
+            "utterance": "NATIVE-BRANCH-CHECK: Please record a premium membership request. My premium detail is priority workshop access and my email is branch.member@example.com. Please show me the review before completing.",
+            "response": "Please review the details:\n\n**Tier**: premium\n\n**Premium Note**: priority workshop access\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_ae7e668d20b2",
+                "title": "Membership request",
+                "description": "Collect and confirm a membership selection without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T18:11:20.010093+00:00",
+                "updated_at": "2026-11-05T18:11:20.013332+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-3afcb866c4b24dd189b7bf4dbca08a33"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-3afcb866c4b24dd189b7bf4dbca08a33:1",
+                  "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1215,
+                    "completion_tokens": 19,
+                    "total_tokens": 1234,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002582,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-3afcb866c4b24dd189b7bf4dbca08a33:2",
+                  "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1442,
+                    "completion_tokens": 34,
+                    "total_tokens": 1476,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.003156,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-3afcb866c4b24dd189b7bf4dbca08a33:3",
+                  "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+                  "native_step_index": 3,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1577,
+                    "completion_tokens": 13,
+                    "total_tokens": 1590,
+                    "cached_prompt_tokens": 1408,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001146,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-3afcb866c4b24dd189b7bf4dbca08a33:4",
+                  "native_run_id": "corr-3afcb866c4b24dd189b7bf4dbca08a33",
+                  "native_step_index": 4,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1878,
+                    "completion_tokens": 59,
+                    "total_tokens": 1937,
+                    "cached_prompt_tokens": 1536,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001924,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 6112,
+              "completion_tokens": 125,
+              "total_tokens": 6237,
+              "cached_prompt_tokens": 2944,
+              "cache_write_tokens": 0,
+              "model_call_count": 4,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.008808,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.008808,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T18:11:26.016798+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.68b04344d4bd454cabaf28ad",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_06071a93260b4a5c"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started_at": "2026-11-05T18:11:36.409Z",
+      "status": 200,
+      "duration_ms": 5398.699999988079,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+          "session_id": "sess_06071a93260b4a5c",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.ea936e9a52ba4f7c935df95b",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "adhoc",
+            "content": "interview__set_fields",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_Ky1Kmu0gkR7y1cdI2Go2VtxB",
+            "metadata": {
+              "tool_name": "interview__set_fields",
+              "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "fields": {
+                  "tier": "standard",
+                  "standard_note": "monthly community sessions"
+                }
+              }
+            },
+            "timestamp": "2026-11-05T14:11:38.678577"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.8aa4ae242946466babc0487b",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"review\", \"results\": [{\"field\": \"tier\", \"stored\": true, \"value\": \"standard\"}, {\"field\": \"standard_note\", \"stored\": true, \"value\": \"monthly community sessions\"}], \"pruned\": [\"premium_note\"], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_Ky1Kmu0gkR7y1cdI2Go2VtxB",
+            "metadata": {
+              "tool_name": "interview__set_fields",
+              "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"review\", \"results\": [{\"field\": \"tier\", \"stored\": true, \"value\": \"standard\"}, {\"field\": \"standard_note\", \"stored\": true, \"value\": \"monthly community sessions\"}], \"pruned\": [\"premium_note\"], \"response_directive\": \"Call interview__review.\", \"next_tool\": \"interview__review\"}"
+            },
+            "timestamp": "2026-11-05T14:11:38.728819"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.3180e78d854e429e9404e2c8",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "adhoc",
+            "content": "interview__review",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_7aFMdTYTSPRyTMMvY9wkXRzr",
+            "metadata": {
+              "tool_name": "interview__review",
+              "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {}
+            },
+            "timestamp": "2026-11-05T14:11:39.727323"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.ed5d51ef1e8f4df28b8419b3",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Tier**: standard\\n\\n**Standard Note**: monthly community sessions\\n\\n**Email**: branch.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"tier\": \"standard\", \"standard_note\": \"monthly community sessions\", \"email\": \"branch.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Tier**: standard\\n\\n**Standard Note**: monthly community sessions\\n\\n**Email**: branch.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_7aFMdTYTSPRyTMMvY9wkXRzr",
+            "metadata": {
+              "tool_name": "interview__review",
+              "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"review\", \"response_directive\": \"Tell the user or ask the user: Please review the details.\\n\\n**Tier**: standard\\n\\n**Standard Note**: monthly community sessions\\n\\n**Email**: branch.member@example.com\\n\\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\\u2063Close with exactly that confirmation ask (paraphrase lightly if needed). Those quoted words ('Confirm' / 'Yes') are for the USER to say \\u2014 never send a reply that is just 'Confirm' or 'Yes'. This is a confirmation step only \\u2014 the process is NOT complete yet. Do NOT say the process is complete or that any account or record has been created. Do NOT call interview__complete until they explicitly confirm. Do NOT call interview__review again.\", \"fields\": {\"tier\": \"standard\", \"standard_note\": \"monthly community sessions\", \"email\": \"branch.member@example.com\"}, \"skipped_fields\": [], \"summary\": \"**Tier**: standard\\n\\n**Standard Note**: monthly community sessions\\n\\n**Email**: branch.member@example.com\", \"confirm\": \"manual\", \"system_message\": \"Confirmation step \\u2014 wait for user to confirm before interview__complete.\"}"
+            },
+            "timestamp": "2026-11-05T14:11:39.796188"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-11799f2b3c74440bb3c979c1a555c8e3",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "adhoc",
+            "content": "Please review the details:\n\n**Tier**: standard\n\n**Standard Note**: monthly community sessions\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:11:41.709400"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-11799f2b3c74440bb3c979c1a555c8e3",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:11:41.728587"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_06071a93260b4a5c",
+          "response": "Please review the details:\n\n**Tier**: standard\n\n**Standard Note**: monthly community sessions\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+          "interaction": {
+            "id": "n.Interaction.5943185f6410415ca9a76574",
+            "utterance": "Change that to standard membership, with standard detail monthly community sessions. Keep my email the same. Please review the revised details before completing.",
+            "response": "Please review the details:\n\n**Tier**: standard\n\n**Standard Note**: monthly community sessions\n\n**Email**: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_ae7e668d20b2",
+                "title": "Membership request",
+                "description": "Collect and confirm a membership selection without external effects",
+                "status": "active",
+                "created_at": "2026-11-05T18:11:20.010093+00:00",
+                "updated_at": "2026-11-05T18:11:20.013332+00:00",
+                "completed_at": null,
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-11799f2b3c74440bb3c979c1a555c8e3"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-11799f2b3c74440bb3c979c1a555c8e3:1",
+                  "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1970,
+                    "completion_tokens": 27,
+                    "total_tokens": 1997,
+                    "cached_prompt_tokens": 1792,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001468,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-11799f2b3c74440bb3c979c1a555c8e3:2",
+                  "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 2086,
+                    "completion_tokens": 13,
+                    "total_tokens": 2099,
+                    "cached_prompt_tokens": 1920,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001396,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-11799f2b3c74440bb3c979c1a555c8e3:3",
+                  "native_run_id": "corr-11799f2b3c74440bb3c979c1a555c8e3",
+                  "native_step_index": 3,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 2387,
+                    "completion_tokens": 59,
+                    "total_tokens": 2446,
+                    "cached_prompt_tokens": 2048,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002174,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 6443,
+              "completion_tokens": 99,
+              "total_tokens": 6542,
+              "cached_prompt_tokens": 5760,
+              "cache_write_tokens": 0,
+              "model_call_count": 3,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.005038,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.005038,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T18:11:41.728958+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.5943185f6410415ca9a76574",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_06071a93260b4a5c"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "started_at": "2026-11-05T18:12:08.974Z",
+      "status": 200,
+      "duration_ms": 4837.700000017881,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+          "session_id": "sess_06071a93260b4a5c",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.5a5a6e842c27414c9c8f7925",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+            "message_type": "adhoc",
+            "content": "interview__complete",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_tHmoterdjc8q3rX9Te3Dwzql",
+            "metadata": {
+              "tool_name": "interview__complete",
+              "native_run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {}
+            },
+            "timestamp": "2026-11-05T14:12:11.823438"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.94fbe4570f094bf787b952df",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+            "message_type": "adhoc",
+            "content": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"tier\": \"standard\", \"email\": \"branch.member@example.com\", \"standard_note\": \"monthly community sessions\"}}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_tHmoterdjc8q3rX9Te3Dwzql",
+            "metadata": {
+              "tool_name": "interview__complete",
+              "native_run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{\"ok\": true, \"status\": \"completed\", \"response_directive\": \"Interview completed successfully.\", \"fields\": {\"tier\": \"standard\", \"email\": \"branch.member@example.com\", \"standard_note\": \"monthly community sessions\"}}"
+            },
+            "timestamp": "2026-11-05T14:12:11.906417"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-d94441b71cbc423ba22709f7fef070d4",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+            "message_type": "adhoc",
+            "content": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: monthly community sessions\n- Email: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:12:13.664226"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-d94441b71cbc423ba22709f7fef070d4",
+            "session_id": "sess_06071a93260b4a5c",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T14:12:13.683468"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_06071a93260b4a5c",
+          "response": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: monthly community sessions\n- Email: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!",
+          "interaction": {
+            "id": "n.Interaction.fa3e647f96554341a7b075a4",
+            "utterance": "Confirm the revised standard membership details.",
+            "response": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: monthly community sessions\n- Email: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [
+              {
+                "id": "task_ae7e668d20b2",
+                "title": "Membership request",
+                "description": "Collect and confirm a membership selection without external effects",
+                "status": "completed",
+                "created_at": "2026-11-05T18:11:20.010093+00:00",
+                "updated_at": "2026-11-05T18:12:11.863309+00:00",
+                "completed_at": "2026-11-05T18:12:11.863309+00:00",
+                "task_type": "SKILL",
+                "owner_action": "conversation",
+                "data": {
+                  "interview_type": "conversation",
+                  "interview_managed": true
+                },
+                "steps": [],
+                "blocked_on": [],
+                "resumes": null,
+                "order": 0,
+                "seed": {},
+                "snapshot": {},
+                "blocked": false
+              }
+            ],
+            "parameters": [
+              {
+                "scope": "orchestration",
+                "condition": "conducting an interview or asking the user questions on behalf of a skill",
+                "response": "Stay in the interview's persona and purpose; do not volunteer information beyond what the interview prompts for, do not skip or fabricate answers, and do not break out of the flow.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "responding while an interview session is active",
+                "response": "Keep replies focused on the current interview question; do not offer unrelated help or switch topics until the interview completes or is cancelled.",
+                "action_name": "InterviewAction",
+                "executed": false
+              },
+              {
+                "scope": "response",
+                "condition": "the user refuses, hesitates, or says they don't want to provide a required piece of information during an interview",
+                "response": "Let the user know the detail is required to continue. On the first refusal, just acknowledge and re-ask — don't mention cancel. Only offer cancel as an option after the user has refused more than once or seems stuck on the required question. Keep it light, don't push cancel.",
+                "action_name": "InterviewAction",
+                "executed": false
+              }
+            ],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-d94441b71cbc423ba22709f7fef070d4"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-d94441b71cbc423ba22709f7fef070d4:1",
+                  "native_run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 2459,
+                    "completion_tokens": 13,
+                    "total_tokens": 2472,
+                    "cached_prompt_tokens": 1152,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.003294,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-d94441b71cbc423ba22709f7fef070d4:2",
+                  "native_run_id": "corr-d94441b71cbc423ba22709f7fef070d4",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 2527,
+                    "completion_tokens": 58,
+                    "total_tokens": 2585,
+                    "cached_prompt_tokens": 2304,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002062,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 4986,
+              "completion_tokens": 71,
+              "total_tokens": 5057,
+              "cached_prompt_tokens": 3456,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.005356,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.005356,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T18:12:13.683844+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.fa3e647f96554341a7b075a4",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_06071a93260b4a5c"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "snapshots": [
+    {
+      "phase": "premium-review",
+      "text": "NATIVE-BRANCH-CHECK: Please record a premium membership request. My premium detail is priority workshop access and my email is branch.member@example.com. Please show me the review before completing.\n\n3 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nTier: premium\n\nPremium Note: priority workshop access\n\nEmail: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 6.2k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "standard-review",
+      "text": "NATIVE-BRANCH-CHECK: Please record a premium membership request. My premium detail is priority workshop access and my email is branch.member@example.com. Please show me the review before completing.\n\n3 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nTier: premium\n\nPremium Note: priority workshop access\n\nEmail: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 6.2k tokens\n\nChange that to standard membership, with standard detail monthly community sessions. Keep my email the same. Please review the revised details before completing.\n\n2 tool calls\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nTier: standard\n\nStandard Note: monthly community sessions\n\nEmail: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 6.5k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "completed-after-backend-restart",
+      "text": "NATIVE-BRANCH-CHECK: Please record a premium membership request. My premium detail is priority workshop access and my email is branch.member@example.com. Please show me the review before completing.\n\n3 tool calls\nUsed tool: interview__start\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nTier: premium\n\nPremium Note: priority workshop access\n\nEmail: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 6.2k tokens\n\nChange that to standard membership, with standard detail monthly community sessions. Keep my email the same. Please review the revised details before completing.\n\n2 tool calls\nUsed tool: interview__set_fields\nUsed tool: interview__review\n\nPlease review the details:\n\nTier: standard\n\nStandard Note: monthly community sessions\n\nEmail: branch.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.\n\ngpt-4.1-2025-04-14 · 6.5k tokens\n\nConfirm the revised standard membership details.\n\n1 tool call\nUsed tool: interview__complete\n\nYour standard membership request with the following details has been recorded:\n\nTier: standard\nStandard Note: monthly community sessions\nEmail: branch.member@example.com\n\nThe process is now complete. If you need to make another request or update your details, just let me know!\n\ngpt-4.1-2025-04-14 · 5.1k tokens\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    }
+  ],
+  "assets": [
+    "http://127.0.0.1:3136/assets/main-CLaLzRzO.js"
+  ]
+}

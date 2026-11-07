@@ -24,7 +24,12 @@ from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import (
+    AuthenticationError,
+    ResourceNotFoundError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from jvspatial.storage.exceptions import InvalidPathError, PathTraversalError
 from jvspatial.storage.security import PathSanitizer
 from pydantic import Field
@@ -32,6 +37,7 @@ from python_multipart.multipart import FormParser, parse_options_header
 
 from jvagent.core.agent import Agent
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.harness.completion_tool import CompleteText
 
 from .config import (
     get_pageindex_doc_description,
@@ -60,6 +66,7 @@ from .documents import (
 )
 from .jvforge_assimilate import assimilate_via_jvforge, assimilate_via_jvforge_async
 from .jvforge_routing import resolve_effective_jvforge_base
+from .native_search import Complete
 from .pageindex_action import (
     PageIndexAction,
     ensure_ingestion_config_for_agent,
@@ -792,9 +799,14 @@ async def _do_assimilate(
     convert_to_markdown: bool = False,
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
+    complete: Optional[CompleteText] = None,
+    pdf_complete: Optional[Complete] = None,
+    drive_source_key: Optional[str] = None,
+    drive_revision_key: Optional[str] = None,
+    drive_operation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
-    assimilate_kw = {
+    assimilate_kw: dict[str, Any] = {
         "doc_name": doc_name,
         "model": model,
         "if_add_node_summary": if_add_node_summary,
@@ -807,6 +819,14 @@ async def _do_assimilate(
         "ocr": ocr,
         "docling_ocr_engine": docling_ocr_engine,
     }
+    if drive_source_key is not None:
+        assimilate_kw["drive_source_key"] = drive_source_key
+        assimilate_kw["drive_revision_key"] = drive_revision_key
+        assimilate_kw["drive_operation_id"] = drive_operation_id
+    if complete is not None:
+        assimilate_kw["complete"] = complete
+    if pdf_complete is not None:
+        assimilate_kw["pdf_complete"] = pdf_complete
 
     work_dir = await _ensure_pageindex_work_dir()
 
@@ -855,6 +875,83 @@ async def _do_assimilate(
 
     raise ValidationError(
         f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+    )
+
+
+async def _ingest_locally(
+    request: Request, agent_id: str, content: bytes, ext: str, **options: Any
+) -> dict[str, Any]:
+    """Select a qualified ingestion path for the target's native owner."""
+    from jvagent.core.execution_owner import native_harness_action
+
+    agent = await Agent.get(agent_id)
+    if agent is None:
+        raise ResourceNotFoundError("PageIndex agent not found")
+    native = await native_harness_action(agent)
+    if native is None:
+        return await _do_assimilate(content, ext, **options)
+
+    from .native_ingest import run_native_markdown_ingest, run_native_pdf_ingest
+
+    profile = await agent.get_action_by_type("PageIndexAction")
+    if profile is None:
+        profile = await agent.get_action_by_type("PageIndexReadAction")
+    if not isinstance(profile, PageIndexAction) or not profile.enabled:
+        raise ValidationError("Native PageIndex ingestion is not enabled")
+    principal = getattr(request.state, "user", None)
+    actor = (
+        principal.get("id")
+        if isinstance(principal, dict)
+        else getattr(principal, "id", None)
+    )
+    if not isinstance(actor, str) or not actor:
+        raise AuthenticationError("An authenticated operator is required")
+    if options["collection_name"] != agent_id:
+        raise ValidationError("Native ingestion requires this agent's collection")
+    if ext == ".pdf":
+        if profile.native_pdf_ingestion is not True or options["convert_to_markdown"]:
+            raise ValidationError(
+                "Native classic PDF ingestion is not enabled for this upload"
+            )
+        from pydantic_ai.exceptions import UsageLimitExceeded
+        from pydantic_ai_harness.spend import SpendLimitExceeded
+
+        async def pdf_assimilate(complete: Complete) -> dict[str, Any]:
+            return await _do_assimilate(content, ext, pdf_complete=complete, **options)
+
+        try:
+            return await run_native_pdf_ingest(
+                native,
+                agent_id=agent_id,
+                actor=actor,
+                doc_name=options["doc_name"],
+                requested_model=options.get("model"),
+                configured_model=profile.native_ingestion_model,
+                assimilate=pdf_assimilate,
+            )
+        except (UsageLimitExceeded, SpendLimitExceeded):
+            raise ValidationError(
+                "PDF ingestion reached the configured model budget"
+            ) from None
+    if (
+        ext not in PAGEINDEX_TEXT_LIKE_EXTENSIONS
+        or profile.native_markdown_ingestion is not True
+    ):
+        raise ValidationError(
+            "Native Markdown ingestion is not enabled for this upload"
+        )
+
+    async def assimilate(complete: CompleteText) -> dict[str, Any]:
+        return await _do_assimilate(content, ext, complete=complete, **options)
+
+    return await run_native_markdown_ingest(
+        native,
+        agent_id=agent_id,
+        actor=actor,
+        doc_name=options["doc_name"],
+        requested_model=options.get("model"),
+        assimilate=assimilate,
+        configured_model=profile.native_ingestion_model,
     )
 
 
@@ -1286,7 +1383,9 @@ async def ingest_document_endpoint(
                         chunking_strategy=chunking_strategy_eff,
                     )
             else:
-                result = await _do_assimilate(
+                result = await _ingest_locally(
+                    request,
+                    agent_id,
                     content,
                     ext,
                     doc_name=effective_doc_name,
@@ -1795,6 +1894,7 @@ async def delete_document_chunk_endpoint(
     ),
 )
 async def search_documents_endpoint(
+    request: Request,
     agent_id: str,
     query: str = Field(..., description="Search query text"),
     doc_name: Optional[str] = Field(
@@ -1854,17 +1954,64 @@ async def search_documents_endpoint(
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     metadata_filter = _parse_metadata(metadata)
-    results = await search_documents(
-        query=query,
-        doc_name=doc_name,
-        strategy=strategy,
-        limit=limit,
-        collection_name=agent_id,
-        metadata_filter=metadata_filter,
-        include_references=include_references,
-        only_enabled=only_enabled,
-        include=include,
-    )
+    search_args: dict[str, Any] = {
+        "query": query,
+        "doc_name": doc_name,
+        "strategy": strategy,
+        "limit": limit,
+        "collection_name": agent_id,
+        "metadata_filter": metadata_filter,
+        "include_references": include_references,
+        "only_enabled": only_enabled,
+        "include": include,
+    }
+    if strategy == "tree_search":
+        from jvagent.core.execution_owner import native_harness_action
+
+        agent = await Agent.get(agent_id)
+        if agent is None:
+            raise ResourceNotFoundError("PageIndex agent not found")
+        action = await native_harness_action(agent)
+        if action is not None:
+            from .native_search import run_native_search
+
+            profile = await agent.get_action_by_type("PageIndexReadAction")
+            if (
+                not isinstance(profile, PageIndexAction)
+                or not profile.enabled
+                or ((profile.config or {}).get("strategy") or profile.strategy)
+                != "tree_search"
+            ):
+                raise ValidationError("Native PageIndex tree search is not enabled")
+            principal = getattr(request.state, "user", None)
+            actor = (
+                principal.get("id")
+                if isinstance(principal, dict)
+                else getattr(principal, "id", None)
+            )
+            if not isinstance(actor, str) or not actor:
+                raise AuthenticationError("An authenticated operator is required")
+
+            async def search(complete: Any) -> list[dict[str, Any]]:
+                return await search_documents(**search_args, complete=complete)
+
+            try:
+                return {
+                    "results": await run_native_search(
+                        action,
+                        agent_id=agent_id,
+                        actor=actor,
+                        query=query,
+                        search=search,
+                        configured_model=profile.native_search_model,
+                    )
+                }
+            except Exception as exc:
+                logger.warning("Native PageIndex search failed: %s", type(exc).__name__)
+                raise ServiceUnavailableError(
+                    "Native PageIndex search failed"
+                ) from None
+    results = await search_documents(**search_args)
     return {"results": results}
 
 
@@ -2010,21 +2157,31 @@ async def import_documents_endpoint(
 )
 async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, Any]:
     """Inbound webhook: jvforge LLM completion or process-document graph import."""
+    from jvagent.core.execution_owner import native_harness_action
+
+    from .webhook_auth import webhook_actor
+
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
             message=f"Agent with ID '{agent_id}' not found",
             details={"agent_id": agent_id},
         )
+    native = await native_harness_action(agent)
     core_action = await agent.get_action_by_type("PageIndexAction")
-    if not core_action or not isinstance(core_action, PageIndexAction):
+    if core_action is None and native is not None:
+        core_action = await agent.get_action_by_type("PageIndexReadAction")
+    if not isinstance(core_action, PageIndexAction) or not core_action.enabled:
         raise ResourceNotFoundError(
             message="PageIndexAction not found for this agent",
             details={"agent_id": agent_id},
         )
+    actor = webhook_actor(
+        getattr(request.state, "user", None), core_action.webhook_api_key_id
+    )
     data = await request.json()
     if not isinstance(data, dict):
-        data = await request.body()
+        raise ValidationError("PageIndex webhook payload must be an object")
 
     process_url = (data.get("process_document_url") or "").strip()
     if process_url:
@@ -2085,6 +2242,31 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             },
         }
     else:
+        if native is not None:
+            from .native_callback import run_native_callback
+
+            if core_action.native_webhook_completion is not True:
+                raise ValidationError(
+                    "Native PageIndex webhook completion is not enabled"
+                )
+            try:
+                result = await run_native_callback(
+                    native,
+                    agent_id=agent_id,
+                    actor=actor,
+                    payload=data,
+                    configured_model=core_action.native_callback_model,
+                )
+            except ValidationError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "Native PageIndex callback failed: %s", type(exc).__name__
+                )
+                raise ServiceUnavailableError(
+                    "Native PageIndex callback failed"
+                ) from None
+            return {"status": "received", "result": result}
         try:
             result = await core_action.handle_webhook_payload(data)
             return {"status": "received", "result": result}

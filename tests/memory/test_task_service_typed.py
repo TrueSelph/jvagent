@@ -43,6 +43,19 @@ class TestTaskStoreCreate:
         assert task["description"] == "test task"
 
     @pytest.mark.asyncio
+    async def test_create_can_persist_an_active_task_in_one_write(self):
+        store, conv = _make_store()
+        handle = await store.create(
+            title="pilot task",
+            description="pilot task",
+            initial_status="active",
+            snapshot={"status": "running"},
+        )
+        assert handle.status == "active"
+        assert conv.tasks[0]["snapshot"] == {"status": "running"}
+        assert conv.save.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_create_sets_owner_action(self):
         store, conv = _make_store()
         handle = await store.create(
@@ -101,6 +114,37 @@ class TestTaskHandleComplete:
         await handle.complete(result="Done.")
         task = conv.tasks[0]
         assert task["data"].get("result") == "Done."
+
+    @pytest.mark.asyncio
+    async def test_complete_persists_terminal_snapshot_in_the_same_write(self):
+        store, conv = _make_store()
+        handle = await store.create(title="t", description="t")
+        await handle.start()
+        writes_before = conv.save.await_count
+
+        await handle.complete(result="Done.", snapshot={"status": "complete"})
+
+        task = conv.tasks[0]
+        assert task["status"] == "completed"
+        assert task["snapshot"] == {"status": "complete"}
+        assert conv.save.await_count == writes_before + 1
+
+
+class TestTaskHandleSnapshot:
+    @pytest.mark.asyncio
+    async def test_snapshot_mutation_rolls_back_when_persistence_fails(self):
+        store, conv = _make_store()
+        handle = await store.create(
+            title="t", description="t", snapshot={"checkpoint": "previous"}
+        )
+        previous = dict(handle.snapshot)
+        conv.save.side_effect = OSError("storage unavailable")
+
+        with pytest.raises(OSError, match="storage unavailable"):
+            await handle.set_snapshot({"checkpoint": "uncommitted"})
+
+        assert handle.snapshot == previous
+        assert conv.tasks[0]["snapshot"] == previous
 
 
 # ---------------------------------------------------------------------------

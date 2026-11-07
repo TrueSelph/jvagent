@@ -1,0 +1,404 @@
+{
+  "parent_revision": "git-commit:762223a36c41c7e14a83d0e73126b02c8b5e5cb8",
+  "final_source": {
+    "process_id": 16356,
+    "observed_at": "2026-11-07T06:11:28.688276+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/endpoints.py": "git-blob:bd1d23e19cda5a4c5690e5d870c7926c7189f8a0",
+      "jvagent/action/pageindex/native_search.py": "git-blob:258361976b59d0ff75a936d8e854c0e0ed145a05",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "frontend_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "fixture": {
+    "http_backend": 8185,
+    "jvchat_frontend": 3146,
+    "graph": "disposable PostgreSQL",
+    "index": "isolated JSON"
+  },
+  "browser": [
+    {
+      "scenario": "initial ranking requests with unsupported hook signature",
+      "status": 503,
+      "elapsed_ms": [
+        1479,
+        105
+      ],
+      "source": "earlier source epoch"
+    },
+    {
+      "scenario": "authenticated admin Harbor lookup",
+      "status": 200,
+      "elapsed_ms": 3904,
+      "observed": "Dock Room 4, HARBOR-41 and stored source URL"
+    },
+    {
+      "scenario": "unauthenticated lookup",
+      "status": 401,
+      "source": "backend access log; browser exposed fetch error"
+    },
+    {
+      "scenario": "authenticated other collection lookup",
+      "status": 200,
+      "elapsed_ms": 83,
+      "observed": "empty results"
+    },
+    {
+      "scenario": "jvchat replay",
+      "observed": "load_capability and pageindex__search completed, Fern room and WILLOW-57 with named source"
+    },
+    {
+      "scenario": "admin lookup after removing sibling import",
+      "status": 200,
+      "elapsed_ms": 4438,
+      "observed": "Dock Room 4, HARBOR-41 and stored source URL"
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.31431b2b7ace42f1987a0438",
+      "channel": "pageindex_admin_search",
+      "closed": true,
+      "utterance": "Find the check-in room and verification code in the Harbor handbook",
+      "response": null,
+      "elapsed_seconds": 0.049705,
+      "outcome": "failed",
+      "failure_type": "TypeError",
+      "usage": {
+        "total_tokens": 0,
+        "model_call_count": 0,
+        "estimated_cost_usd": 0.0,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [],
+      "runs": [],
+      "tool_events": [],
+      "conversation_spend": null
+    },
+    {
+      "interaction_id": "n.Interaction.01b6326fe742424195061669",
+      "channel": "pageindex_admin_search",
+      "closed": true,
+      "utterance": "Harbor check-in",
+      "response": null,
+      "elapsed_seconds": 0.039616,
+      "outcome": "failed",
+      "failure_type": "TypeError",
+      "usage": {
+        "total_tokens": 0,
+        "model_call_count": 0,
+        "estimated_cost_usd": 0.0,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [],
+      "runs": [],
+      "tool_events": [],
+      "conversation_spend": null
+    },
+    {
+      "interaction_id": "n.Interaction.1fbb5ba07ed941d8934518ad",
+      "channel": "pageindex_admin_search",
+      "closed": true,
+      "utterance": "Find the check-in room and verification code in the Harbor handbook",
+      "response": "[{\"doc_name\": \"Harbor Operations Handbook\", \"title\": \"Harbor check-in\", \"start_index\": null, \"end_index\": null, \"node_id\": \"n.DocumentNode.f00027aacad34e32b25bc7aa\", \"summary\": \"Harbor induction check-in is in Dock Room 4. Verification code HARBOR-41.\", \"doc_url\": \"https://example.com/harbor-operations\"}]",
+      "elapsed_seconds": 2.47614,
+      "outcome": "completed",
+      "failure_type": null,
+      "usage": {
+        "total_tokens": 269,
+        "model_call_count": 1,
+        "estimated_cost_usd": 0.00106,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 269,
+            "prompt_tokens": 182,
+            "completion_tokens": 87,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.00106,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "runs": [
+        {
+          "agent_name": "pageindex_admin_search",
+          "parent_run_id": null,
+          "run_id": "e8fc8200cb5f430a99ad4e27823f652a",
+          "conversation_id": "e8fc8200cb5f430a99ad4e27823f652a"
+        }
+      ],
+      "tool_events": [],
+      "conversation_spend": {
+        "usd": "0.001060",
+        "tokens": 269,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.6b8d951e2024462cafbe0bd4",
+      "channel": "pageindex_admin_search",
+      "closed": true,
+      "utterance": "Find the Other Handbook",
+      "response": "[]",
+      "elapsed_seconds": 0.027822,
+      "outcome": "completed",
+      "failure_type": null,
+      "usage": {
+        "total_tokens": 0,
+        "model_call_count": 0,
+        "estimated_cost_usd": 0.0,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [],
+      "runs": [],
+      "tool_events": [],
+      "conversation_spend": null
+    },
+    {
+      "interaction_id": "n.Interaction.bd1f24998407466ab9cd81d7",
+      "channel": "default",
+      "closed": true,
+      "utterance": "Use PageIndex to find the exact Willow Staff Handbook. What booking code and room are recorded? Cite the source.",
+      "response": "The Willow Staff Handbook records that the Willow induction is scheduled for 26 November 2026 in the Fern room, with the booking code WILLOW-57[1].\n\nReferences:\n[1] Willow Staff Handbook",
+      "elapsed_seconds": 8.231845,
+      "outcome": "delivered",
+      "failure_type": null,
+      "usage": {
+        "total_tokens": 4218,
+        "model_call_count": 4,
+        "estimated_cost_usd": 0.006954,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 308,
+            "prompt_tokens": 287,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000742,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 1744,
+            "prompt_tokens": 1720,
+            "completion_tokens": 24,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.003632,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 261,
+            "prompt_tokens": 182,
+            "completion_tokens": 79,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000996,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 1905,
+            "prompt_tokens": 1860,
+            "completion_tokens": 45,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "cost_record": {
+            "amount": 0.001584,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "runs": [
+        {
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "run_id": "corr-99dafc388936494d82f686e0ae1924ab",
+          "conversation_id": "sess_9a246c90462e4fd4"
+        },
+        {
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-99dafc388936494d82f686e0ae1924ab",
+          "run_id": "01a1b49c-532a-77c6-ba44-9d7f92a9a98d",
+          "conversation_id": "sess_9a246c90462e4fd4"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.006954",
+        "tokens": 4218,
+        "requests": 4,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.0733acf874984efabf0338f7",
+      "channel": "pageindex_admin_search",
+      "closed": true,
+      "utterance": "Find the Harbor check-in room and verification code",
+      "response": "[{\"doc_name\": \"Harbor Operations Handbook\", \"title\": \"Harbor check-in\", \"start_index\": null, \"end_index\": null, \"node_id\": \"n.DocumentNode.f00027aacad34e32b25bc7aa\", \"summary\": \"Harbor induction check-in is in Dock Room 4. Verification code HARBOR-41.\", \"doc_url\": \"https://example.com/harbor-operations\"}]",
+      "elapsed_seconds": 3.009946,
+      "outcome": "completed",
+      "usage": {
+        "total_tokens": 262,
+        "model_call_count": 1,
+        "estimated_cost_usd": 0.001022,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "provider_calls": [
+        {
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 262,
+            "prompt_tokens": 179,
+            "completion_tokens": 83,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001022,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "runs": [
+        {
+          "agent_name": "pageindex_admin_search",
+          "parent_run_id": null,
+          "run_id": "27f17dc906c84b94b776cc803c70e3c1",
+          "conversation_id": "27f17dc906c84b94b776cc803c70e3c1"
+        }
+      ],
+      "tool_events": [],
+      "conversation_spend": {
+        "usd": "0.001022",
+        "tokens": 262,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "prior_source": {
+    "process_id": 15571,
+    "observed_at": "2026-11-07T06:06:22.128293+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/endpoints.py": "git-blob:3243dbbada8ce6b6d16981046b82e910b1b4b174",
+      "jvagent/core/execution_owner.py": "git-blob:4ac307369c61ee39f8078dab05dd3dcd1c057ff5",
+      "jvagent/action/pageindex/native_search.py": "git-blob:258361976b59d0ff75a936d8e854c0e0ed145a05",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  }
+}

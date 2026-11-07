@@ -1,0 +1,558 @@
+{
+  "tested_parent": "git-commit:9db33ef159e0bfe5562115b8a8b274524750bdde",
+  "runtime_source_blobs": {
+    "examples/jvagent_app/agents/jvagent/leadgen_agent/README.md": "git-blob:42a28120a22f82d4a3c1d8193b3057cf0347d6c3",
+    "examples/jvagent_app/agents/jvagent/leadgen_agent/actions/contrib/storefront/storefront_action.py": "git-blob:891c7889eb5bc2ffc1ecf8037b7562dd772d929b",
+    "examples/jvagent_app/agents/jvagent/leadgen_agent/agent.yaml": "git-blob:e986ee36e1642114774aab24586eb37132f406e3",
+    "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-faq/SKILL.md": "git-blob:8645a34cf374d8b42f4ee8b4468e97310ba9fee1",
+    "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-search/SKILL.md": "git-blob:e0d2b2da62272fd527547eee82d973afd882d5e2",
+    "jvagent/harness/native.py": "git-blob:aa60ba8573ffff0f5715fd52a1c5c42ee9766331",
+    "jvagent/harness/native_model.py": "git-blob:544cb7a55c4c9dfc7225f49b58b13cea61084e1e"
+  },
+  "fixture_backend_port": 8166,
+  "browser_ui_port": 3140,
+  "model": "openai:gpt-4.1",
+  "profile_override": "public OpenAIModelProfile(tool_addition_mode=None), GPT-4.1 string declarations only",
+  "qualification_scope": "Two existing app-local mock Storefront read tools and canonical SOPs; not full LeadGen capture/sync or production storefront",
+  "acceptance": {
+    "scope": "App-local mock Storefront, existing generic native SDK adapter, GPT-4.1",
+    "success": "Unchanged compound trial/churn request invokes FAQ and catalog and returns 14-day/no-card trial and Customer Insights at $249/mo without substituting subscription tiers",
+    "denial": "Unseen onboarding FAQ request receives access refusal; zero FAQ body calls for that interaction; other catalog read remains allowed",
+    "restart": "Restore FAQ permission, restart process and read fresh onboarding fact; follow-up uses persisted conversation; reload leaves run/event/effect/usage/spend records unchanged",
+    "request_ceiling_per_turn": 12,
+    "optimization_claim": false,
+    "earlier_failures_retained": true
+  },
+  "turns": [
+    {
+      "scenario": "initial_incremental_tools_failure",
+      "interaction_id": "n.Interaction.b3331b4f10d64f77a5b1f88d",
+      "run_id_digest": "sha256:1174ab16a678d77d5066cbb45c9671fb747e4816b9483478e8b9567e0ccd5cc2",
+      "session_id": "sess_79803119f7474d7a",
+      "utterance": "Do you offer a free trial, and which product would help us predict customer churn? Please include the price.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "run_status": "failed",
+      "closed": true,
+      "duration_seconds": 11.317539,
+      "provider_requests": 3,
+      "provider_reported_tokens": 2511,
+      "estimated_cost_usd": "0.005832",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 3.207154,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 2.58027,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.797258,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability"
+      ],
+      "body_calls": [],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 18,
+      "effect_statuses": {
+        "completed": 2,
+        "started": 1,
+        "failed": 3
+      },
+      "history_source": {},
+      "worker_pids": [
+        "59643"
+      ]
+    },
+    {
+      "scenario": "instrumented_repeat_failure",
+      "interaction_id": "n.Interaction.c3d32c49b6a3479c9e6c3313",
+      "run_id_digest": "sha256:59772ba39d46382d5079954d8367f03c6125248aed0f645c6ac8c123b88919ca",
+      "session_id": "sess_e1aca5a1deb14665",
+      "utterance": "Do you offer a free trial, and which product would help us predict customer churn? Please include the price.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "run_status": "failed",
+      "closed": true,
+      "duration_seconds": 8.738985,
+      "provider_requests": 3,
+      "provider_reported_tokens": 2592,
+      "estimated_cost_usd": "0.006252",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.536494,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.674701,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.53126,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability"
+      ],
+      "body_calls": [],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 19,
+      "effect_statuses": {
+        "completed": 2,
+        "started": 2,
+        "failed": 3
+      },
+      "history_source": {},
+      "worker_pids": [
+        "59820"
+      ]
+    },
+    {
+      "scenario": "wire_capture_failure",
+      "interaction_id": "n.Interaction.4d0cf7191915461a89019167",
+      "run_id_digest": "sha256:3985a27d609443fd3c2a96ed45eb4729e42b08a619a8aa9e72b9eeb33827c668",
+      "session_id": "sess_a1f8153c4c114282",
+      "utterance": "Do you offer a free trial, and which product would help us predict customer churn? Please include the price.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "run_status": "failed",
+      "closed": true,
+      "duration_seconds": 9.566904,
+      "provider_requests": 3,
+      "provider_reported_tokens": 2494,
+      "estimated_cost_usd": "0.005696",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.664677,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 2.36007,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.432506,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability",
+        "load_capability"
+      ],
+      "body_calls": [],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 17,
+      "effect_statuses": {
+        "completed": 2,
+        "started": 1,
+        "failed": 2
+      },
+      "history_source": {},
+      "worker_pids": [
+        "59969"
+      ]
+    },
+    {
+      "scenario": "standard_tools_but_wrong_product_answer",
+      "interaction_id": "n.Interaction.0b907bf529964910a092ebd6",
+      "run_id_digest": "sha256:d5babe826861d34f658866bca010dcc52b199fb6f255da0b6834161943c6ed13",
+      "session_id": "sess_d7f2b330384c4001",
+      "utterance": "Do you offer a free trial, and which product would help us predict customer churn? Please include the price.",
+      "response": "Yes, every plan starts with a 14-day free trial\u2014no credit card required. You keep any dashboards you build during the trial.\n\nFor predicting customer churn, the platform offers analytics features across all plans. Pricing starts at $49/month for Starter, $199/month for Growth, and custom pricing for Enterprise. All tiers include the core analytics platform; higher tiers add more seats, connectors, and support.\n\nWould you like details on which plan best fits your team?",
+      "run_status": "delivered",
+      "closed": true,
+      "duration_seconds": 7.690294,
+      "provider_requests": 3,
+      "provider_reported_tokens": 2449,
+      "estimated_cost_usd": "0.005984",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.119847,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.278611,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.354548,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "storefront__faq",
+        "storefront__faq"
+      ],
+      "body_calls": [
+        {
+          "method": "faq",
+          "pid": 60215,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        },
+        {
+          "method": "faq",
+          "pid": 60215,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        }
+      ],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 9,
+      "sdk_event_count": 14,
+      "effect_statuses": {
+        "completed": 3
+      },
+      "history_source": {},
+      "worker_pids": [
+        "60215"
+      ]
+    },
+    {
+      "scenario": "compound_success",
+      "interaction_id": "n.Interaction.4eed75b448604ec690eb3740",
+      "run_id_digest": "sha256:611fcd32380aad6650c314a36ee2d4c35f2ce089a7981a3b53cfb830ff69c5e8",
+      "session_id": "sess_a057c97cfff545b4",
+      "utterance": "Do you offer a free trial, and which product would help us predict customer churn? Please include the price.",
+      "response": "Yes, every plan starts with a 14-day free trial, no credit card required. You can keep any dashboards you build during the trial.\n\nFor predicting customer churn, the \"Customer Insights\" product is the best fit. It offers ML-driven churn prediction, segmentation, and lifetime-value modeling, priced at $249/month.\n\nWould you like more details about this product or see how it works?",
+      "run_status": "delivered",
+      "closed": true,
+      "duration_seconds": 10.239936,
+      "provider_requests": 4,
+      "provider_reported_tokens": 4400,
+      "estimated_cost_usd": "0.007732",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.16064,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.333218,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 0.882291,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.95385,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "load_capability",
+        "storefront__faq",
+        "load_capability",
+        "storefront__search_products"
+      ],
+      "body_calls": [
+        {
+          "method": "faq",
+          "pid": 60417,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        },
+        {
+          "method": "search_products_tool",
+          "pid": 60417,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        }
+      ],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 12,
+      "sdk_event_count": 18,
+      "effect_statuses": {
+        "completed": 4
+      },
+      "history_source": {},
+      "worker_pids": [
+        "60417"
+      ]
+    },
+    {
+      "scenario": "live_faq_denial",
+      "interaction_id": "n.Interaction.b711f7a287434368b642539c",
+      "run_id_digest": "sha256:98ebe2efd4bc5ca769aefcd4b94cb0974de5e543b5523b4ce08417ca06eb2cf2",
+      "session_id": "sess_a057c97cfff545b4",
+      "utterance": "How long does onboarding take? Please check the FAQ.",
+      "response": "I'm unable to access the specific onboarding time from the FAQ right now. If you have other questions about setup, support, or product features, I can help with those! Would you like more details on something else?",
+      "run_status": "delivered",
+      "closed": true,
+      "duration_seconds": 4.868572,
+      "provider_requests": 2,
+      "provider_reported_tokens": 3439,
+      "estimated_cost_usd": "0.002672",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.189786,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.359806,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "storefront__faq"
+      ],
+      "body_calls": [],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 8,
+      "effect_statuses": {
+        "failed": 1
+      },
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-0730e8f71e8f4753aaeec97a73852995"
+      },
+      "worker_pids": [
+        "60417"
+      ]
+    },
+    {
+      "scenario": "catalog_allowed_while_faq_denied",
+      "interaction_id": "n.Interaction.046522edac264cd99446c12b",
+      "run_id_digest": "sha256:0fc9effa5a53aadf4767ba89458509ca0fa8418ff40ca7bb277d2bf3457ecfd8",
+      "session_id": "sess_a057c97cfff545b4",
+      "utterance": "Which product builds dashboards, and what does it cost?",
+      "response": "The \"Analytics Platform\" product is designed for building dashboards. It offers real-time dashboards, funnels, and cohort analysis, and costs $199/month.\n\nWould you like more information or a feature comparison?",
+      "run_status": "delivered",
+      "closed": true,
+      "duration_seconds": 4.555539,
+      "provider_requests": 2,
+      "provider_reported_tokens": 3670,
+      "estimated_cost_usd": "0.005210",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 0.959428,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.212391,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "storefront__search_products"
+      ],
+      "body_calls": [
+        {
+          "method": "search_products_tool",
+          "pid": 60417,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        }
+      ],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 8,
+      "effect_statuses": {
+        "completed": 1
+      },
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-e9dd2239c69f4f309967b52feff4d973"
+      },
+      "worker_pids": [
+        "60417"
+      ]
+    },
+    {
+      "scenario": "restart_restored_permission_and_history",
+      "interaction_id": "n.Interaction.a1b820a8f1574e2184e7f339",
+      "run_id_digest": "sha256:db064e12396ded6fa81a1570544aa803ca3ca3024707ed12ae833fe481852393",
+      "session_id": "sess_a057c97cfff545b4",
+      "utterance": "Please check the FAQ again: how long does onboarding take? Also remind me which churn product you recommended.",
+      "response": "Onboarding typically takes 3-5 business days for standard setup. If you choose Enterprise white-glove onboarding with a solutions engineer, it usually takes about 2 weeks.\n\nFor churn prediction, I recommend the \"Customer Insights\" product. It provides ML-driven churn prediction, segmentation, and lifetime-value modeling, and is priced at $249/month.\n\nLet me know if you need more details!",
+      "run_status": "delivered",
+      "closed": true,
+      "duration_seconds": 7.882552,
+      "provider_requests": 2,
+      "provider_reported_tokens": 4195,
+      "estimated_cost_usd": "0.004034",
+      "provider_attempts": [
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.395457,
+          "usage_status": "receipt_recorded"
+        },
+        {
+          "outcome": "completed",
+          "duration_seconds": 1.481492,
+          "usage_status": "receipt_recorded"
+        }
+      ],
+      "visible_tool_calls": [
+        "storefront__faq",
+        "storefront__search_products"
+      ],
+      "body_calls": [
+        {
+          "method": "faq",
+          "pid": 60767,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        },
+        {
+          "method": "search_products_tool",
+          "pid": 60767,
+          "action_id": "n.StorefrontAction.242f54844d5f4a4eba6be642"
+        }
+      ],
+      "sdk_registration_count": 1,
+      "sdk_snapshot_count": 6,
+      "sdk_event_count": 10,
+      "effect_statuses": {
+        "completed": 2
+      },
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-ec10d2ea4087448eaf72c9fb77467332"
+      },
+      "worker_pids": [
+        "60767"
+      ]
+    }
+  ],
+  "totals": {
+    "requests": 22,
+    "tokens": 25750,
+    "estimated_cost_usd": "0.043412",
+    "unknown_usage_requests": 0
+  },
+  "conversation_spend_records": [
+    {
+      "usd": "0.005832",
+      "tokens": 2511,
+      "requests": 3,
+      "unpriced_requests": 0
+    },
+    {
+      "usd": "0.005984",
+      "tokens": 2449,
+      "requests": 3,
+      "unpriced_requests": 0
+    },
+    {
+      "usd": "0.006252",
+      "tokens": 2592,
+      "requests": 3,
+      "unpriced_requests": 0
+    },
+    {
+      "usd": "0.005696",
+      "tokens": 2494,
+      "requests": 3,
+      "unpriced_requests": 0
+    },
+    {
+      "usd": "0.019648",
+      "tokens": 15704,
+      "requests": 10,
+      "unpriced_requests": 0
+    }
+  ],
+  "conversation_task_count": 0,
+  "pre_fix_unresolved_capability_receipts": [
+    {
+      "interaction_id": "n.Interaction.b3331b4f10d64f77a5b1f88d",
+      "tool_name": "load_capability",
+      "status": "started"
+    },
+    {
+      "interaction_id": "n.Interaction.c3d32c49b6a3479c9e6c3313",
+      "tool_name": "load_capability",
+      "status": "started"
+    },
+    {
+      "interaction_id": "n.Interaction.c3d32c49b6a3479c9e6c3313",
+      "tool_name": "load_capability",
+      "status": "started"
+    },
+    {
+      "interaction_id": "n.Interaction.4d0cf7191915461a89019167",
+      "tool_name": "load_capability",
+      "status": "started"
+    }
+  ],
+  "restart": {
+    "interaction_rows_unchanged": true,
+    "conversations_unchanged": true,
+    "before_digest": "sha256:d27481d221c2673091b7e3b34780ddb36a9cf73bf841afd56da01407a929bc2b",
+    "after_digest": "sha256:d27481d221c2673091b7e3b34780ddb36a9cf73bf841afd56da01407a929bc2b"
+  },
+  "reload": {
+    "interaction_rows_unchanged": true,
+    "conversations_unchanged": true,
+    "before_digest": "sha256:bb2715e800cd0379567ec712b8deeba80ead6733f3a5ffd7cbb8f20e991b3e37",
+    "after_digest": "sha256:bb2715e800cd0379567ec712b8deeba80ead6733f3a5ffd7cbb8f20e991b3e37"
+  },
+  "runtime_probe": {
+    "process_id": 60767,
+    "observed_at": "2026-11-06T20:18:37.652319+00:00",
+    "source_blobs": {
+      "examples/jvagent_app/agents/jvagent/leadgen_agent/README.md": "git-blob:42a28120a22f82d4a3c1d8193b3057cf0347d6c3",
+      "examples/jvagent_app/agents/jvagent/leadgen_agent/actions/contrib/storefront/storefront_action.py": "git-blob:891c7889eb5bc2ffc1ecf8037b7562dd772d929b",
+      "examples/jvagent_app/agents/jvagent/leadgen_agent/agent.yaml": "git-blob:e986ee36e1642114774aab24586eb37132f406e3",
+      "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-faq/SKILL.md": "git-blob:8645a34cf374d8b42f4ee8b4468e97310ba9fee1",
+      "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product-search/SKILL.md": "git-blob:e0d2b2da62272fd527547eee82d973afd882d5e2",
+      "jvagent/harness/native.py": "git-blob:aa60ba8573ffff0f5715fd52a1c5c42ee9766331",
+      "jvagent/harness/native_model.py": "git-blob:544cb7a55c4c9dfc7225f49b58b13cea61084e1e"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "tests": {
+    "native311": "682 passed, 6 optional Docker-profile cases skipped",
+    "native312": "688 passed, including Docker-profile cases",
+    "configured_script_and_affected311": "55 passed",
+    "final_affected311": "34 passed",
+    "final_affected312": "34 passed",
+    "wire_mutation": "Unmodified upstream profile fails: storefront__faq missing from ordinary tools after skill activation"
+  },
+  "limits": [
+    "Mock fixed-data reads only; synthetic security assertions are not real certification",
+    "No broad accuracy or performance optimization claim",
+    "GPT-4.1 mini/nano, other providers and explicitly supplied model instances are not qualified by this override",
+    "Reference Orchestrator deployment and LeadGen capture/sync remain transitional",
+    "Four pre-fix duplicate capability-load receipts remain started; failed-session reconciliation is not qualified or silently repaired",
+    "Distributed recovery, remaining compatibility, legacy deletion and release gates remain open"
+  ]
+}
