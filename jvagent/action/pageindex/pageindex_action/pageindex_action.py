@@ -113,6 +113,10 @@ class PageIndexAction(Action):
     native_webhook_completion: bool = attribute(
         default=False, description="Enable accounted native jvforge completion"
     )
+    native_callback_model: str = attribute(
+        default="",
+        description="SDK model for native callbacks; empty uses the chat model",
+    )
     native_markdown_ingestion: bool = attribute(
         default=False, description="Enable accounted local Markdown ingestion"
     )

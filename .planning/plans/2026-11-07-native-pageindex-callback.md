@@ -47,3 +47,37 @@ and interrupted-recovery limits. Live jvforge deployment, credential rotation,
 graph artifact import and end-to-end ingestion or Drive sync still require
 qualification before the reference converter can retire legacy model services.
 See the [retirement boundary](2026-11-07-native-model-service-boundary.md).
+
+## Separate host-selected callback model
+
+The enabled PageIndex profile can set `native_callback_model`. Empty
+uses the chat model. A nonempty value selects the SDK model for the
+authenticated callback while retaining the native owner's settings and
+limits. Request model text only verifies the host selection. Usage
+settlement uses the selected operation model. Sources:
+`pageindex_action.py:117`, `endpoints.py:2250`, `native_callback.py:30`,
+and `native_search.py:108`.
+
+Browser smoke at parent `19686027`, runtime diff SHA-256
+`dcf3e8ce687e7df386cdda0b556057904b04363a9e0d81c3a3ed8f4d657b3435`.
+A loopback browser fixture forwarded its fixed payload to the production
+callback with the disposable Action-bound key and trusted proxy scheme.
+The fresh PostgreSQL app kept GPT-4.1 configured for chat. OpenAI
+rejected the reference Nano alias during generation, and independent
+SDK controls reproduced the rejection for the alias and dated snapshot.
+The browser showed HTTP 503 in 2.147 seconds. Interaction
+`n.Interaction.850f18feeb9049a39a342a73` recorded `ModelNotFoundError`,
+one failed attempt, no usage receipt and one unknown-cost event.
+A chat-model override returned HTTP 422 in 50 ms with no Interaction
+or model request.
+
+After applying GPT-4.1 Mini to the disposable YAML and persisted Action
+and restarting, the browser displayed HTTP 200 in 1.588 seconds and
+`MINI-CALLBACK-VERIFIED`. PostgreSQL Interaction
+`n.Interaction.6955b9d7b9714d2c83df8399` completed with one Mini call,
+26 provider-reported tokens, USD 0.000021 estimated and no unknown
+cost. Neither callback emitted tool events. The fixture exercised the
+callback through a browser page. It verified the chat model setting
+by graph readback without making a chat turn. HTTP tree search,
+ingestion, and in-run ranking still need separate model selection
+before the full reference migration.

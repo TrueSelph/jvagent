@@ -50,8 +50,9 @@ async def test_other_actions_webhook_key_is_refused_before_payload(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_image", [False, True])
+@pytest.mark.parametrize("configured_model", ["", "openai:gpt-4.1-nano"])
 async def test_native_callback_preserves_response_and_receipts(
-    monkeypatch: pytest.MonkeyPatch, with_image: bool
+    monkeypatch: pytest.MonkeyPatch, with_image: bool, configured_model: str
 ) -> None:
     action = await NativeHarnessAction.create(input_media_types=["image/png"])
     seen = []
@@ -67,12 +68,15 @@ async def test_native_callback_preserves_response_and_receipts(
             usage=RequestUsage(input_tokens=10, output_tokens=5, cost=Decimal("0.001")),
         )
 
-    monkeypatch.setattr(
-        native_model,
-        "qualified_model",
-        lambda _: FunctionModel(respond, model_name="gpt-4.1"),
-    )
-    payload = {"prompt": "Summarize", "model": "openai/gpt-4.1"}
+    effective_model = configured_model or action.model
+    model_name = effective_model.split(":", 1)[1]
+
+    def resolve(model: str) -> FunctionModel:
+        assert model == effective_model
+        return FunctionModel(respond, model_name=model_name)
+
+    monkeypatch.setattr(native_model, "qualified_model", resolve)
+    payload = {"prompt": "Summarize", "model": model_name}
     if with_image:
         payload.update(image_base64="YWJj", mime_type="image/png")
     with pytest.raises(ValidationError):
@@ -81,13 +85,18 @@ async def test_native_callback_preserves_response_and_receipts(
             agent_id="agent",
             actor="service",
             payload={**payload, "model": "other-model"},
+            configured_model=configured_model,
         )
     result = await run_native_callback(
-        action, agent_id="agent", actor="service", payload=payload
+        action,
+        agent_id="agent",
+        actor="service",
+        payload=payload,
+        configured_model=configured_model,
     )
     assert result == {
         "text": "Result",
-        "model": "gpt-4.1",
+        "model": model_name,
         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     }
     rows = await Interaction.find({"channel": CHANNEL})

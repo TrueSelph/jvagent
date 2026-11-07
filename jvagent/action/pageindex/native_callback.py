@@ -12,7 +12,12 @@ CHANNEL = "pageindex_webhook_completion"
 
 
 async def run_native_callback(
-    action: Any, *, agent_id: str, actor: str, payload: dict[str, Any]
+    action: Any,
+    *,
+    agent_id: str,
+    actor: str,
+    payload: dict[str, Any],
+    configured_model: str = "",
 ) -> dict[str, Any]:
     """Use host provider and media policy while preserving the callback response."""
     prompt = payload.get("prompt")
@@ -21,7 +26,8 @@ async def run_native_callback(
             "A nonempty PageIndex prompt of at most 100,000 characters is required"
         )
     prompt = prompt.strip()
-    model = admitted_operation_model(action.model, payload.get("model"))
+    operation_model = configured_model or action.model
+    model = admitted_operation_model(operation_model, payload.get("model"))
 
     encoded = payload.get("image_base64")
     media = None
@@ -65,4 +71,5 @@ async def run_native_callback(
         query=prompt,
         channel=CHANNEL,
         operation=operation,
+        configured_model=operation_model,
     )

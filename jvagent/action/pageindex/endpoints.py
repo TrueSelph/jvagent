@@ -2248,7 +2248,11 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
                 )
             try:
                 result = await run_native_callback(
-                    native, agent_id=agent_id, actor=actor, payload=data
+                    native,
+                    agent_id=agent_id,
+                    actor=actor,
+                    payload=data,
+                    configured_model=core_action.native_callback_model,
                 )
             except ValidationError:
                 raise

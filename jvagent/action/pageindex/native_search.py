@@ -76,6 +76,7 @@ async def run_native_operation(
     operation: Callable[[Complete], Awaitable[Result]],
     result_receipt: Callable[[Result], Any] | None = None,
     on_started: Callable[[str], None] | None = None,
+    configured_model: str = "",
 ) -> Result:
     """Persist one service operation with shared native SDK limits."""
     from jvspatial import flush_deferred_entities
@@ -105,7 +106,8 @@ async def run_native_operation(
     budgets = native_budgets(
         limits["max_run_cost_usd"], action.max_conversation_cost_usd
     )
-    model = qualified_model(action.model)
+    model_name = configured_model or action.model
+    model = qualified_model(model_name)
     usage = RunUsage()
     usage_limits = UsageLimits(
         request_limit=limits["max_requests"],
@@ -228,7 +230,7 @@ async def run_native_operation(
         )
         return results
     finally:
-        await recover_native_usage(interaction, run_id=run_id, model=action.model)
+        await recover_native_usage(interaction, run_id=run_id, model=model_name)
         await interaction.close_interaction()
         await interaction.save()
         await flush_deferred_entities(interaction, strict=True)
