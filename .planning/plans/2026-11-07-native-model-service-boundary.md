@@ -556,3 +556,26 @@ fixture. Hooks, external sync, crash reconciliation and the existing
 LeadGen reference skills remain outside this admission.
 
 Runtime diff SHA-256: `71668644cb206ac69f54a9349425515540f6143f9adef9ee706c3da5906d00be`.
+
+### LeadGen capture worker-exit smoke
+
+At `2e6da588`, a disposable browser fixture used actual GPT-4.1
+and the production streaming endpoint. A test wrapper exited the
+isolated worker with code 72 after the capture returned from its
+graph flush and verification, before the SDK received the tool return.
+The browser showed the capture tool call and disconnected after 2.031
+seconds. PostgreSQL Interaction `n.Interaction.c2bc2b0ed040412e887dc2c0`
+retained the running receipt and SDK mutation effect, with one request,
+492 provider tokens, USD 0.001140 estimated and no unknown-cost
+events. The existing LeadProfile retained the updated synthetic email.
+
+After a normal backend restart, a browser retry with the same
+authenticated conversation returned the recovery notice in 196 ms.
+Interaction `n.Interaction.65121aa577604c1c8440344e` recorded
+`predecessor_requires_reconciliation`, no tool events, and zero requests,
+tokens or cost. The profile remained singular and unchanged on retry.
+This qualifies refusal to replay the interrupted capture in the
+same conversation. Operator reconciliation still needs a scoped
+LeadGen verifier. It must validate the recorded field intent against
+current caller-owned state and distinguish a verified end state from
+an observed original completion. No production code changed.
