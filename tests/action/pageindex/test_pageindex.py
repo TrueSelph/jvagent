@@ -2550,3 +2550,21 @@ async def test_native_action_assimilation_refuses_before_legacy_model_lookup():
         with pytest.raises(ValidationError, match="Native PageIndex ingestion"):
             await action.assimilate("# Fixture", doc_name="blocked.md")
     model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_action_tree_search_refuses_before_legacy_model_lookup():
+    from jvagent.action.pageindex.pageindex_action import PageIndexAction
+
+    action = PageIndexAction()
+    with (
+        patch.object(PageIndexAction, "get_agent", AsyncMock(return_value=object())),
+        patch(
+            "jvagent.core.execution_owner.uses_native_harness",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(PageIndexAction, "get_model_action", AsyncMock()) as model,
+    ):
+        with pytest.raises(ValidationError, match="accounted completion"):
+            await action.search("fixture", strategy="tree_search")
+    model.assert_not_awaited()

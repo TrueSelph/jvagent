@@ -378,13 +378,20 @@ class PageIndexAction(Action):
         )
         from ..retrieval import search_documents
 
+        cfg = self.config or {}
+        resolved_strategy = strategy or cfg.get("strategy") or self.strategy
+        if complete is None and resolved_strategy == "tree_search":
+            from jvagent.core.execution_owner import uses_native_harness
+
+            agent = await self.get_agent()
+            if agent is not None and await uses_native_harness(agent):
+                raise ValidationError(
+                    "Native PageIndex tree search requires an accounted completion"
+                )
+
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
-
-        cfg = self.config or {}
-
-        resolved_strategy = strategy or cfg.get("strategy") or self.strategy
         resolved_limit = (
             limit if limit is not None else (cfg.get("limit") or self.limit)
         )

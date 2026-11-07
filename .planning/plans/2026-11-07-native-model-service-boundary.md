@@ -1,5 +1,21 @@
 # Reference model service retirement boundary
 
+At parent `fb0ff665`, direct Action tree search now requires explicit
+accounted completion on a native-owned agent
+(`pageindex_action.py:381`). The browser fixture called the same Action
+with and without the native adapter. The unaccounted call returned HTTP
+422 in 33 ms with no provider request. The accounted call returned HTTP
+200 in 2.393 seconds and ranked the renamed PDF section containing
+ORBIT-42. PostgreSQL Interaction `n.Interaction.124ff642978b42e490853968`
+recorded one GPT-4.1 request, 367 provider tokens, USD 0.001298 estimated
+cost and zero unknown-cost requests. There were no chat tool events.
+The tested Action blob was `01d265eebbaa46f8cdc627834996902595d4dd43`.
+This fixture used the production Action and native search adapter through
+a disposable test route. The reference converter still needs separate
+qualification for Reply composition, active MCP sampling and the
+configured provider declarations.
+
+
 At parent `c122da99`, the native-owner Action assimilation guard
 (`pageindex_action.py:560`) closes a remaining fallback route. Native
 agents use authenticated upload or configured Drive sync for ingestion.
@@ -11,8 +27,7 @@ events, tokens or cost. Tested Action blob
 `f756c5846b830a926455f2d847ce2aaa8d963bc5`. The regression checks that the
 refusal precedes legacy model resolution. The reference converter still
 has model-service blockers, including the separate Reply composition and
-MCP sampling contracts. Direct programmatic tree search also needs an
-explicit completion boundary when a native agent owns execution.
+MCP sampling contracts.
 
 Source revision `50b6c737`. This is an offline compatibility audit. The
 reference agent selects GPT-4.1 through LiteLLM for orchestration and uses
