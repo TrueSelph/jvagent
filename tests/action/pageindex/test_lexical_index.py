@@ -561,6 +561,7 @@ async def test_import_cannot_restore_drive_source_binding(pageindex_temp_db):
         [{"title": "Local"}],
         collection_name="local",
         drive_source_key="local-source",
+        drive_revision_key="local-revision",
         drive_operation_id="local-operation",
     )
     await import_documents(
@@ -570,6 +571,7 @@ async def test_import_cannot_restore_drive_source_binding(pageindex_temp_db):
                     "doc_name": "imported.pdf",
                     "collection_name": "imported",
                     "drive_source_key": "copied-source",
+                    "drive_revision_key": "copied-revision",
                     "drive_operation_id": "copied-operation",
                 }
             ]
@@ -578,6 +580,8 @@ async def test_import_cannot_restore_drive_source_binding(pageindex_temp_db):
     (local,) = await get_document_roots("local")
     (imported,) = await get_document_roots("imported")
     assert local.drive_source_key == "local-source"
+    assert local.drive_revision_key == "local-revision"
     assert local.drive_operation_id == "local-operation"
     assert imported.drive_source_key is None
+    assert imported.drive_revision_key is None
     assert imported.drive_operation_id is None

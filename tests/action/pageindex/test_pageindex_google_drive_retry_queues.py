@@ -1245,7 +1245,8 @@ async def test_native_drive_stale_marker_requires_proven_owner_death(owner_dead)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "scenario", ["complete", "changed_metadata", "unsettled", "unknown_cost"]
+    "scenario",
+    ["complete", "changed_metadata", "unsettled", "unknown_cost", "different_revision"],
 )
 async def test_native_drive_replay_checks_publication_receipt(scenario):
     from jvagent.memory.interaction import Interaction
@@ -1259,6 +1260,9 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
         id="root",
         doc_name="doc.pdf",
         drive_operation_id="operation",
+        drive_revision_key=(
+            "other-version" if scenario == "different_revision" else None
+        ),
         drive_source_key=source_key,
         metadata={},
         doc_url="https://example.com/doc.pdf",
@@ -1306,6 +1310,7 @@ async def test_native_drive_replay_checks_publication_receipt(scenario):
             doc_name="doc.pdf",
             doc_url=root.doc_url,
             file_id="file",
+            version="42",
             cfg=cfg,
         )
         if scenario != "complete":

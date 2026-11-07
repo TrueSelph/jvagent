@@ -607,6 +607,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 doc_name=doc_name,
                 doc_url=doc_url,
                 file_id=file_id,
+                version=queued_version,
                 cfg=cfg,
             )
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
@@ -717,6 +718,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         doc_name: str,
         doc_url: str,
         file_id: str,
+        version: str,
         cfg: DriveIngestConfig,
     ) -> Dict[str, Any]:
         """Index a new Drive document with the host's admitted completion service."""
@@ -736,6 +738,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             raise ValidationError("Native Drive ingestion requires a source file ID")
         source_facts = [self.id, file_id, hashlib.sha256(content).hexdigest()]
         source_key = hashlib.sha256(json.dumps(source_facts).encode()).hexdigest()
+        revision_key = hashlib.sha256(
+            json.dumps([self.id, file_id, version]).encode()
+        ).hexdigest()
         root = await get_document_root(
             strip_redundant_md_suffix(doc_name), cfg.collection_name
         )
@@ -751,6 +756,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 receipt is not None
                 and receipt.user_id == self.id
                 and receipt.channel in {CHANNEL, PDF_CHANNEL}
+                and root.drive_revision_key in {None, revision_key}
                 and root.metadata == cfg.metadata
                 and root.doc_url == doc_url
                 and (root.chunks or 0) > 0
@@ -795,6 +801,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
         options: dict[str, Any] = {
             "drive_source_key": source_key,
+            "drive_revision_key": revision_key,
             "doc_name": doc_name,
             "doc_url": doc_url,
             "collection_name": cfg.collection_name,

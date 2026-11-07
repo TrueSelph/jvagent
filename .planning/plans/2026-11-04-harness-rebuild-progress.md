@@ -12,6 +12,25 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+New Drive roots now store a server-derived key for the Action, file ID
+and verified provider version separately from the content hash
+(`pageindex_google_drive_sync_action.py:741`). Retrying a version-bound
+root requires the same revision as well as the same bytes. Older roots
+retain their content-based retry path. Their absent revision key supplies
+no proof for retiring them as a specific prior revision. Graph import
+discards the server-owned key.
+
+An isolated browser fixture at parent `0e8a74bd` with runtime diff hash
+`924bace2316e424647486bd4c21277e69901bc7c` used synthetic Drive bytes and
+actual GPT-4.1. HTTP 200 in 11.814 seconds verified both keys on the saved
+two-chunk root `n.DocumentRootNode.78e1e0d009de4c6f87c7b986`.
+Interaction `n.Interaction.47f640fd1470430484a93d49` recorded 10 requests,
+3,066 provider tokens, USD 0.009372 estimated cost and zero unknown-cost
+requests. A cold replay with identical bytes and version 43 returned a
+conflict in 106 ms and preserved the queued revision and original root,
+with zero provider requests and no chat tool events. Live Drive transport
+and exact-root retirement remain unqualified.
+
 A native folder refresh now updates pending and failed additions in
 place when the listing reports a new version. Only files without an
 existing addition enter the modified bucket

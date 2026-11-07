@@ -50,6 +50,10 @@ class DocumentRootNode(Node):
         default=None,
         description="Server-bound Drive source and content identity",
     )
+    drive_revision_key: Optional[str] = attribute(
+        default=None,
+        description="Server-bound Drive Action, file and provider version identity",
+    )
     drive_operation_id: Optional[str] = attribute(
         default=None,
         description="Native operation Interaction that published this Drive root",
