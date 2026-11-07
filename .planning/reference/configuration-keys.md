@@ -19,6 +19,11 @@ Code: [`jvagent/core/config.py:60-150`](../../jvagent/core/config.py) — `Confi
 NativeHarnessAction's `tool_execution_mode` defaults to `parallel` and uses the
 public Pydantic AI mode type. `sequential` preserves a migrated legacy one-tool
 ceiling without recreating legacy ticks. See [native scheduling settings](../runbooks/native-tool-execution.md).
+Native `channel_limits` defaults to `{}` and admits only exact-channel tightening
+of run resource ceilings. It grants no channel/tool authority and does not
+migrate legacy prompt overrides. See [native run limits](../runbooks/native-run-limits.md)
+and `jvagent/harness/run_limits.py:47`.
+
 Sources: `jvagent/action/native_harness/native_harness_action.py:121`,
 `jvagent/harness/native.py:635`.
 

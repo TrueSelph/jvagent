@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native skill continuation](2026-11-06-native-continuation.md).
+Latest increment: [native channel resource ceilings](2026-11-06-native-channel-limits.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,23 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Channel resource ceilings
+
+Exact-channel resource profiles can only tighten existing native run ceilings;
+they select no prompts, tools, providers or permissions. Public SDK limits/run
+timeout and official shared spending enforce the selected policy, which persists
+on host receipts. Actual GPT-4.1 browser proof covers intentional one-request
+refusal, reviewed profile change, successful fresh turn, terminal cold readback,
+stored-skill follow-up and retry in the failed conversation. Four turns/six calls/
+1,736 reported tokens/USD 0.003994 estimated reconcile. Retry refreshes only the
+old accounting timestamp; final reload is exact. Both Python versions pass 853
+complete native/host/real-PG cases; the transitional suite passes 5,114. Mutation
+checks detect selection removal and widened policy. The
+[record](2026-11-06-native-channel-limits.md) bounds this prerequisite: all three
+reference configuration blockers remain, including unconverted channel prompts
+and per-tool timeout/effect policy. Parent 8048fcf5 has all nine remote checks
+green; new-head gates are separate. The full migration/deletion/release goal remains active.
 
 ## Skill-led continuation
 

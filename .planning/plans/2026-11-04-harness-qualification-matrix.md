@@ -10,6 +10,19 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Native channel resources
+
+[Qualification](2026-11-06-native-channel-limits.md) covers exact-channel
+tightenings of native request/token/time/run-cost ceilings, startup/live validation,
+recorded selected policy and unchanged shared conversation budgets. The SDK owns
+request/deadline enforcement. Actual GPT-4.1 browser proof includes intentional
+budget refusal, successful profile change, cold restart, follow-up and known-budget
+retry with reconciled spend. Four turns/six calls/1,736 reported tokens/USD 0.003994
+estimated; final reload is exact. Complete native/host/real-PG lanes pass 853 per
+Python 3.11/3.12 and the transitional suite passes 5,114. Legacy channel prompts,
+per-tool timeout/effects and all three reference blockers remain unqualified;
+this does not close channel migration, deployment, deletion or enterprise gates.
+
 ## Native skill continuation
 
 [Current evidence](2026-11-06-native-continuation.md) qualifies model-led interview

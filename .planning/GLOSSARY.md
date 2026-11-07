@@ -73,6 +73,14 @@ HTTP route defined by the `@endpoint` decorator from jvspatial. Actions ship end
 ### Orchestrator
 The single orchestrator of the Orchestrator pattern. Implemented by [`OrchestratorInteractAction`](../jvagent/action/orchestrator/orchestrator_interact_action.py) at weight `-200`. Runs the whole turn inside one `execute()` call: when a turn-spanning flow has an active control-task on the conversation `TaskStore` it surfaces that flow as a tool and notes it, then runs a bounded think-act-observe loop over a unified tool surface (routing is tool selection) in which the model decides whether to continue the flow. No recruited centers, no reflex, no separate router. Supersedes the Executive + Centers pattern. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md), [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md), [`PATTERNS.md`](PATTERNS.md).
 
+### Channel limits
+
+Native host resource ceilings selected by exact channel label. They only tighten
+the agent's base run allowance; the public SDK enforces execution and official
+Harness spending remains shared by conversation. They grant no channel authority,
+tool access or prompt overrides. See the [run limits guide](runbooks/native-run-limits.md)
+and `jvagent/harness/run_limits.py:48`.
+
 ### Flow continuation
 
 This entry describes the transitional Orchestrator. Native execution uses

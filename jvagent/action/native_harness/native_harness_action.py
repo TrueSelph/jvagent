@@ -194,6 +194,7 @@ class NativeHarnessAction(InteractAction):
     max_tokens: int = attribute(default=100_000)
     max_output_tokens: int | None = attribute(default=None)
     timeout_seconds: float = attribute(default=180.0)
+    channel_limits: dict[str, dict[str, Any]] = attribute(default_factory=dict)
     tool_execution_mode: str = attribute(default="parallel")
 
     async def on_startup(self) -> None:
@@ -212,6 +213,9 @@ class NativeHarnessAction(InteractAction):
             raise ValueError("planning must be a boolean")
         if type(self.publish_reasoning) is not bool:
             raise ValueError("publish_reasoning must be a boolean")
+        from jvagent.harness.run_limits import effective_run_limits
+
+        effective_run_limits(self, "default")
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
@@ -489,8 +493,10 @@ class NativeHarnessAction(InteractAction):
                 session_id=visitor.session_id,
                 lock=spend_store.lock,
             )
+        from jvagent.harness.run_limits import effective_run_limits
         from jvagent.tooling.context import bind_dispatch_context
 
+        limits = effective_run_limits(self, caller_channel)
         with bind_dispatch_context(visitor):
             agent = build_native_agent(
                 self.model,
@@ -546,7 +552,7 @@ class NativeHarnessAction(InteractAction):
                 context_max_tokens=self.context_max_tokens,
                 context_keep_tokens=self.context_keep_tokens,
                 spend_store=spend_store,
-                max_run_cost_usd=self.max_run_cost_usd,
+                max_run_cost_usd=limits["max_run_cost_usd"],
                 max_conversation_cost_usd=self.max_conversation_cost_usd,
                 available_actions=sorted(
                     {
@@ -558,13 +564,14 @@ class NativeHarnessAction(InteractAction):
                         )
                     }
                 ),
-                channel=getattr(visitor, "channel", "default"),
+                channel=caller_channel,
             )
         run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
         interaction.native_run = {
             "run_id": run_id,
             "status": "running",
             "history_source": history_source,
+            "limits": limits,
         }
         task_binding = getattr(visitor, "_native_task_dispatch", None)
         if task_spec is not None:
@@ -584,12 +591,12 @@ class NativeHarnessAction(InteractAction):
                     message_history=history,
                     deferred_tool_results=getattr(prepared_history, "deferred", None),
                     event_stream_handler=events,
-                    max_cost_usd=self.max_run_cost_usd,
-                    max_requests=self.max_requests,
-                    max_tool_calls=self.max_tool_calls,
-                    max_tokens=self.max_tokens,
-                    max_output_tokens=self.max_output_tokens,
-                    timeout_seconds=self.timeout_seconds,
+                    max_cost_usd=limits["max_run_cost_usd"],
+                    max_requests=limits["max_requests"],
+                    max_tool_calls=limits["max_tool_calls"],
+                    max_tokens=limits["max_tokens"],
+                    max_output_tokens=limits["max_output_tokens"],
+                    timeout_seconds=limits["timeout_seconds"],
                     tool_execution_mode=getattr(
                         self, "tool_execution_mode", "parallel"
                     ),
@@ -608,6 +615,7 @@ class NativeHarnessAction(InteractAction):
                 "status": "pending_delivery",
                 "history_source": history_source,
                 "usage_complete": True,
+                "limits": limits,
                 "usage": {
                     "requests": usage.requests,
                     "input_tokens": usage.input_tokens,

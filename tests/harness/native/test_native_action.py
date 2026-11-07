@@ -42,6 +42,7 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("profile", [False, True])
 @pytest.mark.parametrize("attached", [False, True])
 @pytest.mark.parametrize(
     "delivered,settled",
@@ -67,6 +68,7 @@ async def test_native_receipt_precedes_delivery(
     settled: bool,
     caplog: Any,
     attached: bool,
+    profile: bool,
 ) -> None:
     from jvagent.action.native_harness import native_harness_action as module
 
@@ -109,11 +111,21 @@ async def test_native_receipt_precedes_delivery(
             "Do not suggest uploads in a disabled format."
         )
         assert kwargs["model_settings"] == {"temperature": 0.0, "max_tokens": 8192}
+        assert kwargs["max_run_cost_usd"] == ("0.75" if profile else "2")
         assert kwargs["tools"][0].binds_visitor is True
         assert original_tool.binds_visitor is None
         return runtime
 
     monkeypatch.setattr(module, "build_native_agent", factory)
+    real_run = module.run_native_agent
+
+    async def selected_run(*args: Any, **kwargs: Any) -> Any:
+        assert kwargs["max_requests"] == (1 if profile else 2)
+        assert kwargs["timeout_seconds"] == (3 if profile else 10)
+        assert kwargs["max_cost_usd"] == ("0.75" if profile else "2")
+        return await real_run(*args, **kwargs)
+
+    monkeypatch.setattr(module, "run_native_agent", selected_run)
     if delivered == "pre_registration_failure":
         monkeypatch.setattr(
             module,
@@ -243,6 +255,17 @@ async def test_native_receipt_precedes_delivery(
         max_tokens=2000,
         max_output_tokens=None,
         timeout_seconds=10,
+        channel_limits=(
+            {
+                "web": {
+                    "max_requests": 1,
+                    "timeout_seconds": 3,
+                    "max_run_cost_usd": "0.75",
+                }
+            }
+            if profile
+            else {}
+        ),
     )
     visitor = SimpleNamespace(
         interaction=interaction,
@@ -354,6 +377,10 @@ async def test_native_receipt_precedes_delivery(
     from jvagent.tooling.context import get_dispatch_context, get_tool_visitor
 
     assert interaction.native_run["run_id"] == "corr-server-owned"
+    assert interaction.native_run["limits"]["max_requests"] == (1 if profile else 2)
+    assert interaction.native_run["limits"]["max_run_cost_usd"] == (
+        "0.75" if profile else "2"
+    )
     assert get_dispatch_context() is None
     assert get_tool_visitor() is None
 

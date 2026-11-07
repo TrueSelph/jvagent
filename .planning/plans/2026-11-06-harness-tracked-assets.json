@@ -1480,7 +1480,7 @@
         "name": "jvagent/native_harness",
         "archetype": "NativeHarnessAction",
         "tracked_directory_files": 4,
-        "tracked_directory_digest": "sha256:40db0e0f6abfe66f4e9e7fc6efbcc4384b95e82f2275ad03863600a2debb7ceb"
+        "tracked_directory_digest": "sha256:853ae99c4942e86bac613bc877b10de63d0a38638cdd2a67093d50f54cc37a6f"
       },
       {
         "path": "jvagent/action/orchestrator/info.yaml",
