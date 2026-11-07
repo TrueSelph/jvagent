@@ -1355,9 +1355,15 @@ def test_selected_provider_maps_only_qualified_defaults_and_timeout(
     document = yaml.safe_load(source(app).read_text())
     owner = document["actions"][0]
     owner["context"]["model_temperature"] = 0.2
+    retained_actions = [
+        {"action": "jvagent/code_execution", "context": {"enabled": False}},
+        {"action": "jvagent/file_interface", "context": {"enabled": True}},
+        {"action": "jvagent/elevenlabs_tts", "context": {"voice": "Sarah"}},
+    ]
     document["actions"] = [
         owner,
         document["actions"][2],
+        *retained_actions,
         {
             "action": "jvagent/litellm_lm",
             "context": {
@@ -1377,3 +1383,5 @@ def test_selected_provider_maps_only_qualified_defaults_and_timeout(
         assert report["mappings"]["model_service.timeout"] == "model_settings.timeout"
         assert candidate["actions"][0]["context"]["model_settings"]["timeout"] == 120
         assert report["retired_actions"] == ["jvagent/litellm_lm"]
+        assert report["model_service_review"]["unreviewed_actions"] == []
+        assert all(action in candidate["actions"] for action in retained_actions)

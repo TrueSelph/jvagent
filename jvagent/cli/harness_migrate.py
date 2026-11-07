@@ -40,6 +40,9 @@ _REVIEWED_CONSUMERS = {
     "jvagent/serper_web_search",
     "jvagent/pageindex_read",
     "jvagent/agent_utils",
+    "jvagent/code_execution",
+    "jvagent/file_interface",
+    "jvagent/elevenlabs_tts",
 }
 # These fields are consumed only by legacy Reply composition and MCP selection.
 _NATIVE_ACTION_MODEL_SETTINGS = {

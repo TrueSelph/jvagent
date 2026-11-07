@@ -1,5 +1,24 @@
 # Reference model service retirement boundary
 
+## Reviewed provider-independent services
+
+The offline converter can preserve CodeExecution, FileInterface and
+ElevenLabs TTS while retiring a qualified selected chat model service.
+CodeExecution declares its SDK sandbox separately
+(`code_execution_action.py:84`), FileInterface publishes independently
+scoped file tools (`file_interface_action.py:110`), and ElevenLabs
+synthesizes supplied text through its own SDK and credentials
+(`elevenlabs.py:34`). The converter still validates enabled script
+policy separately. A regression checks the three declarations survive
+unchanged when the selected model service is retired.
+
+On the script-qualified reference copy, the CLI now reports five Actions
+awaiting review, plus the additional OpenAI and Ollama declarations.
+PageIndex still selects the old OpenAI service for its legacy tree
+search and ingestion paths. Intro contributes a first-turn Reply
+parameter and needs a native presentation review. No reference
+candidate was generated. This round changed offline conversion only.
+
 ## Reference script policy rehearsal
 
 At `244c2332` the unchanged reference migration reported two blockers.
