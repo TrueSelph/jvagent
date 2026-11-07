@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [SDK execution deadline policy](2026-11-07-native-sdk-tool-policy.md).
+Latest increment: [reference model service audit](2026-11-07-native-model-service-boundary.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,16 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Reference model service audit
+
+Four offline probes reproduce PageIndex provider fallback with zero recorded
+usage, sync history bypass, PDF executor binding loss and tree-search HTTP
+dispatch outside Action resolution. The
+[audit and retirement conditions](2026-11-07-native-model-service-boundary.md)
+separate direct retrieval, model-assisted search, ingestion, callbacks, Reply
+and MCP sampling. The reference converter still blocks model-service retirement.
+No runtime source changed in this audit round.
 
 ## SDK execution deadline policy
 
