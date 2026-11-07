@@ -21,10 +21,12 @@ from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
 )
 from jvagent.action.pageindex.documents import (
+    PAGEINDEX_TEXT_LIKE_EXTENSIONS,
     PAGEINDEX_UPLOAD_EXTENSIONS,
     _get_app_id_from_node,
     assimilate_document,
     delete_document,
+    get_document_root,
     list_documents,
 )
 from jvagent.action.pageindex.jvforge_assimilate import (
@@ -291,6 +293,7 @@ class DriveIngestConfig:
     doc_description: Optional[str] = None
     add_doc_description: Optional[bool] = None
     enable_all_chunks: bool = False
+    native_action: Any = None
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -542,6 +545,14 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 guessed = guess_pageindex_extension(doc_name, mime_type)
                 if guessed:
                     forge_filename = f"{doc_name}{guessed}"
+        if cfg.native_action is not None:
+            return await self._ingest_native_drive_document(
+                file_bytes,
+                Path(forge_filename).suffix.lower(),
+                doc_name=doc_name,
+                doc_url=doc_url,
+                cfg=cfg,
+            )
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
         if strategy == "flash" and not effective_forge:
             raise ValidationError(
@@ -642,6 +653,64 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         )
         return {"doc_name": doc_name}
 
+    async def _ingest_native_drive_document(
+        self,
+        content: bytes,
+        ext: str,
+        *,
+        doc_name: str,
+        doc_url: str,
+        cfg: DriveIngestConfig,
+    ) -> Dict[str, Any]:
+        """Index a new Drive document with the host's admitted completion service."""
+        from jvagent.harness.completion_tool import CompleteText
+
+        from ..endpoints import _do_assimilate
+        from ..native_ingest import run_native_markdown_ingest, run_native_pdf_ingest
+        from ..native_search import Complete
+
+        options: dict[str, Any] = {
+            "doc_name": doc_name,
+            "doc_url": doc_url,
+            "collection_name": cfg.collection_name,
+            "metadata": cfg.metadata,
+            "if_add_node_summary": cfg.node_summary,
+            "if_add_doc_description": cfg.add_doc_description,
+            "doc_description": cfg.doc_description,
+        }
+        operation: dict[str, Any] = {
+            "agent_id": cfg.agent_id,
+            "actor": self.id,
+            "doc_name": doc_name,
+            "requested_model": cfg.model,
+        }
+        if ext == ".pdf" and cfg.page_index_action.native_pdf_ingestion is True:
+            if Path(doc_name).suffix.lower() not in {"", ".pdf"}:
+                raise ValidationError("Native Drive PDF requires a PDF filename")
+
+            async def pdf(complete: Complete) -> dict[str, Any]:
+                return await _do_assimilate(
+                    content, ext, pdf_complete=complete, **options
+                )
+
+            return await run_native_pdf_ingest(
+                cfg.native_action, assimilate=pdf, **operation
+            )
+        if (
+            ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS
+            and cfg.page_index_action.native_markdown_ingestion is True
+        ):
+
+            async def markdown(complete: CompleteText) -> dict[str, Any]:
+                return await _do_assimilate(content, ext, complete=complete, **options)
+
+            return await run_native_markdown_ingest(
+                cfg.native_action, assimilate=markdown, **operation
+            )
+        raise ValidationError(
+            "This document format is not enabled for native Drive ingestion"
+        )
+
     async def _process_single_document(
         self,
         google_drive_documents_node: Any,
@@ -710,6 +779,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 )
 
             try:
+                if cfg.native_action is not None:
+                    if doc_type != "added":
+                        raise ValidationError(
+                            "Native Drive replacement requires revision ownership"
+                        )
+                    if await get_document_root(
+                        strip_redundant_md_suffix(doc_name), cfg.collection_name
+                    ):
+                        raise ValidationError(
+                            "Native Drive publication conflicts with an existing root"
+                        )
                 result = await asyncio.wait_for(
                     self._execute_drive_document_ingest(
                         google_drive_action=google_drive_action,
@@ -783,13 +863,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     ),
                 }
 
-            if not result.get("doc_name"):
+            if not result.get("doc_name") or (
+                cfg.native_action is not None and not result.get("_root_id")
+            ):
                 await self._mark_drive_ingest_failed(
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
                 )
-                logger.error("Ingestion returned no doc_name for %s", doc_name)
+                logger.error(
+                    "Ingestion returned no publication result for %s", doc_name
+                )
                 return {
                     "success": False,
                     "skipped": False,
@@ -1426,7 +1510,31 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         }
 
         collection_name = page_index_action.resolve_collection()
-        model_action = await page_index_action.get_model_action()
+        from jvagent.core.execution_owner import native_harness_action
+
+        native = await native_harness_action(await self.get_agent())
+        if native is not None:
+            if not page_index_action.enabled or collection_name != agent_id:
+                raise ValidationError(
+                    "Native Drive ingestion requires this agent's PageIndex collection"
+                )
+            if (
+                convert_to_markdown
+                or remove_deleted_documents
+                or normalize_bold_headings
+                or chunking_strategy
+                or resolve_effective_jvforge_base(
+                    (get_jvagent_jvforge_base_url() or "").strip(),
+                    use_jvforge=use_jvforge,
+                )
+            ):
+                raise ValidationError(
+                    "Native Drive ingestion requires local indexing of new documents"
+                )
+            skip_existing_documents = False
+        model_action = (
+            None if native is not None else await page_index_action.get_model_action()
+        )
         node_summary = page_index_action.config.get("node_summary")
         model = page_index_action.config.get("model")
 
@@ -1448,6 +1556,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             doc_description=doc_description,
             add_doc_description=add_doc_description,
             enable_all_chunks=enable_all_chunks,
+            native_action=native,
         )
 
         await self._phase_sync_google_drive_folders(

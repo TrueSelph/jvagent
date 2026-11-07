@@ -12,6 +12,30 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native Drive ingestion now resolves the agent's native owner before
+resolving a legacy model Action (`pageindex_google_drive_sync_action.py:1515`).
+New local PDFs and text files use the existing accounted PageIndex adapters
+when their profile flags are enabled (`:656`). The queue acknowledges an
+addition only with a publication root. Existing roots and queued changes
+fail admission until Drive revision ownership and reconciliation are
+available (`:785`). The native path also refuses converter options and
+deletion before scanning the folders.
+
+A disposable browser fixture supplied Drive bytes to the production queue
+handler on parent `4c85cdb2`. Two actual GPT-4.1 PDF operations returned
+HTTP 200 in 13.269 and 13.083 seconds. The final source blob
+`54706be5e74e314a8fca08e6f07dc2d57321d504` required a publication receipt.
+The browser reported two chunks, cleared pending and failed queues, and
+showed queue node `n.GoogleDriveDocuments.bc73432e867141899f98d5ab`.
+The final PostgreSQL interaction `n.Interaction.48f9e464a89546e0b831b664`
+was completed with root `n.DocumentRootNode.d75cb5261ca740d28937c07a`.
+Across both runs the graph reported 20 model requests, 6,178 provider
+tokens, USD 0.019100 estimated cost and zero unknown-cost calls. These
+document operations emitted no chat tool events. The fixture used synthetic
+Drive transport and a test entrypoint. Live Drive OAuth, the standard
+sync endpoint, text ingest through Drive, and restart reconciliation
+still require qualification.
+
 Both Drive skip-existing checks now require a positive per-root completion
 count and live chunks (`documents.py:882`,
 `pageindex_google_drive_sync_action.py:417` and `:425`). The adapter

@@ -1173,3 +1173,31 @@ async def test_skip_existing_requires_completed_root(tmp_path, monkeypatch):
         assert await _drive_added_fname_matches_indexed("ready.pdf", collection)
     finally:
         unregister_database(PAGEINDEX_DB_NAME)
+
+
+@pytest.mark.asyncio
+async def test_native_drive_replacement_refuses_before_downloading() -> None:
+    old = {"id": "file", "name": "old.pdf"}
+    new = {"id": "file", "name": "new.pdf"}
+    revision = {"id": "file", "old": old, "new": new}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [], "modified": [revision], "removed": []},
+    )
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+    )
+    drive = SimpleNamespace(get_media=AsyncMock())
+    result = await PageIndexGoogleDriveSyncAction()._process_single_document(
+        node, drive, new, "modified", cfg, old_file=old
+    )
+    assert not result["success"]
+    assert "revision ownership" in result["ingestion_message"]
+    assert node.failed_documents["modified"] == [revision]
+    drive.get_media.assert_not_awaited()
