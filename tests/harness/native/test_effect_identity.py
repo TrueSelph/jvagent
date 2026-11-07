@@ -6,8 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 pytest.importorskip("pydantic_ai_harness")
+from pydantic import TypeAdapter
 from pydantic_ai_harness.step_persistence import ToolEffectRecord
 
+from jvagent.harness.mutation_tools import MutationOutcomeUnknown
 from jvagent.harness.step_store import InteractionStepStore
 
 
@@ -66,3 +68,33 @@ async def test_effect_annotation_finish_and_identical_retry_are_supported() -> N
     await store.record_tool_effect(final)
     await store.record_tool_effect(final)
     assert len(interaction.native_steps["effects"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("run", ["run", "child-run"])
+async def test_semantic_effect_key_cannot_be_claimed_by_another_call(run: str) -> None:
+    interaction = SimpleNamespace(native_steps={})
+
+    async def save() -> None:
+        pass
+
+    interaction.save = save
+    store = InteractionStepStore(interaction)
+    original = ToolEffectRecord(
+        run_id="run",
+        tool_call_id="first",
+        tool_name="send",
+        status="completed",
+        effect_summary="jv:mutation:whatsapp-send:v1",
+        idempotency_key="semantic-key",
+    )
+    await store.record_tool_effect(original)
+    with pytest.raises(MutationOutcomeUnknown, match="already claimed"):
+        await store.record_tool_effect(
+            replace(original, run_id=run, tool_call_id="second")
+        )
+    assert interaction.native_steps["effects"] == [
+        __import__("pydantic")
+        .TypeAdapter(ToolEffectRecord)
+        .dump_python(original, mode="json")
+    ]

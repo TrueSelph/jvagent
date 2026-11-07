@@ -27,6 +27,31 @@ def _meta_action(**attrs) -> WhatsAppAction:
 
 
 @pytest.mark.asyncio
+async def test_send_flow_cannot_pair_an_allowed_name_with_another_id(monkeypatch):
+    action = _meta_action(flow_allowlist=["signin_signup"])
+    send = AsyncMock(return_value={"ok": True, "messages": [{"id": "wamid.test"}]})
+    monkeypatch.setattr(WhatsAppAction, "is_configured", lambda _: True)
+    monkeypatch.setattr(
+        WhatsAppAction,
+        "api",
+        AsyncMock(return_value=SimpleNamespace(send_flow_message=send)),
+    )
+    host = SimpleNamespace(
+        user_id="15555550100",
+        channel="whatsapp",
+        session_id="session",
+        _agent=SimpleNamespace(id="agent"),
+        interaction=None,
+    )
+    with bind_dispatch_context(host):
+        result = json.loads(
+            await action.send_flow(flow_id="forbidden", flow_name="signin_signup")
+        )
+    assert result["ok"] is False and "not both" in result["error"]
+    send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_send_flow_rejects_non_whatsapp_channel(monkeypatch):
     monkeypatch.setenv("JVAGENT_PUBLIC_BASE_URL", "https://agent.example.com")
     monkeypatch.setenv("JVCONNECT_URL", "https://connect.example.com")

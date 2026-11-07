@@ -17,6 +17,8 @@ from pydantic_ai_harness.step_persistence import (
     ToolEffectRecord,
 )
 
+from jvagent.harness.mutation_tools import MutationOutcomeUnknown
+
 
 class InteractionStepStore:
     """Persist public library records on a declared jvspatial Interaction field."""
@@ -35,6 +37,24 @@ class InteractionStepStore:
             "jv_user_id": getattr(self.interaction, "user_id", None),
             "jv_session_id": getattr(self.interaction, "session_id", None),
         }
+        # Export authenticated ingress facts only into the SDK's host-owned
+        # registration. Message bodies/metadata cannot grant transport authority.
+        from jvagent.tooling.channel_identity import verified_channel_metadata
+        from jvagent.tooling.context import get_dispatch_context
+
+        context = get_dispatch_context()
+        if (
+            context is not None
+            and context.agent_id == self.agent_id
+            and context.interaction_id == getattr(self.interaction, "id", None)
+            and context.channel
+        ):
+            try:
+                facts = verified_channel_metadata(channels=frozenset({context.channel}))
+            except ValueError:
+                pass
+            else:
+                scope.update(facts)
         return {
             key: value
             for key, value in scope.items()
@@ -120,6 +140,16 @@ class InteractionStepStore:
                             raise ValueError(
                                 "Native tool effect annotations are immutable"
                             )
+                effect_key = encoded.get("idempotency_key")
+                if effect_key is not None and any(
+                    value.get("idempotency_key") == effect_key
+                    and (value.get("run_id"), value.get("tool_call_id"))
+                    != (record.run_id, record.tool_call_id)
+                    for value in values
+                ):
+                    raise MutationOutcomeUnknown(
+                        "Native effect idempotency key is already claimed"
+                    )
             if identity is not None:
                 values = [
                     value

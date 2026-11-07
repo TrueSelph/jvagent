@@ -292,9 +292,9 @@ actions:
         - triage          # library CLAUDE skill — sorts findings via code_execution
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
         - signup-interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
-        - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
-        - whatsapp_flows      # Meta Flow interactive send (WhatsApp text / voice-call)
-        - whatsapp_service_flows  # signup/signin + appointment booking Flow intents
+        - whatsapp-templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
+        - whatsapp-flows      # Meta Flow interactive send (WhatsApp text / voice-call)
+        - whatsapp-service-flows  # signup/signin + appointment booking Flow intents
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per

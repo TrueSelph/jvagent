@@ -55,6 +55,7 @@ async def test_pre_model_admission_error_has_visible_notice(monkeypatch: Any) ->
         ("settlement_write_failed", True),
         ("pre_registration_failure", True),
         ("mutation_denied", True),
+        ("mutation_unknown", True),
         ("retry_limit", True),
         ("wrapped_retry_limit", True),
         ("protocol_error", True),
@@ -127,6 +128,14 @@ async def test_native_receipt_precedes_delivery(
             "run_native_agent",
             AsyncMock(side_effect=MutationAccessDenied("private policy detail")),
         )
+    if delivered == "mutation_unknown":
+        from jvagent.harness.mutation_tools import MutationOutcomeUnknown
+
+        monkeypatch.setattr(
+            module,
+            "run_native_agent",
+            AsyncMock(side_effect=MutationOutcomeUnknown("private provider detail")),
+        )
     if delivered in {"retry_limit", "wrapped_retry_limit", "protocol_error"}:
         from pydantic_ai.exceptions import (
             ModelRetry,
@@ -191,6 +200,7 @@ async def test_native_receipt_precedes_delivery(
         if delivered in {
             "pre_registration_failure",
             "mutation_denied",
+            "mutation_unknown",
             "retry_limit",
             "wrapped_retry_limit",
             "protocol_error",
@@ -278,6 +288,16 @@ async def test_native_receipt_precedes_delivery(
         assert (
             "private tool argument detail"
             not in str(saved) + str(published) + caplog.text
+        )
+    elif delivered == "mutation_unknown":
+        await NativeHarnessAction.execute(facade, visitor)
+        assert saved[-1]["reason"] == "mutation_outcome_unknown"
+        assert published == [
+            "That operation may already have been accepted. Automatic retry "
+            "is blocked until its outcome has been reconciled."
+        ]
+        assert (
+            "private provider detail" not in str(saved) + str(published) + caplog.text
         )
     elif delivered == "mutation_denied":
         await NativeHarnessAction.execute(facade, visitor)

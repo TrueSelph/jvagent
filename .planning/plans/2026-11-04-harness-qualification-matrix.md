@@ -50,6 +50,13 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Native WhatsApp: [qualification](2026-11-06-native-whatsapp-tools.md). Actual
+GPT-4.1/owned-provider tests qualify sender/named-grant boundaries, catalog/send
+adapters, duplicate refusal, unknown-acknowledgement blocking and native egress
+authority. Eight physical domain sends and all 28 model requests reconcile.
+The reference assessment has six blockers; actual Meta, voice, serverless,
+distributed ownership, operator reconciliation and migration/deletion remain open.
+
 Control retirement and egress: [qualification](2026-11-06-native-controls.md).
 Raw-tool prompt controls and all-enabled MCP selectors retire explicitly; active
 unreviewed MCP declarations and restricted selectors block. Browser/model lookup,

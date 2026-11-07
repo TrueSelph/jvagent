@@ -1,5 +1,5 @@
 ---
-name: whatsapp_templates
+name: whatsapp-templates
 description: >
   Send an approved WhatsApp Meta message template (HSM) to the user who just
   messaged on WhatsApp — e.g. "send me the signup template", "send the welcome
@@ -41,10 +41,19 @@ Word/PDF document.
    `whatsapp__send_template` with that `template_name`.
 2. If they ask what templates exist, or the name is ambiguous, call
    `whatsapp__list_templates`, then send the matching one if they pick.
-3. On `ok: true`, confirm briefly that the template was sent (e.g. "Sent the
-   signup template.").
+3. On `ok: true`, briefly confirm acceptance for sending. Do not claim
+   recipient delivery without a verified delivery acknowledgement.
 4. On allowlist or Meta errors, report the failure plainly; do not claim the
    message was delivered.
 
-Do not activate `signup_interview` for "send the signup template" — that skill
+Do not activate `signup-interview` for "send the signup template" — that skill
 is a multi-turn registration form, not a Meta HSM.
+
+## Send outcome
+
+An authenticated inbound sender and named host tool permission are required.
+A provider message ID acknowledges acceptance, not recipient delivery or business
+completion. On a missing receipt, timeout, uncertain outcome or duplicate-operation
+refusal, report the uncertainty and do not repeat the send. Recovery requires an
+operator to reconcile the existing operation; changing arguments or switching
+between a flow ID and name is not an authorized retry.

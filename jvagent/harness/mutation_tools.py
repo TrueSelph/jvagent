@@ -14,6 +14,10 @@ class MutationAccessDenied(PermissionError):
     """Host policy denied this mutation before its domain write was invoked."""
 
 
+class MutationOutcomeUnknown(RuntimeError):
+    """An external effect lacks a trustworthy acknowledgement; never retry it."""
+
+
 def is_mutation_effect(summary: str | None) -> bool:
     """Recognize retained conversation writes and new reviewed mutation facts."""
     return bool(summary) and (
@@ -44,6 +48,13 @@ class NativeMutationTool(Tool):
     async def recovery_scope(self) -> str | None:
         """Optional domain resource fingerprint, captured in SDK run metadata."""
         return None
+
+    async def effect_identity(
+        self, *, run_id: str, tool_call_id: str, arguments: dict[str, Any]
+    ) -> str:
+        """Return an SDK effect key; reviewed domains may bind semantic intent."""
+        scope = await self.recovery_scope()
+        return f"{run_id}/{tool_call_id}" + (f"/{scope}" if scope is not None else "")
 
     async def verify_recovery(self, *, visitor: Any, arguments: dict[str, Any]) -> Any:
         """Return a verified domain acknowledgement, without executing the write."""

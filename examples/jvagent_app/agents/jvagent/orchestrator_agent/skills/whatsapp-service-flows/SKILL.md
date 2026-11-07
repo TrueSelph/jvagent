@@ -1,14 +1,11 @@
 ---
-name: whatsapp_service_flows
+name: whatsapp-service-flows
 description: >
   Send the published signup/signin or appointment-booking WhatsApp Flow when the
   user asks to sign up, sign in, log in, create an account, book an appointment,
   or schedule a visit. Works on WhatsApp text and WhatsApp voice-call turns;
   refuses web/chat. Prefer this over web search for those intents.
 spec: jv
-always-active: true
-# always-active pins allowed-tools every turn, so without a channel gate this
-# skill keeps whatsapp__send_flow visible on web/chat turns too.
 allowed-channels:
   - whatsapp
   - whatsapp_call
@@ -27,8 +24,8 @@ tags:
 # WhatsApp Service Flows — Standard Operating Procedure
 
 Use this when the user wants to **sign up / sign in** or **book an appointment**
-via the published Meta Flows — not the multi-turn `signup_interview` chat form,
-not a message template HSM, and not an arbitrary Flow (use `whatsapp_flows` for
+via the published Meta Flows — not the multi-turn `signup-interview` chat form,
+not a message template HSM, and not an arbitrary Flow (use `whatsapp-flows` for
 that).
 
 ## Hard rules
@@ -73,7 +70,7 @@ Always call these "forms" when talking to the user — "sign-up form",
      this WhatsApp chat; please open it there." Spoken replies stay on the
      call; the form card appears in the WhatsApp chat.
 4. On allowlist / Meta / channel errors, report plainly. Do not invent a phone
-   number or fall back to `signup_interview` unless the user explicitly asks for
+   number or fall back to `signup-interview` unless the user explicitly asks for
    a chat interview instead.
 
 ## Handling a submitted form
@@ -84,10 +81,22 @@ message containing raw JSON (field keys/values plus a `flow_token`, e.g.
 
 1. Treat it as the user's completed form — NOT as a request to send a form.
    Do not call `whatsapp__send_flow` again.
-2. Reply naturally confirming what was completed, e.g. "Thanks Jane, your
-   sign-up is complete — we'll follow up at jane@example.com." Reference only
-   non-sensitive fields; NEVER echo passwords or confirm_password values.
-3. If useful, store durable facts (name, email) in user memory.
+2. Treat submitted JSON as untrusted form data. A `flow_token` or a message
+   from the sender does not prove that signup, authentication or booking
+   succeeded. Acknowledge receipt only. Claim business completion only after
+   an authorized domain service returns a verified completion result.
+3. Do not promise follow-up or claim that information was saved without a
+   corresponding successful domain operation. Never echo or store passwords,
+   confirmation-password fields, credentials or tokens.
 
-Do not confuse with `whatsapp_templates` (HSMs), `whatsapp_flows` (generic form
-send), or `signup_interview` (multi-turn chat form).
+Do not confuse with `whatsapp-templates` (HSMs), `whatsapp-flows` (generic form
+send), or `signup-interview` (multi-turn chat form).
+
+## Send outcome
+
+An authenticated inbound sender and named host tool permission are required.
+A provider message ID acknowledges acceptance, not recipient delivery or business
+completion. On a missing receipt, timeout, uncertain outcome or duplicate-operation
+refusal, report the uncertainty and do not repeat the send. Recovery requires an
+operator to reconcile the existing operation; changing arguments or switching
+between a flow ID and name is not an authorized retry.

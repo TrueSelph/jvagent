@@ -71,3 +71,21 @@ def require_verified_channel_sender(*, channels: frozenset[str]) -> str:
     ):
         raise ValueError("Verified channel sender is required")
     return proof.sender
+
+
+def verified_channel_metadata(*, channels: frozenset[str]) -> dict[str, str]:
+    """Project verified host facts for SDK registration or immediate notices."""
+    sender = require_verified_channel_sender(channels=channels)
+    context = get_dispatch_context()
+    assert context is not None
+    facts = {
+        "jv_verified_channel_sender": sender,
+        "jv_verified_channel": context.channel,
+        "jv_interaction_id": context.interaction_id,
+        "jv_agent_id": context.agent_id,
+        "jv_user_id": context.user_id,
+        "jv_session_id": context.session_id,
+    }
+    if not all(isinstance(value, str) and value for value in facts.values()):
+        raise ValueError("Channel sender metadata requires complete host scope")
+    return {key: str(value) for key, value in facts.items()}

@@ -234,10 +234,10 @@
         "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       },
       {
-        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_flows/SKILL.md",
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp-flows/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:15cd3f8daacfe294b4302202217e53079a4fcfde486ac26378c76e119d7cde5c",
-        "name": "whatsapp_flows",
+        "sha256": "sha256:3f0f9e769b7e2b8f55a0163c5af713a63f18604ae291206a01eecce293d228a6",
+        "name": "whatsapp-flows",
         "spec": "jv",
         "extends": null,
         "byte_order_mark": false,
@@ -267,10 +267,10 @@
         "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       },
       {
-        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_service_flows/SKILL.md",
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp-service-flows/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:f6bff3b39cab95c11e247eee846f292b83bcc69fec0a019535c449b80449bd87",
-        "name": "whatsapp_service_flows",
+        "sha256": "sha256:79de060a999c3cb12b39eec03acb3206ee5d08a6a6037255fb48a2836249c90d",
+        "name": "whatsapp-service-flows",
         "spec": "jv",
         "extends": null,
         "byte_order_mark": false,
@@ -289,7 +289,6 @@
         "metadata_keys": [
           "allowed-channels",
           "allowed-tools",
-          "always-active",
           "description",
           "name",
           "requires-actions",
@@ -300,10 +299,10 @@
         "tracked_directory_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       },
       {
-        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_templates/SKILL.md",
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp-templates/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:b087cc9f926637231619f77d6fb1fbfb75cb9b9545b15fb80d6c3d91a7951638",
-        "name": "whatsapp_templates",
+        "sha256": "sha256:a40c40944a5101e2d34c8cb5cda86207035fec16011f10bb183f11338ff2edc7",
+        "name": "whatsapp-templates",
         "spec": "jv",
         "extends": null,
         "byte_order_mark": false,
@@ -1481,7 +1480,7 @@
         "name": "jvagent/native_harness",
         "archetype": "NativeHarnessAction",
         "tracked_directory_files": 4,
-        "tracked_directory_digest": "sha256:b3c10563c59a643685b02534d07d275c915f0dbe7d002f9b70c490056c800aed"
+        "tracked_directory_digest": "sha256:d033f88424d3b324cf45d1b3999689c73498636d8a6f6e2ebb36f4b53a64500a"
       },
       {
         "path": "jvagent/action/orchestrator/info.yaml",
@@ -1544,7 +1543,7 @@
         "name": "jvagent/reply",
         "archetype": "ReplyAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:72d60574c624916356e557bd0562337892cae257eacfc0a148e6765098545e9e"
+        "tracked_directory_digest": "sha256:e223db47afca07a3f6be81dd21694be5b60fb2e01b5e78ae8519d78b4b54046c"
       },
       {
         "path": "jvagent/action/sentdm_broadcast/info.yaml",
@@ -1696,8 +1695,8 @@
         "sha256": "sha256:872bb5e676d6295f30b29c159a1ef1b10bbee1107c4dfdfe134fb5b82c35d27b",
         "name": "jvagent/whatsapp_action",
         "archetype": "WhatsAppAction",
-        "tracked_directory_files": 27,
-        "tracked_directory_digest": "sha256:b61f30326dd70526199377fa6ae55ca06281c6631a04ea331bf1e2d63821401f"
+        "tracked_directory_files": 29,
+        "tracked_directory_digest": "sha256:91b3f52eb6e45de0df83d18ba3eb6629aa8da34913d1f4606edcb2b4bf2393e2"
       },
       {
         "path": "jvagent/action/whatsapp_voice/info.yaml",
@@ -1762,7 +1761,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",
         "scope": "app-example",
-        "sha256": "sha256:5b3faf8dc439802fa13e1bcbbf961096064bf7e40fd116d9a994b27e11855fcd",
+        "sha256": "sha256:90d91241ce537656dfeb8574deba5e6c3be071ddad1aba68d36fab6c01ed2ab8",
         "agent": "jvagent/orchestrator_agent",
         "action_names": [
           "jvagent/orchestrator",
@@ -1839,16 +1838,16 @@
               "triage",
               "docx",
               "signup-interview",
-              "whatsapp_templates",
-              "whatsapp_flows",
-              "whatsapp_service_flows"
+              "whatsapp-templates",
+              "whatsapp-flows",
+              "whatsapp-service-flows"
             ],
             "skill_directory": null,
             "skill_directories": null
           }
         ],
         "tracked_directory_files": 68,
-        "tracked_directory_digest": "sha256:70660bca1fe435b7459550db582b4791e72d312fc14b7df7746a95d9b858271c"
+        "tracked_directory_digest": "sha256:37c726728dbb549fb62894cbd082dbabe61520111ef96a04f996bd26ef48237e"
       }
     ]
   }

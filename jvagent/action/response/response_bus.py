@@ -467,6 +467,8 @@ class ResponseBus:
         relay_to_adapters: bool,
     ) -> bool:
         """Check if a message can be delivered to the adapter."""
+        if (getattr(message, "metadata", None) or {}).get("native_local_only") is True:
+            return False
         if not self._is_thought_message(message):
             return True
         return relay_to_adapters and bool(getattr(adapter, "deliver_thoughts", False))

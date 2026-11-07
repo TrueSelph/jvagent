@@ -92,6 +92,11 @@ def delivery_metadata(visitor: Any, interaction: Any, model: str) -> dict[str, A
     usage = interaction.compute_usage()
     return {
         "native_replay": False,
+        **(
+            {"native_local_only": True}
+            if getattr(visitor, "_public_identity", None) is not None
+            else {}
+        ),
         "is_proactive": getattr(visitor, "_native_task_dispatch", None) is not None,
         "observability": {
             "usage": usage,
@@ -478,73 +483,77 @@ class NativeHarnessAction(InteractAction):
                 session_id=visitor.session_id,
                 lock=spend_store.lock,
             )
-        agent = build_native_agent(
-            self.model,
-            plan_store=plan_store,
-            script_sandbox=script_sandbox,
-            allow_mutations=not recovery_read_only,
-            model_settings=self.model_settings,
-            skill_directory=skill_directory,
-            skill_directories=skill_directories,
-            action_skill_bases=action_skill_bases,
-            delegates=self.delegates,
-            conversation_id=visitor.session_id,
-            event_stream_handler=events,
-            tools=tools,
-            toolsets=toolsets,
-            access_check=access,
-            tool_access_check=tool_access,
-            instructions="\n\n".join(
-                part
-                for part in (
-                    self.instructions,
-                    (
-                        "This is a read-only continuation after an operator verified an interrupted mutation. Acknowledge the verified state without issuing another mutation."
-                        if recovery_read_only
-                        else None
-                    ),
-                    getattr(visitor, "_host_system_context", None),
-                    "Host attachment input policy: "
-                    + (", ".join(getattr(self, "input_media_types", [])) or "none")
-                    + ". Files outside this MIME list cannot be accepted.",
-                    "Image uploads: "
-                    + (
-                        "enabled"
-                        if any(
-                            m.startswith("image/")
-                            for m in getattr(self, "input_media_types", [])
+        from jvagent.tooling.context import bind_dispatch_context
+
+        with bind_dispatch_context(visitor):
+            agent = build_native_agent(
+                self.model,
+                plan_store=plan_store,
+                script_sandbox=script_sandbox,
+                allow_mutations=not recovery_read_only,
+                model_settings=self.model_settings,
+                skill_directory=skill_directory,
+                skill_directories=skill_directories,
+                action_skill_bases=action_skill_bases,
+                delegates=self.delegates,
+                conversation_id=visitor.session_id,
+                event_stream_handler=events,
+                tools=tools,
+                toolsets=toolsets,
+                access_check=access,
+                tool_access_check=tool_access,
+                instructions="\n\n".join(
+                    part
+                    for part in (
+                        self.instructions,
+                        (
+                            "This is a read-only continuation after an operator verified an interrupted mutation. Acknowledge the verified state without issuing another mutation."
+                            if recovery_read_only
+                            else None
+                        ),
+                        getattr(visitor, "_host_system_context", None),
+                        "Host attachment input policy: "
+                        + (", ".join(getattr(self, "input_media_types", [])) or "none")
+                        + ". Files outside this MIME list cannot be accepted.",
+                        "Image uploads: "
+                        + (
+                            "enabled"
+                            if any(
+                                m.startswith("image/")
+                                for m in getattr(self, "input_media_types", [])
+                            )
+                            else "disabled"
                         )
-                        else "disabled"
+                        + ". PDF uploads: "
+                        + (
+                            "enabled"
+                            if "application/pdf"
+                            in getattr(self, "input_media_types", [])
+                            else "disabled"
+                        )
+                        + ". Do not suggest uploads in a disabled format.",
                     )
-                    + ". PDF uploads: "
-                    + (
-                        "enabled"
-                        if "application/pdf" in getattr(self, "input_media_types", [])
-                        else "disabled"
-                    )
-                    + ". Do not suggest uploads in a disabled format.",
-                )
-                if part
-            ),
-            step_store=step_store,
-            spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
-            context_max_tokens=self.context_max_tokens,
-            context_keep_tokens=self.context_keep_tokens,
-            spend_store=spend_store,
-            max_run_cost_usd=self.max_run_cost_usd,
-            max_conversation_cost_usd=self.max_conversation_cost_usd,
-            available_actions=sorted(
-                {
-                    name
-                    for action in actions
-                    for name in (
-                        action.get_class_name(),
-                        *(base.__name__ for base in type(action).__mro__),
-                    )
-                }
-            ),
-            channel=getattr(visitor, "channel", "default"),
-        )
+                    if part
+                ),
+                step_store=step_store,
+                spend_observer=NativeSpendRecorder(interaction, lock=step_store.lock),
+                context_max_tokens=self.context_max_tokens,
+                context_keep_tokens=self.context_keep_tokens,
+                spend_store=spend_store,
+                max_run_cost_usd=self.max_run_cost_usd,
+                max_conversation_cost_usd=self.max_conversation_cost_usd,
+                available_actions=sorted(
+                    {
+                        name
+                        for action in actions
+                        for name in (
+                            action.get_class_name(),
+                            *(base.__name__ for base in type(action).__mro__),
+                        )
+                    }
+                ),
+                channel=getattr(visitor, "channel", "default"),
+            )
         run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
         interaction.native_run = {
             "run_id": run_id,
@@ -560,8 +569,6 @@ class NativeHarnessAction(InteractAction):
             )
         await interaction.save()
         try:
-            from jvagent.tooling.context import bind_dispatch_context
-
             with bind_dispatch_context(visitor):
                 result = await run_native_agent(
                     agent,
@@ -683,7 +690,10 @@ class NativeHarnessAction(InteractAction):
 
                 from jvagent.harness.accounting import recover_native_usage
                 from jvagent.harness.contracts import OutputTokenLimitReached
-                from jvagent.harness.mutation_tools import MutationAccessDenied
+                from jvagent.harness.mutation_tools import (
+                    MutationAccessDenied,
+                    MutationOutcomeUnknown,
+                )
 
                 retry_limit = isinstance(exc, UnexpectedModelBehavior) and isinstance(
                     exc.__cause__, (ModelRetry, ToolRetryError)
@@ -701,6 +711,8 @@ class NativeHarnessAction(InteractAction):
                     interaction.native_run["reason"] = "output_token_limit"
                 elif isinstance(exc, MutationAccessDenied):
                     interaction.native_run["reason"] = "mutation_access_denied"
+                elif isinstance(exc, MutationOutcomeUnknown):
+                    interaction.native_run["reason"] = "mutation_outcome_unknown"
                 elif retry_limit:
                     interaction.native_run["reason"] = "retry_limit"
                 await interaction.save()
@@ -709,6 +721,11 @@ class NativeHarnessAction(InteractAction):
                 if isinstance(exc, MutationAccessDenied):
                     message = (
                         "Your current permissions do not allow that write operation."
+                    )
+                elif isinstance(exc, MutationOutcomeUnknown):
+                    message = (
+                        "That operation may already have been accepted. Automatic retry "
+                        "is blocked until its outcome has been reconciled."
                     )
                 elif isinstance(exc, ModelAuthenticationError):
                     message = "The model provider rejected its API credentials. Please update the configured key."

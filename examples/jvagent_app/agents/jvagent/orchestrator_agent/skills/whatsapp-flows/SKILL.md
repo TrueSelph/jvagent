@@ -1,10 +1,10 @@
 ---
-name: whatsapp_flows
+name: whatsapp-flows
 description: >
   Send a WhatsApp Flow (interactive form) to the user on a WhatsApp text or
   WhatsApp voice-call turn — e.g. "send me the signup flow", "open the survey
   form". Refuses web/chat. For signup/signin or appointment booking intents,
-  prefer whatsapp_service_flows.
+  prefer whatsapp-service-flows.
 spec: jv
 # The SOP itself refuses web/chat, but the gate belongs here: without it the
 # skill is still listed (and its tools surfaced) on every web turn — dead prompt
@@ -25,10 +25,10 @@ tags:
 # WhatsApp Flows — Standard Operating Procedure
 
 Use this when the user asks to open/send a WhatsApp **Flow** (Meta interactive
-form), not a message template HSM and not the multi-turn `signup_interview`.
+form), not a message template HSM and not the multi-turn `signup-interview`.
 
 For natural-language **signup / signin** or **appointment booking** requests,
-prefer the `whatsapp_service_flows` skill (fixed published Flow ids).
+prefer the `whatsapp-service-flows` skill (fixed published Flow ids).
 
 ## Hard rules
 
@@ -63,5 +63,14 @@ prefer the `whatsapp_service_flows` skill (fixed published Flow ids).
 4. On `ok: true`, confirm the Flow was sent. On allowlist/Meta errors, report
    plainly.
 
-Do not confuse with `whatsapp_templates` (HSMs), `whatsapp_service_flows`
-(signup/signin + appointment intents), or `signup_interview` (chat form).
+Do not confuse with `whatsapp-templates` (HSMs), `whatsapp-service-flows`
+(signup/signin + appointment intents), or `signup-interview` (chat form).
+
+## Send outcome
+
+An authenticated inbound sender and named host tool permission are required.
+A provider message ID acknowledges acceptance, not recipient delivery or business
+completion. On a missing receipt, timeout, uncertain outcome or duplicate-operation
+refusal, report the uncertainty and do not repeat the send. Recovery requires an
+operator to reconcile the existing operation; changing arguments or switching
+between a flow ID and name is not an authorized retry.

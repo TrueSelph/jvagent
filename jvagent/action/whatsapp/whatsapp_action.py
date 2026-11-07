@@ -19,6 +19,7 @@ from jvagent.core.public_url import get_public_base_url
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.channel_identity import require_verified_channel_sender
 from jvagent.tooling.context import get_dispatch_context, get_tool_visitor
+from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import tool
 
 from .modules.jvconnect_api import JvconnectWhatsAppAPI
@@ -27,6 +28,7 @@ from .modules.registry import get_provider_factory
 from .modules.ultramsg import UltraMsgAPI
 from .modules.wppconnect import WPPConnectAPI
 from .modules.wwebjs_api import WWebJSAPI
+from .utils.message_receipts import acknowledged_message_id
 from .utils.meta_verify_token import derive_meta_verify_token
 from .utils.meta_webhook_verify import (
     agent_id_from_callback_url,
@@ -72,6 +74,19 @@ class WhatsAppAction(Action):
     # Stable tool prefix: whatsapp__list_templates / whatsapp__send_template /
     # whatsapp__list_flows / whatsapp__send_flow
     tool_namespace: ClassVar[str] = "whatsapp"
+
+    async def get_native_tools(self) -> list[Tool]:
+        """Expose reviewed catalogs and SDK-journaled, explicitly permitted sends."""
+        from .native_tools import READS, SENDS, WhatsAppSendTool, read_tool
+
+        return [
+            (
+                WhatsAppSendTool(original, self)
+                if original.name in SENDS
+                else read_tool(original) if original.name in READS else original
+            )
+            for original in await self.get_tools()
+        ]
 
     # AUDIT-actions XC-4: declare non-conforming endpoint paths so deregister
     # cleanup unregisters them along with the standard /actions/{id}/ ones.
@@ -1635,7 +1650,7 @@ class WhatsAppAction(Action):
             ]
             return json.dumps({"ok": True, "templates": slim})
         except Exception as e:
-            logger.exception("whatsapp__list_templates failed")
+            logger.error("whatsapp__list_templates failed (%s)", type(e).__name__)
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     @tool(
@@ -1711,15 +1726,17 @@ class WhatsAppAction(Action):
                         "raw": result,
                     }
                 )
+            try:
+                message_id = acknowledged_message_id(result)
+            except ValueError:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "whatsapp_send_acknowledgement_missing",
+                        "outcome": "unknown",
+                    }
+                )
             await self._record_template_send(name, lang, to, result)
-            messages = result.get("messages") or []
-            message_id = ""
-            if (
-                isinstance(messages, list)
-                and messages
-                and isinstance(messages[0], dict)
-            ):
-                message_id = str(messages[0].get("id") or "")
             return json.dumps(
                 {
                     "ok": True,
@@ -1730,7 +1747,7 @@ class WhatsAppAction(Action):
                 }
             )
         except Exception as e:
-            logger.exception("whatsapp__send_template failed")
+            logger.error("whatsapp__send_template failed (%s)", type(e).__name__)
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     # ------------------------------------------------------------------
@@ -1855,7 +1872,7 @@ class WhatsAppAction(Action):
             ]
             return json.dumps({"ok": True, "flows": slim})
         except Exception as e:
-            logger.exception("whatsapp__list_flows failed")
+            logger.error("whatsapp__list_flows failed (%s)", type(e).__name__)
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     @tool(
@@ -1910,6 +1927,10 @@ class WhatsAppAction(Action):
         to = (ctx.user_id or "").strip()
         fid = (flow_id or "").strip()
         fname = (flow_name or "").strip()
+        if fid and fname:
+            return json.dumps(
+                {"ok": False, "error": "Provide flow_id or flow_name, not both"}
+            )
         if not fid and not fname:
             return json.dumps(
                 {"ok": False, "error": "flow_id or flow_name is required"}
@@ -1919,11 +1940,7 @@ class WhatsAppAction(Action):
                 {
                     "ok": False,
                     "error": "flow is not on the agent allowlist",
-                    "hint": (
-                        "Allowlist entries must match the flow_id and/or "
-                        "flow_name you pass. Put both the Meta Flow id and "
-                        "name in flow_allowlist, or pass both arguments."
-                    ),
+                    "hint": ("Use exactly one allowlisted flow_id or flow_name."),
                     "requested": {"flow_id": fid, "flow_name": fname},
                     "allowlist": self._flow_allowlist_keys(),
                 }
@@ -2000,17 +2017,19 @@ class WhatsAppAction(Action):
                         "raw": result,
                     }
                 )
+            try:
+                message_id = acknowledged_message_id(result)
+            except ValueError:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "whatsapp_send_acknowledgement_missing",
+                        "outcome": "unknown",
+                    }
+                )
             await self._record_flow_send(
                 flow_id=fid, flow_name=fname, to=to, result=result
             )
-            messages = result.get("messages") or []
-            message_id = ""
-            if (
-                isinstance(messages, list)
-                and messages
-                and isinstance(messages[0], dict)
-            ):
-                message_id = str(messages[0].get("id") or "")
             return json.dumps(
                 {
                     "ok": True,
@@ -2022,7 +2041,7 @@ class WhatsAppAction(Action):
                 }
             )
         except Exception as e:
-            logger.exception("whatsapp__send_flow failed")
+            logger.error("whatsapp__send_flow failed (%s)", type(e).__name__)
             return json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
     async def healthcheck(self) -> Union[bool, Dict[str, Any]]:

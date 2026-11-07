@@ -380,6 +380,10 @@ class ReplyAction(Action):
 
         channel = getattr(visitor, "channel", "default") or "default"
         visitor_data = getattr(visitor, "data", None) or {} if visitor else {}
+        if getattr(visitor, "_native_execution", False):
+            # Native output metadata is explicit server policy. Forwarding
+            # request data would expose channel adapters' raw-send escape hatches.
+            visitor_data = {}
         publish_options: Dict[str, Any] = {
             "session_id": visitor.session_id,
             "content": content,
@@ -394,10 +398,15 @@ class ReplyAction(Action):
         }
         if message_id is not None:
             publish_options["message_id"] = message_id
-            publish_options["require_adapter_ack"] = True
-        message = await response_bus.publish(
-            **publish_options,
-        )
+            publish_options["require_adapter_ack"] = not bool(
+                (metadata or {}).get("native_local_only")
+            )
+        from jvagent.tooling.context import bind_dispatch_context
+
+        with bind_dispatch_context(visitor):
+            message = await response_bus.publish(
+                **publish_options,
+            )
         # ResponseBus returns an empty-content envelope when it suppresses a
         # duplicate or a fail-fast channel filter rejects the message. Do not
         # report those outcomes as confirmed delivery to pilot TaskStore callers.

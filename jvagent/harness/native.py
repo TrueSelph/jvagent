@@ -138,10 +138,13 @@ def build_native_agent(
                 from pydantic_ai.exceptions import ToolRetryError
                 from pydantic_ai_harness.step_persistence import annotate_tool_effect
 
-                scope = await original.recovery_scope()
-                effect_key = f"{ctx.run_id}/{ctx.tool_call_id}" + (
-                    f"/{scope}" if scope is not None else ""
+                effect_key = await original.effect_identity(
+                    run_id=ctx.run_id,
+                    tool_call_id=ctx.tool_call_id,
+                    arguments=arguments,
                 )
+                if not isinstance(effect_key, str) or not effect_key.strip():
+                    raise ValueError("Mutations require a non-empty SDK effect key")
                 await annotate_tool_effect(
                     step_store,
                     ctx,

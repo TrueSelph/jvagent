@@ -433,3 +433,19 @@ configured on InterviewAction rather than granted by skill metadata. It permits
 reviewed conversation-local callbacks inside SDK-dispatched Action tools. It is
 not a Python sandbox, transitive dependency pin or external-effect authorization.
 Source: [`native_hooks.py:1`](../jvagent/action/interview/native_hooks.py:1).
+
+### Idempotency key
+
+A host-chosen identifier recorded by official SDK effect persistence before I/O.
+A reviewed domain may bind a normalized request to an Interaction; another SDK
+call/run cannot claim the same key in that graph adapter. This does not guarantee
+provider-wide exactly-once delivery. See [ADR-0058](adr/0058-native-channel-authority-and-send-effects.md),
+`jvagent/harness/mutation_tools.py:52` and `jvagent/harness/step_store.py:144`.
+
+### Uncertain external outcome
+
+A dispatched operation whose acceptance cannot safely be established, or a
+duplicate claim requiring reconciliation. Mutation facts remain on the SDK
+journal; a missing receipt is not successful delivery or authority to retry.
+See [ADR-0058](adr/0058-native-channel-authority-and-send-effects.md) and
+`jvagent/action/whatsapp/native_tools.py:124`.
