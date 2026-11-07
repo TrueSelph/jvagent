@@ -12,6 +12,24 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+A native folder refresh now updates pending and failed additions in
+place when the listing reports a new version. Only files without an
+existing addition enter the modified bucket
+(`pageindex_google_drive_sync_action.py:169`). Failed additions still
+require the existing retry option. This preserves the version guard's
+failure record until a fresh listing supplies the new version.
+
+At parent `ca6b4c1a` and Action blob
+`90231794337daa26d6b7ff381e359a2a0a46f1f5`, an isolated browser fixture
+ran the production listing and queue merge phase against synthetic Drive
+metadata. HTTP 200 in 19 ms showed version 43 in the original pending
+and failed addition buckets and preserved an independent version
+42-to-43 change in the modified bucket. A fresh JSON graph readback
+verified `n.GoogleDriveDocuments.9893a02881da4c3e83df0904`. This phase
+made zero model requests and emitted no model usage, cost or tool
+events. Existing published roots still require verified ownership
+before replacement.
+
 Native folder listings request the Drive file version. Native ingestion
 requires the queued version to match before and after download, prior
 to calling the model or writing a root

@@ -166,6 +166,23 @@ def _queue_item_file_id(item: Any, queue_key: str) -> str:
     return str(item.get("id", ""))
 
 
+def _refresh_native_queued_additions(
+    node: Any, changes: Dict[str, List[Dict[str, Any]]]
+) -> None:
+    """Keep the latest listing in the original added bucket, including failed work."""
+    latest = {item["id"]: item["new"] for item in changes["modified"]}
+    refreshed: set[str] = set()
+    for queues in (node.ingesting_documents, node.failed_documents):
+        for index, item in enumerate(queues["added"]):
+            file_id = _queue_item_file_id(item, "added")
+            if file_id in latest:
+                queues["added"][index] = latest[file_id]
+                refreshed.add(file_id)
+    changes["modified"] = [
+        item for item in changes["modified"] if item["id"] not in refreshed
+    ]
+
+
 def _find_file_dict_in_tree(
     items: List[Dict[str, Any]], file_id: str
 ) -> Optional[Dict[str, Any]]:
@@ -1286,6 +1303,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         # the removals run and the queue drains normally.
                         _filter_doc_queues_for_disabled(
                             ingesting_documents, excluded_stale_ids
+                        )
+                    if include_version:
+                        _refresh_native_queued_additions(
+                            google_drive_documents_node, ingesting_documents
                         )
                     google_drive_documents_node.files = files
                     google_drive_documents_node.folder_name = folder_name

@@ -30,6 +30,7 @@ from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_googl
     _find_file_dict_in_tree,
     _merge_configured_exclude_sub_folders,
     _prune_added_queue_skip_existing,
+    _refresh_native_queued_additions,
     _strip_file_id_from_doc_queues,
     _sync_drive_node_status_from_queues,
 )
@@ -1358,3 +1359,32 @@ async def test_native_drive_refuses_unversioned_or_changed_download(queued_versi
     assert node.failed_documents["added"] == [fixture]
     assert drive.get_media.await_count == int(queued_version is not None)
     publish.assert_not_awaited()
+
+
+def test_native_refresh_retains_pending_and_failed_additions() -> None:
+    pending = {"id": "pending", "name": "before.pdf", "version": "42"}
+    failed = {"id": "failed", "name": "failed.pdf", "version": "42"}
+    indexed = {"id": "indexed", "name": "indexed.pdf", "version": "42"}
+    pending_next = {**pending, "name": "after.pdf", "version": "43"}
+    failed_next = {**failed, "version": "43"}
+    indexed_next = {**indexed, "version": "43"}
+    node = SimpleNamespace(
+        ingesting_documents={"added": [pending]},
+        failed_documents={"added": [failed]},
+    )
+    changes = {
+        "modified": [
+            {"id": old["id"], "old": old, "new": new}
+            for old, new in (
+                (pending, pending_next),
+                (failed, failed_next),
+                (indexed, indexed_next),
+            )
+        ]
+    }
+    _refresh_native_queued_additions(node, changes)
+    assert node.ingesting_documents["added"] == [pending_next]
+    assert node.failed_documents["added"] == [failed_next]
+    assert changes["modified"] == [
+        {"id": "indexed", "old": indexed, "new": indexed_next}
+    ]
