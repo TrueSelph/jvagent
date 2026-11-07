@@ -174,6 +174,7 @@ async def persist_structure(
     doc_url: Optional[str] = None,
     *,
     drive_source_key: Optional[str] = None,
+    drive_operation_id: Optional[str] = None,
 ) -> str:
     """Persist PageIndex output to jvspatial graph.
 
@@ -207,6 +208,7 @@ async def persist_structure(
             collection_name=collection_name,
             metadata=metadata,
             drive_source_key=drive_source_key,
+            drive_operation_id=drive_operation_id,
         )
         await root.set_context(context)
         await root.save()
@@ -266,4 +268,5 @@ async def tree_to_graph(
         metadata=metadata,
         doc_url=doc_url,
         drive_source_key=pageindex_output.get("drive_source_key"),
+        drive_operation_id=pageindex_output.get("drive_operation_id"),
     )

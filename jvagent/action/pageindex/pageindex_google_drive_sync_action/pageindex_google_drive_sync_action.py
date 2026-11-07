@@ -678,13 +678,55 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         from jvagent.harness.completion_tool import CompleteText
 
         from ..endpoints import _do_assimilate
-        from ..native_ingest import run_native_markdown_ingest, run_native_pdf_ingest
+        from ..native_ingest import (
+            CHANNEL,
+            PDF_CHANNEL,
+            run_native_markdown_ingest,
+            run_native_pdf_ingest,
+        )
         from ..native_search import Complete
 
         if not file_id:
             raise ValidationError("Native Drive ingestion requires a source file ID")
         source_facts = [self.id, file_id, hashlib.sha256(content).hexdigest()]
         source_key = hashlib.sha256(json.dumps(source_facts).encode()).hexdigest()
+        root = await get_document_root(
+            strip_redundant_md_suffix(doc_name), cfg.collection_name
+        )
+        if root is not None:
+            from jvagent.memory.interaction import Interaction
+
+            receipt = (
+                await Interaction.get(root.drive_operation_id)
+                if root.drive_operation_id and root.drive_source_key == source_key
+                else None
+            )
+            if (
+                receipt is not None
+                and receipt.user_id == self.id
+                and receipt.channel in {CHANNEL, PDF_CHANNEL}
+                and receipt.closed
+                and receipt.native_run.get("status") == "completed"
+                and receipt.native_run.get("usage_complete") is True
+                and receipt.usage.get("unknown_cost_call_count", 0) == 0
+                and root.metadata == cfg.metadata
+                and root.doc_url == doc_url
+                and (root.chunks or 0) > 0
+            ):
+                publication = json.loads(receipt.response or "null")
+                if (
+                    isinstance(publication, dict)
+                    and publication.get("_root_id") == root.id
+                ):
+                    return {
+                        "doc_name": doc_name,
+                        "_root_id": root.id,
+                        "reconciled": True,
+                    }
+            raise ValidationError(
+                "Native Drive publication conflicts with an existing root"
+            )
+
         options: dict[str, Any] = {
             "drive_source_key": source_key,
             "doc_name": doc_name,
@@ -695,7 +737,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             "if_add_doc_description": cfg.add_doc_description,
             "doc_description": cfg.doc_description,
         }
+
+        def bind_operation(interaction_id: str) -> None:
+            options["drive_operation_id"] = interaction_id
+
         operation: dict[str, Any] = {
+            "on_started": bind_operation,
             "agent_id": cfg.agent_id,
             "actor": self.id,
             "doc_name": doc_name,
@@ -803,12 +850,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     if doc_type != "added":
                         raise ValidationError(
                             "Native Drive replacement requires revision ownership"
-                        )
-                    if await get_document_root(
-                        strip_redundant_md_suffix(doc_name), cfg.collection_name
-                    ):
-                        raise ValidationError(
-                            "Native Drive publication conflicts with an existing root"
                         )
                 result = await asyncio.wait_for(
                     self._execute_drive_document_ingest(
@@ -942,6 +983,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 }
 
             msg = f"Added {doc_name}" if doc_type == "added" else f"Updated {doc_name}"
+            if result.get("reconciled"):
+                msg = f"Recovered publication for {doc_name}"
             jid = result.get("jvforge_job_id")
             if jid:
                 msg = f"{msg} (jvforge job {jid})"

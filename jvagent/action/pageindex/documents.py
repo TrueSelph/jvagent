@@ -488,6 +488,7 @@ async def assimilate_document(
     complete: Optional[CompleteText] = None,
     pdf_complete: Complete | None = None,
     drive_source_key: Optional[str] = None,
+    drive_operation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -803,6 +804,7 @@ async def assimilate_document(
             result["metadata"] = metadata
             if drive_source_key is not None:
                 result["drive_source_key"] = drive_source_key
+                result["drive_operation_id"] = drive_operation_id
             if doc_description is not None:
                 result["doc_description"] = doc_description
             if doc_url is not None:
@@ -1061,7 +1063,7 @@ async def import_documents(
                 **{
                     key: value
                     for key, value in root_data.items()
-                    if key != "drive_source_key"
+                    if key not in {"drive_source_key", "drive_operation_id"}
                 }
             ).save()
         imported_nodes: list = []

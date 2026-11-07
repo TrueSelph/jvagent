@@ -50,6 +50,10 @@ class DocumentRootNode(Node):
         default=None,
         description="Server-bound Drive source and content identity",
     )
+    drive_operation_id: Optional[str] = attribute(
+        default=None,
+        description="Native operation Interaction that published this Drive root",
+    )
     chunks: Optional[int] = attribute(
         default=None,
         description="Number of DocumentNode chunks for this document",

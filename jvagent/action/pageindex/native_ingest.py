@@ -26,6 +26,7 @@ async def run_native_markdown_ingest(
     actor: str,
     doc_name: str,
     requested_model: str | None,
+    on_started: Callable[[str], None] | None = None,
     assimilate: Callable[[CompleteText], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Share SDK accounting across summaries and retain the published root ID."""
@@ -49,6 +50,7 @@ async def run_native_markdown_ingest(
         channel=CHANNEL,
         operation=operation,
         result_receipt=_publication,
+        on_started=on_started,
     )
 
 
@@ -59,6 +61,7 @@ async def run_native_pdf_ingest(
     actor: str,
     doc_name: str,
     requested_model: str | None,
+    on_started: Callable[[str], None] | None = None,
     assimilate: Callable[[Complete], Awaitable[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Use the same host limits and receipts for the classic PDF parser."""
@@ -71,4 +74,5 @@ async def run_native_pdf_ingest(
         channel=PDF_CHANNEL,
         operation=assimilate,
         result_receipt=_publication,
+        on_started=on_started,
     )

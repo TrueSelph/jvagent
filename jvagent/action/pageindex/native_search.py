@@ -75,6 +75,7 @@ async def run_native_operation(
     channel: str,
     operation: Callable[[Complete], Awaitable[Result]],
     result_receipt: Callable[[Result], Any] | None = None,
+    on_started: Callable[[str], None] | None = None,
 ) -> Result:
     """Persist one service operation with shared native SDK limits."""
     from jvspatial import flush_deferred_entities
@@ -202,6 +203,8 @@ async def run_native_operation(
         return result
 
     try:
+        if on_started is not None:
+            on_started(interaction.id)
         results = await operation(complete)
     except BaseException as exc:
         interaction.native_run = {

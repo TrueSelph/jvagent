@@ -12,6 +12,29 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Drive now binds the native operation Interaction to the root before
+publication. A requeued addition can acknowledge the existing root when
+the file and bytes, source URL and metadata match, and a closed native
+receipt identifies that root with complete usage and no unknown cost
+(`native_search.py:206`, `pageindex_google_drive_sync_action.py:697`).
+Graph imports discard both binding fields. A root with a missing or
+incomplete receipt remains a conflict and requires reconciliation.
+
+A disposable browser fixture at parent `c2885ed4` published a synthetic
+Drive PDF through actual GPT-4.1 with runtime diff hash
+`35cdc4bd10efbd7e52dcb0a711c8892d8f784083`. HTTP 200 in 12.292 seconds
+showed two chunks and root `n.DocumentRootNode.b41263ca6f6b47818724e13d`.
+The completed Interaction `n.Interaction.cd43d74e8a0a4be0addf6a67`
+recorded 10 requests, 3,091 provider tokens, USD 0.009572 estimated cost,
+and zero unknown-cost calls. After a backend restart the final runtime
+diff `685e19022c30dd77d48ab8d44b972fe739c7a31a` acknowledged a fresh
+queue entry for the same source in 98 ms and reused both IDs. A second
+replay with changed access metadata returned a conflict and retained
+the failed queue entry in 110 ms. Neither replay made a model request
+or emitted chat tool events. This simulated queue redelivery using
+synthetic Drive bytes. Abrupt interruption before receipt completion,
+replacement, and live Drive transport remain open.
+
 Native Drive publication now stores a source key on the root before
 linking its chunks. The key binds the executing Action ID, Drive file
 ID and SHA-256 of the downloaded bytes

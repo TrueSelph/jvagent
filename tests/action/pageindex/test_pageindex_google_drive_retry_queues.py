@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -1238,3 +1240,62 @@ async def test_native_drive_stale_marker_requires_proven_owner_death(owner_dead)
         assert busy is not None
         assert saved.active_document == revision["name"]
         assert saved.active_worker == owner
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_metadata", [False, True])
+async def test_native_drive_replay_checks_publication_receipt(changed_metadata):
+    from jvagent.memory.interaction import Interaction
+
+    action = PageIndexGoogleDriveSyncAction()
+    data = b"fixture"
+    source_key = hashlib.sha256(
+        json.dumps([action.id, "file", hashlib.sha256(data).hexdigest()]).encode()
+    ).hexdigest()
+    root = SimpleNamespace(
+        id="root",
+        drive_operation_id="operation",
+        drive_source_key=source_key,
+        metadata={},
+        doc_url="https://example.com/doc.pdf",
+        chunks=1,
+    )
+    receipt = SimpleNamespace(
+        user_id=action.id,
+        channel="pageindex_pdf_ingestion",
+        closed=True,
+        native_run={"status": "completed", "usage_complete": True},
+        usage={"unknown_cost_call_count": 0},
+        response=json.dumps({"_root_id": root.id}),
+    )
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={"access": ["restricted"]} if changed_metadata else {},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+    )
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_root",
+            AsyncMock(return_value=root),
+        ),
+        patch.object(Interaction, "get", AsyncMock(return_value=receipt)),
+    ):
+        replay = action._ingest_native_drive_document(
+            data,
+            ".pdf",
+            doc_name="doc.pdf",
+            doc_url=root.doc_url,
+            file_id="file",
+            cfg=cfg,
+        )
+        if changed_metadata:
+            with pytest.raises(ValidationError, match="conflicts"):
+                await replay
+        else:
+            assert (await replay)["_root_id"] == root.id
