@@ -1315,6 +1315,28 @@ def test_native_candidate_retires_only_legacy_action_model_settings(app: Path):
     assert yaml.safe_load(source(app).read_text()) == declaration
 
 
+def test_provider_blocker_distinguishes_unreviewed_actions_and_alternate_services(
+    app: Path,
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    document["actions"].extend(
+        [
+            {"action": "jvagent/litellm_lm", "context": {}},
+            {"action": "jvagent/openai_lm", "context": {"api_key": "private-value"}},
+            {"action": "demo/custom_tool", "context": {"model": "private-model"}},
+        ]
+    )
+    source(app).write_text(yaml.safe_dump(document))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    review = report["model_service_review"]
+    assert review["additional_services"] == ["jvagent/openai_lm"]
+    assert "demo/custom_tool" in review["unreviewed_actions"]
+    assert "jvagent/openai_lm" not in review["unreviewed_actions"]
+    assert "private-value" not in json.dumps(report)
+    assert "private-model" not in json.dumps(report)
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected"),
     [

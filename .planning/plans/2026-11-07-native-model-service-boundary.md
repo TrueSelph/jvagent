@@ -1,5 +1,35 @@
 # Reference model service retirement boundary
 
+## Reference script policy rehearsal
+
+At `244c2332` the unchanged reference migration reported two blockers.
+A disposable copy retained the complete skill list and all Actions. Its
+CodeExecution declaration kept the 90-second timeout, 64,000-character
+output cap and disabled network, replaced the legacy unlimited memory
+and 60-second CPU settings with the native fixed resource preset, and
+declared local image
+`sha256:8906f76b96018319b876bffd2c6f839a3491bb3b0b63957bb40acd00012ed1ed`.
+The image layers the repository PDF recipe onto the existing DOCX
+qualification image. Network-free, non-root, read-only-root image probes
+generated PDF and DOCX bytes and ran the bundled triage sorter. The
+offline planner admitted the revised script declaration at source digest
+`sha256:4f3dfd18ca563334cb17c08005331b42b9e8add7ecb410fa7d223b7ebeffe060`.
+Only the aggregate model-service blocker remained. No candidate was
+generated. The script probes exercised container dependencies directly.
+Browser/SDK execution of the combined profile, bounded storage,
+compatibility of other DOCX modes and retained-state cutover remain open.
+
+The offline CLI report now separates additional model services from
+Actions whose model-service independence has not been reviewed
+(`harness_migrate.py:315`). Against the same script-qualified copy,
+the selected service is LiteLLM. OpenAI and Ollama are additional
+declarations. The unreviewed Actions are CodeExecution, ElevenLabs TTS,
+FileInterface, IntroInteract, PageIndex, SkillHub, WhatsApp and
+WhatsApp Voice. The list reports review status rather than model
+calls. No runtime settings are modified and no candidate is generated.
+The regression verifies that Action configuration values are omitted.
+This is offline CLI qualification only.
+
 At `3e0d5d4c`, a reduced fixture with source digest
 `sha256:3da34b31edf72affce99eb9c28519d1da4eedcf505153f5faea103cbcf91779a`
 converted a 1 ms provider timeout. Merge sync preserved the existing

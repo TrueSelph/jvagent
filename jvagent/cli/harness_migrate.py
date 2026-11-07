@@ -308,19 +308,24 @@ def _plan_model_service(
     retired_service = False
     service_timeout: float | int | None = None
     if services:
+        declared_services = sorted(service["action"] for service in services)
+        unreviewed_actions = sorted(
+            {
+                action["action"]
+                for action in actions
+                if action["action"] not in _REVIEWED_CONSUMERS | _MODEL_SERVICES
+                and not (retire_vision and action["action"] == "jvagent/vision")
+            }
+        )
         report["model_service_review"] = {
             "selected": selected_service,
-            "declared": sorted(service["action"] for service in services),
+            "declared": declared_services,
+            "additional_services": [
+                service for service in declared_services if service != selected_service
+            ],
+            "unreviewed_actions": unreviewed_actions,
         }
-        if (
-            len(services) != 1
-            or services[0].get("action") != selected_service
-            or any(
-                a.get("action") not in _REVIEWED_CONSUMERS | {selected_service}
-                for a in actions
-                if not (retire_vision and a.get("action") == "jvagent/vision")
-            )
-        ):
+        if declared_services != [selected_service] or unreviewed_actions:
             blockers.append(
                 "Model service has unqualified callers or provider declarations; review before removal"
             )
