@@ -496,3 +496,31 @@ No write tool was available or called. Capture, sync and the native
 Action skill base remain open.
 
 Runtime diff SHA-256: `3d423909fc8e9af03dda441b34c97949a5b51dac75620304a74f9c291fd52a1f`.
+
+### LeadGen capture and sync boundary
+
+An offline probe at `4c8a6151` called the production capture engine
+with an invalid synthetic email. The first request returned
+`invalid-argument` without looking up a profile. Repeating the same
+input returned `deduplicated` and invoked the profile get-or-create
+path once. The probe substituted that graph call, so it establishes
+the mutation attempt and does not create a real profile. The process
+dedup marker is set before validation (`engine.py:296`, `:315`).
+It is unsuitable as a native effect receipt.
+
+The production field validator also accepted synthetic reserved and
+undeclared keys (`engine.py:109`). The profile update stores incoming
+keys (`store.py:147`), while sync uses a stored reserved digest
+(`sync.py:14`, `:37`). Native capture needs a closed field schema and
+matching server validation before calling the existing graph service.
+It must reject reserved keys and preserve server-owned metadata.
+
+The reference skills declare a post-capture hook. The example skill
+also declares on-capture MCP file sync. Capture currently invokes hooks,
+updates the graph, appends a summary and may call the external service
+in one method (`engine.py:330`, `:356`, `:369`). Native migration
+requires separate admission for local capture, reviewed hooks and the
+sync effect. A local capture acknowledgement must not imply external
+delivery. Preserve the caller-bound record and existing validators,
+use SDK intent and outcome receipts, and keep uncertain sync out of
+automatic replay. No native capture or sync tool was admitted here.
