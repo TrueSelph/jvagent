@@ -48,6 +48,7 @@ class PageIndexReadAction(PageIndexAction):
                 access_label=source.access_label,
                 effect_class="read",
                 execute=self._native_tree_search,
+                completion_model=self.native_search_model,
             )
         ]
 

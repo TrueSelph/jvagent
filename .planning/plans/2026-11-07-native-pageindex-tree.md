@@ -60,3 +60,28 @@ This increment is limited to the host-admitted tool path. The reference converte
 continues to block retirement of the model services. See the
 [model service audit](2026-11-07-native-model-service-boundary.md) for the remaining
 entrypoints and retirement criteria.
+
+## Separate skill-driven ranking model
+
+The PageIndex read profile's `native_search_model` also configures its
+native tree-search tool. The setting travels on the host-side tool
+definition and is absent from the model-facing schema. The existing
+tool-free SDK child uses the configured model with the parent's usage,
+limits, spend capability and conversation scope. Empty inherits the
+parent model. Sources: `pageindex_read_action.py:45`,
+`completion_tool.py:12`, `:44`.
+
+At parent `e3e20723`, a browser fixture submitted a streaming request
+to the production interaction endpoint with a disposable PostgreSQL
+app and JSON index. The page displayed SDK skill load and
+`pageindex__search` call and result events, then Dock Room 4,
+HARBOR-41 and the handbook citation. HTTP 200 completed in 6.397 seconds.
+Interaction `n.Interaction.337ca407e0874466aca97017` was delivered.
+Its journal contained GPT-4.1 chat and GPT-4.1 Mini ranking.
+Four requests used 4,203 provider-reported tokens, with USD 0.006138
+estimated cost and no unknown-cost events. The browser page displayed
+the SSE response through a loopback fixture. It did not use jvchat.
+The remaining PageIndex model migration includes ingestion and
+conversion of the retained reference declaration.
+
+Runtime diff SHA-256: `0c4d02da54f9657fcfc4b5f9bdf180f1cd9d47d671ca704da46744644239c46e`.

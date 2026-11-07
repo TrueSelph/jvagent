@@ -1525,7 +1525,7 @@
         "name": "jvagent/pageindex_read",
         "archetype": "PageIndexReadAction",
         "tracked_directory_files": 4,
-        "tracked_directory_digest": "sha256:1d91aee28e1286af5bbed2799b8a0caec54734f7128b5e93a2d175400e67cfa7"
+        "tracked_directory_digest": "sha256:8bfc8bde8e48337236e4282a9613f179c3b12ad28c354fb8ba887c5d42347cf1"
       },
       {
         "path": "jvagent/action/postiz_action/info.yaml",

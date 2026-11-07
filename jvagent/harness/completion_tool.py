@@ -1,6 +1,7 @@
 """Host-bound model completion for native Action tools."""
 
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from jvagent.tooling.tool import Tool
@@ -8,8 +9,11 @@ from jvagent.tooling.tool import Tool
 CompleteText = Callable[[str], Awaitable[str]]
 
 
+@dataclass
 class NativeCompletionTool(Tool):
     """A reviewed read tool whose execute callable accepts host completion."""
+
+    completion_model: str = ""
 
 
 def require_completion_receipts(tool: Tool, *services: Any) -> None:
@@ -36,13 +40,19 @@ def completion_arguments(
     )
     from pydantic_ai import Agent
 
+    from jvagent.harness.native_model import qualified_model
+
     graph = get_default_context()
 
     async def complete(prompt: str) -> str:
         if not ctx.conversation_id or ctx.usage_limits is None:
             raise RuntimeError("Action completion requires native run scope")
         child = Agent(
-            ctx.model,
+            (
+                qualified_model(tool.completion_model)
+                if tool.completion_model
+                else ctx.model
+            ),
             name=tool.name,
             model_settings=settings,
             capabilities=capabilities,

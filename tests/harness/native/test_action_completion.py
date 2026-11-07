@@ -11,6 +11,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse, RequestUsage, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
+from jvagent.harness import native_model
 from jvagent.harness.accounting import NativeSpendRecorder, recover_native_usage
 from jvagent.harness.completion_tool import CompleteText, NativeCompletionTool
 from jvagent.harness.native import build_native_agent, run_native_agent
@@ -26,7 +27,11 @@ from jvagent.memory.interaction import Interaction
     [(1, "2.00", 1), (3, "0.0015", 2), (3, "2.00", 3)],
 )
 async def test_action_completion_shares_usage_and_receipts(
-    tmp_path: Path, max_requests: int, max_cost: str, expected_calls: int
+    tmp_path: Path,
+    max_requests: int,
+    max_cost: str,
+    expected_calls: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     skill = tmp_path / "lookup"
     skill.mkdir()
@@ -67,12 +72,23 @@ async def test_action_completion_shares_usage_and_receipts(
             usage=RequestUsage(input_tokens=10, output_tokens=5, cost=Decimal("0.001")),
         )
 
+    def resolve(model: Any) -> Any:
+        if isinstance(model, str):
+            assert model == "openai:gpt-4.1-mini"
+            return FunctionModel(respond, model_name="gpt-4.1-mini")
+        return model
+
+    monkeypatch.setattr(native_model, "qualified_model", resolve)
     agent = build_native_agent(
         FunctionModel(respond, model_name="gpt-4.1"),
         skill_directory=skill,
         tools=[
             NativeCompletionTool(
-                "lookup", "Find records", execute=lookup, effect_class="read"
+                "lookup",
+                "Find records",
+                execute=lookup,
+                effect_class="read",
+                completion_model="openai:gpt-4.1-mini",
             )
         ],
         access_check=allow,
