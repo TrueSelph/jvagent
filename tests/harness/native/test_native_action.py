@@ -105,7 +105,8 @@ async def test_native_receipt_precedes_delivery(
 
     def factory(*args: Any, **kwargs: Any) -> Any:
         assert kwargs["instructions"] == (
-            "Trusted host policy\n\nHost attachment input policy: image/png. "
+            ("Channel response policy\n\n" if profile else "")
+            + "Trusted host policy\n\nHost attachment input policy: image/png. "
             "Files outside this MIME list cannot be accepted."
             "\n\nImage uploads: enabled. PDF uploads: disabled. "
             "Do not suggest uploads in a disabled format."
@@ -248,6 +249,7 @@ async def test_native_receipt_precedes_delivery(
         skill_directory=".",
         delegates=[],
         instructions="",
+        channel_instructions={"web": "Channel response policy"} if profile else {},
         context_max_tokens=32000,
         context_keep_tokens=16000,
         max_requests=2,

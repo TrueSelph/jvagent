@@ -11,6 +11,12 @@ run deadline and does not promise hard preemption or write rollback. Sources:
 `jvagent/tooling/tool.py:49`, `jvagent/harness/native.py:216`. See
 [native tool deadlines](runbooks/native-tool-deadlines.md).
 
+### Channel instructions
+Literal host presentation/context text appended to base SDK instructions for one
+exact channel label. This is model guidance and grants no authority or tool
+access. Source: `jvagent/harness/instructions.py:6`. See
+[native channel instructions](runbooks/native-channel-instructions.md).
+
 ### Native media
 Conversation-owned immutable payloads referenced by official Harness media markers
 in SDK snapshots. The public MediaStore adapter stores each payload once per

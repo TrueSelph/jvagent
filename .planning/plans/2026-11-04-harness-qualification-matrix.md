@@ -10,6 +10,16 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Exact-channel instructions
+
+[Qualification](2026-11-07-native-channel-instructions.md) covers literal host
+presentation text selected by exact channel into public SDK instructions.
+Three GPT-4.1 browser turns verify selected presentation, a user-text channel
+spoof attempt and cold continuation. Four requests/1,281 reported tokens/USD
+0.002946 estimated reconcile; cached reload changes no graph records. These
+instructions are guidance, not authorization. Legacy channel overrides, real
+voice/Meta behavior and all three reference blockers remain open.
+
 ## Native Action deadlines
 
 [Qualification](2026-11-06-native-tool-deadlines.md) covers Action-declared public

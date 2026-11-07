@@ -189,6 +189,7 @@ class NativeHarnessAction(InteractAction):
     planning: bool = attribute(default=False)
     publish_reasoning: bool = attribute(default=False)
     instructions: str = attribute(default="Help the user using the available skill.")
+    channel_instructions: dict[str, str] = attribute(default_factory=dict)
     max_run_cost_usd: str = attribute(default="2.00")
     max_conversation_cost_usd: str = attribute(default="20.00")
     context_max_tokens: int = attribute(default=32_000)
@@ -220,6 +221,9 @@ class NativeHarnessAction(InteractAction):
         from jvagent.harness.run_limits import effective_run_limits
 
         effective_run_limits(self, "default")
+        from jvagent.harness.instructions import effective_instructions
+
+        effective_instructions(self, "default")
 
     async def execute(self, visitor: Any) -> None:
         """Run through the library and publish through the configured responder."""
@@ -501,6 +505,9 @@ class NativeHarnessAction(InteractAction):
         from jvagent.tooling.context import bind_dispatch_context
 
         limits = effective_run_limits(self, caller_channel)
+        from jvagent.harness.instructions import effective_instructions
+
+        instructions = effective_instructions(self, caller_channel)
         with bind_dispatch_context(visitor):
             agent = build_native_agent(
                 self.model,
@@ -521,7 +528,7 @@ class NativeHarnessAction(InteractAction):
                 instructions="\n\n".join(
                     part
                     for part in (
-                        self.instructions,
+                        instructions,
                         (
                             "This is a read-only continuation after an operator verified an interrupted mutation. Acknowledge the verified state without issuing another mutation."
                             if recovery_read_only

@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native Action deadlines](2026-11-06-native-tool-deadlines.md).
+Latest increment: [native channel instructions](2026-11-07-native-channel-instructions.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,18 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Exact-channel presentation instructions
+
+Literal exact-channel instructions now append to the existing public SDK input,
+with all profiles validated at startup and per turn. Domain procedures stay in
+skills; the map changes no permission/provider/tool/budget policy. Three actual
+GPT-4.1 browser turns include attempted channel spoofing in user text and cold
+same-session continuation. Four requests/1,281 reported tokens/USD 0.002946
+estimated reconcile; cold and cached reload readbacks are exact. See the
+[record](2026-11-07-native-channel-instructions.md). Nonempty legacy channel
+overrides still block offline migration. All three reference blockers and full
+migration/deletion/enterprise gates remain open.
 
 ## Action tool deadlines and uncertain writes
 
