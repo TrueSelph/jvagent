@@ -2062,21 +2062,31 @@ async def import_documents_endpoint(
 )
 async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, Any]:
     """Inbound webhook: jvforge LLM completion or process-document graph import."""
+    from jvagent.core.execution_owner import native_harness_action
+
+    from .webhook_auth import webhook_actor
+
     agent = await Agent.get(agent_id)
     if not agent:
         raise ResourceNotFoundError(
             message=f"Agent with ID '{agent_id}' not found",
             details={"agent_id": agent_id},
         )
+    native = await native_harness_action(agent)
     core_action = await agent.get_action_by_type("PageIndexAction")
-    if not core_action or not isinstance(core_action, PageIndexAction):
+    if core_action is None and native is not None:
+        core_action = await agent.get_action_by_type("PageIndexReadAction")
+    if not isinstance(core_action, PageIndexAction) or not core_action.enabled:
         raise ResourceNotFoundError(
             message="PageIndexAction not found for this agent",
             details={"agent_id": agent_id},
         )
+    actor = webhook_actor(
+        getattr(request.state, "user", None), core_action.webhook_api_key_id
+    )
     data = await request.json()
     if not isinstance(data, dict):
-        data = await request.body()
+        raise ValidationError("PageIndex webhook payload must be an object")
 
     process_url = (data.get("process_document_url") or "").strip()
     if process_url:
@@ -2137,6 +2147,27 @@ async def pageindex_llm_webhook(request: Request, agent_id: str) -> Dict[str, An
             },
         }
     else:
+        if native is not None:
+            from .native_callback import run_native_callback
+
+            if core_action.native_webhook_completion is not True:
+                raise ValidationError(
+                    "Native PageIndex webhook completion is not enabled"
+                )
+            try:
+                result = await run_native_callback(
+                    native, agent_id=agent_id, actor=actor, payload=data
+                )
+            except ValidationError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "Native PageIndex callback failed: %s", type(exc).__name__
+                )
+                raise ServiceUnavailableError(
+                    "Native PageIndex callback failed"
+                ) from None
+            return {"status": "received", "result": result}
         try:
             result = await core_action.handle_webhook_payload(data)
             return {"status": "received", "result": result}

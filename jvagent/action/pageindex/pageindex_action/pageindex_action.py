@@ -34,7 +34,6 @@ from ..prompts import (
     DIRECTIVE_TEMPLATE_PLAIN,
 )
 from ..webhook_auth import (
-    ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     PAGEINDEX_WEBHOOK_ROUTE_PREFIX,
     WEBHOOK_PERMISSION,
     get_or_create_system_user,
@@ -111,6 +110,9 @@ class PageIndexAction(Action):
         default=None,
         description="API key row id for LLM webhook auth",
     )
+    native_webhook_completion: bool = attribute(
+        default=False, description="Enable accounted native jvforge completion"
+    )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
         description="Optional key-value filter to narrow search by document metadata (not for access control; use access_control instead)",
@@ -160,7 +162,7 @@ class PageIndexAction(Action):
                 not regenerate
                 and self.webhook_url
                 and "?api_key=" in self.webhook_url
-                and self.webhook_url.startswith(expected_url_base)
+                and self.webhook_url.partition("?")[0] == expected_url_base
             ):
                 if allowed_ip is not None and self.webhook_api_key_id:
                     try:
@@ -195,7 +197,7 @@ class PageIndexAction(Action):
                 permissions=[WEBHOOK_PERMISSION],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
+                allowed_endpoints=[f"/api/{PAGEINDEX_WEBHOOK_ROUTE_PREFIX}/{agent_id}"],
                 key_prefix="jv_",
             )
 

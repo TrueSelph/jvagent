@@ -4,12 +4,14 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeVar
 from uuid import uuid4
 
 from jvagent.harness.completion_tool import CompleteText
 
 CHANNEL = "pageindex_admin_search"
+Result = TypeVar("Result")
+Complete = Callable[[str | list[Any]], Awaitable[Any]]
 
 
 async def run_native_search(
@@ -21,6 +23,33 @@ async def run_native_search(
     search: Callable[[CompleteText], Awaitable[list[dict[str, Any]]]],
 ) -> list[dict[str, Any]]:
     """Keep one isolated graph operation and shared budget across tree ranks."""
+
+    async def operation(complete: Complete) -> list[dict[str, Any]]:
+        async def text(prompt: str) -> str:
+            return (await complete(prompt)).output
+
+        return await search(text)
+
+    return await run_native_operation(
+        action,
+        agent_id=agent_id,
+        actor=actor,
+        query=query,
+        channel=CHANNEL,
+        operation=operation,
+    )
+
+
+async def run_native_operation(
+    action: Any,
+    *,
+    agent_id: str,
+    actor: str,
+    query: str,
+    channel: str,
+    operation: Callable[[Complete], Awaitable[Result]],
+) -> Result:
+    """Persist one service operation with shared native SDK limits."""
     from jvspatial import flush_deferred_entities
     from jvspatial.core.context import get_default_context, scoped_default_context_async
     from pydantic_ai import Agent
@@ -43,7 +72,7 @@ async def run_native_search(
     from jvagent.memory.conversation import Conversation
 
     require_native_local_ownership()
-    limits = effective_run_limits(action, CHANNEL)
+    limits = effective_run_limits(action, channel)
     settings = validate_model_settings(action.model_settings)
     budgets = native_budgets(
         limits["max_run_cost_usd"], action.max_conversation_cost_usd
@@ -59,7 +88,7 @@ async def run_native_search(
     graph = get_default_context()
     run_id = uuid4().hex
     conversation = await Conversation.create(
-        session_id=run_id, user_id=actor, channel=CHANNEL, status="closed"
+        session_id=run_id, user_id=actor, channel=channel, status="closed"
     )
     await flush_deferred_entities(conversation, strict=True)
     await action.connect(conversation, direction="out")
@@ -95,7 +124,7 @@ async def run_native_search(
     metadata = {
         **store.registration_metadata(),
         **native_worker_metadata(),
-        "jv_operation": CHANNEL,
+        "jv_operation": channel,
     }
     receipt = {"run_id": run_id, "status": "running", "limits": limits}
     interaction.native_run = receipt
@@ -105,7 +134,7 @@ async def run_native_search(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + limits["timeout_seconds"]
 
-    async def complete(prompt: str) -> str:
+    async def complete(prompt: str | list[Any]) -> Any:
         nonlocal first
         remaining = deadline - loop.time()
         if remaining <= 0:
@@ -118,7 +147,7 @@ async def run_native_search(
         async with scoped_default_context_async(graph):
             worker = Agent(
                 model,
-                name="pageindex_admin_search",
+                name=channel,
                 model_settings=settings,
                 capabilities=[
                     ReceiptContext(),
@@ -137,10 +166,10 @@ async def run_native_search(
             )
         if result.response.finish_reason == "length":
             raise OutputTokenLimitReached("PageIndex ranking output was truncated")
-        return result.output
+        return result
 
     try:
-        results = await search(complete)
+        results = await operation(complete)
     except BaseException as exc:
         interaction.native_run = {
             **receipt,

@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native administrative PageIndex search](2026-11-07-native-pageindex-http.md).
+Latest increment: [native PageIndex callback](2026-11-07-native-pageindex-callback.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,15 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native PageIndex callback
+
+New webhook keys are exact-path scoped, and all PageIndex callback modes
+require the target Action's persisted key binding. Native text and image
+completion reuse the accounted SDK operation path. Actual browser calls verify
+text, image, usage and graph readback. Cross-agent, unbound wildcard and
+model-override attempts are refused. See
+[qualification](2026-11-07-native-pageindex-callback.md).
 
 ## Native administrative PageIndex search
 
