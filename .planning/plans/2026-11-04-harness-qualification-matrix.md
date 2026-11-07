@@ -50,6 +50,13 @@ rollback, default cutover and implementation deletion are not complete.
 
 ## Required asset migrations
 
+Reference signup: [qualification](2026-11-06-native-signup-policy.md). Reviewed
+conversation-only source is host-approved, unavailable times cannot silently
+change, and completion records local details without booking/notification claims.
+Actual GPT-4.1 browser rejection/review/confirmation and unchanged cold readback
+pass; five reference blockers remain. This does not migrate retained tasks or
+authorize independent external effects.
+
 Native WhatsApp: [qualification](2026-11-06-native-whatsapp-tools.md). Actual
 GPT-4.1/owned-provider tests qualify sender/named-grant boundaries, catalog/send
 adapters, duplicate refusal, unknown-acknowledgement blocking and native egress

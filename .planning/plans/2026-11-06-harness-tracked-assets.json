@@ -182,7 +182,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:8401ede5dbc2bf6578e2051a33e6921f22a1d7e268e35a47f33346ff895517b7",
+        "sha256": "sha256:1bae5b82461ab4230dec74b2c5dfd3ea57df04eaff35582efa2fd5731478e933",
         "name": "signup-interview",
         "spec": "jv",
         "extends": "action:jvagent/interview",
@@ -202,7 +202,7 @@
           "tags"
         ],
         "tracked_directory_files": 1,
-        "tracked_directory_digest": "sha256:c58f4dfc476cd58c87f672fdf943a1686706c689b03f4869b72236b227c012ae"
+        "tracked_directory_digest": "sha256:548d7ea9feb19f2576bd1fef95633ef1432230739b6c204b9393c3528306089b"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
@@ -1761,7 +1761,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",
         "scope": "app-example",
-        "sha256": "sha256:90d91241ce537656dfeb8574deba5e6c3be071ddad1aba68d36fab6c01ed2ab8",
+        "sha256": "sha256:f922e97fd45f5bad2a94188557f5697ceb83974e266d407ba25be8073d790573",
         "agent": "jvagent/orchestrator_agent",
         "action_names": [
           "jvagent/orchestrator",
@@ -1847,7 +1847,7 @@
           }
         ],
         "tracked_directory_files": 68,
-        "tracked_directory_digest": "sha256:37c726728dbb549fb62894cbd082dbabe61520111ef96a04f996bd26ef48237e"
+        "tracked_directory_digest": "sha256:c048a9e1c8aef7d714923abd0a756d5f6a54843e52196b4e03803ad719726c3c"
       }
     ]
   }

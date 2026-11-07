@@ -25,7 +25,20 @@ def signup_action():
 
 
 @pytest.mark.asyncio
-async def test_set_field_rejects_monday_at_7(signup_action):
+@pytest.mark.parametrize(
+    "slot",
+    [
+        "Monday at 7",
+        "Saturday at 9 PM",
+        "Monday at 2 AM",
+        "Monday at 9:30 AM",
+        "Monday 9 AM - 10 AM",
+        "Monday 9 AM - 11 PM",
+        "Monday or Wednesday at 9 AM",
+        "not Monday at 9 AM",
+    ],
+)
+async def test_set_field_rejects_unavailable_or_ambiguous_slot(signup_action, slot):
     action, contract = signup_action
     session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
@@ -33,7 +46,7 @@ async def test_set_field_rejects_monday_at_7(signup_action):
     action._save_session = AsyncMock()
 
     result = json.loads(
-        await action._handle_set_fields(fields={"available_times": "Monday at 7"})
+        await action._handle_set_fields(fields={"available_times": slot})
     )
 
     assert result["ok"] is False

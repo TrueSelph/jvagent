@@ -2,8 +2,8 @@
 name: signup-interview
 description: >-
   Sign up or register for jvagent training. Collect full name, training
-  availability slot, email, and optional phone number, then confirm
-  registration. Use when the user wants to sign up, register, enroll, or
+  availability slot, email, and optional phone number, then record the
+  signup details locally. Use when the user wants to sign up, register, enroll, or
   join jvagent training.
 spec: jv
 requires-actions:
@@ -97,6 +97,13 @@ tags: [signup, training, interview, onboarding]
 ### Tone
 Relay the prompts in a friendly and helpful manner. Field hints are model-only
 compose steering — do not read them aloud.
+
+### Local record and validation
+This example records confirmed details in the conversation. It does not book a
+training place, send email, schedule follow-up or verify an email address. State
+only what the tools confirm. Preserve the user's supplied day, time, minutes and
+AM/PM when validating availability. Do not silently change an unavailable time
+to one of the offered slots. Ask the user to choose a correction.
 
 ### Side questions
 Preserve interview progress when the user asks a side question. Answer using an

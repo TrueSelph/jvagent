@@ -8,11 +8,11 @@ user-facing text via ``ctx.say`` and control/return data via ``ctx.tool_response
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from jvagent.action.interview.flow import compute_missing_required
+from jvagent.action.interview.hooks import HookExecutionContext
 
 _SKILL_NAME = "signup-interview"
 
@@ -43,82 +43,48 @@ def _match_training_slot(raw_input: str) -> Optional[str]:
         if normalized_value == _normalize_spaces(slot):
             return slot
 
-    input_day = None
-    for day in (
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ):
-        if day in normalized_value:
-            input_day = day
-            break
-
-    if not input_day:
+    # Accept one explicit day/start time and an optional range. Never ignore
+    # a conflicting period, minute, end time, negation or alternative day.
+    clock = r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"
+    pattern = r"(monday|wednesday|friday|saturday)\s+(?:at\s+)?" + clock
+    pattern += r"(?:\s*(?:-|to)\s*" + clock + r")?"
+    match = re.fullmatch(pattern, normalized_value)
+    if match is None:
         return None
+    day, hour, minute, period, end_hour, end_minute, end_period = match.groups()
 
-    time_pattern = r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b"
-    time_matches = re.findall(time_pattern, normalized_value)
-    if not time_matches:
-        return None
-
-    input_hour = int(time_matches[0][0])
-    input_period = time_matches[0][2] or None
-
-    for slot in AVAILABLE_TRAINING_TIMES:
-        normalized_slot = _normalize_spaces(slot)
-        if input_day not in normalized_slot:
-            continue
-
-        slot_match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", normalized_slot)
-        if not slot_match:
-            continue
-
-        slot_hour = int(slot_match.group(1))
-        slot_period = slot_match.group(3)
-        hour_matches = input_hour == slot_hour
-        period_matches = input_period is None or input_period == slot_period
-
-        if hour_matches and period_matches:
-            return slot
-
-    # Fuzzy partial match — normalize shorthand like "Saturday at 9" to a full slot
-    for slot in AVAILABLE_TRAINING_TIMES:
-        normalized_slot = _normalize_spaces(slot)
-        day_match = any(
-            d in normalized_value and d in normalized_slot
-            for d in ("monday", "wednesday", "friday", "saturday")
+    def clock_matches(
+        supplied_hour: str,
+        supplied_minute: Optional[str],
+        supplied_period: Optional[str],
+        expected: str,
+    ) -> bool:
+        target = re.fullmatch(clock, expected)
+        assert target is not None
+        return (
+            int(supplied_hour) == int(target[1])
+            and int(supplied_minute or "0") == int(target[2] or "0")
+            and (supplied_period is None or supplied_period == target[3])
         )
-        if not day_match:
+
+    candidates: List[str] = []
+    for slot in AVAILABLE_TRAINING_TIMES:
+        slot_day, times = _normalize_spaces(slot).split(" ", 1)
+        start, end = times.split(" - ")
+        if slot_day != day or not clock_matches(hour, minute, period, start):
             continue
-
-        slot_time = re.search(
-            r"(\d+):(\d+)\s*(am|pm)\s*-\s*(\d+):(\d+)\s*(am|pm)", normalized_slot
-        )
-        if not slot_time:
+        if end_hour is not None and not clock_matches(
+            end_hour, end_minute, end_period, end
+        ):
             continue
-
-        start_hour = int(slot_time.group(1))
-        hour_patterns = [
-            rf"\b{start_hour}\b",
-            rf"at\s+{start_hour}\b",
-            rf"{start_hour}\s*(am|pm)\b",
-            rf"{start_hour}:00",
-            rf"{start_hour}:00\s*(am|pm)",
-        ]
-        if any(re.search(p, normalized_value, re.IGNORECASE) for p in hour_patterns):
-            return slot
-
-    return None
+        candidates.append(slot)
+    return candidates[0] if len(candidates) == 1 else None
 
 
 # ─── Validators ──────────────────────────────────────────────────────
 
 
-async def validate_full_name(ctx) -> Dict[str, Any]:
+async def validate_full_name(ctx: HookExecutionContext) -> Dict[str, Any]:
     value = ctx.value
     if not value or not isinstance(value, str):
         return ctx.invalid("Please provide your full name", value=value or "")
@@ -143,7 +109,7 @@ async def validate_full_name(ctx) -> Dict[str, Any]:
     return ctx.valid(value=name)
 
 
-async def validate_available_times(ctx) -> Dict[str, Any]:
+async def validate_available_times(ctx: HookExecutionContext) -> Dict[str, Any]:
     value = ctx.value
     if not value or not isinstance(value, str):
         return ctx.invalid(
@@ -180,7 +146,7 @@ _VIRTUAL_ALIASES = frozenset(
 )
 
 
-async def validate_training_format(ctx) -> Dict[str, Any]:
+async def validate_training_format(ctx: HookExecutionContext) -> Dict[str, Any]:
     """Normalize Saturday-session attendance preference (branch-only field)."""
     value = ctx.value
     if not value or not isinstance(value, str):
@@ -204,7 +170,7 @@ async def validate_training_format(ctx) -> Dict[str, Any]:
     )
 
 
-async def validate_signup_email(ctx) -> Dict[str, Any]:
+async def validate_signup_email(ctx: HookExecutionContext) -> Dict[str, Any]:
     value = ctx.value
     if not value or not isinstance(value, str):
         return ctx.invalid("Please provide a valid email address", value=value or "")
@@ -229,7 +195,7 @@ async def validate_signup_email(ctx) -> Dict[str, Any]:
 # ─── Pre-tools ───────────────────────────────────────────────────────
 
 
-async def get_available_training_times(ctx) -> str:
+async def get_available_training_times(ctx: HookExecutionContext) -> str:
     slots_text = "\n".join(f"- {slot}" for slot in AVAILABLE_TRAINING_TIMES)
     # Two sequential statements: the slot list the user must see, then the question.
     # ctx.say is the single user-text channel — inert off the activation run, so the
@@ -251,7 +217,7 @@ async def get_available_training_times(ctx) -> str:
 # ─── Post-tools ──────────────────────────────────────────────────────
 
 
-async def append_work_email_note(ctx) -> str:
+async def append_work_email_note(ctx: HookExecutionContext) -> str:
     email = ""
     if ctx.session is not None:
         email = (ctx.session.get_value("user_email") or "").lower()
@@ -265,23 +231,20 @@ async def append_work_email_note(ctx) -> str:
     return ctx.tool_response(
         ok=True,
         status="ok",
-        note=(
-            "Thank you for using your work email! We'll send you special updates "
-            "about jvagent training."
-        ),
+        note=("Your work email has been recorded with these signup details."),
     )
 
 
 # ─── Review handler ──────────────────────────────────────────────────
 
 
-async def signup_review(ctx) -> Dict[str, Any]:
+async def signup_review(ctx: HookExecutionContext) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "modified_values": {},
         "additional_data": {},
         "custom_message": (
             "Here's a summary of your jvagent training signup. "
-            "Please confirm these details are correct before I finalize your registration."
+            "Please confirm these details are correct before I record your signup."
         ),
     }
 
@@ -309,32 +272,32 @@ async def signup_review(ctx) -> Dict[str, Any]:
 # ─── Completion handler ──────────────────────────────────────────────
 
 
-async def signup_complete(ctx) -> str:
+async def signup_complete(ctx: HookExecutionContext) -> str:
     values = ctx.extracted_values or {}
     user_name = (values.get("user_name") or "").strip()
     user_email = (values.get("user_email") or "").strip()
     available_times = (values.get("available_times") or "").strip()
 
-    if not user_name or not user_email or not available_times:
+    session = ctx.session
+    missing = await compute_missing_required(
+        session,
+        ctx.spec,
+        ctx.interview_action._load_fn(ctx.spec),
+        ctx.visitor,
+        ctx.interview_action,
+    )
+    if missing or not user_name or not user_email or not available_times:
         ctx.say(
             "Some required signup fields are missing. "
             "Please go back and collect all required information."
         )
-        return ctx.tool_response(ok=True, status="ok")
+        return ctx.tool_response(ok=False, status="validation_failed")
 
-    session = ctx.session
     matched_times: List[str] = []
     if session is not None and isinstance(getattr(session, "context", None), dict):
         raw = session.context.get("matched_training_times") or []
         if isinstance(raw, list):
             matched_times = [str(x) for x in raw if x]
-
-    logger.info(
-        "Signup interview completed: %s (%s) — slot: %s",
-        user_name,
-        user_email,
-        available_times,
-    )
 
     training_format = (values.get("training_format") or "").strip()
     employer_name = (values.get("employer_name") or "").strip()
@@ -347,7 +310,7 @@ async def signup_complete(ctx) -> str:
         times_note = f"{times_note} Format: {training_format}."
     employer_note = f" Employer: {employer_name}." if employer_name else ""
     ctx.say(
-        f"Thank you, {user_name}! Your signup for jvagent training is complete. "
-        f"We will contact you at {user_email}.{employer_note} {times_note}"
+        f"Thank you, {user_name}! Your training signup details are recorded locally. "
+        f"No booking or notification has been made.{employer_note} {times_note}"
     )
     return ctx.tool_response(ok=True, status="ok")

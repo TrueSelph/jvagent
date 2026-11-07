@@ -370,7 +370,8 @@ async def test_existing_signup_hooks_execute_inside_sdk_mutations() -> None:
     assert session.get_value("available_times") == "Saturday 9:00 AM - 12:00 PM"
     assert session.get_value("training_format") == "Virtual"
     assert session.get_value("employer_name") == "Orbit Fixtures"
-    assert "special updates" in str(visitor.interaction.native_steps)
+    assert "work email has been recorded" in str(visitor.interaction.native_steps)
+    assert "special updates" not in str(visitor.interaction.native_steps)
     await turn(SIGNUP, visitor, tools, [("interview__complete", {})], bases)
     assert load_session(visitor.conversation) is None
     assert visitor.tasks.list()[0].status == "completed"

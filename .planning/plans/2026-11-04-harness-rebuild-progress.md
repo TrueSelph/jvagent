@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native WhatsApp tools and channel authority](2026-11-06-native-whatsapp-tools.md).
+Latest increment: [reference signup policy and hook approval](2026-11-06-native-signup-policy.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
