@@ -116,3 +116,37 @@ async def test_native_retrieve_does_not_create_or_rewrite_a_profile() -> None:
     assert result["fields"] == {"name": "Casey"}
     assert result["missing_fields"] == ["email"]
     assert (await LeadRecord.get_for_user(user)).get_required_fields() == ["name"]
+
+
+@pytest.mark.asyncio
+async def test_local_capture_validates_before_graph_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from jvagent.action.leadgen import engine
+
+    graph = AsyncMock()
+    monkeypatch.setattr(engine, "get_user_and_interaction", graph)
+    action = LeadGenAction(
+        native_local_capture=True,
+        default_fields={"email": {"validator": "email"}},
+    )
+    tools = {tool.name: tool for tool in await action.get_native_tools()}
+    capture = tools["leadgen__capture"]
+    assert capture.requires_tool_permission
+    assert (
+        capture.parameters_schema["properties"]["fields"]["additionalProperties"]
+        is False
+    )
+    for fields in (
+        {"_leadgen_sync_digest": "forged"},
+        {"unknown": "value"},
+        {"email": "invalid"},
+    ):
+        result = json.loads(await capture.execute(visitor=object(), fields=fields))
+        assert result["status"] == "invalid-argument"
+    graph.assert_not_called()
+    action.sync_destinations = [{"server": "fixture"}]
+    with pytest.raises(ValueError, match="without skill hooks or sync"):
+        await action.get_native_tools()

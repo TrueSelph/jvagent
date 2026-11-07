@@ -524,3 +524,35 @@ sync effect. A local capture acknowledgement must not imply external
 delivery. Preserve the caller-bound record and existing validators,
 use SDK intent and outcome receipts, and keep uncertain sync out of
 automatic replay. No native capture or sync tool was admitted here.
+
+### Opt-in local LeadGen capture
+
+`native_local_capture` admits the existing tool name through the SDK
+mutation contract for declared Action-default fields. It requires a
+named permission and authenticated visitor, refuses configured skill
+specs and sync destinations, validates before graph access, and
+flushes and reads back the caller's local profile before returning.
+The existing process dedup marker is bypassed. The existing per-user
+lock serializes the local read-modify-write path. Sources:
+`leadgen_action.py:101`, `native_capture.py:22`.
+
+At parent `88a82a4d`, an authenticated browser fixture submitted a
+synthetic email via the production stream to GPT-4.1 on the disposable
+PostgreSQL app. The initial tool result was updated and the identical
+request in a new conversation returned no-op. PostgreSQL retained one
+profile, `n.LeadProfile.5df0434c51f0412e8efcbd45`, with the supplied
+email. Both turns were delivered and journaled the native capture effect.
+
+| Interaction | Browser result | Usage |
+|---|---|---|
+| `n.Interaction.7c40475a2b544dee8a08082f` | HTTP 200 in 3.552 s, capture call and updated result | 2 requests, 1,095 provider tokens, USD 0.002514 estimated |
+| `n.Interaction.1a83874f8e9b4ed4b63b9227` | HTTP 200 in 2.289 s, capture call and no-op result | 2 requests, 1,098 provider tokens, USD 0.002544 estimated |
+
+Both recorded zero unknown-cost events. The first reply offered
+removal even though no removal tool was admitted. The regression
+checks reserved, undeclared and invalid fields before graph access.
+This qualifies local capture and repeated identical input for this
+fixture. Hooks, external sync, crash reconciliation and the existing
+LeadGen reference skills remain outside this admission.
+
+Runtime diff SHA-256: `71668644cb206ac69f54a9349425515540f6143f9adef9ee706c3da5906d00be`.

@@ -30,6 +30,8 @@ class LeadGenAction(Action):
     )
     binds_tools_to_visitor: bool = True
 
+    native_local_capture: bool = attribute(default=False)
+
     default_fields: Dict[str, Dict[str, Any]] = attribute(
         default_factory=dict,
         description=(
@@ -108,7 +110,7 @@ class LeadGenAction(Action):
                 self, skill=skill, visitor=visitor, read_only=True
             )
 
-        return [
+        reads = [
             tools["leadgen__status"],
             replace(
                 retrieve,
@@ -122,6 +124,12 @@ class LeadGenAction(Action):
                 requires_tool_permission=True,
             ),
         ]
+
+        if not self.native_local_capture:
+            return reads
+        from .native_capture import local_capture_tool
+
+        return [*reads, local_capture_tool(self)]
 
     async def _handle_capture(self, **kwargs: Any) -> str:
         return await engine.handle_capture(self, **kwargs)
