@@ -32,7 +32,7 @@ Implementation: [`harness_migrate.py:491`](../../jvagent/cli/harness_migrate.py#
 The planner reads literal YAML. Other Action placeholders remain authored; it
 does not resolve credentials into a report. Model/limit placeholders requiring
 resolution block conversion. Unknown execution settings also block, including
-custom legacy prompts, fallback and active channel/flow controls. Known engine
+custom legacy prompts, fallback and unqualified channel/flow controls. Known engine
 heuristics retire explicitly in the report, rather than being copied into another
 loop. A finite declared skill set is preserved; explicit repeated `--skill` values
 must match that set when present. Dynamic `-all`/wildcard selectors require an
@@ -68,10 +68,19 @@ Unmapped controls and provider policy are checked in
 | `tool_servers: "-all"` or implicit default with MCP Actions | Retire the selector only with reviewed native tool declarations on enabled MCP Actions; restricted/empty/invalid selectors stay blocked |
 | Typed inactive pilot settings under the legacy driver | Explicit retirement; active legacy budgets migrate independently |
 | Typed `lock_active_flow` boolean, including its implicit legacy default | Explicitly retire deterministic routing into SDK skill/domain-state continuation; budgets and permissions remain independent. Retained legacy tasks and unsupported flows still block. See [qualification](../plans/2026-11-06-native-continuation.md) |
+| Qualified `channel_overrides` fields | Exact-channel literal extras/soft response length become `channel_instructions`; request/time/run-cost ceilings become tightening-only `channel_limits`. Known typed engine heuristics and exactly inactive controls retire with review. Active tool pins/restrictions, nonzero tool deadlines, unknown/invalid controls and widening policies block the entire candidate. See [qualification](../plans/2026-11-07-native-channel-migration.md) |
 | Other empty/disabled channel/tool/vision controls | May retire only when exactly empty/disabled; active policies block until qualified |
 | Reviewed default `vision: true` + default OpenAI VisionAction + primary GPT-4.1 | Declare native image MIME policy and propose removing VisionAction; independent model/tool/description-artifact semantics retire explicitly. Custom callers/settings and dependent skills block. See [qualification](../plans/2026-11-06-native-vision-migration.md) |
 
 Mapping/default construction: [`harness_migrate.py:359`](../../jvagent/cli/harness_migrate.py#L359).
+
+Channel conversion is offline and does not interpret instructions as procedures
+or authorization. Keep domain SOPs in skills and review channel presentation as
+model guidance. Explicit zero channel activation retains the legacy clamp to one;
+zero channel runtime/cost ceilings require review rather than silently disabling
+the native bound. Reports omit channel labels and instruction contents. Sources:
+`jvagent/cli/harness_migration_channels.py:24`,
+`jvagent/cli/harness_migrate.py:583`.
 
 See [native tool execution](native-tool-execution.md) for scheduling modes and
 the difference between preserving a concurrency ceiling and reproducing legacy ticks.

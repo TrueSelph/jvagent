@@ -728,6 +728,111 @@ def test_active_unqualified_policy_is_never_retired(
     assert candidate is None and any(key in reason for reason in report["blockers"])
 
 
+def test_channel_policy_migrates_without_writing_or_reporting_instructions(
+    app: Path,
+) -> None:
+    change(
+        app,
+        channel_overrides={
+            "voice": {
+                "system_prompt_extra": "private-channel-instruction",
+                "max_statement_length": 280,
+                "activation_budget": 0,
+                "max_duration_seconds": 30,
+                "max_turn_cost_usd": "0.10",
+                "history_limit": 6,
+                "ack_statements": ["private-channel-instruction"],
+                "pinned_tools": [],
+                "with_event": False,
+                "tool_call_timeout": 0,
+            }
+        },
+    )
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None and source(app).read_bytes() == before
+    target = candidate["actions"][0]["context"]
+    assert target["channel_limits"] == {
+        "voice": {"max_requests": 1, "timeout_seconds": 30, "max_run_cost_usd": "0.10"}
+    }
+    assert target["channel_instructions"] == {
+        "voice": "private-channel-instruction\n\nKeep final replies within 280 characters when practical."
+    }
+    assert "channel_overrides" not in target
+    assert "private-channel-instruction" not in json.dumps(report)
+    assert set(report["retired_channel_settings"]) == {
+        "history_limit",
+        "ack_statements",
+        "pinned_tools",
+        "with_event",
+        "tool_call_timeout",
+    }
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        {"activation_budget": 13},
+        {"max_duration_seconds": 61},
+        {"max_turn_cost_usd": "0.26"},
+        {"max_turn_cost_usd": True},
+        {"max_duration_seconds": 0},
+        {"max_duration_seconds": float("inf")},
+        {"tool_call_timeout": 15},
+        {"tool_call_timeout": False},
+        {"with_event": 0},
+        {"with_event": True},
+        {"denied_tools": ["private-channel-instruction"]},
+        {"pinned_tools": ["private-channel-instruction"]},
+        {"history_limit": True},
+        {"history_limit": 10**400},
+        {"system_prompt_extra": {"private-channel-instruction": 1}},
+        {"unknown-private-key": "private-channel-instruction"},
+        {"max_statement_length": -1},
+    ],
+)
+def test_channel_policy_refuses_unqualified_controls_atomically(
+    app: Path, declaration: Any
+) -> None:
+    change(
+        app,
+        channel_overrides={
+            "default": {"system_prompt_extra": "valid"},
+            "voice": declaration,
+        },
+    )
+    before = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and source(app).read_bytes() == before
+    assert any("channel_overrides" in value for value in report["blockers"])
+    assert "private-channel-instruction" not in json.dumps(report)
+    assert "unknown-private-key" not in json.dumps(report)
+    assert report["blocked_channel_settings"] == [
+        "unknown" if "unknown-private-key" in declaration else next(iter(declaration))
+    ]
+
+
+@pytest.mark.parametrize(
+    "profiles", [None, [], {" voice": {}}, {"": {}}, {2: {}}, {"voice": []}]
+)
+def test_invalid_channel_profile_shapes_block(app: Path, profiles: Any) -> None:
+    change(app, channel_overrides=profiles)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and any(
+        "channel_overrides" in value for value in report["blockers"]
+    )
+
+
+def test_invalid_global_limit_with_channel_policy_returns_report(app: Path) -> None:
+    change(
+        app,
+        activation_budget="bad",
+        channel_overrides={"voice": {"activation_budget": 3}},
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and report["blockers"]
+
+
 @pytest.mark.parametrize("lock_setting", [None, False, True])
 def test_turn_lock_retires_into_skill_continuation_without_changing_limits(
     app: Path,

@@ -69,7 +69,6 @@ _RETIRE = {
 _EMPTY = {
     "pinned_tools": list,
     "skill_only_tools": list,
-    "channel_overrides": dict,
     "with_event": bool,
     "tool_call_timeout": float,
 }
@@ -228,6 +227,7 @@ _KNOWN = (
     | set(_RETIRE)
     | set(_EMPTY)
     | {
+        "channel_overrides",
         "skills",
         "skills_source",
         "max_statement_length",
@@ -578,6 +578,9 @@ def plan_harness_migration(
         blockers.append(
             "Model settings or limits require valid finite native values and the native SDK extra"
         )
+    from jvagent.cli.harness_migration_channels import migrate_channel_overrides
+
+    migrate_channel_overrides(context, target, report, retire_kinds=_RETIRE)
     if blockers:
         return report, None
     target.update(model="openai:" + bare, **skill_settings)

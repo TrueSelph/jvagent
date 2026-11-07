@@ -10,6 +10,17 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Offline channel migration
+
+[Qualification](2026-11-07-native-channel-migration.md) covers public CLI generation
+and disposable empty-graph execution of exact-channel presentation and tightening
+request/time/cost declarations. Three actual GPT-4.1 turns reconcile to three
+requests/985 reported tokens/USD 0.002330 estimated. Cold/reload graph readbacks
+are exact; final planner replay matches the tested candidate. Nonempty tool
+pins/restrictions, nonzero tool deadlines, unknown and widening settings block
+the entire candidate. Three reference blocker categories, retained-state cutover,
+legacy deletion and enterprise qualification remain open.
+
 ## Exact-channel instructions
 
 [Qualification](2026-11-07-native-channel-instructions.md) covers literal host

@@ -19,9 +19,10 @@ ownership. A channel label grants no authority; instructions are model guidance,
 not deterministic validation. Sources: `jvagent/harness/instructions.py:6`,
 `jvagent/action/native_harness/native_harness_action.py:511`.
 
-The offline migration command still blocks nonempty legacy `channel_overrides`.
-Its combined controls require explicit migration: domain SOPs into skills,
+The offline migration command converts a qualified subset of legacy
+`channel_overrides`; see [the migration contract](native-harness-migration.md).
+Its remaining combined controls require explicit migration: domain SOPs into skills,
 presentation into SDK instructions, ceilings into `channel_limits`, and remaining
 tool/service policies into their qualified adapters. Adding this field does not
 authorize dropping a legacy denial, deadline or response contract. Source:
-`jvagent/cli/harness_migrate.py:180`.
+`jvagent/cli/harness_migration_channels.py:24`.
