@@ -1201,3 +1201,40 @@ async def test_native_drive_replacement_refuses_before_downloading() -> None:
     assert "revision ownership" in result["ingestion_message"]
     assert node.failed_documents["modified"] == [revision]
     drive.get_media.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_dead", [True, False])
+async def test_native_drive_stale_marker_requires_proven_owner_death(owner_dead):
+    action = await PageIndexGoogleDriveSyncAction.create()
+    revision = {"id": "file", "name": "interrupted.pdf"}
+    owner = {"jv_worker_pid": "1234"}
+    node = await GoogleDriveDocuments.create(
+        folder_id="fixture",
+        active_document=revision["name"],
+        active_worker=owner,
+        status="processing",
+        ingesting_documents={"added": [revision], "modified": [], "removed": []},
+    )
+    await action.connect(node)
+    with patch(
+        "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+        "pageindex_google_drive_sync_action.require_dead_native_owner",
+        side_effect=None if owner_dead else ValueError("owner still live"),
+    ) as verify:
+        busy = await action._check_active_google_drive_document(
+            [{"folder_id": "fixture"}], {}, native=True
+        )
+    verify.assert_called_once_with(owner)
+    saved = await GoogleDriveDocuments.get(node.id)
+    assert saved is not None
+    assert saved.ingesting_documents["added"] == [revision]
+    if owner_dead:
+        assert busy is None
+        assert saved.status == "pending"
+        assert not saved.active_document
+        assert not saved.active_worker
+    else:
+        assert busy is not None
+        assert saved.active_document == revision["name"]
+        assert saved.active_worker == owner

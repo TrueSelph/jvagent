@@ -36,6 +36,12 @@ from jvagent.action.pageindex.jvforge_assimilate import (
 from jvagent.action.pageindex.pageindex_action import (
     ensure_ingestion_config_for_agent,
 )
+from jvagent.core.execution_owner import (
+    native_harness_action,
+    native_worker_metadata,
+    require_dead_native_owner,
+    require_native_local_ownership,
+)
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
 
@@ -358,6 +364,7 @@ async def _pop_skip_head(
         if docs["modified"]:
             docs["modified"].pop(0)
     node.active_document = ""
+    node.active_worker = {}
     _sync_drive_node_status_from_queues(node)
     await node.save()
     return {
@@ -508,6 +515,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         failed_item = queue.pop(0)
         google_drive_documents_node.failed_documents[doc_type].append(failed_item)
         google_drive_documents_node.active_document = ""
+        google_drive_documents_node.active_worker = {}
         _sync_drive_node_status_from_queues(google_drive_documents_node)
         await google_drive_documents_node.save()
 
@@ -739,6 +747,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         )
 
         google_drive_documents_node.active_document = doc_name
+        google_drive_documents_node.active_worker = (
+            native_worker_metadata() if cfg.native_action is not None else {}
+        )
         google_drive_documents_node.status = "processing"
         await google_drive_documents_node.save()
 
@@ -897,6 +908,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                             collection_name=cfg.collection_name,
                         )
                 google_drive_documents_node.active_document = ""
+                google_drive_documents_node.active_worker = {}
                 _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
             except Exception:
@@ -935,6 +947,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             # Ensure active_document is always cleared
             if google_drive_documents_node.active_document:
                 google_drive_documents_node.active_document = ""
+                google_drive_documents_node.active_worker = {}
                 await google_drive_documents_node.save()
 
     async def ingest_documents_from_google_drive(
@@ -1241,8 +1254,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         self,
         google_drive_folders: list,
         document_ingested: Dict[str, List[str]],
+        *,
+        native: bool = False,
     ) -> Optional[dict]:
-        """Phase B: if any folder has ``active_document``, return early response."""
+        """Resume native queue admission only after proving the former worker is dead."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
             google_drive_documents_node = await self.node(
@@ -1252,6 +1267,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 google_drive_documents_node
                 and google_drive_documents_node.active_document
             ):
+                if native:
+                    try:
+                        require_dead_native_owner(
+                            google_drive_documents_node.active_worker
+                        )
+                    except ValueError:
+                        pass
+                    else:
+                        google_drive_documents_node.active_document = ""
+                        google_drive_documents_node.active_worker = {}
+                        _sync_drive_node_status_from_queues(google_drive_documents_node)
+                        await google_drive_documents_node.save()
+                        continue
                 return {
                     "status": "completed",
                     "message": (
@@ -1510,10 +1538,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         }
 
         collection_name = page_index_action.resolve_collection()
-        from jvagent.core.execution_owner import native_harness_action
-
         native = await native_harness_action(await self.get_agent())
         if native is not None:
+            require_native_local_ownership()
             if not page_index_action.enabled or collection_name != agent_id:
                 raise ValidationError(
                     "Native Drive ingestion requires this agent's PageIndex collection"
@@ -1559,6 +1586,13 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             native_action=native,
         )
 
+        if native is not None:
+            busy = await self._check_active_google_drive_document(
+                google_drive_folders, document_ingested, native=True
+            )
+            if busy is not None:
+                return busy
+
         await self._phase_sync_google_drive_folders(
             google_drive_folders,
             google_drive_action,
@@ -1567,11 +1601,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             remove_deleted_documents=remove_deleted_documents,
         )
 
-        busy = await self._check_active_google_drive_document(
-            google_drive_folders, document_ingested
-        )
-        if busy is not None:
-            return busy
+        if native is None:
+            busy = await self._check_active_google_drive_document(
+                google_drive_folders, document_ingested
+            )
+            if busy is not None:
+                return busy
 
         return await self._phase_pick_and_process_google_drive_document(
             google_drive_folders=google_drive_folders,
@@ -1621,6 +1656,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             queues_touched = True
         if active_document is not None:
             node.active_document = active_document
+            node.active_worker = {}
 
         if status is not None:
             s = str(status).strip()

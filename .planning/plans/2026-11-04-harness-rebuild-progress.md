@@ -12,6 +12,24 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native Drive claims now persist server-owned worker identity
+(`google_drive_documents.py:54`). Before refreshing the folder listing,
+native admission applies the existing same-host process-death check. It
+clears a verified dead worker's marker and preserves the queued file.
+Live, unbound and unverifiable markers remain busy
+(`pageindex_google_drive_sync_action.py:1253`). This uses the existing
+local-worker boundary and supplies no distributed lease.
+
+At parent `413e9bef` and Action source blob
+`85372cd9de5471479a756f8e5c72f3473a86f5c7`, a disposable browser fixture
+created a real worker identity in a subprocess and waited for its exit.
+The browser showed HTTP 200 in 674 ms. Fresh JSON graph contexts found
+the dead-owner queue pending at `n.GoogleDriveDocuments.1ab0db8b813c4263b0708735`.
+The live and unbound queues remained busy with their markers and pending
+items intact. This fixture exercised claim admission with no model
+requests, tokens, cost or tool events. Recovery where publication already
+wrote a root still requires revision reconciliation.
+
 Native Drive ingestion now resolves the agent's native owner before
 resolving a legacy model Action (`pageindex_google_drive_sync_action.py:1515`).
 New local PDFs and text files use the existing accounted PageIndex adapters
