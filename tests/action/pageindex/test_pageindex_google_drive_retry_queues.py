@@ -16,6 +16,9 @@ from jvspatial.exceptions import ValidationError
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.drive_ingest_filter import (
     file_ids_under_excluded_folders,
 )
+from jvagent.action.pageindex.pageindex_google_drive_sync_action.google_drive_documents import (
+    GoogleDriveDocuments,
+)
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
     DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
@@ -38,6 +41,37 @@ def test_sync_drive_node_status_respects_failed_backlog() -> None:
     )
     _sync_drive_node_status_from_queues(node)
     assert node.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_failed_rename_preserves_persisted_queue_item() -> None:
+    old = {"id": "file", "name": "old.pdf", "modifiedTime": "2026-11-05T00:00:00Z"}
+    new = {"id": "file", "name": "new.pdf", "modifiedTime": "2026-11-06T00:00:00Z"}
+    revision = {"id": "file", "old": old, "new": new}
+    node = await GoogleDriveDocuments.create(
+        ingesting_documents={"added": [], "modified": [revision], "removed": []},
+    )
+    action = PageIndexGoogleDriveSyncAction()
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+    )
+    drive = SimpleNamespace(get_media=AsyncMock(side_effect=OSError("unavailable")))
+    for source in ("ingesting_documents", "failed_documents"):
+        result = await action._process_single_document(
+            node, drive, new, "modified", cfg, old_file=old, source=source
+        )
+        assert result["success"] is False
+        node = await GoogleDriveDocuments.get(node.id)
+        assert node is not None
+        assert node.ingesting_documents["modified"] == []
+        assert node.failed_documents["modified"] == [revision]
+        assert not node.active_document
 
 
 def test_sync_drive_node_status_pending_when_ingesting_has_work() -> None:

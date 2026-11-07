@@ -500,15 +500,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         *,
         source: str,
         doc_type: str,
-        file_info: Dict[str, Any],
     ) -> None:
-        docs = getattr(google_drive_documents_node, source)
-        if doc_type == "added":
-            docs["added"].pop(0)
-            google_drive_documents_node.failed_documents["added"].append(file_info)
-        else:
-            docs["modified"].pop(0)
-            google_drive_documents_node.failed_documents["modified"].append(file_info)
+        queue = getattr(google_drive_documents_node, source)[doc_type]
+        failed_item = queue.pop(0)
+        google_drive_documents_node.failed_documents[doc_type].append(failed_item)
         google_drive_documents_node.active_document = ""
         _sync_drive_node_status_from_queues(google_drive_documents_node)
         await google_drive_documents_node.save()
@@ -733,7 +728,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.warning(
                     "Document %s timed out after %ss", doc_name, timeout_seconds
@@ -763,7 +757,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.exception("ValidationError ingesting document %s", doc_name)
                 return {
@@ -777,7 +770,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.exception("Error ingesting document %s", doc_name)
                 return {
@@ -796,7 +788,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.error("Ingestion returned no doc_name for %s", doc_name)
                 return {

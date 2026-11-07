@@ -12,6 +12,40 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Drive failure handling now moves the original queue entry, including the
+old and new revisions, into the retry queue
+(`pageindex_google_drive_sync_action.py:497`). The regression rereads the
+graph after the initial failure and after another failed retry. A browser
+fixture on parent `66c3f0d5` exercised production queue handling against
+a disposable JSON graph with a simulated Drive download outage. The page
+reported HTTP 200 in 14 ms and displayed two "Failed to update new.pdf"
+outcomes. Graph readback at
+`n.GoogleDriveDocuments.24ba6fe2b0cf41f79a7c3d19` showed one modified entry
+containing both revisions and an empty active marker. The failure occurs
+before model execution, with zero requests, tokens and cost. This fixture
+exercised the queue handler directly. The production endpoint, Google
+OAuth, native model execution and successful replacement remain separate
+qualification cases.
+
+Recovery probes at `66c3f0d5` exposed three separate states:
+
+- A saved `active_document` marker blocked two fresh processes opening the
+  same disposable JSON graph. Both returned "currently being processed" with
+  the pending revision intact. The marker carries no run identity or expiry
+  (`google_drive_documents.py:49`, `pageindex_google_drive_sync_action.py:1165`).
+- A failed modified item moved from the pending queue to the retry queue as
+  a plain new file record. The prior filename and revision were lost
+  (`pageindex_google_drive_sync_action.py:497` and `:1297`).
+- A fault injected after the initial root save left a discoverable root
+  with zero chunks. The Drive filename skip check treated that partial root
+  as already indexed (`adapter.py:200`,
+  `pageindex_google_drive_sync_action.py:417`).
+
+These are separate acceptance cases for native Drive sync. A recovery attempt
+must establish ownership before taking over a job, preserve the queued
+revision across failure, and distinguish a completed publication from a
+partial root before retiring the prior version or acknowledging the queue.
+
 PageIndex deletion now accepts an exact root ID, verifies its collection
 and name, and removes postings only for chunks deleted by the graph cascade
 (`documents.py:908`). The regression tests a same-name replacement, wrong
