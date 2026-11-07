@@ -82,20 +82,25 @@ def require_dead_native_owner(metadata: dict[str, str]) -> None:
     raise ValueError("Prior native worker PID is still alive")
 
 
-async def uses_native_harness(agent: Any) -> bool:
+async def native_harness_action(agent: Any) -> Any:
     """Resolve enabled graph Actions; never fall back after a lookup failure."""
     from jvagent.action.native_harness import NativeHarnessAction
 
     actions = await agent.get_actions(enabled_only=True)
     native = [action for action in actions if isinstance(action, NativeHarnessAction)]
     if not native:
-        return False
+        return None
     if len(native) != 1 or any(
         action is not native[0] and action.get_manifest().pattern_orchestrator
         for action in actions
     ):
         raise RuntimeError("Configure only one harness execution Action")
-    return True
+    return native[0]
+
+
+async def uses_native_harness(agent: Any) -> bool:
+    """Return whether an enabled native Action owns execution."""
+    return await native_harness_action(agent) is not None
 
 
 def require_native_local_ownership() -> None:

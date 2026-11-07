@@ -24,7 +24,12 @@ from jvspatial import create_task
 from jvspatial.api import endpoint
 from jvspatial.api.decorators import EndpointField
 from jvspatial.api.endpoints.response import ResponseField, success_response
-from jvspatial.api.exceptions import ResourceNotFoundError, ValidationError
+from jvspatial.api.exceptions import (
+    AuthenticationError,
+    ResourceNotFoundError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from jvspatial.storage.exceptions import InvalidPathError, PathTraversalError
 from jvspatial.storage.security import PathSanitizer
 from pydantic import Field
@@ -1795,6 +1800,7 @@ async def delete_document_chunk_endpoint(
     ),
 )
 async def search_documents_endpoint(
+    request: Request,
     agent_id: str,
     query: str = Field(..., description="Search query text"),
     doc_name: Optional[str] = Field(
@@ -1854,17 +1860,63 @@ async def search_documents_endpoint(
     """
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     metadata_filter = _parse_metadata(metadata)
-    results = await search_documents(
-        query=query,
-        doc_name=doc_name,
-        strategy=strategy,
-        limit=limit,
-        collection_name=agent_id,
-        metadata_filter=metadata_filter,
-        include_references=include_references,
-        only_enabled=only_enabled,
-        include=include,
-    )
+    search_args: dict[str, Any] = {
+        "query": query,
+        "doc_name": doc_name,
+        "strategy": strategy,
+        "limit": limit,
+        "collection_name": agent_id,
+        "metadata_filter": metadata_filter,
+        "include_references": include_references,
+        "only_enabled": only_enabled,
+        "include": include,
+    }
+    if strategy == "tree_search":
+        from jvagent.core.execution_owner import native_harness_action
+
+        agent = await Agent.get(agent_id)
+        if agent is None:
+            raise ResourceNotFoundError("PageIndex agent not found")
+        action = await native_harness_action(agent)
+        if action is not None:
+            from .native_search import run_native_search
+
+            profile = await agent.get_action_by_type("PageIndexReadAction")
+            if (
+                not isinstance(profile, PageIndexAction)
+                or not profile.enabled
+                or ((profile.config or {}).get("strategy") or profile.strategy)
+                != "tree_search"
+            ):
+                raise ValidationError("Native PageIndex tree search is not enabled")
+            principal = getattr(request.state, "user", None)
+            actor = (
+                principal.get("id")
+                if isinstance(principal, dict)
+                else getattr(principal, "id", None)
+            )
+            if not isinstance(actor, str) or not actor:
+                raise AuthenticationError("An authenticated operator is required")
+
+            async def search(complete: Any) -> list[dict[str, Any]]:
+                return await search_documents(**search_args, complete=complete)
+
+            try:
+                return {
+                    "results": await run_native_search(
+                        action,
+                        agent_id=agent_id,
+                        actor=actor,
+                        query=query,
+                        search=search,
+                    )
+                }
+            except Exception as exc:
+                logger.warning("Native PageIndex search failed: %s", type(exc).__name__)
+                raise ServiceUnavailableError(
+                    "Native PageIndex search failed"
+                ) from None
+    results = await search_documents(**search_args)
     return {"results": results}
 
 

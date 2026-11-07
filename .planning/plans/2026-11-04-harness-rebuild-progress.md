@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native PageIndex tree ranking](2026-11-07-native-pageindex-tree.md).
+Latest increment: [native administrative PageIndex search](2026-11-07-native-pageindex-http.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,15 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native administrative PageIndex search
+
+The admin HTTP endpoint now routes opted-in native tree search through shared
+SDK limits and per-operation graph receipts. Browser evidence covers a real
+GPT-4.1 ranking request, unauthenticated rejection, collection exclusion,
+chat replay, and exact graph readback after reload. Ingestion, callbacks and
+administrative recovery remain open. See
+[qualification](2026-11-07-native-pageindex-http.md).
 
 ## Native PageIndex tree ranking
 
