@@ -111,6 +111,10 @@ def build_native_agent(
     }
 
     def adapt(original: JVTool) -> Any:
+        from jvagent.tooling.tool import validate_tool_timeout
+
+        timeout = validate_tool_timeout(original.timeout_seconds)
+
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
             if isinstance(original, NativeMutationTool) and not allow_mutations:
                 raise MutationAccessDenied("Recovery continuation is read-only")
@@ -135,7 +139,6 @@ def build_native_agent(
 
                 call_arguments["visitor"] = require_tool_visitor()
             if isinstance(original, NativeMutationTool):
-                from pydantic_ai.exceptions import ToolRetryError
                 from pydantic_ai_harness.step_persistence import annotate_tool_effect
 
                 effect_key = await original.effect_identity(
@@ -162,10 +165,7 @@ def build_native_agent(
                     or effect.idempotency_key != effect_key
                 ):
                     raise RuntimeError("Mutation lacks an SDK effect record")
-                try:
-                    result = await original.call(**call_arguments)
-                except (ModelRetry, ToolRetryError) as error:
-                    raise RuntimeError("Mutation requires reconciliation") from error
+                result = await original.call(**call_arguments)
             else:
                 result = await original.call(**call_arguments)
             if result.is_error:
@@ -204,7 +204,7 @@ def build_native_agent(
             configured_skills=catalog.metadata,
         )
 
-        return Tool.from_schema(
+        adapted = Tool.from_schema(
             invoke,
             name=original.name,
             description=original.description,
@@ -213,6 +213,8 @@ def build_native_agent(
             sequential=bool(original.binds_visitor),
             args_validator=validate_arguments,
         )
+        adapted.timeout = timeout
+        return adapted
 
     declared = [tool.name for tool in tools] + [
         name for toolset in toolsets for name in toolset.declared_names

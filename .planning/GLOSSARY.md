@@ -4,6 +4,13 @@ Single-source definitions for terms used throughout jvagent. Whenever a defined 
 
 ---
 
+### Tool deadline
+An Action-declared positive finite `Tool.timeout_seconds` value mapped to public
+Pydantic AI `Tool.timeout` for native execution. It is separate from the overall
+run deadline and does not promise hard preemption or write rollback. Sources:
+`jvagent/tooling/tool.py:49`, `jvagent/harness/native.py:216`. See
+[native tool deadlines](runbooks/native-tool-deadlines.md).
+
 ### Native media
 Conversation-owned immutable payloads referenced by official Harness media markers
 in SDK snapshots. The public MediaStore adapter stores each payload once per

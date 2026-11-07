@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native channel resource ceilings](2026-11-06-native-channel-limits.md).
+Latest increment: [native Action deadlines](2026-11-06-native-tool-deadlines.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,21 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Action tool deadlines and uncertain writes
+
+Action-owned deadline metadata maps to the public SDK timer. A reproduced
+post-write timeout/retry defect now stops annotated mutations before another
+model attempt or queued write. Final GPT-4.1 browser proof also qualifies typed
+failed-tool display and unconfirmed-write warnings. Six turns/twelve calls/5,312
+reported tokens/USD 0.011836 estimated reconcile; two independently requested
+local writes produce exactly two markers, and both retries are blocked with zero
+model attempts. Final cached reload preserves warnings/statistics and all graph
+records exactly; fresh-profile bookmark-only transcript backfill remains open.
+Both Python versions pass 882 complete native/host/real-PG cases; the transitional
+suite passes 5,121 and frontend 184. See the
+[record](2026-11-06-native-tool-deadlines.md). All three reference blockers,
+retained-state cutover, legacy deletion and enterprise qualification remain open.
 
 ## Channel resource ceilings
 

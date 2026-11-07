@@ -66,6 +66,7 @@ class ToolSpec:
     effect_class: Optional[Literal["read", "write", "external"]] = None
     requires_tool_permission: bool = False
     permission_denied_message: Optional[str] = None
+    timeout_seconds: Optional[float] = None
 
 
 def tool(
@@ -80,6 +81,7 @@ def tool(
     effect_class: Optional[Literal["read", "write", "external"]] = None,
     requires_tool_permission: bool = False,
     permission_denied_message: Optional[str] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> Callable[..., Any]:
     """Mark a method as an agent tool. Usable as ``@tool`` or ``@tool(name=...)``."""
 
@@ -93,6 +95,7 @@ def tool(
         effect_class=effect_class,
         requires_tool_permission=requires_tool_permission,
         permission_denied_message=permission_denied_message,
+        timeout_seconds=timeout_seconds,
     )
 
     def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -214,6 +217,7 @@ def collect_tools(instance: Any) -> List[Tool]:
             # bleed into the class-level cache.
             parameters_schema=dict(schema),
             execute=member,
+            timeout_seconds=spec.timeout_seconds,
         )
         # Carry orchestrator wrap-step hints when supplied (no-ops otherwise).
         if spec.access_label is not None:

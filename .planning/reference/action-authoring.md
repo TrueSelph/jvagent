@@ -429,6 +429,10 @@ The decorator derives everything from the function:
 | `description` | method docstring, first paragraph | `@tool(description="…")` |
 | `parameters_schema` | the signature; `Annotated[T, "desc"]` supplies per-arg docs | — |
 | `effect_class` | unset for the legacy surface | `@tool(effect_class="read")`, `"write"`, or `"external"` |
+| `timeout_seconds` | no per-tool deadline | `@tool(timeout_seconds=15)`; native execution uses the public SDK timer |
+
+See [native tool deadlines](../runbooks/native-tool-deadlines.md) for validation,
+direct-call behavior, uncertain effects and the separate legacy migration gate.
 
 The prefix resolves in order: a class-level `tool_namespace` (when declared) → the loader package name (`metadata["name"]`) → the action `label` → a class-name fallback (`WebFetchAction` → `web_fetch`), so names stay stable even when an instance is built without loader metadata.
 

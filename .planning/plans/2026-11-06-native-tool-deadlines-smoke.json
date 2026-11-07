@@ -1,0 +1,923 @@
+{
+  "parent_revision": "git-commit:357e4047ce4d8608699978b81f6d2aa760815d6b",
+  "scope": "Actual GPT-4.1, disposable PostgreSQL/backend8179, frozen built jvchat3142. Two independent explicit local marker writes; no external delivery.",
+  "source_blobs": {
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:42b55ac755aac42e68fc6d9280f8aa68a93e65be",
+    "jvagent/harness/native.py": "git-blob:db06d12742faab6146769648ff683a5bb779bac5",
+    "jvagent/harness/read_retries.py": "git-blob:1e21b0911f8782e46cf95a9334a35cf86b9a4dfd",
+    "jvagent/tooling/tool.py": "git-blob:27765d2740e74d75d272c8de7a69966aaeafb6c9",
+    "jvagent/tooling/tool_decorator.py": "git-blob:0badce0fa020358125994fdf3d5bc2547e34ae76",
+    "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf"
+  },
+  "cohort_note": "First read/write used PID1229 before typed failure projection/UI fixes. Final source PID2493 repeats both and tests blocked follow-ups. All source epochs observed; final blob set does not relabel original turns.",
+  "fixture_files": [
+    {
+      "path": "agents/demo/assistant/agent.yaml",
+      "sha256": "sha256:05aef6ee5672939ec4c1320a9db5ed429b4fec1f297ea63259cd2d43899e27d9"
+    },
+    {
+      "path": "agents/demo/assistant/skills/deadline-probe/SKILL.md",
+      "sha256": "sha256:70a54af18f968c9abb860e3cdff21bc61b28c6877d884bbb5ceff930eda882fa"
+    },
+    {
+      "path": "agents/demo/assistant/actions/qualification/deadline_probe/deadline_probe_action.py",
+      "sha256": "sha256:62a64182d0ed8ab54eeba7d665c9ad636aa242001d3fc1107b78cddaa16987d4"
+    },
+    {
+      "path": "agents/demo/assistant/actions/qualification/deadline_probe/__init__.py",
+      "sha256": "sha256:e4e056f501cbd7e2bee4a8a5ba3dcf05e269e5dc13905eaf8d526710fe38bedf"
+    },
+    {
+      "path": "agents/demo/assistant/actions/qualification/deadline_probe/info.yaml",
+      "sha256": "sha256:52fe4e6841186e6255781cd8d254673732d69b329346fce2c3ddab4858cad1f4"
+    },
+    {
+      "path": "agents/demo/assistant/actions/qualification/deadline_probe/endpoints.py",
+      "sha256": "sha256:9e1fe5f0f44504db804d0bd4e69dce02ce83aecbf101f403c6cb0bba27052161"
+    }
+  ],
+  "frozen_ui_sha256": {
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc",
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc"
+  },
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.e9466475f79f48ae894293f5",
+      "conversation_id": "n.Conversation.8497c6b92266489bae8cdb5a",
+      "session_id": "sess_7a03dcdeeb7a478d",
+      "cohort": "pre-display-fix",
+      "utterance": "Load deadline-probe. Try its slow_read once; if it times out, use fast_read once and report the exact value. Do not write any marker.",
+      "response": "The slow_read timed out. The fast_read value is: DEADLINE-READY-37.",
+      "closed": true,
+      "started_at": "2026-11-06T23:36:52.270578",
+      "completed_at": "2026-11-06T23:37:02.610725",
+      "elapsed_seconds": 10.340147,
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 1826,
+          "output_tokens": 69
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null
+        },
+        "output": "The slow_read timed out. The fast_read value is: DEADLINE-READY-37.",
+        "run_id": "corr-1a1de90cc1d74d00b1b7bfff30098b7d",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:37:02.610889+00:00",
+        "total_tokens": 1895,
+        "prompt_tokens": 1826,
+        "total_cost_usd": 0.004204,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 69,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004204,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 4.323,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.323,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [
+        {
+          "run_id": "corr-1a1de90cc1d74d00b1b7bfff30098b7d",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:36:56.314262Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:36:56.294496Z",
+          "tool_call_id": "call-sha256-6ac31248c366b992",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-1a1de90cc1d74d00b1b7bfff30098b7d",
+          "status": "failed",
+          "ended_at": "2026-11-07T03:36:58.704124Z",
+          "tool_name": "deadline_probe__slow_read",
+          "started_at": "2026-11-07T03:36:57.671301Z",
+          "tool_call_id": "call-sha256-b640f89e51055421",
+          "effect_summary": "ToolRetryError('Timed out after 1.0 seconds.')",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-1a1de90cc1d74d00b1b7bfff30098b7d",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:37:00.194056Z",
+          "tool_name": "deadline_probe__fast_read",
+          "started_at": "2026-11-07T03:37:00.159080Z",
+          "tool_call_id": "call-sha256-97f75875c4fcc45a",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:53.971847Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:54.184937Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:55.962161Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:56.301488Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-6ac31248c366b992"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:56.323220Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-6ac31248c366b992"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:56.759927Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:57.440398Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:57.683247Z",
+          "tool_name": "deadline_probe__slow_read",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-b640f89e51055421"
+        },
+        {
+          "kind": "tool_call_failed",
+          "error": "ToolRetryError('Timed out after 1.0 seconds.')",
+          "timestamp": "2026-11-07T03:36:58.718584Z",
+          "tool_name": "deadline_probe__slow_read",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-b640f89e51055421"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:59.146678Z",
+          "tool_name": null,
+          "step_index": 3,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:36:59.867914Z",
+          "tool_name": null,
+          "step_index": 3,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:00.170296Z",
+          "tool_name": "deadline_probe__fast_read",
+          "step_index": 3,
+          "tool_call_id": "call-sha256-97f75875c4fcc45a"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:00.205857Z",
+          "tool_name": "deadline_probe__fast_read",
+          "step_index": 3,
+          "tool_call_id": "call-sha256-97f75875c4fcc45a"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:00.678496Z",
+          "tool_name": null,
+          "step_index": 4,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:01.822424Z",
+          "tool_name": null,
+          "step_index": 4,
+          "tool_call_id": null
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:02.287779Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.ce6c8cf4c27941bd87fd8c74",
+      "conversation_id": "n.Conversation.f4ad42988dc747bea93097eb",
+      "session_id": "sess_063ae78af8c84cc6",
+      "cohort": "pre-display-fix",
+      "utterance": "Load deadline-probe and call its write tool once to append one local marker. Do not retry it if there is any timeout or uncertainty.",
+      "response": "That operation may already have been accepted. Automatic retry is blocked until its outcome has been reconciled.",
+      "closed": true,
+      "started_at": "2026-11-06T23:37:41.308569",
+      "completed_at": "2026-11-06T23:37:46.896700",
+      "elapsed_seconds": 5.588131,
+      "native_run": {
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null
+        },
+        "reason": "mutation_outcome_unknown",
+        "run_id": "corr-ff114679b69c44eab098416fd965ff7f",
+        "status": "failed",
+        "failure_type": "MutationOutcomeUnknown",
+        "failure_origin": "read_retries.py:52:wrap_tool_execute",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:37:46.896813+00:00",
+        "total_tokens": 761,
+        "prompt_tokens": 729,
+        "total_cost_usd": 0.001714,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 32,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001714,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.669,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.669,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [
+        {
+          "run_id": "corr-ff114679b69c44eab098416fd965ff7f",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:37:43.078507Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:37:43.060234Z",
+          "tool_call_id": "call-sha256-314ead91590f1944",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-ff114679b69c44eab098416fd965ff7f",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "deadline_probe__write",
+          "started_at": "2026-11-07T03:37:45.346667Z",
+          "tool_call_id": "call-sha256-c8512aff4c54a66d",
+          "effect_summary": "jv:mutation:deadline-probe:v1",
+          "idempotency_key": "corr-ff114679b69c44eab098416fd965ff7f/call-sha256-c8512aff4c54a66d"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:41.405432Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:41.649118Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:42.824278Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:43.066615Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-314ead91590f1944"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:43.090381Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-314ead91590f1944"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:43.576884Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:45.070344Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:37:45.357252Z",
+          "tool_name": "deadline_probe__write",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-c8512aff4c54a66d"
+        },
+        {
+          "kind": "run_failed",
+          "error": "MutationOutcomeUnknown('An annotated mutation cannot be retried after SDK execution failure')",
+          "timestamp": "2026-11-07T03:37:46.607324Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.17b50fe0a93a446ca4e42bf5",
+      "conversation_id": "n.Conversation.f4ad42988dc747bea93097eb",
+      "session_id": "sess_063ae78af8c84cc6",
+      "cohort": "final-source",
+      "utterance": "Try that write again.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "closed": true,
+      "started_at": "2026-11-06T23:54:11.290414",
+      "completed_at": "2026-11-06T23:54:11.511236",
+      "elapsed_seconds": 0.220822,
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.ce6c8cf4c27941bd87fd8c74"
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:54:11.511316+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [],
+      "events": []
+    },
+    {
+      "interaction_id": "n.Interaction.7fb9c1e8dc314ed48fdfb9e8",
+      "conversation_id": "n.Conversation.60634ac52cc4428ea0d2cf50",
+      "session_id": "sess_91eebe2218be4aea",
+      "cohort": "final-source",
+      "utterance": "Load deadline-probe. Try its slow_read once; if it times out, use fast_read once and report the exact value. Do not write any marker.",
+      "response": "The slow_read timed out. The fast_read value is: DEADLINE-READY-37.",
+      "closed": true,
+      "started_at": "2026-11-06T23:54:26.216361",
+      "completed_at": "2026-11-06T23:54:37.960062",
+      "elapsed_seconds": 11.743701,
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 1826,
+          "output_tokens": 69
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null
+        },
+        "output": "The slow_read timed out. The fast_read value is: DEADLINE-READY-37.",
+        "run_id": "corr-a440f805c0024bd49e7eb1508de1588f",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:54:37.960198+00:00",
+        "total_tokens": 1895,
+        "prompt_tokens": 1826,
+        "total_cost_usd": 0.004204,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 69,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004204,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 5.78,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.78,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [
+        {
+          "run_id": "corr-a440f805c0024bd49e7eb1508de1588f",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:54:30.454613Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:54:30.437443Z",
+          "tool_call_id": "call-sha256-9668a82abb45f788",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-a440f805c0024bd49e7eb1508de1588f",
+          "status": "failed",
+          "ended_at": "2026-11-07T03:54:33.195552Z",
+          "tool_name": "deadline_probe__slow_read",
+          "started_at": "2026-11-07T03:54:32.164932Z",
+          "tool_call_id": "call-sha256-a16fb82bb3a85b18",
+          "effect_summary": "ToolRetryError('Timed out after 1.0 seconds.')",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-a440f805c0024bd49e7eb1508de1588f",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:54:35.410897Z",
+          "tool_name": "deadline_probe__fast_read",
+          "started_at": "2026-11-07T03:54:35.374865Z",
+          "tool_call_id": "call-sha256-13cc4065618cbd2b",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:27.760854Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:27.979177Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:30.102967Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:30.444053Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-9668a82abb45f788"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:30.462591Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-9668a82abb45f788"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:30.919694Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:31.912194Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:32.173005Z",
+          "tool_name": "deadline_probe__slow_read",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-a16fb82bb3a85b18"
+        },
+        {
+          "kind": "tool_call_failed",
+          "error": "ToolRetryError('Timed out after 1.0 seconds.')",
+          "timestamp": "2026-11-07T03:54:33.208922Z",
+          "tool_name": "deadline_probe__slow_read",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-a16fb82bb3a85b18"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:33.655225Z",
+          "tool_name": null,
+          "step_index": 3,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:35.114980Z",
+          "tool_name": null,
+          "step_index": 3,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:35.386273Z",
+          "tool_name": "deadline_probe__fast_read",
+          "step_index": 3,
+          "tool_call_id": "call-sha256-13cc4065618cbd2b"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:35.424527Z",
+          "tool_name": "deadline_probe__fast_read",
+          "step_index": 3,
+          "tool_call_id": "call-sha256-13cc4065618cbd2b"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:35.973610Z",
+          "tool_name": null,
+          "step_index": 4,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:37.177974Z",
+          "tool_name": null,
+          "step_index": 4,
+          "tool_call_id": null
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:37.645145Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.b049bf22ecc94fea9b140a53",
+      "conversation_id": "n.Conversation.b5514e0e25fa40cc9948a3fc",
+      "session_id": "sess_ae542c7e2db6491e",
+      "cohort": "final-source",
+      "utterance": "Load deadline-probe and call its write tool once to append one local marker. Do not retry it if there is any timeout or uncertainty.",
+      "response": "That operation may already have been accepted. Automatic retry is blocked until its outcome has been reconciled.",
+      "closed": true,
+      "started_at": "2026-11-06T23:54:49.289641",
+      "completed_at": "2026-11-06T23:54:55.004042",
+      "elapsed_seconds": 5.714401,
+      "native_run": {
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null
+        },
+        "reason": "mutation_outcome_unknown",
+        "run_id": "corr-427b80b124d34f2c858b9fdf1f2436c0",
+        "status": "failed",
+        "failure_type": "MutationOutcomeUnknown",
+        "failure_origin": "read_retries.py:52:wrap_tool_execute",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:54:55.004168+00:00",
+        "total_tokens": 761,
+        "prompt_tokens": 729,
+        "total_cost_usd": 0.001714,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 32,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001714,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.977,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.977,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [
+        {
+          "run_id": "corr-427b80b124d34f2c858b9fdf1f2436c0",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:54:50.981787Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:54:50.963591Z",
+          "tool_call_id": "call-sha256-242e3bed6a6a665e",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-427b80b124d34f2c858b9fdf1f2436c0",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "deadline_probe__write",
+          "started_at": "2026-11-07T03:54:53.518188Z",
+          "tool_call_id": "call-sha256-1dd14fd08c6cb2f0",
+          "effect_summary": "jv:mutation:deadline-probe:v1",
+          "idempotency_key": "corr-427b80b124d34f2c858b9fdf1f2436c0/call-sha256-1dd14fd08c6cb2f0"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:49.373921Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:49.595701Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:50.726352Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:50.970430Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-242e3bed6a6a665e"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:50.988807Z",
+          "tool_name": "load_capability",
+          "step_index": 1,
+          "tool_call_id": "call-sha256-242e3bed6a6a665e"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:51.407222Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:53.253976Z",
+          "tool_name": null,
+          "step_index": 2,
+          "tool_call_id": null
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "timestamp": "2026-11-07T03:54:53.527450Z",
+          "tool_name": "deadline_probe__write",
+          "step_index": 2,
+          "tool_call_id": "call-sha256-1dd14fd08c6cb2f0"
+        },
+        {
+          "kind": "run_failed",
+          "error": "MutationOutcomeUnknown('An annotated mutation cannot be retried after SDK execution failure')",
+          "timestamp": "2026-11-07T03:54:54.750686Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.344ecb5877684400be695509",
+      "conversation_id": "n.Conversation.b5514e0e25fa40cc9948a3fc",
+      "session_id": "sess_ae542c7e2db6491e",
+      "cohort": "final-source",
+      "utterance": "Try that write again.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "closed": true,
+      "started_at": "2026-11-06T23:55:15.928258",
+      "completed_at": "2026-11-06T23:55:16.017150",
+      "elapsed_seconds": 0.088892,
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.b049bf22ecc94fea9b140a53"
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:55:16.017222+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "effects": [],
+      "events": []
+    }
+  ],
+  "conversation_spend": [
+    {
+      "conversation_id": "n.Conversation.8497c6b92266489bae8cdb5a",
+      "spent": {
+        "usd": "0.004204",
+        "tokens": 1895,
+        "requests": 4,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "conversation_id": "n.Conversation.60634ac52cc4428ea0d2cf50",
+      "spent": {
+        "usd": "0.004204",
+        "tokens": 1895,
+        "requests": 4,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "conversation_id": "n.Conversation.f4ad42988dc747bea93097eb",
+      "spent": {
+        "usd": "0.001714",
+        "tokens": 761,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "conversation_id": "n.Conversation.b5514e0e25fa40cc9948a3fc",
+      "spent": {
+        "usd": "0.001714",
+        "tokens": 761,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "totals": {
+    "model_requests": 12,
+    "provider_reported_tokens": 5312,
+    "estimated_cost_usd": "0.011836",
+    "provider_reported_cost_usd": "0",
+    "unknown_cost_calls": 0,
+    "local_marker_writes": 2
+  },
+  "readback": {
+    "cold_first_two_rows_and_conversations_exact": true,
+    "final_reload_all_six_rows_four_conversations_and_registrations_exact": true,
+    "markers_after_reload": 2
+  },
+  "module_observation": {
+    "process_id": 2493,
+    "observed_at": "2026-11-07T03:56:31.255585+00:00",
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "limitations": [
+    "Uncertain write effects remain started; no fabricated terminal tool result or rollback. Model usage measured despite unknown tool outcome.",
+    "Fresh browser profile given only canonical conversation bookmarks did not backfill archived transcript; final same-profile cache reload restored tools and usage.",
+    "Legacy global/channel deadlines and MCP/delegation/script deadline equivalence not qualified.",
+    "No external write, hard preemption, distributed recovery, reference cutover or optimization claim."
+  ],
+  "setup_failures": [
+    "Initial wrong canonical AccessControl reference refused startup before any model call; corrected to existing registered reference.",
+    "Frozen UI3142 initially failed CORS preflight; exact private app origin added before final model calls."
+  ]
+}

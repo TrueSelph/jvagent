@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 
@@ -92,6 +92,35 @@ def test_underscore_method_collected_with_hints():
 def test_effect_class_is_carried_to_collected_tool():
     tools = _by_name(collect_tools(FakeAction()))
     assert tools["myact__inspect"].effect_class == "read"
+
+
+@pytest.mark.asyncio
+async def test_deadline_metadata_preserves_normal_method_and_wire_schema() -> None:
+    class Service:
+        @tool(name="deadline_read", effect_class="read", timeout_seconds=2)
+        async def read(self) -> str:
+            """Read a record."""
+            return "record"
+
+    service = Service()
+    declared = collect_tools(service)[0]
+    assert declared.timeout_seconds == 2.0
+    assert declared.to_serialized()["function"]["parameters"]["properties"] == {}
+    assert await service.read() == "record"
+
+
+@pytest.mark.parametrize(
+    "value", [0, -1, True, "private-invalid-deadline", float("nan"), float("inf")]
+)
+def test_invalid_deadline_is_rejected_during_collection(value: Any) -> None:
+    class Service:
+        @tool(timeout_seconds=value)
+        async def read(self) -> str:
+            return "record"
+
+    with pytest.raises(ValueError) as caught:
+        collect_tools(Service())
+    assert "private-invalid-deadline" not in str(caught.value)
 
 
 def test_undecorated_method_ignored():

@@ -42,6 +42,7 @@ async def publish_native_event(
         FunctionToolCallEvent,
         FunctionToolResultEvent,
         PartEndEvent,
+        RetryPromptPart,
         ThinkingPart,
     )
 
@@ -70,6 +71,9 @@ async def publish_native_event(
             phase = "tool_result"
             content = str(part.content)[:8000]
             metadata["tool_result"] = content
+            metadata["is_error"] = isinstance(part, RetryPromptPart) or (
+                getattr(part, "outcome", "success") != "success"
+            )
     else:
         return
     bus = getattr(visitor, "response_bus", None)

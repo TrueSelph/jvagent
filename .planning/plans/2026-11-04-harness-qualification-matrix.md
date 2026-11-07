@@ -10,6 +10,18 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Native Action deadlines
+
+[Qualification](2026-11-06-native-tool-deadlines.md) covers Action-declared public
+SDK timeouts, non-retriable annotated mutation failures, terminal read receipts,
+typed failed-tool display and missing-acknowledgement warnings. Six real GPT-4.1
+browser turns reconcile to twelve requests/5,312 reported tokens/USD 0.011836
+estimated. Both follow-ups to uncertain writes are blocked before model execution;
+cached reload is read-only. Native/host/real-PG lanes pass 882 on each supported
+Python version, transitional suite 5,121 and frontend 184. Fresh-profile transcript
+backfill, legacy global/channel deadlines, MCP/delegation/script equivalence,
+external write reconciliation and all three reference blockers remain open.
+
 ## Native channel resources
 
 [Qualification](2026-11-06-native-channel-limits.md) covers exact-channel

@@ -10,13 +10,16 @@ pytest.importorskip("pydantic_ai_harness")
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
+    FunctionToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RetryPromptPart,
     TextPart,
     ThinkingPart,
     ThinkingPartDelta,
     ToolCallPart,
+    ToolReturnPart,
 )
 from pydantic_ai.models.function import DeltaThinkingPart, FunctionModel
 
@@ -34,6 +37,52 @@ def context() -> tuple[Any, Any, Any]:
         visitor,
         SimpleNamespace(id="interaction"),
         SimpleNamespace(run_id="run", agent=SimpleNamespace(name="child")),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "failed", "retried"])
+async def test_sdk_tool_outcome_reaches_the_view_without_text_inference(
+    outcome: Any,
+) -> None:
+    visitor, interaction, ctx = context()
+    await publish_native_event(
+        visitor,
+        interaction,
+        ctx,
+        FunctionToolResultEvent(
+            ToolReturnPart(
+                tool_name="lookup",
+                content="A result",
+                tool_call_id="call",
+                outcome=outcome,
+            )
+        ),
+        publish_reasoning=False,
+    )
+    receipt = visitor.response_bus.publish.await_args.kwargs
+    assert receipt["metadata"]["is_error"] is (outcome != "success")
+    assert receipt["metadata"]["tool_result"] == "A result"
+
+
+@pytest.mark.asyncio
+async def test_public_retry_prompt_part_is_presented_as_failure() -> None:
+    visitor, interaction, ctx = context()
+    await publish_native_event(
+        visitor,
+        interaction,
+        ctx,
+        FunctionToolResultEvent(
+            RetryPromptPart(
+                content="Try again",
+                tool_name="lookup",
+                tool_call_id="call",
+            )
+        ),
+        publish_reasoning=False,
+    )
+    assert (
+        visitor.response_bus.publish.await_args.kwargs["metadata"]["is_error"] is True
     )
 
 

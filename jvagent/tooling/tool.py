@@ -1,8 +1,22 @@
 import inspect
+import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Literal, Optional
 
 from jvagent.tooling.tool_result import ToolResult
+
+
+def validate_tool_timeout(value: Any) -> Optional[float]:
+    """Validate SDK deadline metadata without echoing host configuration."""
+    if value is None:
+        return None
+    try:
+        valid = type(value) in (int, float) and math.isfinite(value) and value > 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError("Tool timeout must be a positive finite number or null")
+    return float(value)
 
 
 @dataclass
@@ -32,8 +46,10 @@ class Tool:
     effect_class: Optional[Literal["read", "write", "external"]] = None
     requires_tool_permission: bool = False
     permission_denied_message: Optional[str] = None
+    timeout_seconds: Optional[float] = None
 
     def __post_init__(self) -> None:
+        self.timeout_seconds = validate_tool_timeout(self.timeout_seconds)
         if not self.parameters_schema:
             self.parameters_schema = {"type": "object", "properties": {}}
         # Validate against strict-provider rules (OpenAI gpt-4.1 etc.) so a
