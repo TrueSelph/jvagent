@@ -29,6 +29,7 @@ from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
     get_document_root,
+    get_document_roots,
     list_documents,
 )
 from jvagent.action.pageindex.jvforge_assimilate import (
@@ -549,6 +550,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         cancel_event: threading.Event,
         mime_type: str = "",
         queued_version: Any = None,
+        old_file: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         async def verify_version() -> None:
             if (
@@ -608,6 +610,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 doc_url=doc_url,
                 file_id=file_id,
                 version=queued_version,
+                old_file=old_file,
                 cfg=cfg,
             )
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
@@ -720,9 +723,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         file_id: str,
         version: str,
         cfg: DriveIngestConfig,
+        old_file: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Index a new Drive document with the host's admitted completion service."""
         from jvagent.harness.completion_tool import CompleteText
+        from jvagent.memory.interaction import Interaction
 
         from ..endpoints import _do_assimilate
         from ..native_ingest import (
@@ -741,12 +746,96 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         revision_key = hashlib.sha256(
             json.dumps([self.id, file_id, version]).encode()
         ).hexdigest()
-        root = await get_document_root(
-            strip_redundant_md_suffix(doc_name), cfg.collection_name
-        )
-        if root is not None:
-            from jvagent.memory.interaction import Interaction
+        name = strip_redundant_md_suffix(doc_name)
+        prior = None
+        if old_file is None:
+            root = await get_document_root(name, cfg.collection_name)
+        else:
+            old_version = old_file.get("version")
+            old_name = strip_redundant_md_suffix(str(old_file.get("name") or ""))
+            if (
+                old_file.get("id") != file_id
+                or not old_name
+                or not isinstance(old_version, str)
+                or not old_version.isascii()
+                or not old_version.isdecimal()
+                or int(old_version) >= int(version)
+            ):
+                raise ValidationError(
+                    "Native Drive replacement requires revision ownership"
+                )
+            old_key = hashlib.sha256(
+                json.dumps([self.id, file_id, old_version]).encode()
+            ).hexdigest()
+            roots = await get_document_roots(
+                cfg.collection_name, doc_names={old_name, name}
+            )
+            root = None
+            for candidate in roots:
+                if (
+                    candidate.doc_name == old_name
+                    and candidate.drive_revision_key == old_key
+                    and prior is None
+                ):
+                    if (
+                        candidate.chunks or 0
+                    ) <= 0 or candidate.metadata != cfg.metadata:
+                        raise ValidationError(
+                            "Native Drive prior root requires reconciliation"
+                        )
+                    prior = candidate
+                elif (
+                    candidate.doc_name == name
+                    and candidate.drive_revision_key == revision_key
+                    and root is None
+                ):
+                    root = candidate
+                else:
+                    raise ValidationError(
+                        "Native Drive replacement has an ambiguous document root"
+                    )
+            if prior is not None:
+                prior_receipt = (
+                    await Interaction.get(prior.drive_operation_id)
+                    if prior.drive_operation_id
+                    else None
+                )
+                if (
+                    prior_receipt is None
+                    or prior_receipt.user_id != self.id
+                    or prior_receipt.channel not in {CHANNEL, PDF_CHANNEL}
+                    or not prior_receipt.closed
+                    or prior_receipt.native_run.get("status") != "completed"
+                    or prior_receipt.native_run.get("usage_complete") is not True
+                    or prior_receipt.usage.get("unknown_cost_call_count", 0)
+                    or (json.loads(prior_receipt.response or "null") or {}).get(
+                        "_root_id"
+                    )
+                    != prior.id
+                ):
+                    raise ValidationError(
+                        "Native Drive prior root requires reconciliation"
+                    )
+            if prior is None and root is None:
+                raise ValidationError(
+                    "Native Drive replacement requires a bound prior root"
+                )
 
+        async def finish(result: dict[str, Any]) -> dict[str, Any]:
+            if prior is not None:
+                if not result.get("_root_id") or result["_root_id"] == prior.id:
+                    raise ValidationError(
+                        "Native Drive replacement did not publish a successor"
+                    )
+                if not await delete_document(
+                    prior.doc_name, cfg.collection_name, root_id=prior.id
+                ):
+                    raise ValidationError(
+                        "Native Drive prior root could not be retired"
+                    )
+            return result
+
+        if root is not None:
             receipt = (
                 await Interaction.get(root.drive_operation_id)
                 if root.drive_operation_id and root.drive_source_key == source_key
@@ -790,11 +879,13 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     isinstance(publication, dict)
                     and publication.get("_root_id") == root.id
                 ):
-                    return {
-                        "doc_name": doc_name,
-                        "_root_id": root.id,
-                        "reconciled": True,
-                    }
+                    return await finish(
+                        {
+                            "doc_name": doc_name,
+                            "_root_id": root.id,
+                            "reconciled": True,
+                        }
+                    )
             raise ValidationError(
                 "Native Drive publication conflicts with an existing root"
             )
@@ -830,8 +921,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     content, ext, pdf_complete=complete, **options
                 )
 
-            return await run_native_pdf_ingest(
-                cfg.native_action, assimilate=pdf, **operation
+            return await finish(
+                await run_native_pdf_ingest(
+                    cfg.native_action, assimilate=pdf, **operation
+                )
             )
         if (
             ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS
@@ -841,8 +934,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             async def markdown(complete: CompleteText) -> dict[str, Any]:
                 return await _do_assimilate(content, ext, complete=complete, **options)
 
-            return await run_native_markdown_ingest(
-                cfg.native_action, assimilate=markdown, **operation
+            return await finish(
+                await run_native_markdown_ingest(
+                    cfg.native_action, assimilate=markdown, **operation
+                )
             )
         raise ValidationError(
             "This document format is not enabled for native Drive ingestion"
@@ -920,7 +1015,11 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
 
             try:
                 if cfg.native_action is not None:
-                    if doc_type != "added":
+                    if doc_type != "added" and not (
+                        old_file
+                        and old_file.get("version")
+                        and old_file.get("id") == file_id
+                    ):
                         raise ValidationError(
                             "Native Drive replacement requires revision ownership"
                         )
@@ -932,6 +1031,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         doc_url=doc_url,
                         mime_type=ingest_mime,
                         queued_version=file_info.get("version"),
+                        old_file=old_file if doc_type == "modified" else None,
                         cfg=cfg,
                         cancel_event=cancel_event,
                     ),
@@ -1026,7 +1126,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     docs["added"].pop(0)
                 else:
                     docs["modified"].pop(0)
-                    if old_file:
+                    if old_file and cfg.native_action is None:
                         await delete_document(
                             old_file.get("name", ""),
                             collection_name=cfg.collection_name,

@@ -1393,3 +1393,46 @@ def test_native_refresh_retains_pending_and_failed_additions() -> None:
     assert changes["modified"] == [
         {"id": "indexed", "old": indexed, "new": indexed_next}
     ]
+
+
+@pytest.mark.asyncio
+async def test_native_drive_replacement_refuses_unrelated_same_name_root():
+    action = PageIndexGoogleDriveSyncAction()
+    cfg = DriveIngestConfig(
+        collection_name="agent-1",
+        metadata={},
+        model=None,
+        model_action=None,
+        node_summary=None,
+        agent_id="agent-1",
+        page_index_action=None,
+        native_action=object(),
+    )
+    with (
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.get_document_roots",
+            AsyncMock(
+                return_value=[
+                    SimpleNamespace(doc_name="doc.pdf", drive_revision_key=None)
+                ]
+            ),
+        ),
+        patch(
+            "jvagent.action.pageindex.pageindex_google_drive_sync_action."
+            "pageindex_google_drive_sync_action.delete_document",
+            AsyncMock(),
+        ) as retire,
+    ):
+        with pytest.raises(ValidationError, match="ambiguous document root"):
+            await action._ingest_native_drive_document(
+                b"fixture",
+                ".pdf",
+                doc_name="doc.pdf",
+                doc_url="https://example.com/doc.pdf",
+                file_id="file",
+                version="43",
+                cfg=cfg,
+                old_file={"id": "file", "name": "doc.pdf", "version": "42"},
+            )
+    retire.assert_not_awaited()

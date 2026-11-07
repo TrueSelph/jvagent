@@ -830,12 +830,16 @@ async def assimilate_document(
 async def get_document_roots(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    *,
+    doc_names: Optional[set[str]] = None,
 ) -> List[DocumentRootNode]:
     """Get DocumentRootNodes filtered by collection and optional metadata."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {"context.collection_name": collection_name}
+        if doc_names is not None:
+            query["context.doc_name"] = {"$in": sorted(doc_names)}
         query.update(_build_metadata_query(metadata_filter or {}))
         logger.debug(
             "PageIndex get_document_roots: collection=%s query=%s",

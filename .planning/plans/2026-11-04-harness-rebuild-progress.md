@@ -12,6 +12,26 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Native replacement selects the prior root by its verified Drive revision
+and checks its closed publication receipt. It refuses unrelated same-name
+roots and changes to access metadata. After the successor's native
+operation completes, it retires the prior root by exact ID before
+acknowledging the queue (`pageindex_google_drive_sync_action.py:768` and
+`:825`).
+
+At parent `4be378c1` and runtime diff hash
+`7cf4239df68d98f6b36b43c6fcece4bc2b9b9728`, a browser fixture used
+synthetic Drive transport and actual GPT-4.1 for a same-name replacement
+from version 42 to 43. HTTP 200 in 12.767 seconds showed two chunks
+under sole remaining root `n.DocumentRootNode.322819e3121f4446baa2d40d`.
+Interaction `n.Interaction.b409e7be12b34f7385d576f4` recorded 10 requests,
+3,091 provider tokens, USD 0.009572 estimated cost and zero unknown-cost
+calls. A 52 ms browser replay reused the root, cleared the queue and
+made zero additional model requests. There were no chat tool events.
+Live Drive, rename and abrupt interruption between successor publication
+and prior-root retirement still require qualification. The graph
+operations are sequential.
+
 New Drive roots now store a server-derived key for the Action, file ID
 and verified provider version separately from the content hash
 (`pageindex_google_drive_sync_action.py:741`). Retrying a version-bound
