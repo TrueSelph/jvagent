@@ -389,3 +389,31 @@ Source digest
 The tracked source and graph were untouched. This candidate has not
 been bootstrapped or exercised in a browser. Retained-graph cutover
 and provider retirement approval remain separate.
+
+## Fresh reference candidate bootstrap and browser smoke
+
+At `43f78f67`, the generated candidate with SHA-256
+`e5eb2e641fde4d0a3113042ab50abcd2e787d2d8c4962490890e0f17bf74ebb7`
+booted on a fresh disposable PostgreSQL graph, with the reference app
+configuration restricted to its migrated Orchestrator agent. It used
+a bounded 48 MiB volume and the reviewed combined script image. Graph
+readback found the native owner and no legacy model or Orchestrator
+owner nodes. The loopback browser fixture submitted production streaming
+requests under the disposable account using actual GPT-4.1.
+
+| Browser case | Result | PostgreSQL Interaction | Usage |
+|---|---|---|---|
+| Plain chat on the generated candidate | HTTP 200 in 2.406 s, REFERENCE-READY and an introduction, no tool events | `n.Interaction.1d49245897784d048b2d9447`, delivered | 1 call, 1,422 provider tokens, USD 0.003054 estimated |
+| Triage on the generated candidate | HTTP 200 in 2.983 s with skill load, shell attempt and permission refusal | `n.Interaction.78fe861b4e5c477aa4a1a13b`, failed | 2 calls, 3,233 provider tokens, USD 0.007090 estimated |
+| Triage after adding an explicit disposable shell grant and restarting | HTTP 200 in 24.831 s with skill load, shell result and correctly ranked incidents | `n.Interaction.2b3ef91a0418482e8cddec16`, delivered | 3 calls, 5,191 provider tokens, USD 0.008732 estimated |
+
+All three Interactions recorded zero unknown-cost events. The sorted
+`ranked.json` existed in the expected user sandbox. Docker readback
+verified no network and a read-only root. The initial bootstrap
+reported ElevenLabs dependency installation errors because the native
+test interpreter lacked pip. Preinstalling the declared dependency
+into the disposable dependency path cleared those errors on restart.
+The app had no live channel credentials. The browser fixture displayed
+the production stream without jvchat. The separate LeadGen agent,
+live channel providers, remaining reference skills and retained graph
+conversion were outside this smoke.
