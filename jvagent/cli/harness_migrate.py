@@ -43,6 +43,7 @@ _REVIEWED_CONSUMERS = {
     "jvagent/code_execution",
     "jvagent/file_interface",
     "jvagent/elevenlabs_tts",
+    "jvagent/deepgram_stt",
     "jvagent/whatsapp_voice_action",
     "jvagent/whatsapp_action",
 }

@@ -417,3 +417,35 @@ The app had no live channel credentials. The browser fixture displayed
 the production stream without jvchat. The separate LeadGen agent,
 live channel providers, remaining reference skills and retained graph
 conversion were outside this smoke.
+
+## Separate LeadGen reference declaration
+
+The fresh reference rehearsal above exercised the Orchestrator agent.
+The second agent in the app descriptor, `jvagent/leadgen_agent`, was
+rechecked at parent `5783e2b6` against source digest
+`sha256:fc12603075e4667c39d4a4a804ee15c4a0d00288f6a61c0f2a4a717e200dd4b3`.
+Its offline plan still has five blocker entries.
+
+- The enabled user-scoped filesystem MCP has no reviewed native read
+  list. Its lead synchronization requires a separately qualified
+  mutation path, including effect ownership and receipts
+  (`leadgen_agent/agent.yaml:141`).
+- The selected `product_inquiry_leads` and `example_leadgen` assets
+  use underscore names and extend the LeadGen Action. Canonical names
+  alone would leave their Action extension, hook and sync semantics
+  unresolved (`leadgen_agent/agent.yaml:32` and each skill frontmatter).
+- Vision still selects an independent legacy model
+  (`leadgen_agent/agent.yaml:187`). Suggestions independently resolves
+  a model after streaming replies
+  (`suggestions_interact_action.py:266`).
+- PageContext currently adds response parameters from visitor page data
+  (`page_context_interact_action.py:100`). Its native presentation
+  mapping needs a trusted-data review. UI rendering, LeadGen and the
+  app-local Storefront still require declaration-specific review.
+
+Deepgram STT uses its own SDK and credentials
+(`deepgram.py:57`, `:93`, `:149`). The offline converter can preserve
+that declaration when retiring a qualified chat service. The regression
+asserts the declaration survives unchanged. The reference report now
+lists six unreviewed Actions plus the alternate OpenAI declaration.
+No LeadGen candidate was generated and no runtime behavior changed.
