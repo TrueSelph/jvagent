@@ -1,5 +1,27 @@
 # Reference model service retirement boundary
 
+An isolated candidate rehearsal at `4c349688` copied the reference
+LiteLLM model, temperature, output limit and 120-second request timeout
+into a reduced legacy fixture. This fixture omitted the unqualified
+`drop_params` switch, alternate provider Actions and unrelated reference
+Actions. Its source digest was
+`sha256:0180b26f65d193cf37f121f48179734b2499f34d568cea5d621fb40c436767f0`.
+The converter retired the LiteLLM Action, and a fresh PostgreSQL
+bootstrap saved the expected native settings, including `timeout: 120`.
+An initial sign-in failed because the fixture encoded its CORS origin
+as an array. After using the original fixture's scalar origin, the
+browser signed in and completed an actual GPT-4.1 turn.
+
+jvchat displayed "Converted provider verified." and one attempt with no
+tool events. Graph Interaction `n.Interaction.c37c1cfae96d4ce393c46e9d`
+was delivered in 2.767 seconds, with one request, 249 provider-reported
+tokens, USD 0.000534 estimated cost and zero unknown-cost calls. This
+qualifies fresh bootstrap and ordinary execution for the reduced
+candidate. The request completed well before its deadline, so timeout
+enforcement under delayed provider response is still untested.
+The full reference app remains blocked.
+
+
 The offline provider converter accepts a selected service's explicit
 model, temperature and output limit when they exactly match the
 execution declaration. A finite positive service timeout maps to
