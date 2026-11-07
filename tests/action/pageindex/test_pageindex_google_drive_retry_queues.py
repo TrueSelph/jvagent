@@ -1243,8 +1243,10 @@ async def test_native_drive_stale_marker_requires_proven_owner_death(owner_dead)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed_metadata", [False, True])
-async def test_native_drive_replay_checks_publication_receipt(changed_metadata):
+@pytest.mark.parametrize(
+    "scenario", ["complete", "changed_metadata", "unsettled", "unknown_cost"]
+)
+async def test_native_drive_replay_checks_publication_receipt(scenario):
     from jvagent.memory.interaction import Interaction
 
     action = PageIndexGoogleDriveSyncAction()
@@ -1268,9 +1270,15 @@ async def test_native_drive_replay_checks_publication_receipt(changed_metadata):
         usage={"unknown_cost_call_count": 0},
         response=json.dumps({"_root_id": root.id}),
     )
+    if scenario == "unsettled":
+        receipt.closed = False
+        receipt.native_run = {"status": "running"}
+    if scenario == "unknown_cost":
+        receipt.usage["unknown_cost_call_count"] = 1
+
     cfg = DriveIngestConfig(
         collection_name="agent-1",
-        metadata={"access": ["restricted"]} if changed_metadata else {},
+        metadata={"access": ["restricted"]} if scenario == "changed_metadata" else {},
         model=None,
         model_action=None,
         node_summary=None,
@@ -1294,7 +1302,7 @@ async def test_native_drive_replay_checks_publication_receipt(changed_metadata):
             file_id="file",
             cfg=cfg,
         )
-        if changed_metadata:
+        if scenario != "complete":
             with pytest.raises(ValidationError, match="conflicts"):
                 await replay
         else:

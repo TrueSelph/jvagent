@@ -12,6 +12,30 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+An abrupt-exit browser test at `92f33877` exercised the interval between
+root publication and operation settlement (`native_search.py:232`).
+A disposable fixture used actual GPT-4.1, then forced process exit 71
+at the entry to usage recovery. The browser saw the connection close
+after 12.022 seconds. PostgreSQL held an open, running Interaction
+`n.Interaction.d107b36629a64334b607a76b`. It already contained SDK step
+records and 10 recorded calls, 3,095 provider-reported tokens and
+USD 0.009604 estimated cost. No unknown-cost calls were recorded before
+exit. The aggregate remained unsettled and reported zero finalized
+attempts.
+
+After a backend restart the fixture reclaimed the original queue node
+`n.GoogleDriveDocuments.12a2534de31f4d089c7e56cd` using verified worker
+death. The browser received HTTP 200 with an ingestion conflict after
+144 ms. The exact bound root
+`n.DocumentRootNode.ee60bcfe53004e2da41c0695` still had two chunks, and
+the queue retained the file as failed. The retry made zero provider
+requests and emitted no chat tool events. The fixture injected the
+crash and supplied synthetic Drive bytes. Production source was
+unchanged. Regression cases now cover an unsettled receipt and unknown
+billing. Recovery still needs to settle journaled usage and establish
+a terminal publication receipt before acknowledging this state.
+
+
 Drive now binds the native operation Interaction to the root before
 publication. A requeued addition can acknowledge the existing root when
 the file and bytes, source URL and metadata match, and a closed native
