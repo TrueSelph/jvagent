@@ -44,6 +44,7 @@ _REVIEWED_CONSUMERS = {
     "jvagent/file_interface",
     "jvagent/elevenlabs_tts",
     "jvagent/whatsapp_voice_action",
+    "jvagent/whatsapp_action",
 }
 # These fields are consumed only by legacy Reply composition and MCP selection.
 _NATIVE_ACTION_MODEL_SETTINGS = {

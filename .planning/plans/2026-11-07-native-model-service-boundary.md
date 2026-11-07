@@ -1,5 +1,19 @@
 # Reference model service retirement boundary
 
+## WhatsApp messaging provider boundary
+
+WhatsApp messaging can be preserved during legacy chat-provider
+retirement. Its ingress spawns the shared interaction walker
+(`whatsapp/utils/endpoint_helpers.py:574`), STT resolves its separately
+configured Action (`:472`), and its response-bus adapter sends the
+supplied content using the configured WhatsApp transport
+(`whatsapp/whatsapp_adapter.py:65`, `:171`). Native replies still
+require verified sender and interaction scope (`:90`). The converter
+retains the complete transport declaration, including template
+allowlists and TTS wiring. This review covers the model-service
+dependency only. Live Meta transport, legacy prompt parity and
+recipient delivery remain separate qualification gates.
+
 ## Voice provider boundary and SkillHub catalog gap
 
 WhatsApp Voice delegates accepted calls to the configured jvvoice

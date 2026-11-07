@@ -1360,6 +1360,14 @@ def test_selected_provider_maps_only_qualified_defaults_and_timeout(
         {"action": "jvagent/file_interface", "context": {"enabled": True}},
         {"action": "jvagent/elevenlabs_tts", "context": {"voice": "Sarah"}},
         {"action": "jvagent/whatsapp_voice_action", "context": {"agent_name": "voice"}},
+        {
+            "action": "jvagent/whatsapp_action",
+            "context": {
+                "provider": "meta",
+                "template_allowlist": ["signup"],
+                "tts_action": "ElevenLabsTTSAction",
+            },
+        },
     ]
     document["actions"] = [
         owner,
