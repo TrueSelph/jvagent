@@ -2058,6 +2058,19 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
                 ),
             )
 
+    missing = await compute_missing_required(
+        session, spec, action._load_fn(spec), visitor, action
+    )
+    if missing:
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error="Required fields are incomplete.",
+            missing_required=missing,
+            next_tool="interview__next_field",
+            response_directive=call_tool_directive("interview__next_field"),
+        )
+
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete
     if not complete_fn:

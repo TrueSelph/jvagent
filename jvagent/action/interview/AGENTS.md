@@ -61,6 +61,9 @@ Conversation mutations require caller scope, SDK effect annotation and strict gr
 acknowledgement (`jvagent/harness/conversation_tools.py:14`). Failure after a mutation
 requires reconciliation; do not discard its outcomes into pre-write input history.
 Native tools retire the duplicate task `data.state`; TaskStore.status is canonical.
+Completion checks all required fields on the current collectible path before a
+completion handler or task closure (`engine.py:2061`). A review/confirmation alone
+cannot complete missing data; skill handlers should not duplicate this check.
 Native declarative branches use the existing domain resolver. Admission rejects
 unknown operators, malformed targets, duplicate names and cycles before execution
 (`native.py:59`); branch hooks remain unqualified. Manual completion requires a

@@ -114,6 +114,58 @@ def declaration(tmp_path: Path, fields: dict[str, Any]) -> Path:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("confirmation", ["manual", "auto"])
+async def test_review_does_not_authorize_completing_missing_required_fields(
+    tmp_path: Path,
+    confirmation: str,
+) -> None:
+    directory = declaration(
+        tmp_path,
+        {
+            "interview": {
+                "confirm": confirmation,
+                "fields": [
+                    {
+                        "key": "email",
+                        "prompt": "Email?",
+                        "required": True,
+                        "validator": "email",
+                    }
+                ],
+            }
+        },
+    )
+    action = InterviewAction()
+    action._registry.discover([str(tmp_path)])
+    visitor = await host()
+    tools = await action.get_native_tools()
+    bases = await action.get_native_skill_bases()
+    await turn(
+        directory,
+        visitor,
+        tools,
+        [
+            ("interview__start", {"interview_type": "profile"}),
+            ("interview__review", {}),
+        ],
+        bases,
+    )
+    result, _ = await turn(
+        directory, visitor, tools, [("interview__complete", {})], bases
+    )
+    results = [
+        json.loads(part.content)
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "interview__complete"
+    ]
+    assert results[-1]["ok"] is False
+    assert results[-1]["missing_required"] == ["email"]
+    assert load_session(visitor.conversation) is not None
+    assert visitor.tasks.list()[0].status == "active"
+
+
+@pytest.mark.asyncio
 async def test_native_interview_validation_review_and_later_confirmation(
     tmp_path: Path,
 ) -> None:

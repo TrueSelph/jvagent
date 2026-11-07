@@ -74,6 +74,9 @@ HTTP route defined by the `@endpoint` decorator from jvspatial. Actions ship end
 The single orchestrator of the Orchestrator pattern. Implemented by [`OrchestratorInteractAction`](../jvagent/action/orchestrator/orchestrator_interact_action.py) at weight `-200`. Runs the whole turn inside one `execute()` call: when a turn-spanning flow has an active control-task on the conversation `TaskStore` it surfaces that flow as a tool and notes it, then runs a bounded think-act-observe loop over a unified tool surface (routing is tool selection) in which the model decides whether to continue the flow. No recruited centers, no reflex, no separate router. Supersedes the Executive + Centers pattern. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md), [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md), [`PATTERNS.md`](PATTERNS.md).
 
 ### Flow continuation
+
+This entry describes the transitional Orchestrator. Native execution uses
+*Skill continuation* below; it does not invoke the legacy flow router.
 The mechanism by which a turn-spanning flow keeps (or releases) the turn under the Orchestrator. A *flow* records a control-task on the conversation `TaskStore` while active (the flow manages this itself). Each turn the Orchestrator detects it via `active_flow_owner(visitor)` (the active task's `owner_action`, equal to the flow's tool name). The mode is set by `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)): when **True** (default) the loop restricts its callable surface to that flow's IA tool and dispatches it with no model round-trip (mechanistic turn-lock); when **False** it surfaces the flow's tool and injects `active_flow_note(tool_name)`, and the model either continues the flow (selecting its tool, whose `get_tools` → `execute` advances the session) or routes an off-topic request elsewhere (the flow is not forced to run, its control-task persists, and it resumes when the user returns). In neither mode does the flow gain a resume entry point or outcome enum — its only orchestrator-facing surface is `get_tools()`. Source: [`jvagent/action/orchestrator/continuation.py`](../jvagent/action/orchestrator/continuation.py). See [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).
 
 ### Graph repair
@@ -217,6 +220,17 @@ Grouped `then` keys evaluated by the test runner. Framework-owned: `task_graph`,
 ### Thin harness (principle)
 jvagent-wide design contract: **thin server harness** (Orchestrator, Actions, turn-lock hooks — session, validation dispatch, raw tool JSON, no conversation steering) and **thick SOP + skill extensions** (intent routing, extraction, domain logic in skills and `custom_tools.py`). Forbidden platform-wide: server intent classification, prep steering, activation auto-store, response inlining, orchestrator action special-casing. Canonical rules: [`docs/thin-harness.md`](../docs/thin-harness.md). Interview-specific profile: [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md).
 
+### Skill continuation
+
+Native workflow progress through official SDK skill loading and explicit domain
+tools. The model can handle a detour and later resume using authoritative domain
+results; a status lookup is available when progress is unclear. Domain session
+and TaskStore state persist independently of the current question. Host identity,
+tool ownership, permissions and required-field/review checks remain enforced by
+the adapters and domain tools. The legacy routing switch retires explicitly;
+retained tasks are not automatically converted. See [ADR-0059](adr/0059-native-skill-continuation.md)
+and `jvagent/action/interview/native_skill/SKILL.md:38`.
+
 ### Sustained activation (turn-lock)
 A flow declaring it owns the turn across user messages. Realized as **flow continuation**, whose mode is set by `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation's declarative `TaskStore` while active, and each turn the Orchestrator detects it. When `lock_active_flow=True` (default) the orchestrator routes the turn deterministically to the flow's IA (mechanistic turn-lock); when `False` it surfaces the flow as a tool and the model decides whether to continue it or route an off-topic request elsewhere (the control-task persists and resumes later). See *Flow continuation* and [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).
 
@@ -230,6 +244,9 @@ A named callable wrapped with a JSON Schema for arguments, exposed to the model.
 A slim index of the available tools that the Orchestrator carries in the prompt instead of every tool schema, with `find_tool` / `load_tool` meta-tools for progressive disclosure — bounding prompt size as the tool surface grows (mirrors the skills `find_skill` / `use_skill` meta-tools). Source: [`jvagent/action/orchestrator/catalog.py`](../jvagent/action/orchestrator/catalog.py).
 
 ### Turn-lock
+
+The description below is transitional. Native execution retires this routing
+switch into *Skill continuation*, with explicit migration review.
 Declares that an `InteractAction` owns the next turn end-to-end (e.g. interview, form, gated workflow). Under the Orchestrator turn-lock is realized as **flow continuation**, configurable via `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation `TaskStore` while active. When `lock_active_flow=True` (default) the loop restricts its callable surface to the flow's IA tool and dispatches it with no model round-trip — a mechanistic lock; the IA owns interruption/cancel. When `False` the flow is surfaced as a tool and the lock is emergent — the model continues the flow by selecting its tool or routes an off-topic message elsewhere (interruptibility automatic). In both modes the flow's own session logic handles its steps. See *Sustained activation (turn-lock)* and *Flow continuation*.
 
 ### Update mode

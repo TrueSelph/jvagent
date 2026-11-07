@@ -202,7 +202,7 @@
           "tags"
         ],
         "tracked_directory_files": 1,
-        "tracked_directory_digest": "sha256:548d7ea9feb19f2576bd1fef95633ef1432230739b6c204b9393c3528306089b"
+        "tracked_directory_digest": "sha256:fd7582f6910298acb699b18cf61e32c023d896774725b14df8207c24a5e90c18"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
@@ -359,7 +359,7 @@
           "task-lock"
         ],
         "tracked_directory_files": 38,
-        "tracked_directory_digest": "sha256:99ed2bc88b1f66ff9ffa0afd245ac8ec4f7fc19c5e2ab96546f35149497cfee8"
+        "tracked_directory_digest": "sha256:912ef2d2a219f343867967fe3ea68e6900236cc6cf6a9cc1fc5f800ab32e8fb2"
       },
       {
         "path": "jvagent/action/interview/examples/example_account_gating/example_booking_interview/SKILL.md",
@@ -473,7 +473,7 @@
       {
         "path": "jvagent/action/interview/native_skill/SKILL.md",
         "scope": "package",
-        "sha256": "sha256:48966840c1c38188160f9011e5de9f6bcb3519b3488e2557c83b1497f0e0ae58",
+        "sha256": "sha256:88d9a51cc1d803612b92b2173754e73f6625961a1311f51b796d728960b5061d",
         "name": "native-interview",
         "spec": null,
         "extends": null,
@@ -1300,7 +1300,7 @@
         "name": "jvagent/interview",
         "archetype": "InterviewAction",
         "tracked_directory_files": 38,
-        "tracked_directory_digest": "sha256:b668e82ec0195283f744c1e75da48e5590121bf3889cdb7e0d89db5a7248015c"
+        "tracked_directory_digest": "sha256:d2843e59e48b697f70bd03940dbaba9e56e914bebd6bf091946b15aad904483b"
       },
       {
         "path": "jvagent/action/intro/info.yaml",
@@ -1761,7 +1761,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",
         "scope": "app-example",
-        "sha256": "sha256:f922e97fd45f5bad2a94188557f5697ceb83974e266d407ba25be8073d790573",
+        "sha256": "sha256:e70e627bc5fd6ddbcbbc38644dc39952692e5dac416b0fe8f2e206814dd57162",
         "agent": "jvagent/orchestrator_agent",
         "action_names": [
           "jvagent/orchestrator",
@@ -1847,7 +1847,7 @@
           }
         ],
         "tracked_directory_files": 68,
-        "tracked_directory_digest": "sha256:c048a9e1c8aef7d714923abd0a756d5f6a54843e52196b4e03803ad719726c3c"
+        "tracked_directory_digest": "sha256:73735280f28fcaaddc59edb8147df6e680ab0f11a7a5bd443063516f13e9d9aa"
       }
     ]
   }

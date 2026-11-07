@@ -717,7 +717,6 @@ def test_source_selection_does_not_leak_app_override_into_library_mode(
         ("skill_only_tools", ["pay__*"]),
         ("pinned_tools", ["write__save"]),
         ("vision", True),
-        ("lock_active_flow", True),
         ("tool_call_timeout", 30),
     ],
 )
@@ -727,6 +726,34 @@ def test_active_unqualified_policy_is_never_retired(
     change(app, **{key: value})
     report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
     assert candidate is None and any(key in reason for reason in report["blockers"])
+
+
+@pytest.mark.parametrize("lock_setting", [None, False, True])
+def test_turn_lock_retires_into_skill_continuation_without_changing_limits(
+    app: Path,
+    lock_setting: bool | None,
+) -> None:
+    if lock_setting is not None:
+        change(app, lock_active_flow=lock_setting)
+    original = source(app).read_bytes()
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None
+    native = candidate["actions"][0]["context"]
+    assert "lock_active_flow" not in native
+    assert report["mappings"]["lock_active_flow"] == "retired"
+    assert "domain task state" in report["retired_settings"]["lock_active_flow"]
+    assert native["max_requests"] == 12
+    assert native["max_run_cost_usd"] == "0.25"
+    assert "lock_active_flow" not in native["instructions"]
+    assert source(app).read_bytes() == original
+
+
+@pytest.mark.parametrize("invalid", [None, 0, 1, "true", [], {}])
+def test_turn_lock_retirement_requires_a_boolean(app: Path, invalid: Any) -> None:
+    change(app, lock_active_flow=invalid)
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert any("lock_active_flow" in reason for reason in report["blockers"])
 
 
 @pytest.mark.parametrize("model_service", [False, True])
@@ -950,13 +977,29 @@ def test_skill_format_preflight_does_not_discard_unsupported_jv_policy(
     assert "private-group" not in json.dumps(report)
 
 
+@pytest.mark.parametrize("active_flow", [False, True])
 def test_state_snapshot_blocker_prevents_candidate_without_exposing_source(
-    app: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    app: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    active_flow: bool,
 ) -> None:
     from tests.cli.test_harness_migration_state import state_snapshot
 
     data = state_snapshot()
-    data["conversation"]["context"]["context"] = {}
+    if active_flow:
+        change(app, lock_active_flow=True)
+        data["conversation"]["context"]["tasks"] = [
+            {
+                "id": "private-flow",
+                "status": "active",
+                "owner_action": "private-flow",
+                "task_type": "SKILL",
+                "data": {"state": "private"},
+            }
+        ]
+    else:
+        data["conversation"]["context"]["context"] = {}
     state = tmp_path / "private-state.json"
     state.write_text(json.dumps(data))
     output = tmp_path / "candidate.yaml"
@@ -978,7 +1021,13 @@ def test_state_snapshot_blocker_prevents_candidate_without_exposing_source(
     )
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "blocked" and not output.exists()
-    assert "missing_lifetime_spend_baseline" in result["state_preflight"]["blockers"]
+    assert (
+        "nonterminal_or_malformed_tasks"
+        if active_flow
+        else "missing_lifetime_spend_baseline"
+    ) in result["state_preflight"]["blockers"]
+    assert result["mappings"]["lock_active_flow"] == "retired"
+    assert "private-flow" not in json.dumps(result)
     assert "private user message" not in json.dumps(result)
 
 

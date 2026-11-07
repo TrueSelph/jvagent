@@ -64,12 +64,12 @@ _RETIRE = {
     "lean_presurface_k": "integer",
     "history_limit": "integer",
     "block_raw_tool_invocation": "boolean",
+    "lock_active_flow": "boolean",
 }
 _EMPTY = {
     "pinned_tools": list,
     "skill_only_tools": list,
     "channel_overrides": dict,
-    "lock_active_flow": bool,
     "with_event": bool,
     "tool_call_timeout": float,
 }
@@ -83,9 +83,9 @@ def _retire_controls(
 ) -> None:
     retired = report.setdefault("retired_settings", {})
     for key, kind in _RETIRE.items():
-        if key not in context:
+        if key not in context and key != "lock_active_flow":
             continue
-        value = context[key]
+        value = context.get(key, True) if key == "lock_active_flow" else context[key]
         if kind == "boolean":
             valid = type(value) is bool
         elif kind == "text":
@@ -118,6 +118,13 @@ def _retire_controls(
         if key == "block_raw_tool_invocation":
             retired[key] = (
                 "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory"
+            )
+        if key == "lock_active_flow":
+            retired[key] = (
+                "Retired deterministic turn routing; official SDK skill ownership and persisted domain task state support model-led continuation, not a hard turn lock"
+            )
+            report["required_review"].append(
+                "Qualify skill detours/resumption and domain validation; retained legacy flow/task locks require separate state migration"
             )
         report["mappings"][key] = "retired"
     mcp_actions = [a for a in actions if a["action"] == "jvagent/mcp"]

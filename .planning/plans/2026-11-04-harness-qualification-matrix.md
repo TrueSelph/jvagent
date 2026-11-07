@@ -10,6 +10,21 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## Native skill continuation
+
+[Current evidence](2026-11-06-native-continuation.md) qualifies model-led interview
+detours/resumption, terminal cold readback, unchanged task identity, manual
+confirmation and the simplified approved signup handler. Shared required-path
+validation prevents reviewed but incomplete interviews from closing; both
+manual/auto regressions fail when removed. Typed/implicit turn-lock retirement
+preserves budget/permission boundaries and retains legacy active-task blockers.
+Ten GPT-4.1 browser turns reconcile to 32 requests, 71,718 reported tokens and
+USD 0.080490 estimated; all tasks complete and reload changes no graph records.
+Both Python versions pass 571 affected tests and 799 complete native/host/real-PG
+cases; the full transitional suite passes 5,113. Three reference configuration
+blockers, generic legacy flow/state conversion, whole-app cutover/deletion,
+wider recovery/deployment, comparative evaluation and enterprise gates remain.
+
 ## Qualification status
 
 | Gate | Current evidence | Remaining work |

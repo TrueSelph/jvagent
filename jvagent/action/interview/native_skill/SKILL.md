@@ -38,6 +38,14 @@ corrections through interview__set_fields, cancel through interview__cancel, and
 starting over through interview__reset. Interpret the user's intent in this SOP;
 there is no server intent classifier.
 
+Side questions do not cancel or reset interview progress. Use an appropriate
+available, authorized skill for a detour and resume the interview when the user
+is ready. Never store the side question as a field answer. On resumption, use
+the actual domain tool results for progress and stored answers. Read
+interview__get_status when progress is unclear; do not restart an existing
+session or reconstruct its values from chat history. A cancelled/completed
+session needs a new explicit start.
+
 When collection is ready, call interview__review and show the actual review. For
 manual confirmation, wait for the user's next message confirming that review before
 calling interview__complete. Never confirm on the user's behalf or claim a task has

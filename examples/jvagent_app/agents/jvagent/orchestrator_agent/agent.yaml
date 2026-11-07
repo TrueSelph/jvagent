@@ -468,7 +468,7 @@ actions:
       # Reviewed conversation-only example hooks; source/SOP changes require review.
       # No booking, email or other external effect is authorized by this approval.
       native_hook_digests:
-        signup-interview: sha256:d6a1faef62abf10716d8844829fc64718414177ba0c86e7f6e5c21c86c641899
+        signup-interview: sha256:044fb0c1cf4413c5644cdda67a1a58ad44d68575f04bd054cc99b2279a4eb914
 
   # ── Proactive task pipeline (TaskMonitor queue + event bridge) ──
   # - action: jvagent/task_trigger_interact_action

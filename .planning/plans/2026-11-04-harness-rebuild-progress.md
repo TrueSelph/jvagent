@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [default vision reflex retirement](2026-11-06-native-vision-migration.md).
+Latest increment: [native skill continuation](2026-11-06-native-continuation.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,25 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Skill-led continuation
+
+Typed and implicit legacy turn-lock controls now retire explicitly into official
+SDK skill/domain-state continuation. Actual GPT-4.1 browser detours preserve
+session/tasks exactly, cold restart preserves graph records, and resumption uses
+only the newly supplied answer before review and later confirmation. Shared
+required-path validation closes a generic premature-completion defect and removes
+the reference signup handler's duplicate check. The initial missed mandatory
+status-read expectation and overlapping asset edit remain recorded; a fresh
+final-source cohort qualifies the refined conditional-status procedure. Ten
+turns/32 requests/71,718 reported tokens/USD 0.080490 estimated reconcile; reload
+is read-only and all three tasks complete. Both Python versions pass 571 affected
+cases; complete native/host/real-PG lanes pass 799 per version, and the full
+transitional suite passes 5,113. Mutation checks detect both removed protections. The
+[record](2026-11-06-native-continuation.md) bounds this increment. Reference
+configuration blockers fall to three; retained tasks, whole-app cutover, legacy
+deletion, wider recovery/deployment and enterprise gates remain open. Parent
+7ded3a4b has nine green remote checks; this increment's gates remain separate.
 
 ## Control retirement and response policy
 

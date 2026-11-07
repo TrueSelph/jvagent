@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from jvagent.action.interview.flow import compute_missing_required
 from jvagent.action.interview.hooks import HookExecutionContext
 
 _SKILL_NAME = "signup-interview"
@@ -275,24 +274,9 @@ async def signup_review(ctx: HookExecutionContext) -> Dict[str, Any]:
 async def signup_complete(ctx: HookExecutionContext) -> str:
     values = ctx.extracted_values or {}
     user_name = (values.get("user_name") or "").strip()
-    user_email = (values.get("user_email") or "").strip()
     available_times = (values.get("available_times") or "").strip()
 
     session = ctx.session
-    missing = await compute_missing_required(
-        session,
-        ctx.spec,
-        ctx.interview_action._load_fn(ctx.spec),
-        ctx.visitor,
-        ctx.interview_action,
-    )
-    if missing or not user_name or not user_email or not available_times:
-        ctx.say(
-            "Some required signup fields are missing. "
-            "Please go back and collect all required information."
-        )
-        return ctx.tool_response(ok=False, status="validation_failed")
-
     matched_times: List[str] = []
     if session is not None and isinstance(getattr(session, "context", None), dict):
         raw = session.context.get("matched_training_times") or []
