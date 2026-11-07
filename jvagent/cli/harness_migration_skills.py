@@ -214,6 +214,32 @@ def migrate_skill_selection(
                             f"Selected skill {index} declares tools unavailable on the native PageIndex read profile"
                         )
                         break
+            if "jvagent/skill_hub" in report.get("retired_actions", ()):
+                dependencies = metadata.get("requires-actions", [])
+                tools = (
+                    "skill_hub__search_registry",
+                    "skill_hub__install_skill",
+                    "skill_hub__list_installed",
+                    "skill_hub__remove_skill",
+                )
+                if (
+                    isinstance(dependencies, list)
+                    and any(
+                        dep in dependencies
+                        for dep in ("SkillHubAction", "jvagent/skill_hub")
+                    )
+                ) or any(
+                    fnmatchcase(tool, pattern)
+                    for key in ("allowed-tools", "requires-tools")
+                    if isinstance(metadata.get(key), list)
+                    for pattern in metadata[key]
+                    if isinstance(pattern, str)
+                    for tool in tools
+                ):
+                    blockers.append(
+                        f"Selected skill {index} requires legacy SkillHub; migrate its contract explicitly"
+                    )
+                    continue
             if context.get("vision") is True and (
                 any(
                     not isinstance(metadata.get(key, []), list)

@@ -403,6 +403,33 @@ def _plan_model_service(
     return selected_service, retired_service, service_timeout
 
 
+def _retire_skill_hub(actions: list[dict[str, Any]], report: dict[str, Any]) -> None:
+    """Move catalog changes to the operator-reviewed native declaration."""
+    name = "jvagent/skill_hub"
+    declarations = [action for action in actions if action["action"] == name]
+    if not declarations:
+        return
+    declaration = declarations[0]
+    context = declaration.get("context", {})
+    if (
+        len(declarations) != 1
+        or set(declaration) - {"action", "context"}
+        or not isinstance(context, dict)
+        or set(context) - {"enabled"}
+        or type(context.get("enabled", True)) is not bool
+    ):
+        report["blockers"].append(
+            "SkillHub has settings outside operator-managed migration"
+        )
+        return
+    actions.remove(declaration)
+    report.setdefault("retired_actions", []).append(name)
+    report["preserved_action_count"] -= 1
+    report["required_review"].append(
+        "Manage installed skill assets and explicit native catalog paths through reviewed app configuration"
+    )
+
+
 def _migrate_intro(
     actions: list[dict[str, Any]], owner: dict[str, Any], report: dict[str, Any]
 ) -> str | None:
@@ -507,6 +534,7 @@ def plan_harness_migration(
     *,
     skill: str | Sequence[str] | None = None,
     pageindex_model: str | None = None,
+    operator_managed_skills: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Return a redacted plan and candidate without graph or env resolution.
 
@@ -609,6 +637,8 @@ def plan_harness_migration(
             report["required_review"].append(
                 "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration"
             )
+    if operator_managed_skills:
+        _retire_skill_hub(actions, report)
     intro = _migrate_intro(actions, context, report)
     _migrate_pageindex_profile(actions, pageindex_model, report)
     _retire_controls(context, report, mode, actions)
@@ -906,6 +936,11 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
         "--pageindex-model",
         help="Replace the reviewed legacy PageIndex tree profile with an explicit OpenAI SDK model",
     )
+    parser.add_argument(
+        "--operator-managed-skills",
+        action="store_true",
+        help="Retire legacy SkillHub in favor of operator-reviewed assets and the explicit native catalog",
+    )
     parser.add_argument("--output", help="New candidate YAML file; never overwrites")
     parser.add_argument(
         "--state-snapshot",
@@ -918,6 +953,7 @@ def handle_harness_migrate(args: list[str], app_root: str) -> int:
             options.agent,
             skill=options.skill,
             pageindex_model=options.pageindex_model,
+            operator_managed_skills=options.operator_managed_skills,
         )
         if options.state_snapshot:
             from jvagent.cli.harness_migration_state import inspect_state_snapshot

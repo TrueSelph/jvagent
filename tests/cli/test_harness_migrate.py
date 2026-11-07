@@ -1477,3 +1477,40 @@ def test_intro_migrates_to_native_first_user_presentation(
     assert all(action["action"] != name for action in candidate["actions"])
     assert report["retired_actions"] == [name]
     assert "private greeting" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("needs_hub", [False, True])
+def test_operator_catalog_retirement_checks_skillhub_dependencies(
+    app: Path, needs_hub: bool
+) -> None:
+    document = yaml.safe_load(source(app).read_text())
+    hub = {"action": "jvagent/skill_hub", "context": {"enabled": True}}
+    document["actions"] = [
+        document["actions"][0],
+        document["actions"][2],
+        hub,
+        {"action": "jvagent/litellm_lm", "context": {}},
+    ]
+    source(app).write_text(yaml.safe_dump(document))
+    asset = source(app).parent / "skills/answer/SKILL.md"
+    if needs_hub:
+        asset.write_text(
+            asset.read_text().replace(
+                "description: Answer",
+                "description: Answer\nallowed-tools: [skill_hub__*]",
+            )
+        )
+    original_asset = asset.read_bytes()
+    _, unapproved = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert unapproved is None
+    report, candidate = plan_harness_migration(
+        app, "demo/bot", skill="answer", operator_managed_skills=True
+    )
+    assert asset.read_bytes() == original_asset
+    if needs_hub:
+        assert candidate is None
+        assert any("requires legacy SkillHub" in text for text in report["blockers"])
+    else:
+        assert candidate is not None
+        assert hub not in candidate["actions"]
+        assert "jvagent/skill_hub" in report["retired_actions"]

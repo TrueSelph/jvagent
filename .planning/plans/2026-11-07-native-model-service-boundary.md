@@ -360,3 +360,32 @@ unknown-cost events. The browser test used a streaming fixture without
 jvchat. Retained-graph migration remains separate.
 
 Runtime diff SHA-256: `a2b9cd591a7b68101d5c13531605c24693697988099ff69cc217cbb7150d9cde`.
+
+## Operator-managed skill catalog conversion
+
+`--operator-managed-skills` explicitly retires the reviewed legacy
+SkillHub declaration in the generated candidate. Operators manage
+the existing skill assets and the native owner's explicit catalog
+through app configuration. No asset is rewritten. A selected skill
+that names SkillHub or matches one of its tool names prevents the
+conversion. Unknown SkillHub settings also block.
+Sources: `harness_migrate.py:406`, `harness_migration_skills.py:220`.
+
+At parent `0d82dafa`, the offline reference dry run combined the
+script-qualified source, the explicit PageIndex model and the
+operator-managed catalog. It reported no unreviewed Actions. LiteLLM
+remains the selected legacy provider, and the additional OpenAI and
+Ollama declarations still block a full candidate. Regression fixtures
+confirm candidate creation with a single eligible model service,
+refusal without opt-in, and refusal when a selected skill depends on
+a SkillHub tool. This increment changes offline planning only.
+
+A second disposable copy removed the two alternate provider declarations.
+The planner then isolated the unsupported selected-service setting.
+Removing the legacy LiteLLM `drop_params` switch from that copy yielded
+a full configuration candidate, written mode 0600 by the public CLI.
+Source digest
+`sha256:3f6ce7cda9f1a38d0a48fb99ebf52583741b762db48c3680b8d3e5c4dca6bee3`.
+The tracked source and graph were untouched. This candidate has not
+been bootstrapped or exercised in a browser. Retained-graph cutover
+and provider retirement approval remain separate.
