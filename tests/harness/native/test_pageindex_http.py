@@ -34,18 +34,23 @@ async def test_admin_search_shares_limits_and_journals_all_ranks(
             usage=RequestUsage(input_tokens=10, output_tokens=5, cost=Decimal("0.001")),
         )
 
-    monkeypatch.setattr(
-        native_model,
-        "qualified_model",
-        lambda _: FunctionModel(respond, model_name="gpt-4.1"),
-    )
+    def resolve(model: str) -> FunctionModel:
+        assert model == "openai:gpt-4.1-mini"
+        return FunctionModel(respond, model_name="gpt-4.1-mini")
+
+    monkeypatch.setattr(native_model, "qualified_model", resolve)
 
     async def search(complete: CompleteText) -> list[dict[str, Any]]:
         return [{"text": await complete("Rank A")}, {"text": await complete("Rank B")}]
 
     async def run() -> list[dict[str, Any]]:
         return await run_native_search(
-            action, agent_id="agent", actor="operator", query="search", search=search
+            action,
+            agent_id="agent",
+            actor="operator",
+            query="search",
+            search=search,
+            configured_model="openai:gpt-4.1-mini",
         )
 
     if max_requests == 1:

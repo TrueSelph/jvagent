@@ -2001,6 +2001,7 @@ async def search_documents_endpoint(
                         actor=actor,
                         query=query,
                         search=search,
+                        configured_model=profile.native_search_model,
                     )
                 }
             except Exception as exc:

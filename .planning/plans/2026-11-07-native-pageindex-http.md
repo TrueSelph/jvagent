@@ -53,3 +53,26 @@ operations remain separate deployment gates. Ingestion, Drive sync and
 jvforge callbacks still require native qualification. The reference converter
 continues to block model-service retirement. See the
 [model service audit](2026-11-07-native-model-service-boundary.md).
+
+## Separate administrative search model
+
+The enabled PageIndex read profile may set `native_search_model`.
+Administrative tree search forwards that host choice to the existing
+accounted operation. Empty uses the chat model. Direct search does
+not resolve a provider. The override shares the native owner's
+settings, limits and deadline. Sources: `pageindex_action.py:116`,
+`endpoints.py:1998`, `native_search.py:43`.
+
+At parent `6ff4b67c`, a loopback browser fixture sent an authenticated
+request to the production endpoint on a fresh disposable PostgreSQL
+app and JSON PageIndex. Chat was configured for GPT-4.1 and the search
+profile for GPT-4.1 Mini. The browser displayed HTTP 200 in 2.714 seconds,
+Dock Room 4, HARBOR-41 and the stored citation. The separate collection
+canary was absent. Graph Interaction `n.Interaction.219d75ad37a041cb87f24b88`
+completed with the Mini model in the SDK journal, one call, 262 provider
+tokens, USD 0.000204 estimated cost and zero unknown-cost events. The
+direct control returned the same hit in 20 ms without creating a new
+Interaction or provider attempt. Neither request emitted chat tool events.
+In-run ranking and ingestion model selection remain separate work.
+
+Runtime diff SHA-256: `b90700528fcc43e2d96b3ff1a5b1c95a998ea27ce6c07f6f36e2f3bce29e579a`.

@@ -47,6 +47,7 @@ async def run_native_search(
     actor: str,
     query: str,
     search: Callable[[CompleteText], Awaitable[list[dict[str, Any]]]],
+    configured_model: str = "",
 ) -> list[dict[str, Any]]:
     """Keep one isolated graph operation and shared budget across tree ranks."""
 
@@ -63,6 +64,7 @@ async def run_native_search(
         query=query,
         channel=CHANNEL,
         operation=operation,
+        configured_model=configured_model,
     )
 
 
