@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native PageIndex callback](2026-11-07-native-pageindex-callback.md).
+Latest increment: [native Markdown ingestion](2026-11-07-native-pageindex-ingest.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,14 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native local Markdown ingestion
+
+Opted-in local Markdown uploads now use accounted SDK summaries and descriptions
+before PageIndex publication. Browser evidence verifies a persisted chunk,
+correct HTTP chunk count, cited jvchat retrieval and scoped admission. PDF,
+Office, Drive sync and publication recovery remain open. See
+[qualification](2026-11-07-native-pageindex-ingest.md).
 
 ## Native PageIndex callback
 

@@ -28,6 +28,7 @@ from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     _build_metadata_query,
     assimilate_document,
+    count_document_chunks,
     enrich_structure_titles,
     export_documents,
     get_document_root,
@@ -82,6 +83,17 @@ def pageindex_temp_db(temp_dir):
         unregister_database(PAGEINDEX_DB_NAME)
     except Exception:
         pass
+
+
+@pytest.mark.asyncio
+async def test_count_document_chunks_reads_index_collection(pageindex_temp_db):
+    await persist_structure(
+        "Counted handbook",
+        [{"title": "Section", "node_id": "1", "text": "Indexed text"}],
+        collection_name="counted",
+    )
+    assert await count_document_chunks("Counted handbook", "counted") == 1
+    assert await count_document_chunks("Counted handbook", "another") == 0
 
 
 @pytest.fixture

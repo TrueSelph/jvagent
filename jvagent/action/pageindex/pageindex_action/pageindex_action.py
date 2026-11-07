@@ -113,6 +113,9 @@ class PageIndexAction(Action):
     native_webhook_completion: bool = attribute(
         default=False, description="Enable accounted native jvforge completion"
     )
+    native_markdown_ingestion: bool = attribute(
+        default=False, description="Enable accounted local Markdown ingestion"
+    )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
         description="Optional key-value filter to narrow search by document metadata (not for access control; use access_control instead)",

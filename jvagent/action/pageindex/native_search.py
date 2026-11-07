@@ -7,11 +7,26 @@ from decimal import Decimal
 from typing import Any, TypeVar
 from uuid import uuid4
 
+from jvspatial.api.exceptions import ValidationError
+
 from jvagent.harness.completion_tool import CompleteText
 
 CHANNEL = "pageindex_admin_search"
 Result = TypeVar("Result")
 Complete = Callable[[str | list[Any]], Awaitable[Any]]
+
+
+def admitted_operation_model(configured: str, requested: Any) -> str:
+    """Allow a caller to name the configured model without selecting a provider."""
+    provider, separator, model = configured.partition(":")
+    if not separator:
+        model = configured
+    if requested is not None and (
+        not isinstance(requested, str)
+        or requested.strip() not in {"", configured, model, f"{provider}/{model}"}
+    ):
+        raise ValidationError("Requested model is not enabled for PageIndex completion")
+    return model
 
 
 async def run_native_search(
@@ -48,6 +63,7 @@ async def run_native_operation(
     query: str,
     channel: str,
     operation: Callable[[Complete], Awaitable[Result]],
+    result_receipt: Callable[[Result], Any] | None = None,
 ) -> Result:
     """Persist one service operation with shared native SDK limits."""
     from jvspatial import flush_deferred_entities
@@ -186,7 +202,10 @@ async def run_native_operation(
             "status": "completed",
             "usage_complete": True,
         }
-        interaction.response = json.dumps(results, ensure_ascii=False)
+        interaction.response = json.dumps(
+            results if result_receipt is None else result_receipt(results),
+            ensure_ascii=False,
+        )
         return results
     finally:
         await recover_native_usage(interaction, run_id=run_id, model=action.model)

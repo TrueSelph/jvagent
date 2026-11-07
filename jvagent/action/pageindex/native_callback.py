@@ -6,7 +6,7 @@ from jvspatial.api.exceptions import ValidationError
 
 from jvagent.harness.inputs import NativeInputError, native_user_prompt
 
-from .native_search import Complete, run_native_operation
+from .native_search import Complete, admitted_operation_model, run_native_operation
 
 CHANNEL = "pageindex_webhook_completion"
 
@@ -21,16 +21,7 @@ async def run_native_callback(
             "A nonempty PageIndex prompt of at most 100,000 characters is required"
         )
     prompt = prompt.strip()
-    configured = action.model
-    provider, separator, model = configured.partition(":")
-    if not separator:
-        model = configured
-    requested = payload.get("model")
-    if requested is not None and (
-        not isinstance(requested, str)
-        or requested.strip() not in {"", configured, model, f"{provider}/{model}"}
-    ):
-        raise ValidationError("Requested model is not enabled for PageIndex completion")
+    model = admitted_operation_model(action.model, payload.get("model"))
 
     encoded = payload.get("image_base64")
     media = None

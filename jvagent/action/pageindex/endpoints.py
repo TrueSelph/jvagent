@@ -37,6 +37,7 @@ from python_multipart.multipart import FormParser, parse_options_header
 
 from jvagent.core.agent import Agent
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.harness.completion_tool import CompleteText
 
 from .config import (
     get_pageindex_doc_description,
@@ -797,9 +798,10 @@ async def _do_assimilate(
     convert_to_markdown: bool = False,
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
+    complete: Optional[CompleteText] = None,
 ) -> Dict[str, Any]:
     """Run assimilate_document on content. Temps live under ``pageindex/tmp`` (file_storage root)."""
-    assimilate_kw = {
+    assimilate_kw: dict[str, Any] = {
         "doc_name": doc_name,
         "model": model,
         "if_add_node_summary": if_add_node_summary,
@@ -812,6 +814,8 @@ async def _do_assimilate(
         "ocr": ocr,
         "docling_ocr_engine": docling_ocr_engine,
     }
+    if complete is not None:
+        assimilate_kw["complete"] = complete
 
     work_dir = await _ensure_pageindex_work_dir()
 
@@ -860,6 +864,59 @@ async def _do_assimilate(
 
     raise ValidationError(
         f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+    )
+
+
+async def _ingest_locally(
+    request: Request, agent_id: str, content: bytes, ext: str, **options: Any
+) -> dict[str, Any]:
+    """Select native Markdown ingestion when the target has a native owner."""
+    from jvagent.core.execution_owner import native_harness_action
+
+    agent = await Agent.get(agent_id)
+    if agent is None:
+        raise ResourceNotFoundError("PageIndex agent not found")
+    native = await native_harness_action(agent)
+    if native is None:
+        return await _do_assimilate(content, ext, **options)
+
+    from .native_ingest import run_native_markdown_ingest
+
+    profile = await agent.get_action_by_type("PageIndexAction")
+    if profile is None:
+        profile = await agent.get_action_by_type("PageIndexReadAction")
+    if (
+        not isinstance(profile, PageIndexAction)
+        or not profile.enabled
+        or profile.native_markdown_ingestion is not True
+    ):
+        raise ValidationError("Native PageIndex Markdown ingestion is not enabled")
+    principal = getattr(request.state, "user", None)
+    actor = (
+        principal.get("id")
+        if isinstance(principal, dict)
+        else getattr(principal, "id", None)
+    )
+    if not isinstance(actor, str) or not actor:
+        raise AuthenticationError("An authenticated operator is required")
+    if (
+        ext not in PAGEINDEX_TEXT_LIKE_EXTENSIONS
+        or options["collection_name"] != agent_id
+    ):
+        raise ValidationError(
+            "Native ingestion requires Markdown or text in this agent's collection"
+        )
+
+    async def assimilate(complete: CompleteText) -> dict[str, Any]:
+        return await _do_assimilate(content, ext, complete=complete, **options)
+
+    return await run_native_markdown_ingest(
+        native,
+        agent_id=agent_id,
+        actor=actor,
+        doc_name=options["doc_name"],
+        requested_model=options.get("model"),
+        assimilate=assimilate,
     )
 
 
@@ -1291,7 +1348,9 @@ async def ingest_document_endpoint(
                         chunking_strategy=chunking_strategy_eff,
                     )
             else:
-                result = await _do_assimilate(
+                result = await _ingest_locally(
+                    request,
+                    agent_id,
                     content,
                     ext,
                     doc_name=effective_doc_name,

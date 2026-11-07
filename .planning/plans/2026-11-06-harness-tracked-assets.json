@@ -1507,7 +1507,7 @@
         "name": "jvagent/pageindex_action",
         "archetype": "PageIndexAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:a9aa9acb7dd5d8871f3d065e7d2fce17c61e412d632b4e29ac9b70e9f1ad3dc8"
+        "tracked_directory_digest": "sha256:68e8480fd40c643f5190a24447bf8c805c82fbe5384a533720b14a0ad38e2646"
       },
       {
         "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",

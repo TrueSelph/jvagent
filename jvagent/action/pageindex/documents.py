@@ -24,6 +24,8 @@ from jvspatial.core.context import (
 )
 from jvspatial.db import get_database_manager
 
+from jvagent.harness.completion_tool import CompleteText
+
 from .adapter import _count_structure_nodes, strip_redundant_md_suffix, tree_to_graph
 from .config import (
     PAGEINDEX_DB_NAME,
@@ -464,6 +466,7 @@ async def assimilate_document(
     convert_to_markdown: bool = False,
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
+    complete: Optional[CompleteText] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -497,6 +500,8 @@ async def assimilate_document(
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
     """
+    if complete is not None and model_action is not None:
+        raise ValueError("Use one PageIndex model execution owner")
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
     model = model or "gpt-4o-mini"
@@ -658,6 +663,8 @@ async def assimilate_document(
             doc = t_txt.name
 
         if use_pdf_page_index:
+            if complete is not None:
+                raise ValueError("Native PDF tree ingestion is not enabled")
             # page_index() uses asyncio.run() internally; run in executor to avoid
             # "asyncio.run() cannot be called from a running event loop"
             from jvagent.core.app import App
@@ -718,6 +725,7 @@ async def assimilate_document(
                 if_add_doc_description=if_add_doc_description,
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
+                **({"complete": complete} if complete is not None else {}),
             )
             heading_line_offset = int(result.pop("_heading_line_offset", 0) or 0)
             if line_map and result.get("structure"):
@@ -831,13 +839,15 @@ async def _document_node_counts_by_doc_name(collection_name: str) -> Dict[str, i
 
 async def count_document_chunks(doc_name: str, collection_name: str) -> int:
     """Number of DocumentNode chunks for a single document."""
-    nodes = await DocumentNode.find(
-        {
-            "context.doc_name": doc_name,
-            "context.collection_name": collection_name,
-        }
-    )
-    return len(nodes)
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    async with _scoped_pageindex_context(_get_pageindex_context()):
+        nodes = await DocumentNode.find(
+            {
+                "context.doc_name": doc_name,
+                "context.collection_name": collection_name,
+            }
+        )
+        return len(nodes)
 
 
 async def list_documents(
