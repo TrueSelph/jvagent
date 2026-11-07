@@ -571,6 +571,14 @@ class PageIndexAction(Action):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
     ) -> Dict[str, Any]:
+        from jvagent.core.execution_owner import uses_native_harness
+
+        agent = await self.get_agent()
+        if agent is not None and await uses_native_harness(agent):
+            raise ValidationError(
+                "Native PageIndex ingestion requires an authenticated upload or a configured Drive sync Action"
+            )
+
         from ..documents import assimilate_document
         from ..llm_bridge import (
             get_pageindex_model_action,

@@ -1,5 +1,19 @@
 # Reference model service retirement boundary
 
+At parent `c122da99`, the native-owner Action assimilation guard
+(`pageindex_action.py:560`) closes a remaining fallback route. Native
+agents use authenticated upload or configured Drive sync for ingestion.
+The isolated browser fixture called the public Action method on the
+native PageIndex read profile. HTTP 422 in 29 ms explained the admitted
+ingestion paths. No matching root or Interaction was present in graph
+readback and the backend made zero model requests. There were no tool
+events, tokens or cost. Tested Action blob
+`f756c5846b830a926455f2d847ce2aaa8d963bc5`. The regression checks that the
+refusal precedes legacy model resolution. The reference converter still
+has model-service blockers, including the separate Reply composition and
+MCP sampling contracts. Direct programmatic tree search also needs an
+explicit completion boundary when a native agent owns execution.
+
 Source revision `50b6c737`. This is an offline compatibility audit. The
 reference agent selects GPT-4.1 through LiteLLM for orchestration and uses
 GPT-4.1 Nano through OpenAI for PageIndex tree search and Reply. MCP is disabled

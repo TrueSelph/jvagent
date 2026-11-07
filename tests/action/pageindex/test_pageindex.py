@@ -2532,3 +2532,21 @@ def test_pageindex_default_limit_is_the_effective_search_default():
     is the tool's effective default — it used to be a hardcoded 5.
     """
     assert PageIndexAction.model_fields["limit"].default == 10
+
+
+@pytest.mark.asyncio
+async def test_native_action_assimilation_refuses_before_legacy_model_lookup():
+    from jvagent.action.pageindex.pageindex_action import PageIndexAction
+
+    action = PageIndexAction()
+    with (
+        patch.object(PageIndexAction, "get_agent", AsyncMock(return_value=object())),
+        patch(
+            "jvagent.core.execution_owner.uses_native_harness",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(PageIndexAction, "get_model_action", AsyncMock()) as model,
+    ):
+        with pytest.raises(ValidationError, match="Native PageIndex ingestion"):
+            await action.assimilate("# Fixture", doc_name="blocked.md")
+    model.assert_not_awaited()

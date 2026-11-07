@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [native classic PDF ingestion](2026-11-07-native-pageindex-pdf.md).
+Latest increment: [native PageIndex Action admission](2026-11-07-native-model-service-boundary.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
