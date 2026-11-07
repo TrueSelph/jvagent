@@ -1,5 +1,25 @@
 # Reference model service retirement boundary
 
+## Voice provider boundary and SkillHub catalog gap
+
+WhatsApp Voice delegates accepted calls to the configured jvvoice
+service with its own credentials and JV Agent callback target
+(`whatsapp_voice_action.py:202`, `:248`). It can be preserved during
+selected chat-provider retirement. The offline regression verifies
+that its declaration survives unchanged. This does not qualify live
+Meta or jvvoice transport.
+
+The SkillHub install helper recognizes only the retired
+SkillInteractAction selector (`_installer.py:138`, `:266`).
+A disposable YAML probe showed byte-identical native and current
+Orchestrator declarations after an attempted install registration.
+The same probe updated a SkillInteractAction positive control. Native
+catalog entries come from explicit directory declarations
+(`native_harness_action.py:399`). Before admitting SkillHub, decide how
+operator-reviewed installs and removals update the native catalog
+without granting new tools or introducing implicit discovery.
+The probe touched neither the registry nor a running graph.
+
 ## Reviewed provider-independent services
 
 The offline converter can preserve CodeExecution, FileInterface and
