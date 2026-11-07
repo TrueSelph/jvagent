@@ -1515,3 +1515,19 @@ def test_operator_catalog_retirement_checks_skillhub_dependencies(
         assert candidate is not None
         assert hub not in candidate["actions"]
         assert "jvagent/skill_hub" in report["retired_actions"]
+
+
+def test_canonical_skill_with_unreviewed_action_base_remains_blocked(app: Path) -> None:
+    asset = source(app).parent / "skills/answer/SKILL.md"
+    asset.write_text(
+        asset.read_text().replace(
+            "description: Answer",
+            "description: Answer\nextends: action:jvagent/leadgen",
+        )
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None
+    assert (
+        "Selected skill 1 extends an Action without a reviewed native skill base"
+        in report["blockers"]
+    )

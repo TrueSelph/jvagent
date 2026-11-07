@@ -449,3 +449,24 @@ that declaration when retiring a qualified chat service. The regression
 asserts the declaration survives unchanged. The reference report now
 lists six unreviewed Actions plus the alternate OpenAI declaration.
 No LeadGen candidate was generated and no runtime behavior changed.
+
+### LeadGen skill Action-base admission
+
+At parent `c8a4ca8b`, both selected reference skills still failed
+`project_skill` after their names and directories were normalized
+in disposable copies. The projector refused the missing reviewed
+Action base. The CLI now distinguishes that dependency from a generic
+format failure and continues to refuse the candidate. The canonical
+regression exercises the same refusal without editing tracked assets
+(`harness_migration_skills.py:260`).
+
+The legacy base advertises capture, retrieve, status and sync
+(`jvagent/action/leadgen/SKILL.md:8`). Only status has a reviewed
+native read contract (`tools.py:129`). Retrieve uses
+`get_or_create_for_user` (`engine.py:397`), so it needs a true read
+path before it can be exposed as one. Capture can run hooks, persist
+profile changes and initiate auto-sync (`engine.py:271`, `:181`);
+admit those effects only with explicit host permission and SDK
+receipts. The native base should describe only the operations that
+its owning Action can safely supply. This was offline qualification,
+with no graph writes or model requests.

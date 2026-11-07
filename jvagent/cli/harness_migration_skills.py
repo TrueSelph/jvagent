@@ -260,6 +260,16 @@ def migrate_skill_selection(
                     f"Selected skill {index} depends on the legacy vision tool or Action; migrate its contract explicitly"
                 )
                 continue
+            extension = metadata.get("extends")
+            if (
+                isinstance(extension, str)
+                and extension.startswith("action:")
+                and extension != "action:jvagent/interview"
+            ):
+                blockers.append(
+                    f"Selected skill {index} extends an Action without a reviewed native skill base"
+                )
+                continue
             try:
                 if name != directory.name or metadata.get("spec", "jv") not in (
                     "jv",
@@ -280,7 +290,7 @@ def migrate_skill_selection(
                     if stream.read(4) != b"---\n":
                         raise ValueError("Selected skill needs frontmatter migration")
                 bases = {}
-                if metadata.get("extends") == "action:jvagent/interview":
+                if extension == "action:jvagent/interview":
                     from jvagent.action.interview.native import native_skill_bases
 
                     bases = native_skill_bases()
