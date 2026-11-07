@@ -21,6 +21,7 @@ from jvspatial.exceptions import DatabaseError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.harness.completion_tool import CompleteText
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import collect_tools, tool
 
@@ -352,6 +353,7 @@ class PageIndexAction(Action):
         retrieval_excerpt_source: Optional[Any] = None,
         visitor: Optional[InteractWalker] = None,
         access_control: Optional[bool] = None,
+        complete: CompleteText | None = None,
     ) -> List[Dict[str, Any]]:
         from ..config import (
             initialize_pageindex_database,
@@ -447,7 +449,11 @@ class PageIndexAction(Action):
             model if model is not None else (cfg.get("model") or self.model)
         )
 
-        model_action = await self.get_model_action(required=False)
+        model_action = (
+            await self.get_model_action(required=False)
+            if complete is None and resolved_strategy == "tree_search"
+            else None
+        )
         prev_model_action = None
         try:
             if model_action:
@@ -494,6 +500,7 @@ class PageIndexAction(Action):
                 include_references=resolved_include_refs,
                 only_enabled=resolved_only_enabled,
                 include=include,
+                **({"complete": complete} if complete is not None else {}),
             )
 
         finally:
@@ -639,11 +646,22 @@ class PageIndexAction(Action):
         **kwargs: Any,
     ) -> str:
         """Search the internal knowledge base for documents matching a query."""
+        query = query or kwargs.get("q") or kwargs.get("text") or ""
+        return await self._search_tool(query, doc_name=doc_name, limit=limit)
+
+    async def _search_tool(
+        self,
+        query: str,
+        *,
+        doc_name: str | None = None,
+        limit: int | None = None,
+        complete: CompleteText | None = None,
+        strategy: str | None = None,
+    ) -> str:
         import json
 
         from jvagent.tooling.context import get_tool_visitor
 
-        query = query or kwargs.get("q") or kwargs.get("text") or ""
         if not query:
             return json.dumps(
                 {"error": "no query provided: pass it in 'query'"}, indent=2
@@ -662,6 +680,8 @@ class PageIndexAction(Action):
             doc_name=doc_name,
             visitor=visitor,
             metadata_filter=self.metadata_filter,
+            **({"strategy": strategy} if strategy is not None else {}),
+            **({"complete": complete} if complete is not None else {}),
         )
         if not results:
             return "No matching documents found."

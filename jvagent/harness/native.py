@@ -9,6 +9,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
+from jvagent.harness.completion_tool import (
+    NativeCompletionTool,
+    completion_arguments,
+    require_completion_receipts,
+)
 from jvagent.harness.contracts import (
     OutputTokenLimitReached,
     reject_model_authority_fields,
@@ -150,6 +155,9 @@ def build_native_agent(
                     raise MutationAccessDenied("Mutation access denied")
                 raise ModelRetry("Action access denied")
             call_arguments = dict(arguments)
+            call_arguments.update(
+                completion_arguments(original, ctx, settings, run_services)
+            )
             if original.binds_visitor:
                 from jvagent.tooling.context import require_tool_visitor
 
@@ -226,7 +234,8 @@ def build_native_agent(
             description=original.description,
             json_schema=schema,
             takes_ctx=True,
-            sequential=bool(original.binds_visitor),
+            sequential=bool(original.binds_visitor)
+            or isinstance(original, NativeCompletionTool),
             args_validator=validate_arguments,
         )
         adapted.timeout = timeout
@@ -257,6 +266,7 @@ def build_native_agent(
         if tool.name not in allowed:
             continue
         mutation = isinstance(tool, NativeMutationTool)
+        require_completion_receipts(tool, step_store, spend_store, spend_observer)
         if isinstance(tool, NativeMutationTool) and (
             tool.effect_class != "write"
             or not tool.binds_visitor

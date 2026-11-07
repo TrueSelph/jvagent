@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [reference model service audit](2026-11-07-native-model-service-boundary.md).
+Latest increment: [native PageIndex tree ranking](2026-11-07-native-pageindex-tree.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,15 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## Native PageIndex tree ranking
+
+The opt-in native read Action now ranks PageIndex trees through a tool-free
+SDK child with shared usage limits and persisted child receipts. The populated
+browser workflow proves authorized ranking, collection exclusion, citations
+and accounting without the legacy provider. The administrative HTTP entrypoint,
+ingestion and callback gates remain open. See
+[qualification](2026-11-07-native-pageindex-tree.md).
 
 ## Reference model service audit
 
