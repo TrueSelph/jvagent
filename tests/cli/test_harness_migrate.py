@@ -1266,3 +1266,50 @@ def test_planning_migration_rejects_untyped_controls(app: Path, value: Any) -> N
     assert candidate is None and any(
         "planning requires a boolean" in text for text in report["blockers"]
     )
+
+
+def test_native_candidate_retires_only_legacy_action_model_settings(app: Path):
+    declaration = yaml.safe_load(source(app).read_text())
+    reply = declaration["actions"][-1]
+    reply["context"].update(
+        model_action_type="OpenAILanguageModelAction",
+        model="private-reply-model",
+        model_temperature=0.3,
+        model_max_tokens=4096,
+        channel_formats={"web": "Use plain text"},
+    )
+    declaration["actions"].append(
+        {
+            "action": "jvagent/mcp",
+            "context": {
+                "enabled": False,
+                "model_action_type": "OpenAILanguageModelAction",
+                "model": "private-mcp-model",
+                "servers": [{"name": "fixture", "enabled": False}],
+            },
+        }
+    )
+    source(app).write_text(yaml.safe_dump(declaration))
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None
+    assert report["retired_action_model_settings"] == {
+        "jvagent/reply": [
+            "model",
+            "model_action_type",
+            "model_max_tokens",
+            "model_temperature",
+        ],
+        "jvagent/mcp": ["model", "model_action_type"],
+    }
+    assert "private-reply-model" not in json.dumps(report)
+    assert "private-mcp-model" not in json.dumps(report)
+    contexts = {action["action"]: action["context"] for action in candidate["actions"]}
+    assert contexts["jvagent/reply"] == {
+        "enabled": True,
+        "channel_formats": {"web": "Use plain text"},
+    }
+    assert contexts["jvagent/mcp"] == {
+        "enabled": False,
+        "servers": [{"name": "fixture", "enabled": False}],
+    }
+    assert yaml.safe_load(source(app).read_text()) == declaration

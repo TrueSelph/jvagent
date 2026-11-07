@@ -41,6 +41,16 @@ _REVIEWED_CONSUMERS = {
     "jvagent/pageindex_read",
     "jvagent/agent_utils",
 }
+# These fields are consumed only by legacy Reply composition and MCP selection.
+_NATIVE_ACTION_MODEL_SETTINGS = {
+    "jvagent/reply": {
+        "model_action_type",
+        "model",
+        "model_temperature",
+        "model_max_tokens",
+    },
+    "jvagent/mcp": {"model_action_type", "model"},
+}
 _DIRECT = {"enabled", "weight", "description", "planning"}
 _LIMITS = {
     "activation_budget": ("max_requests", 20),
@@ -614,6 +624,22 @@ def plan_harness_migration(
     from jvagent.cli.harness_migration_channels import migrate_channel_overrides
 
     migrate_channel_overrides(context, target, report, retire_kinds=_RETIRE)
+    action_settings: dict[str, set[str]] = {}
+    for action in actions:
+        name = action["action"]
+        settings = action.get("context")
+        if isinstance(settings, dict):
+            retired = _NATIVE_ACTION_MODEL_SETTINGS.get(name, set()) & settings.keys()
+            if retired:
+                action_settings.setdefault(name, set()).update(retired)
+    if action_settings:
+        report["retired_action_model_settings"] = {
+            name: sorted(keys) for name, keys in sorted(action_settings.items())
+        }
+        report["required_review"].append(
+            "Review independent Reply composition or MCP selector callers before cutover; native turns own model execution"
+        )
+
     if blockers:
         return report, None
     target.update(model="openai:" + bare, **skill_settings)
@@ -669,6 +695,11 @@ def plan_harness_migration(
         "action": "jvagent/native_harness",
         "context": target,
     }
+    for action in candidate["actions"]:
+        settings = action.get("context")
+        if isinstance(settings, dict):
+            for key in action_settings.get(action["action"], ()):
+                settings.pop(key, None)
     if retired_service is not None:
         candidate["actions"] = [
             a for a in candidate["actions"] if a.get("action") != selected_service

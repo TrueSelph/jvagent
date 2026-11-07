@@ -1,5 +1,23 @@
 # Reference model service retirement boundary
 
+The offline converter now retires the legacy model settings for Reply
+composition and MCP natural-language selection from a native candidate
+(`harness_migrate.py:625`). Its printable report records only Action
+and setting names. The candidate preserves Reply channel formatting,
+MCP server settings and Action enablement. Independent legacy callers
+still require review before cutover.
+
+The reference recheck at parent `2b6171bb` retained source digest
+`sha256:e70e627bc5fd6ddbcbbc38644dc39952692e5dac416b0fe8f2e206814dd57162`.
+It identified two MCP and three Reply model settings for retirement.
+The reference still produced no candidate because its script policy
+and model-service declarations remain unqualified. The selected
+LiteLLM declaration includes model, temperature, output ceiling,
+timeout and drop-parameter settings. The separately enabled OpenAI
+and Ollama declarations require caller review. This round changed
+offline candidate generation only.
+
+
 At parent `924cb4de`, the legacy natural-language MCP selector
 refuses native ownership before discovery or model resolution
 (`mcp_action.py:656`). An isolated fixture returned the existing
