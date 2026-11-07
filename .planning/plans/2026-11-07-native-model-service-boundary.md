@@ -1,5 +1,34 @@
 # Reference model service retirement boundary
 
+## Reference PageIndex provider mismatch
+
+At `1862a530`, the reference config names GPT-4.1 Nano for PageIndex
+and GPT-4.1 for chat (`agent.yaml:337`, `:445`). The existing native
+HTTP routes require an enabled PageIndexReadAction and resolve the
+chat owner as the operation provider (`endpoints.py:1970`, `:2170`;
+`native_search.py:101`). In-run ranking inherits its parent's model
+and settings (`completion_tool.py:37`).
+
+An offline probe passed the model name from the reference declaration
+to the production native callback with the reference chat model.
+It returned `Requested model is not enabled for PageIndex completion`
+before starting an operation (`native_callback.py:24`).
+The callback regression verifies that a rejected model creates no
+additional graph receipt or provider call. Copying the legacy model
+string onto PageIndexReadAction would therefore leave two gaps:
+implicit use of the chat model for ranking and explicit rejection
+of the reference callback model.
+
+Preserve the model choice with an explicit host-owned PageIndex model
+policy before migrating this Action. Use that policy for callback,
+HTTP search, ingest and authorized in-run ranking through the current
+SDK completion adapters. Bind settings and spend receipts to the
+actual selected model. Keep request payloads as validation of the
+host choice and keep the existing limits, collection scope and
+accounting. Rehearse the GPT-4.1 chat and Nano PageIndex split on a
+disposable graph before replacing the legacy declaration. The probe
+changed no runtime code and made no provider or browser requests.
+
 ## WhatsApp messaging provider boundary
 
 WhatsApp messaging can be preserved during legacy chat-provider
