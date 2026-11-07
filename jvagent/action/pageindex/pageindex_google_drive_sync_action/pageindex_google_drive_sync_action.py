@@ -418,7 +418,7 @@ async def _drive_added_fname_matches_indexed(fname: str, collection_name: str) -
     """True if ``fname`` should be skipped as already present in PageIndex (same rules as prune)."""
     if not (fname or "").strip():
         return False
-    docs = await list_documents(collection_name=collection_name)
+    docs = await list_documents(collection_name=collection_name, complete_only=True)
     full, first = _build_skip_existing_indexes(docs)
     return _drive_fname_matches_indexed(fname, full, first)
 
@@ -439,7 +439,7 @@ async def _prune_added_queue_skip_existing(
     added = list(node.ingesting_documents.get("added") or [])
     if not added:
         return
-    docs = await list_documents(collection_name=collection_name)
+    docs = await list_documents(collection_name=collection_name, complete_only=True)
     indexed_full, indexed_first = _build_skip_existing_indexes(docs)
 
     kept = [

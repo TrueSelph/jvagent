@@ -12,6 +12,26 @@ has separate push and exact-head CI gates, tracked on [draft PR #260](https://gi
 
 ## Drive replacement qualification gap
 
+Both Drive skip-existing checks now require a positive per-root completion
+count and live chunks (`documents.py:882`,
+`pageindex_google_drive_sync_action.py:417` and `:425`). The adapter
+sets the root count after linking the document tree (`adapter.py:217`).
+Roots without a completion count remain visible in the general listing
+and require reprocessing or verification before Drive treats them as indexed.
+The regression covers an unfinished root that already has an attached chunk.
+
+The browser fixture reproduced the failure at `3f0fb2ec` and replayed with
+patched source blobs `b84876b3e8b6db10d97b1342b392fb25397ccf27`
+and `8446e06f23086ae213966d90ba213dff3e4b079b`. On the disposable JSON
+graph, the baseline dropped both queued files in 21 ms. The patched
+HTTP 200 response took 19 ms and retained `partial.pdf` while skipping
+`ready.pdf`. Graph readback showed zero chunks at
+`n.DocumentRootNode.face7eb11fd54123b4727b9d` and one at
+`n.DocumentRootNode.41bde3efca064f5d9a1f0390`. This exercised queue
+admission before any model execution, with zero model requests, tokens,
+cost and tool events. Recovery of the partial root itself and real Drive
+ingestion remain open.
+
 Drive failure handling now moves the original queue entry, including the
 old and new revisions, into the retry queue
 (`pageindex_google_drive_sync_action.py:497`). The regression rereads the

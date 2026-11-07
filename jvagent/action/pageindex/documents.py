@@ -882,8 +882,10 @@ async def count_document_chunks(doc_name: str, collection_name: str) -> int:
 async def list_documents(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    *,
+    complete_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
+    """List indexed documents, optionally requiring a completed root publication."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
@@ -902,6 +904,8 @@ async def list_documents(
                 "chunks": counts.get(r.doc_name, 0),
             }
             for r in roots
+            if not complete_only
+            or ((r.chunks or 0) > 0 and counts.get(r.doc_name, 0) > 0)
         ]
 
 

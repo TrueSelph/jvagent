@@ -22,6 +22,7 @@ from jvagent.action.pageindex.pageindex_google_drive_sync_action.google_drive_do
 from jvagent.action.pageindex.pageindex_google_drive_sync_action.pageindex_google_drive_sync_action import (
     DriveIngestConfig,
     PageIndexGoogleDriveSyncAction,
+    _drive_added_fname_matches_indexed,
     _extract_and_prepend_queue_item,
     _filter_doc_queues_for_disabled,
     _find_file_dict_in_tree,
@@ -1118,3 +1119,57 @@ async def test_no_exclusions_leaves_deletion_detection_alone() -> None:
     )
     assert "old1" in [d.get("id") for d in node.ingesting_documents["added"]]
     assert [f["id"] for f in node.files] == ["keep1", "arch"]
+
+
+@pytest.mark.asyncio
+async def test_skip_existing_requires_completed_root(tmp_path, monkeypatch):
+    from jvspatial.db import unregister_database
+
+    from jvagent.action.pageindex import documents
+    from jvagent.action.pageindex.adapter import persist_structure
+    from jvagent.action.pageindex.config import (
+        PAGEINDEX_DB_NAME,
+        initialize_pageindex_database,
+    )
+    from jvagent.action.pageindex.models import (
+        DocumentContentEdge,
+        DocumentNode,
+        DocumentRootNode,
+    )
+
+    collection = "drive-fixture"
+    initialize_pageindex_database({"db_type": "json", "db_path": str(tmp_path)})
+    monkeypatch.setattr(
+        documents, "_get_app_id_from_node", AsyncMock(return_value=None)
+    )
+    try:
+        async with documents._scoped_pageindex_context(
+            documents._get_pageindex_context()
+        ):
+            partial = await DocumentRootNode.create(
+                doc_name="partial.pdf", collection_name=collection
+            )
+            chunk = await DocumentNode.create(
+                doc_name=partial.doc_name, collection_name=collection
+            )
+            await partial.connect(chunk, edge=DocumentContentEdge, direction="out")
+        await persist_structure(
+            "ready.pdf", [{"title": "Ready"}], collection_name=collection
+        )
+
+        node = SimpleNamespace(
+            ingesting_documents={
+                "added": [{"name": "partial.pdf"}, {"name": "ready.pdf"}]
+            },
+            failed_documents={"added": [], "modified": [], "removed": []},
+            active_document="",
+            save=AsyncMock(),
+        )
+        await _prune_added_queue_skip_existing(
+            node, collection, skip_existing_documents=True
+        )
+        assert node.ingesting_documents["added"] == [{"name": "partial.pdf"}]
+        assert not await _drive_added_fname_matches_indexed("partial.pdf", collection)
+        assert await _drive_added_fname_matches_indexed("ready.pdf", collection)
+    finally:
+        unregister_database(PAGEINDEX_DB_NAME)
