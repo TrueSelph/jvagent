@@ -883,7 +883,9 @@ class MCPAction(Action):
         """
         return await self._list_tools_cached(server_name)
 
-    async def get_native_toolsets(self) -> List[Any]:
+    async def get_native_toolsets(
+        self, *, tool_timeout_seconds: Optional[float] = None
+    ) -> List[Any]:
         """Expose reviewed plain-stdio services through the public SDK lifecycle.
 
         Sandbox, HTTP/auth and sampling profiles require separate qualification.
@@ -900,6 +902,9 @@ class MCPAction(Action):
         from pydantic_ai.mcp import MCPToolset
 
         from jvagent.harness.mcp import ReviewedMCPToolset
+        from jvagent.tooling.tool import validate_tool_timeout
+
+        deadline = validate_tool_timeout(tool_timeout_seconds)
 
         await self.ensure_servers()
         reviewed = self.native_read_tools
@@ -955,14 +960,28 @@ class MCPAction(Action):
             client = Client(
                 transport,
                 init_timeout=entry.connect_timeout,
-                timeout=entry.call_timeout,
+                timeout=(
+                    min(entry.call_timeout, deadline)
+                    if deadline is not None
+                    else entry.call_timeout
+                ),
             )
             sdk = MCPToolset(
                 client,
                 prefer_tasks=False,
                 include_instructions=False,
             ).prefixed(f"mcp_{name}_")
-            result.append(ReviewedMCPToolset(sdk, frozenset(selected)))
+            result.append(
+                ReviewedMCPToolset(
+                    sdk,
+                    frozenset(selected),
+                    tool_timeout_seconds=(
+                        min(entry.call_timeout, deadline)
+                        if deadline is not None
+                        else entry.call_timeout
+                    ),
+                )
+            )
             remaining -= selected
         if remaining:
             raise ValueError(

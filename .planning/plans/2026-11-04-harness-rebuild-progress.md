@@ -1,6 +1,6 @@
 # Harness rebuild execution record
 
-Latest increment: [legacy tool pin retirement](2026-11-07-native-pin-retirement.md).
+Latest increment: [SDK execution deadline policy](2026-11-07-native-sdk-tool-policy.md).
 Next: qualify remaining extension classes, operator recovery and deployment cases,
 then continue the supported compatibility/migration/deletion gates. The
 [interview record](2026-11-05-native-interview.md) bounds the current built-in vertical.
@@ -9,6 +9,23 @@ The older branch name and dependency snapshots below are historical evidence.
 The goal remains active: compatibility, migration, deletion and enterprise gates
 are incomplete. All nine remote checks passed at `d664e4db`; each new milestone
 has separate push and exact-head CI gates, tracked on [draft PR #260](https://github.com/TrueSelph/jvagent/pull/260).
+
+## SDK execution deadline policy
+
+Optional global/exact-channel deadlines reach public SDK function-tool and
+reviewed MCP RPC clocks, preserving tighter service/Action policy. Offline
+conversion requires explicit review of separate run/loading/initialization
+scopes. Annotated writes remain uncertain; pre-intent failure receipts and
+read-only child cancellation receipts close through the existing public-hook
+upstream-gap adapter. Seven actual GPT-4.1 browser turns across two recorded
+source epochs exercise slow-read fallback, uncertain writes, blocked follow-ups
+and cold continuation. Thirteen requests/8,445 reported tokens/USD 0.018372
+estimated reconcile; cold/reload graph readbacks are exact. Native/host/PG/Docker
+lanes pass 939 per supported Python, migration/scaffold 226 per version,
+transitional 5,139 with 73 skipped. Two reference blocker categories remain:
+script image/resource policy and unqualified model-service consumers. Retained
+state, full cutover/deletion and enterprise gates remain open. See the
+[record](2026-11-07-native-sdk-tool-policy.md).
 
 ## Retire legacy tool pins
 

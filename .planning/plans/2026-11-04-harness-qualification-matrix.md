@@ -10,6 +10,20 @@ including renamed/new/removed paths. Dispositions are proposed engineering
 decisions; source discovery does not qualify an integration or deletion.
 No automatic migration tool or deletion authorization is inferred from a category.
 
+## SDK execution deadline policy
+
+[Qualification](2026-11-07-native-sdk-tool-policy.md) adds global/channel SDK
+function-tool deadlines and public FastMCP RPC clocks without a JV timer. Loader/
+output controls retain SDK run clocks; MCP initialization remains separate.
+Seven actual GPT-4.1 browser turns across explicit source epochs cover read
+fallback, uncertain writes, zero-call follow-up refusal and cold continuation.
+Thirteen calls/8,445 reported tokens/USD 0.018372 estimated reconcile; cold/reload
+records are exact. Both Python native lanes pass 939, migration lanes 226;
+transitional passes 5,139 with 73 skips. Actual Docker, stdio, child cancellation
+and pre-intent regressions have separate evidence, not provider/browser claims.
+Reference blockers reduce to two categories; retained-state conversion, legacy
+removal, external recovery, deployment and enterprise gates remain unfinished.
+
 ## Legacy tool pins
 
 [Qualification](2026-11-07-native-pin-retirement.md) retires typed global/channel

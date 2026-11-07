@@ -8,7 +8,10 @@ ceiling also reaches official Harness spend policy, using the same value. Source
 
 An optional `NativeHarnessAction.context.channel_limits` map may **tighten** these
 base Action fields: `max_requests`, `max_tool_calls`, `max_tokens`,
-`max_output_tokens`, `timeout_seconds`, `max_run_cost_usd`. Example:
+`max_output_tokens`, `timeout_seconds`, `max_run_cost_usd`, and the optional
+`tool_timeout_seconds` execution policy. The latter is passed separately to SDK
+tool definitions and qualified MCP adapters, not as a run argument. Sources:
+`jvagent/harness/run_limits.py:79`, `jvagent/harness/native.py:321`. Example:
 
 ```yaml
 max_requests: 20
@@ -42,8 +45,9 @@ ceiling and journal rather than resetting per channel. The selected scalar
 values are copied into `Interaction.native_run.limits` and remain on success,
 failure and cancellation (`native_harness_action.py:570`).
 
-This map accepts no provider selection, tool surfacing, prompts, skills,
-permissions or per-tool timeouts. Keep procedures in skills. Legacy
+This map accepts no provider selection, tool surfacing, prompts, skills or
+permissions. For execution deadline scopes, see
+[tool deadlines](native-tool-deadlines.md). Keep procedures in skills. Legacy
 `channel_overrides` are **not** automatically migrated: custom prompt policy,
 per-tool cancellation/effect semantics and other controls still need explicit
 qualification before retirement. In particular, an SDK run deadline does not

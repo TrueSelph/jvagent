@@ -106,17 +106,28 @@ def migrate_channel_overrides(
                     policy[name] = encoded
                 elif key in retire_kinds and _retirable(value, retire_kinds[key]):
                     retired.add(key)
+                elif key == "tool_call_timeout":
+                    from jvagent.tooling.tool import validate_tool_timeout
+
+                    base_deadline = target.get("tool_timeout_seconds")
+                    if type(value) in (int, float) and value == 0:
+                        if base_deadline is not None:
+                            raise ValueError
+                        retired.add(key)
+                    else:
+                        deadline = validate_tool_timeout(value)
+                        if deadline is None or (
+                            base_deadline is not None and deadline > base_deadline
+                        ):
+                            raise ValueError
+                        policy["tool_timeout_seconds"] = deadline
                 elif (
                     key in {"skill_only_tools", "denied_tools"}
                     and type(value) is list
                     and not value
                 ):
                     retired.add(key)
-                elif (
-                    key == "tool_call_timeout"
-                    and type(value) in (int, float)
-                    and value == 0
-                ) or (key == "with_event" and value is False):
+                elif key == "with_event" and value is False:
                     retired.add(key)
                 else:
                     raise ValueError
@@ -160,3 +171,7 @@ def migrate_channel_overrides(
     report["required_review"].append(
         "Review channel instructions as model guidance, move domain procedures into skills, and qualify retired channel heuristics before cutover; channel labels grant no authority"
     )
+    if any("tool_timeout_seconds" in policy for policy in limits.values()):
+        report["required_review"].append(
+            "Qualify SDK tool-body and MCP RPC deadlines on each selected channel; SDK control loading and initialization retain their separate run/setup clocks"
+        )

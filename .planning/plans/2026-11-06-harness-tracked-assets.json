@@ -1327,7 +1327,7 @@
         "name": "jvagent/mcp",
         "archetype": "MCPAction",
         "tracked_directory_files": 8,
-        "tracked_directory_digest": "sha256:9dfa2c723158af61a01b3a091ad15fdad7dd39ab7e4f9cde67f8e426aafb2963"
+        "tracked_directory_digest": "sha256:df3be6bdd8dccc7b49b80b8cb537170f383ff9848a7120a0ca5293a86db8b4f7"
       },
       {
         "path": "jvagent/action/mcp_oauth/info.yaml",
@@ -1480,7 +1480,7 @@
         "name": "jvagent/native_harness",
         "archetype": "NativeHarnessAction",
         "tracked_directory_files": 4,
-        "tracked_directory_digest": "sha256:c3a25a42206220f463308182a9add10dd4b68ec86c3d284e2a496bfbf5c60c9a"
+        "tracked_directory_digest": "sha256:b6e18210012610bfa0d10c8bf4394eb0970ea811bc44db740e45b0dfd4764699"
       },
       {
         "path": "jvagent/action/orchestrator/info.yaml",

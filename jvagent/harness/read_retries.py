@@ -28,10 +28,16 @@ class ReadRetryReceipts(AbstractCapability[Any]):
     non-retriable effect semantics. SDK clocks and dispatch remain unchanged.
     """
 
-    def __init__(self, persistence: Any, read_names: frozenset[str]) -> None:
+    def __init__(
+        self,
+        persistence: Any,
+        read_names: frozenset[str],
+        pre_intent_mutations: frozenset[str] = frozenset(),
+    ) -> None:
         self.persistence = persistence
         self.store = persistence.store
         self.read_names = read_names
+        self.pre_intent_mutations = pre_intent_mutations
 
     async def wrap_tool_execute(
         self, ctx: RunContext[Any], *, call: Any, tool_def: Any, args: Any, handler: Any
@@ -52,7 +58,15 @@ class ReadRetryReceipts(AbstractCapability[Any]):
                 raise MutationOutcomeUnknown(
                     "An annotated mutation cannot be retried after SDK execution failure"
                 ) from error
-            if tool_def.name in self.read_names:
+            # NativeMutationTool cannot invoke its body before this annotation.
+            # None proves admission has not accepted an intent; an arbitrary
+            # failure summary is not evidence of rollback or non-execution.
+            before_intent = (
+                tool_def.name in self.pre_intent_mutations
+                and prior is not None
+                and prior.effect_summary is None
+            )
+            if tool_def.name in self.read_names or before_intent:
                 if prior is not None and prior.status == "started":
                     # Delegate receipt/event semantics to the library's public
                     # error hook, which core skips for retry control flow.

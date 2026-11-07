@@ -199,6 +199,7 @@ class NativeHarnessAction(InteractAction):
     max_tokens: int = attribute(default=100_000)
     max_output_tokens: int | None = attribute(default=None)
     timeout_seconds: float = attribute(default=180.0)
+    tool_timeout_seconds: float | None = attribute(default=None)
     channel_limits: dict[str, dict[str, Any]] = attribute(default_factory=dict)
     tool_execution_mode: str = attribute(default="parallel")
 
@@ -296,6 +297,12 @@ class NativeHarnessAction(InteractAction):
             return
         if interaction.native_run:
             raise RuntimeError("Existing native invocation requires reconciliation")
+        # Snapshot host identity and policy before invoking integration providers.
+        caller_user_id = visitor.user_id
+        caller_channel = getattr(visitor, "channel", "default")
+        from jvagent.harness.run_limits import effective_tool_timeout
+
+        tool_timeout = effective_tool_timeout(self, caller_channel)
         tools: list[Any] = []
         toolsets: list[Any] = []
         action_skill_bases: dict[str, Path] = {}
@@ -319,7 +326,11 @@ class NativeHarnessAction(InteractAction):
                 action_skill_bases.update(bases)
             native_toolsets = getattr(action, "get_native_toolsets", None)
             if native_toolsets is not None:
-                toolsets.extend(await native_toolsets())
+                toolsets.extend(
+                    await native_toolsets(tool_timeout_seconds=tool_timeout)
+                    if tool_timeout is not None
+                    else await native_toolsets()
+                )
                 continue
             tool_provider = (
                 getattr(action, "get_native_tools", None) or action.get_tools
@@ -331,8 +342,6 @@ class NativeHarnessAction(InteractAction):
 
         # Admission identity stays fixed even if a legacy integration mutates
         # its live visitor while an asynchronous tool is running.
-        caller_user_id = visitor.user_id
-        caller_channel = getattr(visitor, "channel", "default")
 
         async def access(label: str) -> bool:
             return await is_tool_allowed(
@@ -514,6 +523,7 @@ class NativeHarnessAction(InteractAction):
                 plan_store=plan_store,
                 script_sandbox=script_sandbox,
                 allow_mutations=not recovery_read_only,
+                tool_timeout_seconds=tool_timeout,
                 model_settings=self.model_settings,
                 skill_directory=skill_directory,
                 skill_directories=skill_directories,
@@ -578,11 +588,16 @@ class NativeHarnessAction(InteractAction):
                 channel=caller_channel,
             )
         run_id = getattr(visitor, "correlation_id", "") or uuid.uuid4().hex
+        receipt_limits = (
+            {**limits, "tool_timeout_seconds": tool_timeout}
+            if tool_timeout is not None
+            else limits
+        )
         interaction.native_run = {
             "run_id": run_id,
             "status": "running",
             "history_source": history_source,
-            "limits": limits,
+            "limits": receipt_limits,
         }
         task_binding = getattr(visitor, "_native_task_dispatch", None)
         if task_spec is not None:
@@ -626,7 +641,7 @@ class NativeHarnessAction(InteractAction):
                 "status": "pending_delivery",
                 "history_source": history_source,
                 "usage_complete": True,
-                "limits": limits,
+                "limits": receipt_limits,
                 "usage": {
                     "requests": usage.requests,
                     "input_tokens": usage.input_tokens,

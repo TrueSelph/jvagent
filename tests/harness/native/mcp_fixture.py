@@ -1,5 +1,6 @@
 """Disposable stdio MCP service for native compatibility qualification only."""
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -22,6 +23,17 @@ def lookup_record(reference: str) -> dict[str, str]:
     if reference != "REHEARSAL-47":
         raise ValueError("Reference unavailable")
     return {"reference": reference, "room": "Cedar", "start": "14:30"}
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+async def slow_lookup() -> str:
+    """A deliberately slow read for public MCP client deadline qualification."""
+    _audit("SLOW-start")
+    try:
+        await asyncio.sleep(10)
+    finally:
+        _audit("SLOW-stop")
+    return "unreachable slow read"
 
 
 @server.tool(annotations=ToolAnnotations(readOnlyHint=True))

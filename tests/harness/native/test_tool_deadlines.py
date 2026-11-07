@@ -30,6 +30,7 @@ class ProbeWrite(NativeMutationTool):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("batch", [False, True])
 @pytest.mark.parametrize("retries", [0, 3])
+@pytest.mark.parametrize("deadline_source", ["action", "host"])
 @pytest.mark.parametrize(
     "fault", ["timeout", "failed-control", "retry-control", "wrapped-retry"]
 )
@@ -38,6 +39,7 @@ async def test_sdk_timeout_after_write_stops_retry_and_queued_mutation(
     batch: bool,
     retries: int,
     fault: str,
+    deadline_source: str,
 ) -> None:
     skill = tmp_path / "probe"
     skill.mkdir()
@@ -84,7 +86,7 @@ async def test_sdk_timeout_after_write_stops_retry_and_queued_mutation(
         execute=write,
         effect_class="write",
         binds_visitor=True,
-        timeout_seconds=0.2,
+        timeout_seconds=0.2 if deadline_source == "action" else None,
     )
     requests = 0
 
@@ -112,6 +114,7 @@ async def test_sdk_timeout_after_write_stops_retry_and_queued_mutation(
         access_check=allow,
         instructions="Use the probe.",
         step_store=store,
+        tool_timeout_seconds=0.2 if deadline_source == "host" else None,
     )
     error: Exception | None = None
     with bind_dispatch_context(visitor):
@@ -181,8 +184,13 @@ def test_mutated_deadline_is_revalidated_at_native_admission(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "host_deadline,expected", [(None, 0.2), (1.0, 0.2), (0.1, 0.1)]
+)
 async def test_decorated_read_deadline_uses_sdk_and_keeps_retry_receipts(
     tmp_path: Path,
+    host_deadline: float | None,
+    expected: float,
 ) -> None:
     class Reads:
         calls = 0
@@ -218,7 +226,7 @@ async def test_decorated_read_deadline_uses_sdk_and_keeps_retry_receipts(
         nonlocal requests
         requests += 1
         definition = next(t for t in info.function_tools if t.name == "probe_read")
-        assert definition.timeout == 0.2
+        assert definition.timeout == expected
         if requests < 3:
             return ModelResponse(
                 parts=[ToolCallPart("probe_read", {}, tool_call_id=f"read-{requests}")]
@@ -235,6 +243,7 @@ async def test_decorated_read_deadline_uses_sdk_and_keeps_retry_receipts(
         access_check=allow,
         instructions="Read.",
         step_store=store,
+        tool_timeout_seconds=host_deadline,
     )
     result = await agent.run("read", run_id="read-run", conversation_id="session")
     assert result.output == "verified read" and service.calls == 2
@@ -245,3 +254,153 @@ async def test_decorated_read_deadline_uses_sdk_and_keeps_retry_receipts(
         await store.get_tool_effect(run_id="read-run", tool_call_id="read-2")
     ).status == "completed"
     assert not await store.list_unresolved_tool_effects(run_id="read-run")
+
+
+def test_unknown_toolset_cannot_claim_an_unenforced_default_deadline(
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    async def allow(name: str) -> bool:
+        return True
+
+    with pytest.raises(ValueError, match="deadline adapter"):
+        build_native_agent(
+            "test",
+            tools=[],
+            toolsets=[SimpleNamespace()],
+            access_check=allow,
+            instructions="Read.",
+            skill_directory=tmp_path,
+            tool_timeout_seconds=0.2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_deadline_before_mutation_intent_has_failed_receipt_and_one_later_body(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "writer"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: writer\ndescription: Write\nallowed-tools: [probe_write]\n---\nWrite only when permitted.\n"
+    )
+    visitor = await host()
+    visitor.interaction = Interaction(
+        conversation_id=visitor.conversation.id,
+        user_id=visitor.user_id,
+        session_id=visitor.session_id,
+    )
+    await visitor.interaction.save()
+    store = InteractionStepStore(visitor.interaction)
+    checks = 0
+    writes: list[str] = []
+    requests = 0
+
+    async def authorize(tool: Any) -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            await asyncio.Event().wait()
+        return True
+
+    async def write(visitor: Any) -> str:
+        assert (
+            visitor.interaction.native_steps["effects"][-1]["effect_summary"]
+            == ProbeWrite.effect_summary
+        )
+        writes.append("accepted")
+        return "accepted"
+
+    async def allow(name: str) -> bool:
+        return True
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal requests
+        requests += 1
+        if requests <= 2:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "probe_write", {}, tool_call_id=f"admission-{requests}"
+                    )
+                ]
+            )
+        return ModelResponse(parts=[TextPart("accepted")])
+
+    tool = ProbeWrite(
+        "probe_write",
+        "Write",
+        execute=write,
+        effect_class="write",
+        binds_visitor=True,
+        requires_tool_permission=True,
+    )
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=directory,
+        tools=[tool],
+        access_check=allow,
+        tool_access_check=authorize,
+        instructions="Write.",
+        step_store=store,
+        tool_timeout_seconds=0.5,
+    )
+    with bind_dispatch_context(visitor):
+        result = await agent.run(
+            "write", run_id=visitor.interaction.id, conversation_id=visitor.session_id
+        )
+    assert result.output == "accepted" and writes == ["accepted"] and checks == 2
+    first = await store.get_tool_effect(
+        run_id=visitor.interaction.id, tool_call_id="admission-1"
+    )
+    assert first.status == "failed" and not (first.effect_summary or "").startswith(
+        "jv:mutation:"
+    )
+    assert not await store.list_unresolved_tool_effects(run_id=visitor.interaction.id)
+
+
+@pytest.mark.asyncio
+async def test_sdk_control_loader_remains_bounded_by_sdk_run_timeout(
+    tmp_path: Path,
+) -> None:
+    from pydantic_ai.capabilities import Hooks
+
+    directory = tmp_path / "reader"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: reader\ndescription: Read\n---\nRead.\n"
+    )
+    cancelled = asyncio.Event()
+
+    async def wait_for_loader(ctx: Any, *, call: Any, tool_def: Any, args: Any) -> Any:
+        if call.tool_name == "load_capability":
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return args
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        loader = next(t for t in info.function_tools if t.name == "load_capability")
+        assert loader.tool_kind == "capability-load" and loader.timeout is None
+        return ModelResponse(parts=[ToolCallPart("load_capability", {"id": "reader"})])
+
+    async def allow(name: str) -> bool:
+        return True
+
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directories=[directory],
+        tools=[],
+        access_check=allow,
+        instructions="Read.",
+        tool_timeout_seconds=0.01,
+    )
+    with pytest.raises(TimeoutError):
+        await agent.run(
+            "load",
+            timeout=0.1,
+            capabilities=[Hooks(before_tool_execute=wait_for_loader)],
+        )
+    assert cancelled.is_set()

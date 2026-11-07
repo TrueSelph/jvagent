@@ -716,7 +716,6 @@ def test_source_selection_does_not_leak_app_override_into_library_mode(
         ("channel_overrides", {"web": {"skill_only_tools": ["pay__*"]}}),
         ("skill_only_tools", ["pay__*"]),
         ("vision", True),
-        ("tool_call_timeout", 30),
     ],
 )
 def test_active_unqualified_policy_is_never_retired(
@@ -777,7 +776,7 @@ def test_channel_policy_migrates_without_writing_or_reporting_instructions(
         {"max_turn_cost_usd": True},
         {"max_duration_seconds": 0},
         {"max_duration_seconds": float("inf")},
-        {"tool_call_timeout": 15},
+        {"tool_call_timeout": "private-channel-instruction"},
         {"tool_call_timeout": False},
         {"with_event": 0},
         {"with_event": True},
@@ -881,6 +880,54 @@ def test_retired_pins_do_not_erase_active_tool_restrictions(
     )
     report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
     assert candidate is None and restriction in report["blocked_channel_settings"]
+
+
+@pytest.mark.parametrize(
+    "base,profile,expected", [(0, 15, 15), (30, 15, 15), (30, 30, 30), (0, 0, None)]
+)
+def test_tool_deadlines_migrate_to_native_sdk_clocks(
+    app: Path, base: Any, profile: Any, expected: Any
+) -> None:
+    change(
+        app,
+        tool_call_timeout=base,
+        channel_overrides={"voice": {"tool_call_timeout": profile}},
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is not None
+    target = candidate["actions"][0]["context"]
+    assert target.get("tool_timeout_seconds") == (base or None)
+    assert (
+        target.get("channel_limits", {}).get("voice", {}).get("tool_timeout_seconds")
+        == expected
+    )
+    assert "tool_call_timeout" not in target
+    assert any("SDK" in text and "clock" in text for text in report["required_review"])
+
+
+@pytest.mark.parametrize(
+    "base,profile",
+    [
+        (15, 30),
+        (15, 0),
+        (15, None),
+        (0, True),
+        (0, "private-deadline"),
+        (float("inf"), 15),
+        (None, 15),
+    ],
+)
+def test_tool_deadline_migration_never_widens_or_disables_an_active_base(
+    app: Path, base: Any, profile: Any
+) -> None:
+    change(
+        app,
+        tool_call_timeout=base,
+        channel_overrides={"voice": {"tool_call_timeout": profile}},
+    )
+    report, candidate = plan_harness_migration(app, "demo/bot", skill="answer")
+    assert candidate is None and report["blockers"]
+    assert "private-deadline" not in json.dumps(report)
 
 
 @pytest.mark.parametrize("lock_setting", [None, False, True])

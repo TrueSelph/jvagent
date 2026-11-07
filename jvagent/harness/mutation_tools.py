@@ -52,7 +52,11 @@ class NativeMutationTool(Tool):
     async def effect_identity(
         self, *, run_id: str, tool_call_id: str, arguments: dict[str, Any]
     ) -> str:
-        """Return an SDK effect key; reviewed domains may bind semantic intent."""
+        """Return an SDK effect key; reviewed domains may bind semantic intent.
+
+        Identity/scope resolution must not perform the domain mutation. Only
+        ``call`` after the SDK intent fence may execute that write.
+        """
         scope = await self.recovery_scope()
         return f"{run_id}/{tool_call_id}" + (f"/{scope}" if scope is not None else "")
 

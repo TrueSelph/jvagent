@@ -23,6 +23,100 @@ pytest.importorskip("fastmcp.client")
 from jvagent.tooling.context import bind_dispatch_context
 
 NAME = "mcp_records__lookup_record"
+SLOW = "mcp_records__slow_lookup"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host_limit,service_limit", [(0.2, 30.0), (1.0, 0.2)])
+async def test_public_mcp_deadline_cancels_rpc_and_keeps_read_receipts(
+    tmp_path: Path, host_limit: float, service_limit: float
+) -> None:
+    action = MCPAction(
+        sandbox_mode=False,
+        native_read_tools=[NAME, SLOW],
+        mcp_call_timeout=service_limit,
+        servers=[
+            {
+                "name": "records",
+                "command": sys.executable,
+                "args": [str(Path(__file__).with_name("mcp_fixture.py"))],
+                "transport": "stdio",
+                "env": {
+                    "JV_MCP_FIXTURE_AUDIT": str(tmp_path / "calls.txt"),
+                    "JV_MCP_FIXTURE_PID": str(tmp_path / "server.pid"),
+                },
+            }
+        ],
+    )
+    directory = tmp_path / "records"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        f"---\nname: records\ndescription: Read records\nallowed-tools: [{NAME}, {SLOW}]\n---\nRead.\n"
+    )
+    with patch.object(MCPAction, "get_agent", new=AsyncMock(return_value=None)):
+        await action._build_server_entries()
+    interaction = Interaction(utterance="slow then fast")
+    await interaction.save()
+    store = InteractionStepStore(interaction)
+    calls = 0
+
+    async def access(name: str) -> bool:
+        return True
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ModelResponse(parts=[ToolCallPart(SLOW, {}, tool_call_id="slow")])
+        if calls == 2:
+            failures = [
+                p
+                for m in messages
+                for p in m.parts
+                if isinstance(p, ToolReturnPart) and p.tool_call_id == "slow"
+            ]
+            assert failures and failures[-1].outcome != "success"
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        NAME, {"reference": "REHEARSAL-47"}, tool_call_id="fast"
+                    )
+                ]
+            )
+        assert "Cedar" in str(messages)
+        return ModelResponse(parts=[TextPart("verified")])
+
+    try:
+        toolsets = await action.get_native_toolsets(tool_timeout_seconds=host_limit)
+        assert toolsets[0].tool_timeout_seconds == min(host_limit, service_limit)
+        agent = build_native_agent(
+            FunctionModel(respond),
+            skill_directory=directory,
+            tools=[],
+            toolsets=toolsets,
+            access_check=access,
+            instructions="Read.",
+            step_store=store,
+            tool_timeout_seconds=host_limit,
+        )
+        with bind_dispatch_context(host("deadline")):
+            result = await agent.run(
+                "read", run_id="rpc-run", conversation_id="rpc-session"
+            )
+        assert result.output == "verified" and calls == 3
+        assert (
+            await store.get_tool_effect(run_id="rpc-run", tool_call_id="slow")
+        ).status == "failed"
+        assert (
+            await store.get_tool_effect(run_id="rpc-run", tool_call_id="fast")
+        ).status == "completed"
+        assert not await store.list_unresolved_tool_effects(run_id="rpc-run")
+        audit = (tmp_path / "calls.txt").read_text().splitlines()
+        assert sorted(audit) == sorted(["SLOW-start", "SLOW-stop", "REHEARSAL-47"])
+        with pytest.raises(ProcessLookupError):
+            os.kill(int((tmp_path / "server.pid").read_text()), 0)
+    finally:
+        await action.on_disable()
 
 
 def host(user: str) -> Any:

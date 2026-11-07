@@ -1,5 +1,6 @@
 """Native delegation preserves application identity, limits and graph receipts."""
 
+import asyncio
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,12 +25,88 @@ from jvagent.tooling.tool import Tool
 
 
 @pytest.mark.asyncio
+async def test_sdk_delegate_tool_deadline_cancels_child_without_pending_parent_effect(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "reader"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: reader\ndescription: Read\nallowed-tools: [lookup]\n---\nRead.\n"
+    )
+    cancelled = asyncio.Event()
+    parent_requests = 0
+    child_requests = 0
+
+    async def lookup() -> str:
+        return "unreachable"
+
+    async def allow(name: str) -> bool:
+        return True
+
+    async def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal parent_requests, child_requests
+        if "delegate_task" in {t.name for t in info.function_tools}:
+            parent_requests += 1
+            if parent_requests == 1:
+                return ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            "delegate_task",
+                            {"agent_name": "reader", "task": "read"},
+                            tool_call_id="delegate-deadline",
+                        )
+                    ]
+                )
+            return ModelResponse(parts=[TextPart("child stopped")])
+        child_requests += 1
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+        return ModelResponse(parts=[TextPart("unreachable")])
+
+    interaction = Interaction(utterance="delegate")
+    await interaction.save()
+    store = InteractionStepStore(interaction)
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=Path("jvagent/skills/delegate"),
+        tools=[Tool("lookup", "Read", execute=lookup, effect_class="read")],
+        access_check=allow,
+        instructions="Delegate.",
+        step_store=store,
+        conversation_id="session",
+        tool_timeout_seconds=0.2,
+        delegates=[
+            {"name": "reader", "description": "Read", "skill_directory": str(directory)}
+        ],
+    )
+    with bind_dispatch_context(SimpleNamespace(user_id="caller", session_id="session")):
+        result = await agent.run(
+            "delegate", run_id="delegate-parent", conversation_id="session"
+        )
+    assert result.output == "child stopped" and cancelled.is_set()
+    assert parent_requests == 2 and child_requests == 1
+    assert (
+        await store.get_tool_effect(
+            run_id="delegate-parent", tool_call_id="delegate-deadline"
+        )
+    ).status == "failed"
+    assert not await store.list_unresolved_tool_effects(run_id="delegate-parent")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("permitted", [True, False])
+@pytest.mark.parametrize("tool_deadline", [None, 5.0])
 @pytest.mark.parametrize(
     ("request_limit", "max_cost"), [(2, "2.00"), (6, "2.00"), (6, "0.0015")]
 )
 async def test_native_children_share_limits_and_preserve_scope(
-    tmp_path: Path, permitted: bool, request_limit: int, max_cost: str
+    tmp_path: Path,
+    permitted: bool,
+    request_limit: int,
+    max_cost: str,
+    tool_deadline: float | None,
 ) -> None:
     child_dir = tmp_path / "reader"
     child_dir.mkdir()
@@ -59,6 +136,12 @@ async def test_native_children_share_limits_and_preserve_scope(
         assert info.model_settings["temperature"] == 0.0
         assert info.model_settings["max_tokens"] == 8192
         tools = {t.name for t in info.function_tools}
+        if tool_deadline is not None:
+            assert all(
+                tool.timeout == tool_deadline
+                for tool in info.function_tools
+                if tool.tool_kind != "capability-load"
+            ), [(tool.name, tool.timeout) for tool in info.function_tools]
         parent = "delegate_task" in tools
         if parent:
             assert "lookup" not in tools
@@ -103,6 +186,7 @@ async def test_native_children_share_limits_and_preserve_scope(
                 "skill_directory": str(child_dir),
             }
         ],
+        tool_timeout_seconds=tool_deadline,
     )
     visitor = SimpleNamespace(user_id="caller", session_id="host-conversation")
     limited = request_limit == 2 or max_cost == "0.0015"

@@ -15,7 +15,7 @@ from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 
 from jvagent.harness.native import run_native_agent
-from jvagent.harness.run_limits import effective_run_limits
+from jvagent.harness.run_limits import effective_run_limits, effective_tool_timeout
 
 
 def owner(policies: Any) -> Any:
@@ -42,6 +42,33 @@ def test_exact_selection_keeps_base_and_declarations_immutable() -> None:
         assert effective_run_limits(action, channel)["max_requests"] == 4
     selected["max_requests"] = 999
     assert policies == original and action.max_requests == 4
+
+
+def test_tool_deadline_selection_is_separate_from_sdk_run_arguments() -> None:
+    action = owner({"voice": {"tool_timeout_seconds": 0.2}})
+    assert effective_tool_timeout(action, "voice") == 0.2
+    assert effective_tool_timeout(action, "default") is None
+    assert "tool_timeout_seconds" not in effective_run_limits(action, "voice")
+    action.tool_timeout_seconds = 1.0
+    assert effective_tool_timeout(action, "voice") == 0.2
+    assert effective_tool_timeout(action, "voice_extra") == 1.0
+
+
+@pytest.mark.parametrize(
+    "value", [0, -1, True, "0.2", None, float("nan"), float("inf"), 10**400]
+)
+def test_unmatched_invalid_tool_deadline_rejected(value: Any) -> None:
+    with pytest.raises(ValueError):
+        effective_run_limits(
+            owner({"voice": {"tool_timeout_seconds": value}}), "default"
+        )
+
+
+def test_channel_cannot_remove_or_widen_base_tool_deadline() -> None:
+    action = owner({"voice": {"tool_timeout_seconds": 2.0}})
+    action.tool_timeout_seconds = 1.0
+    with pytest.raises(ValueError):
+        effective_tool_timeout(action, "default")
 
 
 @pytest.mark.parametrize(

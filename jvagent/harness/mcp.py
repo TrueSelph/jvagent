@@ -22,6 +22,7 @@ class ReviewedMCPToolset(WrapperToolset[Any]):
     allowed_names: frozenset[str] = frozenset()
     access_check: Callable[[str], Awaitable[bool]] | None = None
     skill_check: Callable[[Any, str], bool] | None = None
+    tool_timeout_seconds: float | None = None
 
     def for_skill(
         self,

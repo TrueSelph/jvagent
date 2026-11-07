@@ -112,6 +112,7 @@ async def test_native_receipt_precedes_delivery(
             "Do not suggest uploads in a disabled format."
         )
         assert kwargs["model_settings"] == {"temperature": 0.0, "max_tokens": 8192}
+        assert kwargs["tool_timeout_seconds"] == (0.5 if profile else None)
         assert kwargs["max_run_cost_usd"] == ("0.75" if profile else "2")
         assert kwargs["tools"][0].binds_visitor is True
         assert original_tool.binds_visitor is None
@@ -263,6 +264,7 @@ async def test_native_receipt_precedes_delivery(
                     "max_requests": 1,
                     "timeout_seconds": 3,
                     "max_run_cost_usd": "0.75",
+                    "tool_timeout_seconds": 0.5,
                 }
             }
             if profile
@@ -494,6 +496,11 @@ async def test_unqualified_predecessor_is_visibly_blocked_without_a_model_call(
         max_conversation_cost_usd="20",
         context_max_tokens=32000,
         context_keep_tokens=16000,
+        max_requests=2,
+        max_tool_calls=40,
+        max_tokens=2000,
+        max_output_tokens=None,
+        timeout_seconds=10,
     )
     visitor = SimpleNamespace(
         interaction=interaction,

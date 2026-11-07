@@ -46,6 +46,7 @@ def build_native_agent(
     allow_mutations: bool = True,
     plan_store: Any = None,
     script_sandbox: Any = None,
+    tool_timeout_seconds: float | None = None,
 ) -> Any:
     """Compose official Skills and native tools without a custom execution loop.
 
@@ -66,10 +67,21 @@ def build_native_agent(
     )
     from jvagent.harness.native_model import qualified_model
     from jvagent.harness.skill_assets import project_skill, projected_workspace
+    from jvagent.tooling.tool import validate_tool_timeout
 
     if not isinstance(allow_mutations, bool):
         raise ValueError("Mutation admission must be a boolean")
     settings = validate_model_settings(model_settings)
+    tool_timeout = validate_tool_timeout(tool_timeout_seconds)
+    if tool_timeout is not None:
+        for toolset in toolsets:
+            bound = validate_tool_timeout(
+                getattr(toolset, "tool_timeout_seconds", None)
+            )
+            if bound is None or bound > tool_timeout:
+                raise ValueError(
+                    "Native toolsets require a qualified SDK deadline adapter"
+                )
 
     if spend_observer is not None and spend_store is None:
         raise ValueError("A spend observer requires native spend tracking")
@@ -114,6 +126,10 @@ def build_native_agent(
         from jvagent.tooling.tool import validate_tool_timeout
 
         timeout = validate_tool_timeout(original.timeout_seconds)
+        if tool_timeout is not None:
+            timeout = (
+                min(timeout, tool_timeout) if timeout is not None else tool_timeout
+            )
 
         async def invoke(ctx: RunContext[Any], /, **arguments: Any) -> str:
             if isinstance(original, NativeMutationTool) and not allow_mutations:
@@ -302,6 +318,18 @@ def build_native_agent(
             selected = prepare_skill_tools(
                 selected, mutation_tools, catalog.tool_owners, ctx.active_capability_ids
             )
+            if tool_timeout is not None:
+                selected = [
+                    replace(
+                        tool,
+                        timeout=(
+                            min(tool.timeout, tool_timeout)
+                            if tool.timeout is not None
+                            else tool_timeout
+                        ),
+                    )
+                    for tool in selected
+                ]
             for index, tool in enumerate(selected):
                 if tool.name in script_names:
                     schema = deepcopy(tool.parameters_json_schema)
@@ -437,7 +465,10 @@ def build_native_agent(
                     for toolset in selected_toolsets
                     for name in toolset.allowed_names
                 )
-                .union({"load_capability"}),
+                .union({"load_capability"})
+                .union({"read_plan"} if plan_store is not None else set())
+                .union({"delegate_task"} if delegates else set()),
+                pre_intent_mutations=frozenset(mutation_tools),
             )
         )
     if spend_store is not None:
@@ -600,6 +631,7 @@ def build_native_agent(
                 context_max_tokens=context_max_tokens,
                 context_keep_tokens=context_keep_tokens,
                 model_settings=settings,
+                tool_timeout_seconds=tool_timeout,
             )
             child.name = entry.name
             children.append(

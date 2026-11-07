@@ -70,7 +70,6 @@ _RETIRE = {
 _EMPTY = {
     "skill_only_tools": list,
     "with_event": bool,
-    "tool_call_timeout": float,
 }
 
 
@@ -238,6 +237,7 @@ _KNOWN = (
     | set(_EMPTY)
     | {
         "channel_overrides",
+        "tool_call_timeout",
         "skills",
         "skills_source",
         "max_statement_length",
@@ -587,6 +587,29 @@ def plan_harness_migration(
     except (ValueError, TypeError, ImportError):
         blockers.append(
             "Model settings or limits require valid finite native values and the native SDK extra"
+        )
+    if "tool_call_timeout" in context:
+        from jvagent.tooling.tool import validate_tool_timeout
+
+        value = context["tool_call_timeout"]
+        try:
+            if type(value) in (int, float) and value == 0:
+                report.setdefault("retired_settings", {})[
+                    "tool_call_timeout"
+                ] = "Retired disabled legacy tool timer; Action-owned SDK deadlines remain independent"
+                report["mappings"]["tool_call_timeout"] = "retired inactive control"
+            else:
+                deadline = validate_tool_timeout(value)
+                if deadline is None:
+                    raise ValueError
+                target["tool_timeout_seconds"] = deadline
+                report["mappings"]["tool_call_timeout"] = "tool_timeout_seconds"
+        except ValueError:
+            blockers.append(
+                "tool_call_timeout requires a finite nonnegative numeric declaration"
+            )
+        report["required_review"].append(
+            "Tool deadlines use public SDK function-body and MCP RPC clocks; capability loading and connection setup retain SDK run/initialization bounds, not the legacy wrapper clock"
         )
     from jvagent.cli.harness_migration_channels import migrate_channel_overrides
 

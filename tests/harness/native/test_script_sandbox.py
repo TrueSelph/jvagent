@@ -23,6 +23,83 @@ from jvagent.memory.interaction import Interaction
 IMAGE = "python@sha256:" + "0" * 64
 
 
+@pytest.mark.asyncio
+async def test_sdk_tool_deadline_after_script_write_requires_reconciliation() -> None:
+    from pydantic import TypeAdapter
+    from pydantic_ai.workspaces import WorkspaceRef
+
+    from jvagent.harness.mutation_tools import MutationOutcomeUnknown
+
+    image = os.environ.get("JVAGENT_TEST_SCRIPT_IMAGE")
+    if not image:
+        pytest.skip("set JVAGENT_TEST_SCRIPT_IMAGE to a reviewed local image digest")
+    profile, conversation = await bound_profile(image)
+    interaction = await Interaction.create(
+        user_id="caller",
+        session_id=conversation.session_id,
+        conversation_id=conversation.id,
+        utterance="one script write",
+    )
+    store = InteractionStepStore(interaction)
+    calls = 0
+
+    def respond(messages: Any, info: Any) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        assert (
+            next(t for t in info.function_tools if t.name == SCRIPT_TOOL).timeout == 4.0
+        )
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    SCRIPT_TOOL,
+                    {"command": "printf 'ACCEPTED\\n' >> deadline-proof.txt; sleep 10"},
+                    tool_call_id="script-write",
+                )
+            ]
+        )
+
+    async def allow(name: str) -> bool:
+        return True
+
+    agent = build_native_agent(
+        FunctionModel(respond),
+        skill_directory=Path("jvagent/skills/triage").resolve(),
+        tools=[],
+        available_actions=["CodeExecutionAction"],
+        access_check=allow,
+        instructions="One write only.",
+        script_sandbox=profile,
+        step_store=store,
+        tool_timeout_seconds=4.0,
+    )
+    try:
+        with pytest.raises(MutationOutcomeUnknown):
+            await agent.run(
+                "write",
+                run_id="script-deadline",
+                conversation_id=conversation.session_id,
+            )
+        assert calls == 1
+        assert (profile._files.root / "deadline-proof.txt").read_text() == "ACCEPTED\n"
+        effect = await store.get_tool_effect(
+            run_id="script-deadline", tool_call_id="script-write"
+        )
+        assert (
+            effect.effect_summary == "jv:mutation:script:v1"
+            and effect.status == "started"
+        )
+    finally:
+        refs = {
+            TypeAdapter(WorkspaceRef).validate_python(message["workspace_ref"])
+            for snapshot in interaction.native_steps.get("snapshots", [])
+            for message in snapshot.get("messages", [])
+            if message.get("workspace_ref")
+        }
+        for ref in refs:
+            await DockerSandbox().destroy(ref)
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean_test_file_roots(monkeypatch: Any) -> Any:
     """Remove only roots successfully created by this test's helper."""
