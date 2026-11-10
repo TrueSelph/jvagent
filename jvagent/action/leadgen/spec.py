@@ -34,10 +34,11 @@ _FIELD_KEYS = frozenset(
         "merge",
         "phone_locale",
         "relevant_when",
+        "capture_only",
     }
 )
-_GAP_FILL_KEYS = frozenset({"batch", "priority"})
-_RELEVANT_WHEN_KEYS = frozenset({"any_present"})
+_GAP_FILL_KEYS = frozenset({"batch"})
+_RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined"})
 _SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 
@@ -53,17 +54,18 @@ class FieldDef:
     decline_value: Optional[str] = None
     merge: bool = False
     phone_locale: str = ""
-    # When set, an empty field only appears in open_fields if at least one of
-    # ``any_present`` is already filled. Absent = always eligible when empty.
+    # Captured only when volunteered; never asked, never offered in the pool.
+    capture_only: bool = False
+    # Eligibility gate the catalogue carries for the model to honour: the field
+    # is askable only once at least one ``any_present`` key is filled, and never
+    # while a ``not_declined`` key holds its own ``decline_value``. Absent =
+    # always eligible.
     relevant_when: Optional[Dict[str, List[str]]] = None
 
 
 @dataclass
 class GapFillDef:
     batch: bool = True
-    # Soft preference order for the model (gap_fill_priority in tool results).
-    # Not a forced next-field pointer — the LLM chooses from open_fields.
-    priority: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -118,6 +120,12 @@ class LeadGenSpec:
 
 
 def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
+    """The catalogue the model reads: every declared field, declaration order.
+
+    Filled fields stay in the list so the model can correct or refresh a value;
+    ``relevant_when`` travels with the entry and is honoured by the SOP, not
+    filtered here.
+    """
     out: List[Dict[str, Any]] = []
     for f in spec.fields:
         entry: Dict[str, Any] = {
@@ -127,6 +135,8 @@ def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
         }
         if f.decline_value is not None:
             entry["decline_value"] = f.decline_value
+        if f.capture_only:
+            entry["capture_only"] = True
         if f.relevant_when:
             entry["relevant_when"] = dict(f.relevant_when)
         out.append(entry)
@@ -140,9 +150,15 @@ def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, List[str
         raise ValueError(f"{path} must be a mapping")
     reject_unknown_keys(data, _RELEVANT_WHEN_KEYS, path=path)
     any_present = [str(x) for x in (data.get("any_present") or []) if x]
-    if not any_present:
+    not_declined = [str(x) for x in (data.get("not_declined") or []) if x]
+    if not any_present and not not_declined:
         return None
-    return {"any_present": any_present}
+    gate: Dict[str, List[str]] = {}
+    if any_present:
+        gate["any_present"] = any_present
+    if not_declined:
+        gate["not_declined"] = not_declined
+    return gate
 
 
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
@@ -160,6 +176,7 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         decline_value=data.get("decline_value"),
         merge=bool(data.get("merge", False)),
         phone_locale=str(data.get("phone_locale", "") or ""),
+        capture_only=bool(data.get("capture_only", False)),
         relevant_when=_parse_relevant_when(
             data.get("relevant_when"), path=f"{path}.relevant_when"
         ),
@@ -172,10 +189,7 @@ def _parse_gap_fill(data: Any) -> GapFillDef:
     if not isinstance(data, dict):
         raise ValueError("gap_fill must be a mapping")
     reject_unknown_keys(data, _GAP_FILL_KEYS, path="gap_fill")
-    return GapFillDef(
-        batch=bool(data.get("batch", True)),
-        priority=[str(x) for x in (data.get("priority") or []) if x],
-    )
+    return GapFillDef(batch=bool(data.get("batch", True)))
 
 
 def _parse_sync(data: Any) -> SyncDef:

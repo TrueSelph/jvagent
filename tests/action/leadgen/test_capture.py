@@ -14,7 +14,7 @@ from jvagent.action.leadgen.engine import (
     merge_spec_with_action_defaults,
 )
 from jvagent.action.leadgen.leadgen_action import LeadGenAction
-from jvagent.action.leadgen.spec import FieldDef, GapFillDef, LeadGenSpec, SyncDef
+from jvagent.action.leadgen.spec import FieldDef, LeadGenSpec, SyncDef
 
 
 @pytest.fixture
@@ -161,7 +161,6 @@ async def test_capture_result_includes_merged_fields():
             ),
             FieldDef(key="interested_products", required=False),
         ],
-        gap_fill=GapFillDef(priority=["name", "email", "phone", "organization"]),
         sync=SyncDef(mode="manual"),
     )
     action._registry._specs[spec.name] = spec
@@ -219,7 +218,22 @@ async def test_capture_result_includes_merged_fields():
     assert "next_ask" not in second
     assert "next_optional" not in second
     assert "next_project_optional" not in second
-    assert isinstance(second["open_fields"], list)
+    assert "must_ask" not in second
+    assert "open_fields" not in second
+    assert second["next_required"] is None
+    assert second["optional_fields"] == []
+    assert "no optional field is open" in second["directive"]
+    assert "gap_fill_priority" not in second
+    # The catalogue keeps filled fields, in declaration order, so the model can
+    # correct a stored value without a second list.
+    assert [e["key"] for e in second["field_reference"]] == [
+        "name",
+        "email",
+        "phone",
+        "organization",
+        "interested_products",
+    ]
+    assert second["field_reference"][0]["required"] is True
     assert second["fields"]["interested_products"] == products
     assert second["fields"]["name"] == "Tharick Jairam"
     assert second["fields"]["email"] == "tharick@example.com"
@@ -242,7 +256,6 @@ async def test_deduplicated_capture_still_returns_the_record():
             FieldDef(key="name", required=True, validator="person_name"),
             FieldDef(key="interested_products", required=False),
         ],
-        gap_fill=GapFillDef(priority=["name"]),
         sync=SyncDef(mode="manual"),
     )
     action._registry._specs[spec.name] = spec
@@ -286,4 +299,8 @@ async def test_deduplicated_capture_still_returns_the_record():
     assert repeated["fields"]["interested_products"] == "mesh"
     assert repeated["missing_fields"] == []
     assert "next_ask" not in repeated
-    assert "open_fields" in repeated
+    assert "must_ask" not in repeated
+    assert "open_fields" not in repeated
+    assert repeated["next_required"] is None
+    assert repeated["optional_fields"] == []
+    assert "gap_fill_priority" not in repeated

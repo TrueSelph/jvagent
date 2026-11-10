@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from jvspatial import create_task, is_serverless_mode
 from jvspatial.api import endpoint
 from jvspatial.api.endpoints.response import ResponseField, success_response
@@ -13,6 +14,7 @@ from jvspatial.exceptions import (
 from jvspatial.exceptions import ValidationError as SpatialValidationError
 from pydantic import Field
 
+from jvagent.action.google.google_action import GoogleAuthRequiredError
 from jvagent.action.pageindex.endpoints import _resolve_docling_ocr_for_ingest
 from jvagent.action.utils.endpoint_helpers import require_typed_action
 from jvagent.core.agent import Agent
@@ -726,6 +728,23 @@ async def pageindex_google_drive_sync_action_interact(
             "response": "Ingestion started in background",
             "result": {},
         }
+    except GoogleAuthRequiredError as e:
+        logger.warning(
+            "Google Drive authorization required for PageIndex sync (agent %s): %s",
+            agent_id,
+            e,
+        )
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error_code": "google_auth_required",
+                "message": str(e),
+                "service": e.service,
+                "reason": e.reason,
+                "missing_scopes": e.missing_scopes,
+                "auth_url": e.auth_url,
+            },
+        )
     except (ResourceNotFoundError, HTTPException):
         raise
     except DatabaseError as e:

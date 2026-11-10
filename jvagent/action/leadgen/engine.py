@@ -13,7 +13,7 @@ from . import sync as sync_mod
 from .hooks import HookExecutionContext, call_hook
 from .spec import LeadGenSpec, fields_reference
 from .store import LeadRecord
-from .validators import run_validator
+from .validators import locale_validator, run_validator
 
 if TYPE_CHECKING:
     from .leadgen_action import LeadGenAction
@@ -68,6 +68,7 @@ def merge_spec_with_action_defaults(
                     validator=str(cfg.get("validator", "") or ""),
                     decline_value=cfg.get("decline_value"),
                     merge=bool(cfg.get("merge", False)),
+                    capture_only=bool(cfg.get("capture_only", False)),
                 )
             )
 
@@ -98,11 +99,9 @@ def canonicalize_fields(raw: Dict[str, Any], spec: LeadGenSpec) -> Dict[str, Any
             out[key] = value
             continue
         clean = key.strip().lower().replace(" ", "_").replace("-", "_")
-        canonical = alias_map.get(clean, key if key in known else clean)
-        if canonical in known or canonical == key:
+        canonical = alias_map.get(clean, key)
+        if canonical in known:
             out[canonical] = value
-        else:
-            out[key] = value
     return out
 
 
@@ -118,20 +117,28 @@ async def validate_fields(
             continue
         fdef = spec.get_field(key)
         if fdef is None:
-            validated[key] = value
             continue
         str_val = str(value).strip() if value is not None else ""
         if not str_val:
             if fdef.decline_value is not None:
                 validated[key] = fdef.decline_value
             continue
+        if str_val.strip().lower() == "decline_value":
+            if fdef.decline_value is not None:
+                validated[key] = str(fdef.decline_value)
+            else:
+                errors[key] = "this field has no decline value; provide a value"
+            continue
+        if _is_decline_value(fdef, str_val):
+            validated[key] = str(fdef.decline_value)
+            continue
         if fdef.decline_value is not None and str_val == str(fdef.decline_value):
             validated[key] = str_val
             continue
-        validator_name = fdef.validator
-        if fdef.key == "phone" and fdef.phone_locale == "GY":
-            validator_name = "phone_gy"
-        elif fdef.key == "phone" and not validator_name:
+        validator_name = locale_validator(fdef.phone_locale) or fdef.validator
+        if fdef.phone_locale and not validator_name:
+            validator_name = "phone_e164"
+        if fdef.key == "phone" and not validator_name:
             validator_name = "phone_e164"
         if validator_name:
             normalized, err = run_validator(
@@ -144,72 +151,6 @@ async def validate_fields(
         else:
             validated[key] = str_val
     return validated, errors
-
-
-def _field_filled(fields: Dict[str, Any], key: str) -> bool:
-    val = fields.get(key)
-    if val is None:
-        return False
-    return bool(str(val).strip())
-
-
-def _relevant_when_met(fields: Dict[str, Any], fdef: Any) -> bool:
-    """True when the field has no gate, or any listed key is already filled."""
-    gate = getattr(fdef, "relevant_when", None) or None
-    if not gate:
-        return True
-    any_present = gate.get("any_present") or []
-    if not any_present:
-        return True
-    return any(_field_filled(fields, k) for k in any_present)
-
-
-def open_fields(
-    record_fields: Dict[str, Any], spec: LeadGenSpec
-) -> List[Dict[str, Any]]:
-    """Empty declared fields that pass ``relevant_when`` (required + optional)."""
-    out: List[Dict[str, Any]] = []
-    for fdef in spec.fields:
-        if _field_filled(record_fields, fdef.key):
-            continue
-        if not _relevant_when_met(record_fields, fdef):
-            continue
-        entry: Dict[str, Any] = {
-            "key": fdef.key,
-            "guidance": fdef.guidance,
-            "required": fdef.required,
-        }
-        if fdef.relevant_when:
-            entry["relevant_when"] = dict(fdef.relevant_when)
-        out.append(entry)
-    return out
-
-
-def optional_fields(
-    record_fields: Dict[str, Any], spec: LeadGenSpec
-) -> List[Dict[str, Any]]:
-    """Empty optional fields that pass ``relevant_when``.
-
-    This is the LLM's optional-question pool: it chooses one only when the
-    field's guidance and the conversation make it relevant now.
-    """
-    out: List[Dict[str, Any]] = []
-    for fdef in spec.fields:
-        if fdef.required:
-            continue
-        if _field_filled(record_fields, fdef.key):
-            continue
-        if not _relevant_when_met(record_fields, fdef):
-            continue
-        entry: Dict[str, Any] = {
-            "key": fdef.key,
-            "guidance": fdef.guidance,
-            "required": False,
-        }
-        if fdef.relevant_when:
-            entry["relevant_when"] = dict(fdef.relevant_when)
-        out.append(entry)
-    return out
 
 
 def apply_merge_fields(
@@ -287,24 +228,266 @@ async def maybe_auto_sync(
     return {"status": status, "results": results}
 
 
-def capture_state(record: Any, spec: LeadGenSpec) -> Dict[str, Any]:
+def _field_filled(fields: Dict[str, Any], key: str) -> bool:
+    val = fields.get(key)
+    if val is None:
+        return False
+    return bool(str(val).strip())
+
+
+def _declined_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> set:
+    """Keys whose stored value equals their own ``decline_value``."""
+    out: set = set()
+    for fdef in spec.fields:
+        if fdef.decline_value is None:
+            continue
+        val = fields.get(fdef.key)
+        if val is None:
+            continue
+        if str(val).strip().lower() == str(fdef.decline_value).strip().lower():
+            out.add(fdef.key)
+    return out
+
+
+def _relevant_when_met(
+    fields: Dict[str, Any], fdef: Any, declined: Optional[set] = None
+) -> bool:
+    """True when the field has no gate, or its gate is satisfied.
+
+    ``any_present`` needs one listed key filled. ``not_declined`` needs every
+    listed key filled and none of them holding its own ``decline_value``.
+    """
+    gate = getattr(fdef, "relevant_when", None) or None
+    if not gate:
+        return True
+    any_present = gate.get("any_present") or []
+    if any_present and not any(
+        _field_filled(fields, k) and (declined is None or k not in declined)
+        for k in any_present
+    ):
+        return False
+    for key in gate.get("not_declined") or []:
+        if not _field_filled(fields, key):
+            return False
+        if declined is not None and key in declined:
+            return False
+    return True
+
+
+MAX_OPTIONAL_FIELDS = 5
+
+#: Short refusals the model may pass instead of the field's decline text. The
+#: action normalises them so gating and the directive see a real decline; a
+#: field without a decline_value keeps the visitor's words and never guesses.
+DECLINE_PHRASES = frozenset(
+    {
+        "no",
+        "none",
+        "n/a",
+        "na",
+        "not provided",
+        "prefer not to say",
+        "prefer not",
+        "i don't want to say",
+        "i dont want to say",
+        "dont want to say",
+        "don't want to say",
+        "no thanks",
+        "skip",
+        "no organization",
+        "no organisation",
+        "no company",
+        "personal use",
+    }
+)
+
+
+def _is_decline_value(fdef: Any, value: Any) -> bool:
+    """True when the supplied value means a refusal for this field."""
+    if fdef is None or getattr(fdef, "decline_value", None) is None:
+        return False
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return text == "decline_value" or text in DECLINE_PHRASES
+
+
+def optional_field_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> List[str]:
+    """Open optional keys that pass their ``relevant_when`` gate.
+
+    Keys only: each key's guidance stays in ``field_reference``, so the payload
+    never repeats the same text twice. The list is capped at
+    ``MAX_OPTIONAL_FIELDS`` so the directive stays a bounded menu.
+    """
+    declined = _declined_keys(fields, spec)
+    out: List[str] = []
+    for fdef in spec.fields:
+        if fdef.required:
+            continue
+        if getattr(fdef, "capture_only", False):
+            continue
+        if _field_filled(fields, fdef.key):
+            continue
+        if not _relevant_when_met(fields, fdef, declined):
+            continue
+        out.append(fdef.key)
+    return out[:MAX_OPTIONAL_FIELDS]
+
+
+SYNC_COMPLETE_DIRECTIVE = (
+    "The request is with the sales team. Acknowledge the captured value "
+    "naturally — name it only when it adds clarity; do not thank the visitor "
+    "every turn. Reply with the hand-off sentence and ask no further field "
+    "this turn."
+)
+
+#: Required fields are complete but the hand-off did not run (no destination, a
+#: destination error, or a denied call). The reply must say so and must never
+#: claim the request was sent.
+SYNC_FAILED_DIRECTIVE = (
+    "The request is saved but not yet sent to the sales team. In one sentence say "
+    "that, name anything still needed in the visitor's own words, and offer the "
+    "sales contact +592-628-4077. Never say sent, received, forwarded, or passed "
+    "on. Ask no further field."
+)
+
+# Internal, underscore-prefixed so it is excluded from the sync digest and from
+# every destination template (see ``sync.compute_digest``).
+HANDOFF_STATED_KEY = "_leadgen_handoff_stated"
+
+
+def handoff_directive(
+    optional_keys: List[str],
+    *,
+    already_stated: bool = False,
+    just_declined: bool = False,
+) -> str:
+    """The hand-off reply, plus one optional when the pool is still open.
+
+    ``already_stated`` suppresses the hand-off sentence on later captures; the
+    optional ask keeps the same need criterion.
+    """
+    if just_declined:
+        if already_stated:
+            return (
+                "The request is already with the sales team; do not repeat the "
+                "hand-off sentence. Reply with this exact sentence — “Noted — the "
+                "request stays with the sales team as it is, and anything you add "
+                "later will update it.” — then ask no field; the visitor declined "
+                "or signalled they do not want more questions."
+            )
+        return (
+            "The request is with the sales team. Reply with the hand-off sentence, "
+            "acknowledge naturally, and ask no field — the visitor declined or "
+            "signalled they do not want more questions. When the visitor supplied "
+            "an optional value this turn, say it is being added to the same "
+            "request."
+        )
+    if not optional_keys:
+        if already_stated:
+            return (
+                "The request is already with the sales team; do not repeat the "
+                "hand-off sentence. Acknowledge in one sentence that the same "
+                "request is up to date with the sales team; never reply with a "
+                "bare acknowledgement; ask no field."
+            )
+        return SYNC_COMPLETE_DIRECTIVE
+    listed = ", ".join(f"`{k}`" for k in optional_keys)
+    if already_stated:
+        return (
+            "The request is already with the sales team; do not repeat the "
+            "hand-off sentence, but do say in one sentence that this detail is "
+            "added to the same request — never reply with a bare acknowledgement. "
+            "Acknowledge in one sentence that this detail updates the same request. "
+            f"Then ask at most one optional field from {listed} only when the "
+            "visitor engaged with a value and has not refused or signalled they "
+            "are done; otherwise ask no field and close. Never rotate to another "
+            "optional after a refusal."
+        )
+    return (
+        "The request is with the sales team. Acknowledge the captured value "
+        "naturally; do not thank every turn. Reply with the hand-off sentence, "
+        f"then ask at most one optional field from {listed} only when the visitor "
+        "engaged with a value and has not refused or signalled they are done; "
+        "otherwise ask no field and close. A refusal or ignore moves on; the "
+        "request is already filed."
+    )
+
+
+def next_ask_directive(
+    next_required: Optional[str],
+    optional_keys: List[str],
+    *,
+    just_declined: bool = False,
+) -> str:
+    """The ask for this reply, derived from the record (not chosen by the model)."""
+    if next_required:
+        return (
+            "Acknowledge the captured value naturally — name it only when it adds "
+            "clarity; do not thank the visitor every turn and do not open every "
+            "reply the same way. Then ask only for "
+            f"`{next_required}` in this reply; do not ask any other field. If the "
+            "visitor refuses it, or answers something else and keeps avoiding it, "
+            "do not ask for it again in that turn: reply with this exact sentence "
+            f"— “{next_required.replace('_', ' ')} is needed to file this request "
+            "— would you like to continue or cancel?” If they continue, ask for it "
+            "once more in fresh words; if they cancel, use the cancel tool. Never "
+            "store a refusal as the value."
+        )
+    if optional_keys:
+        listed = ", ".join(f"`{k}`" for k in optional_keys)
+        if just_declined:
+            return (
+                "Acknowledge naturally in one short sentence and ask no further "
+                "field. The visitor declined or signalled they do not want more "
+                "questions, so do not rotate to another optional. The request is "
+                "saved, and any further details they give update the same "
+                "request. Do not say it was sent unless the hand-off has "
+                "completed."
+            )
+        return (
+            "Acknowledge the captured value naturally — name it only when it adds "
+            "clarity; do not thank the visitor every turn. Required fields are "
+            f"complete. Ask at most one optional field from {listed}, and only "
+            "when the visitor answered with a value and has not refused, skipped, "
+            "or signalled they are done. If the message refuses, skips, says "
+            "'I don't want to say' or 'no more questions', or otherwise shows the "
+            "visitor does not want more questions, acknowledge in one sentence and "
+            "ask no further field. Never rotate to another optional after a "
+            "refusal; optional fields never block the request."
+        )
+    return (
+        "Acknowledge the captured value naturally only if it adds clarity; do not "
+        "thank the visitor every turn. Required fields are complete and no "
+        "optional field is open. Do not ask another field: answer, confirm, or "
+        "close."
+    )
+
+
+def capture_state(
+    record: Any, spec: LeadGenSpec, *, just_declined: bool = False
+) -> Dict[str, Any]:
     """The record snapshot every capture/retrieve result carries.
 
-    Same keys and the same ``_`` filter as :func:`handle_retrieve`, so a caller
-    reads one set no matter which tool produced the payload. There is no
-    server-picked next-field pointer: the model chooses from
-    ``missing_fields`` (required) or ``optional_fields`` (optional).
+    ``next_required`` names the single required field to ask now, and
+    ``directive`` states the ask for this reply; ``optional_fields`` lists the
+    open optional keys once required is complete. The model reads guidance from
+    ``field_reference`` and keeps only the timing and value judgement.
     """
     profile_data = record.get_yaml() or {}
     missing = record.get_missing_fields()
     fields = {k: v for k, v in profile_data.items() if not str(k).startswith("_")}
+    next_required = missing[0] if missing else None
+    optional_keys = optional_field_keys(fields, spec)
     return {
         "fields": fields,
         "missing_fields": missing,
-        "optional_fields": optional_fields(fields, spec),
+        "next_required": next_required,
+        "optional_fields": optional_keys,
         "field_reference": fields_reference(spec),
-        "gap_fill_priority": spec.gap_fill.priority,
-        "open_fields": open_fields(fields, spec),
+        "directive": next_ask_directive(
+            next_required, optional_keys, just_declined=just_declined
+        ),
     }
 
 
@@ -341,7 +524,7 @@ async def handle_capture(
         # {"status": "deduplicated"} tells a post-capture gate nothing at all —
         # the same blindness the merged snapshot exists to fix, one exit over.
         record = await LeadRecord.get_or_create_for_user(
-            user, required_fields=spec.get_required_fields() or None
+            user, required_fields=spec.get_required_fields()
         )
         state = capture_state(record, spec)
         return json.dumps(
@@ -361,9 +544,10 @@ async def handle_capture(
             raw_fields.setdefault("full_name", user.name)
 
     validated, validation_errors = await validate_fields(raw_fields, spec)
+    just_declined = bool(_declined_keys(validated, spec))
 
     record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
+        user, required_fields=spec.get_required_fields()
     )
     profile_data = record.get_yaml() or {}
     changed = False
@@ -393,7 +577,7 @@ async def handle_capture(
         validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
         changed = await record.update_yaml(validated)
 
-    state = capture_state(record, spec)
+    state = capture_state(record, spec, just_declined=just_declined)
     result: Dict[str, Any] = {
         "status": (
             "updated"
@@ -424,6 +608,24 @@ async def handle_capture(
         )
         result["sync_result"] = sync_result
 
+        if sync_result.get("status") == "sync-complete":
+            # The hand-off owns this reply; one optional may ride along when
+            # the pool is still open, and the pool resumes on the next capture.
+            # After the first hand-off the sentence is not repeated.
+            already_stated = bool(profile_data.get(HANDOFF_STATED_KEY))
+            result["directive"] = handoff_directive(
+                result.get("optional_fields") or [],
+                already_stated=already_stated,
+                just_declined=just_declined,
+            )
+            if not already_stated:
+                profile_data[HANDOFF_STATED_KEY] = True
+                await record.update_yaml({HANDOFF_STATED_KEY: True})
+        elif not result.get("missing_fields"):
+            # Required fields are complete but the hand-off did not run. Say it
+            # is saved and not sent; never let the reply claim otherwise.
+            result["directive"] = SYNC_FAILED_DIRECTIVE
+
         if spec.handlers.on_sync:
             ctx = HookExecutionContext(
                 spec=spec,
@@ -451,7 +653,7 @@ async def handle_retrieve(
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
     record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
+        user, required_fields=spec.get_required_fields()
     )
     profile_data = record.get_yaml() or {}
     clean = {k: v for k, v in profile_data.items() if not k.startswith("_")}
@@ -479,7 +681,7 @@ async def handle_status(
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
     record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
+        user, required_fields=spec.get_required_fields()
     )
     profile_data = record.get_yaml() or {}
     digest = sync_mod.get_stored_digest(profile_data)
@@ -509,7 +711,7 @@ async def handle_sync(
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
     record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
+        user, required_fields=spec.get_required_fields()
     )
     profile_data = record.get_yaml() or {}
     if not profile_data:

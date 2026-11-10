@@ -79,6 +79,20 @@ _BUILTIN: Dict[str, ValidatorFn] = {
 }
 
 
+def locale_validator(locale: str) -> str:
+    """Resolve a ``phone_locale`` to a registered ``phone_<locale>`` validator.
+
+    Data-driven: any built-in named ``phone_<locale>`` works, so a deployment can
+    add a locale validator without touching the engine. Unknown or empty locale
+    returns ``""``; the caller falls back to E164.
+    """
+    key = str(locale or "").strip().lower()
+    if not key:
+        return ""
+    name = f"phone_{key}"
+    return name if name in _BUILTIN else ""
+
+
 def get_validator(name: str) -> Optional[ValidatorFn]:
     if not name:
         return None

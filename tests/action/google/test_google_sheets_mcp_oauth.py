@@ -87,6 +87,9 @@ def _ensure_google_stubs() -> None:
 
 _ensure_google_stubs()
 
+from jvagent.action.google.google_action import (  # noqa: E402
+    GoogleAuthRequiredError,
+)
 from jvagent.action.google.google_calendar_action.google_calendar_action import (  # noqa: E402
     GoogleCalendarAction,
 )
@@ -110,6 +113,13 @@ _ACTIONS = (
     GoogleDriveAction,
     GoogleCalendarAction,
 )
+
+
+def _stub_auth_url(cls):
+    return (
+        "https://x/api/mcp/google_workspace/auth"
+        f"?account=integral&service={cls._MCP_SERVICE}"
+    )
 
 
 @pytest.mark.parametrize("cls", _ACTIONS)
@@ -472,3 +482,125 @@ def test_credentials_from_payload_without_expiry_is_expired(cls):
     }
     creds = action._credentials_from_mcp_payload(token_data)
     assert creds.expired is True
+
+
+# ── typed auth failures (one error shape for all Google actions) ──
+
+
+def _expired_mock_creds(refresh_token: str = "rtok") -> MagicMock:
+    creds = MagicMock()
+    creds.valid = False
+    creds.expired = True
+    creds.refresh_token = refresh_token
+    return creds
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+@pytest.mark.asyncio
+async def test_missing_scope_raises_typed_error(cls):
+    """A token bound to this service but without its scope is `missing_scope`."""
+    action = cls()
+    token = {
+        "refresh_token": "rtok",
+        "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email"],
+    }
+    with (
+        patch.object(
+            action,
+            "_load_mcp_token",
+            new=AsyncMock(return_value=("ops@example.com", token, None)),
+        ),
+        patch.object(
+            action,
+            "_credentials_from_mcp_payload",
+            return_value=_expired_mock_creds(),
+        ),
+        patch(
+            "jvagent.action.mcp_oauth.hydrate.mcp_google_workspace_auth_url",
+            return_value=_stub_auth_url(cls),
+        ),
+    ):
+        with pytest.raises(GoogleAuthRequiredError) as exc:
+            await action._get_credentials()
+
+    err = exc.value
+    assert err.reason == "missing_scope"
+    assert err.service == cls._MCP_SERVICE
+    assert err.missing_scopes == list(cls.SCOPES)
+    assert cls.SCOPES[0] in str(err)
+    assert cls._MCP_SERVICE in err.auth_url
+    assert isinstance(err, ValueError)
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+@pytest.mark.asyncio
+async def test_no_token_raises_not_connected(cls):
+    action = cls()
+    with (
+        patch.object(
+            action, "_load_mcp_token", new=AsyncMock(return_value=(None, None, None))
+        ),
+        patch(
+            "jvagent.action.mcp_oauth.hydrate.mcp_google_workspace_auth_url",
+            return_value=_stub_auth_url(cls),
+        ),
+    ):
+        with pytest.raises(GoogleAuthRequiredError) as exc:
+            await action._get_credentials()
+
+    err = exc.value
+    assert err.reason == "not_connected"
+    assert err.service == cls._MCP_SERVICE
+    assert err.auth_url == _stub_auth_url(cls)
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+@pytest.mark.asyncio
+async def test_refresh_failure_raises_typed_error(cls):
+    action = cls()
+    token = {"refresh_token": "rtok", "scopes": list(cls.SCOPES)}
+    creds = _expired_mock_creds()
+    creds.refresh.side_effect = RuntimeError("invalid_grant")
+    with (
+        patch.object(
+            action,
+            "_load_mcp_token",
+            new=AsyncMock(return_value=("ops@example.com", token, None)),
+        ),
+        patch.object(action, "_credentials_from_mcp_payload", return_value=creds),
+        patch(
+            "jvagent.action.mcp_oauth.hydrate.mcp_google_workspace_auth_url",
+            return_value=_stub_auth_url(cls),
+        ),
+        patch("jvagent.action.oauth.audit._audit_log_oauth_event", return_value=None),
+    ):
+        with pytest.raises(GoogleAuthRequiredError) as exc:
+            await action._get_credentials()
+
+    err = exc.value
+    assert err.reason == "refresh_failed"
+    assert err.service == cls._MCP_SERVICE
+    assert err.missing_scopes == []
+    assert isinstance(err.__cause__, RuntimeError)
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+@pytest.mark.asyncio
+async def test_assert_authorized_returns_credentials(cls):
+    action = cls()
+    sentinel = MagicMock()
+    with patch.object(action, "_get_credentials", new=AsyncMock(return_value=sentinel)):
+        assert await action.assert_authorized() is sentinel
+
+
+@pytest.mark.parametrize("cls", _ACTIONS)
+@pytest.mark.asyncio
+async def test_assert_authorized_propagates_typed_error(cls):
+    action = cls()
+    err = GoogleAuthRequiredError(
+        "no", service=cls._MCP_SERVICE, auth_url="https://x", reason="not_connected"
+    )
+    with patch.object(action, "_get_credentials", new=AsyncMock(side_effect=err)):
+        with pytest.raises(GoogleAuthRequiredError) as exc:
+            await action.assert_authorized()
+    assert exc.value is err

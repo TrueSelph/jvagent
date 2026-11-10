@@ -37,7 +37,7 @@ def _field_properties(action: "LeadGenAction") -> Dict[str, Any]:
             if f.key not in props:
                 props[f.key] = {
                     "type": "string",
-                    "description": f.guidance or f"Lead field: {f.key}",
+                    "description": f"Lead field: {f.key}",
                 }
     for key, cfg in (action.default_fields or {}).items():
         if key not in props:
@@ -91,14 +91,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__capture",
             description=(
-                "Save or update lead fields from the latest user message. Call when the "
-                "message provides or refuses lead information; send every new value in one "
-                "call; use the field's decline_value from field_reference for a refusal. "
-                "Auto-syncs to configured destinations when thresholds are met — do not call "
-                "leadgen__sync in on_capture mode. The result carries missing_fields, "
-                "optional_fields, open_fields, field_reference, gap_fill_priority, and "
-                "validation_errors. You choose the next field from the catalogue; ask required "
-                "first, optional only per its guidance; a capture is not a close."
+                "Save or update lead fields from the latest message. Send every new value in "
+                "one call; map a refusal to the field's decline text (short refusals are "
+                "normalised; never send the literal token decline_value). Returns status, fields, "
+                "missing_fields, next_required, optional_fields, field_reference, "
+                "validation_errors, sync_result, and a directive. Follow the directive; a "
+                "capture is not a close."
             ),
             parameters_schema={
                 "type": "object",
@@ -110,15 +108,14 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__retrieve",
             description=(
-                "Load the current lead profile, missing_fields, optional_fields, open_fields, "
-                "field_reference, and soft gap_fill_priority. Use mid-conversation, once "
+                "Load the current lead profile, next_required, optional_fields, field_reference, "
+                "and the ask directive. Use mid-conversation, once "
                 "a request cycle is already underway, when you need profile context and "
                 "the visitor supplied no new lead data. NEVER the first call on a "
-                "post-sync turn: when the visitor returns after a sync — including a bare "
-                'greeting like "hey" with no product named — leadgen__prepare_request '
-                "runs first. Do not use retrieve to restore the profile after a sync or "
-                "to open a turn; it reads the cleared record and re-asks for details the "
-                "visitor already gave."
+                "post-sync turn: when the skill provides a prepare tool, it runs first — "
+                'even for a bare greeting like "hey" with no product named. Do not use '
+                "retrieve to restore the profile after a sync or to open a turn; it reads "
+                "the cleared record and re-asks for details the visitor already gave."
             ),
             parameters_schema=optional_skill,
             execute=_retrieve,

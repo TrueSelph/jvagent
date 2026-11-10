@@ -31,8 +31,6 @@ leadgen:
         any_present: [project_description]
   gap_fill:
     batch: true
-    # Soft preference order only — the model chooses from open_fields / missing_fields
-    priority: [full_name, phone, email, organization]
   sync:
     mode: on_capture       # on_capture | on_complete | manual
     min_fields: [full_name]
@@ -62,21 +60,23 @@ allowed-tools: []
 |-----|------|-------------|
 | `key` | string | Canonical field name (required) |
 | `guidance` | string | Model-facing description |
-| `required` | bool | Included in `missing_fields` / on_complete sync |
+| `required` | bool | Included in `missing_fields` and the sync gates |
 | `aliases` | list | Alternate names for capture |
 | `validator` | string | Built-in: `email`, `phone`, `phone_e164`, `phone_gy`, `person_name` |
 | `validator_args` | map | Passed to validator |
 | `decline_value` | string | Value when user refuses (stops re-asking) |
 | `merge` | bool | Comma-merge list fields on update |
-| `phone_locale` | string | `GY` forces Guyana normalization |
-| `relevant_when` | map | Optional gate: `{ any_present: [keys] }` — empty field only appears in `open_fields` when at least one listed key is filled |
+| `phone_locale` | string | Resolves a built-in `phone_<locale>` validator on any field (`GY`, `E164`); unknown locale falls back to E164 |
+| `relevant_when` | map | Optional gate: `{ any_present: [keys], not_declined: [keys] }` — askable only once a listed key is filled, and never while a `not_declined` key holds its own `decline_value`; the gate travels in `field_reference` |
 
-### Capture catalog (no forced next field)
+### Capture catalogue (server-nominated ask)
 
-Tool results expose `missing_fields`, `optional_fields` (empty optional fields that pass
-`relevant_when`), `open_fields` (compatibility union of required + optional), `field_reference`,
-and `gap_fill_priority`. The model chooses the next field; there is no `next_ask` /
-`next_optional` pointer and no `ask_next` pending stamp.
+Tool results expose `fields` (saved values), `missing_fields` (required keys still empty),
+`next_required` (the single required key to ask now, derived from `missing_fields[0]`),
+`optional_fields` (open optional keys whose `relevant_when` passes), `field_reference` (every
+declared field in ask order, with guidance and `required`), and `directive` (the ask or hand-off
+for this reply). The model follows the directive and applies the five ask tests; there is no
+persisted ask pointer, no `ask_next` stamp, and no priority list.
 
 ## Sync template tokens
 

@@ -17,6 +17,18 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   field and keeps valid values; declines bypass validators. Breaking for callers that
   passed `ask_next`.
 
+- **Leadgen base procedure hardened.** A withheld value ("no organization",
+  "none", "n/a", "personal", "not provided") is captured as that field's
+  `decline_value` instead of the visitor's phrase; every value the message
+  supplies is captured in that same turn before any field question; and a `skipped`
+  (including sync thresholds not met), `no-op`, or `failed` sync is a hand-off that
+  has not run, so the reply says the request is saved but not yet sent instead of
+  closing on an acknowledgement. The open optional pool is capped at five keys
+  (`MAX_OPTIONAL_FIELDS`) so the directive stays a bounded menu. The optional ask
+  now names the need criterion ("the one this request needs") instead of a
+  permission, and the hand-off sentence is not repeated on later captures
+  (`_leadgen_handoff_stated`).
+
 ### Fixed
 
 - **TTS media URLs work with authentication enabled.** `as_url=True` now returns
