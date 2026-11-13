@@ -41,7 +41,9 @@ def _field_properties(action: "LeadGenAction") -> Dict[str, Any]:
                 }
     for key, cfg in (action.default_fields or {}).items():
         if key not in props:
-            desc = cfg.get("description", "") if isinstance(cfg, dict) else ""
+            desc = ""
+            if isinstance(cfg, dict):
+                desc = str(cfg.get("guidance") or cfg.get("description") or "")
             props[key] = {"type": "string", "description": desc or f"Lead field: {key}"}
     return props
 
@@ -62,7 +64,10 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         **kwargs: Any,
     ) -> str:
         return await action._handle_capture(
-            fields=fields, skill=skill, visitor=visitor, **kwargs
+            fields=fields,
+            skill=skill,
+            visitor=visitor,
+            **kwargs,
         )
 
     async def _retrieve(
@@ -88,20 +93,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__capture",
             description=(
-                "Save or update lead fields from the latest user message. "
-                "Call when the user provides personal, business, or interest information. "
-                "Use decline values from field_reference when the user refuses a field "
-                "(e.g. email='N/A'). Auto-syncs to configured destinations when thresholds "
-                "are met — do not call leadgen__sync in on_capture mode. "
-                "STANDING GOAL: collecting the visitor's name and a way to reach them "
-                "(email or phone) comes first, then the qualification fields the skill "
-                "declares for every request. The response returns missing_fields + "
-                "gap_fill_priority + a next_ask hint for the next required contact field; "
-                "once required fields are complete, next_ask is null but next_optional "
-                "names the qualification field to ask next. Null next_ask is not a "
-                "finished request — ask next_optional before closing. When the customer "
-                "described a project, next_project_optional names the next project field "
-                "to ask after the always-relevant set is answered."
+                "Save or update lead fields from the latest message. Send every new value in "
+                "one call; map a refusal to the field's decline text (short refusals are "
+                "normalised; never send the literal token decline_value). Returns status, fields, "
+                "missing_fields, next_required, optional_fields, field_reference, "
+                "validation_errors, sync_result, and a directive. Follow the directive; a "
+                "capture is not a close."
             ),
             parameters_schema={
                 "type": "object",
@@ -113,14 +110,14 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__retrieve",
             description=(
-                "Load the current lead profile, missing_fields, field_reference, and a "
-                "next_ask hint. Use mid-conversation, once a request cycle is already "
-                "underway, when you need profile context and the visitor supplied no new "
-                "lead data. NEVER the first call on a post-sync turn: when the visitor "
-                'returns after a sync — including a bare greeting like "hey" with no '
-                "product named — leadgen__prepare_request runs first. Do not use retrieve to "
-                "restore the profile after a sync or to open a turn; it reads the cleared "
-                "record and re-asks for details the visitor already gave."
+                "Load the current lead profile, next_required, optional_fields, field_reference, "
+                "and the ask directive. Use mid-conversation, once "
+                "a request cycle is already underway, when you need profile context and "
+                "the visitor supplied no new lead data. NEVER the first call on a "
+                "post-sync turn: when the skill provides a prepare tool, it runs first — "
+                'even for a bare greeting like "hey" with no product named. Do not use '
+                "retrieve to restore the profile after a sync or to open a turn; it reads "
+                "the cleared record and re-asks for details the visitor already gave."
             ),
             parameters_schema=optional_skill,
             execute=_retrieve,

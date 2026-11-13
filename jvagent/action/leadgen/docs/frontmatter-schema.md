@@ -25,13 +25,19 @@ leadgen:
       phone_locale: E164   # or GY
     - key: quote_items
       merge: true
+    - key: project_budget
+      guidance: Stated budget once a project is described
+      relevant_when:
+        any_present: [project_description]
   gap_fill:
     batch: true
-    priority: [full_name, phone, email, organization]
+    # priority, qualification, and project_qualification are ignored.
+    # Ask order is the field declaration order.
   sync:
     mode: on_capture       # on_capture | on_complete | manual
     min_fields: [full_name]
     require_any: [phone, email]
+    sales_contact: ""      # optional; omitted from the failed-hand-off reply when empty
     # Destination-agnostic: any MCP server + tool. Below is a flat file; a
     # spreadsheet, email, CRM, or DB is the same shape (only server/tool/args
     # change). Templates: {profile_json}, {profile_row}, {profile_keys},
@@ -57,13 +63,27 @@ allowed-tools: []
 |-----|------|-------------|
 | `key` | string | Canonical field name (required) |
 | `guidance` | string | Model-facing description |
-| `required` | bool | Included in gap-fill / on_complete sync |
+| `required` | bool | Included in `missing_fields` and the sync gates |
 | `aliases` | list | Alternate names for capture |
 | `validator` | string | Built-in: `email`, `phone`, `phone_e164`, `phone_gy`, `person_name` |
 | `validator_args` | map | Passed to validator |
 | `decline_value` | string | Value when user refuses (stops re-asking) |
 | `merge` | bool | Comma-merge list fields on update |
-| `phone_locale` | string | `GY` forces Guyana normalization |
+| `phone_locale` | string | Resolves a built-in `phone_<locale>` validator on any field (`GY`, `E164`); unknown locale falls back to E164 |
+| `relevant_when` | map | Optional gate: `{ any_present: [keys], not_declined: [keys] }` — askable only once a listed key is filled, and never while a `not_declined` key holds its own `decline_value`; the gate travels in `field_reference` |
+
+### Capture catalogue (server-nominated ask)
+
+Tool results expose `fields` (saved values), `missing_fields` (required keys still empty),
+`next_required` (the single required key to ask now, derived from `missing_fields[0]`),
+`optional_fields` (open optional keys whose `relevant_when` passes), `field_reference` (every
+declared field in ask order, with guidance and `required`), and `directive` (the ask or hand-off
+for this reply). The model follows the directive and applies the five ask tests; there is no
+persisted ask pointer and no `ask_next` stamp. `gap_fill.priority`, `qualification`, and
+`project_qualification` are accepted and ignored so older skills still parse. A failed
+hand-off names `sync.sales_contact` only when that value is set (or `sales_contact` on the
+action). `_leadgen_handoff_stated` is paired with a snapshot of the handed-off fields;
+clearing or replacing one of those values states the hand-off again.
 
 ## Sync template tokens
 

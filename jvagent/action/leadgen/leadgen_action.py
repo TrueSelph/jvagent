@@ -64,6 +64,13 @@ class LeadGenAction(Action):
             "fires."
         ),
     )
+    sales_contact: str = attribute(
+        default="",
+        description=(
+            "Optional contact named when a hand-off did not run. Empty omits "
+            "the offer. A skill sync.sales_contact overrides this."
+        ),
+    )
 
     _registry: LeadGenRegistry = PrivateAttr(default_factory=LeadGenRegistry)
 
@@ -121,7 +128,7 @@ class LeadGenAction(Action):
         from .store import LeadRecord
 
         record = await LeadRecord.get_or_create_for_user(
-            user, required_fields=spec.get_required_fields() or None
+            user, required_fields=spec.get_required_fields()
         )
         fn = load_hook_function(spec, tdef.function or tdef.name)
         if fn is None:

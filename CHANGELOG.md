@@ -8,8 +8,38 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ## [Unreleased]
 
+### Changed
+
+- **Leadgen is LLM-driven.** Removed `ask_next` and the `pending_activation` guard;
+  capture/retrieve results now include `optional_fields` (the optional pool with
+  guidance) and `validation_errors`; the base procedure is generic (required first,
+  optional by guidance, content-first extraction, one question); validation is per
+  field and keeps valid values; declines bypass validators. Breaking for callers that
+  passed `ask_next`.
+
+- **Leadgen base procedure hardened.** A withheld value ("no organization",
+  "none", "n/a", "personal", "not provided") is captured as that field's
+  `decline_value` instead of the visitor's phrase; every value the message
+  supplies is captured in that same turn before any field question; and a `skipped`
+  (including sync thresholds not met), `no-op`, or `failed` sync is a hand-off that
+  has not run, so the reply says the request is saved but not yet sent instead of
+  closing on an acknowledgement. The open optional pool is capped at five keys
+  (`MAX_OPTIONAL_FIELDS`) so the directive stays a bounded menu. The optional ask
+  now names the need criterion ("the one this request needs") instead of a
+  permission, and the hand-off sentence is not repeated on later captures
+  (`_leadgen_handoff_stated`, reset when a snapshotted field changes).
+  `gap_fill.priority`, `qualification`, and `project_qualification` are accepted
+  and ignored. The failed-hand-off reply names `sync.sales_contact` (or the
+  action's `sales_contact`) only when one is configured.
+
 ### Fixed
 
+- **TTS media URLs work with authentication enabled.** `as_url=True` now returns
+  a signed proxy URL (`/p/{code}`) instead of the auth-protected
+  `/api/files/...` route, so WhatsApp/Messenger adapters and LLM providers can
+  fetch voice notes anonymously. Requires `JVSPATIAL_PROXY_ENABLED=true`; the
+  action logs a warning and falls back to the direct file route when proxy URLs
+  are unavailable.
 - **Handoff mode prompts corrected.** The consult/transfer trigger is now gated
   on the owning skill/tool having run ("after the owning skill or tool ran, the
   answer is not in this turn's tool results"), so it cannot fire before the first

@@ -7,6 +7,7 @@ import time
 import uuid
 from typing import Dict, List, Optional, Tuple, Union
 
+from jvspatial.api.constants import APIRoutes
 from jvspatial.core.annotations import attribute
 from jvspatial.env import env
 
@@ -97,7 +98,16 @@ class ElevenLabsTTSAction(BaseTTSAction):
                     storage_path, audio, metadata={"type": "tts_audio"}
                 )
                 if success:
-                    url = await self.get_file_url(storage_path)
+                    # Signed proxy URL: adapters and LLM providers fetch this
+                    # anonymously, unlike the auth-protected /api/files route.
+                    url = await self.get_short_file_url(storage_path, expires_in=3600)
+                    if url and url.startswith(f"{APIRoutes.FILES_ROOT}/"):
+                        logger.warning(
+                            "TTS audio URL is the auth-protected file route (%s); "
+                            "set JVSPATIAL_PROXY_ENABLED=true so media adapters can "
+                            "fetch it without authentication.",
+                            url,
+                        )
                     return url
             except Exception as e:
                 logger.error("Error saving audio file: %s", e, exc_info=True)

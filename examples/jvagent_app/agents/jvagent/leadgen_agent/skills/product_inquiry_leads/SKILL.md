@@ -40,7 +40,6 @@ leadgen:
       merge: true
   gap_fill:
     batch: true
-    priority: [name, phone, email, organization]
   # Sync config (mode, thresholds, destinations) lives in agent.yaml on the
   # jvagent/leadgen action — it's deployment/infra, not skill semantics. The
   # skill defines WHAT to capture; the agent defines WHERE it syncs.

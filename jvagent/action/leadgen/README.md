@@ -19,12 +19,20 @@ return visits).
    write/append tool (flat file, spreadsheet, email, CRM, DB). A skill may
    instead declare its own `sync:` block to self-contain sync.
 
+## Flexibility
+
+The action carries **no field vocabulary**: field names, `required`, validators,
+`relevant_when`, sync gates, and handlers come only from the skill's `leadgen:`
+block. `phone_locale` resolves a built-in `phone_<locale>` validator on any
+field (for example `GY`); an unknown locale falls back to E164, never to no
+validation.
+
 ## Tools
 
 | Tool | Purpose |
 |------|---------|
-| `leadgen__capture` | Save partial lead fields; returns `missing_fields` + `next_ask` + `gap_fill_priority`; auto-syncs when thresholds met |
-| `leadgen__retrieve` | Load profile + `missing_fields` + `next_ask` + `field_reference` |
+| `leadgen__capture` | Save partial lead fields; returns `status`, `fields_saved`, `fields`, `missing_fields`, `next_required`, `optional_fields`, `field_reference`, `validation_errors`, `sync_result`, and the ask `directive`; auto-syncs when thresholds met |
+| `leadgen__retrieve` | Load profile + `missing_fields`, `next_required`, `optional_fields`, `field_reference`, and the ask `directive` |
 | `leadgen__status` | Progress snapshot |
 | `leadgen__sync` | Manual sync (`sync_mode: manual`) |
 

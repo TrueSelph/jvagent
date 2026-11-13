@@ -1,6 +1,7 @@
 """Tests for leadgen validators."""
 
 from jvagent.action.leadgen.validators import (
+    locale_validator,
     validate_email,
     validate_person_name,
     validate_phone_e164,
@@ -36,3 +37,10 @@ def test_validate_person_name():
     val, err = validate_person_name("Jane Doe")
     assert err is None
     assert val == "Jane Doe"
+
+
+def test_locale_validator_resolves_builtin():
+    assert locale_validator("GY") == "phone_gy"
+    assert locale_validator("e164") == "phone_e164"
+    assert locale_validator("ZZ") == ""
+    assert locale_validator("") == ""

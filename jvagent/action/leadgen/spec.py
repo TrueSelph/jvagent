@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -14,6 +15,8 @@ from jvagent.action.skill_spec.base import (
     reject_unknown_keys,
 )
 from jvagent.action.skill_spec.registry import BaseSkillRegistry
+
+logger = logging.getLogger(__name__)
 
 LEADGEN_FRONTMATTER_KEY = "leadgen"
 
@@ -33,12 +36,19 @@ _FIELD_KEYS = frozenset(
         "decline_value",
         "merge",
         "phone_locale",
+        "relevant_when",
+        "capture_only",
     }
 )
-_GAP_FILL_KEYS = frozenset(
-    {"batch", "priority", "qualification", "project_qualification"}
+# ``priority``, ``qualification`` and ``project_qualification`` used to order
+# the ask. Declaration order replaced them. They are still accepted so an
+# existing skill parses; the values are ignored.
+_GAP_FILL_DEPRECATED = frozenset({"priority", "qualification", "project_qualification"})
+_GAP_FILL_KEYS = frozenset({"batch"}) | _GAP_FILL_DEPRECATED
+_RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined"})
+_SYNC_KEYS = frozenset(
+    {"mode", "min_fields", "require_any", "destinations", "sales_contact"}
 )
-_SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 
 
@@ -53,20 +63,18 @@ class FieldDef:
     decline_value: Optional[str] = None
     merge: bool = False
     phone_locale: str = ""
+    # Captured only when volunteered; never asked, never offered in the pool.
+    capture_only: bool = False
+    # Eligibility gate the catalogue carries for the model to honour: the field
+    # is askable only once at least one ``any_present`` key is filled, and never
+    # while a ``not_declined`` key holds its own ``decline_value``. Absent =
+    # always eligible.
+    relevant_when: Optional[Dict[str, List[str]]] = None
 
 
 @dataclass
 class GapFillDef:
     batch: bool = True
-    priority: List[str] = field(default_factory=list)
-    # Optional fields that apply to every request cycle (e.g. role, industry,
-    # company size). capture_state names the first empty one as next_optional so
-    # the agent has a structured ask once the required fields are complete.
-    qualification: List[str] = field(default_factory=list)
-    # Qualification fields that apply only once a project is described (budget,
-    # timeline, pain points, contact preference). capture_state names the first
-    # empty one as next_project_optional after the always-relevant set is done.
-    project_qualification: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -75,6 +83,9 @@ class SyncDef:
     min_fields: List[str] = field(default_factory=lambda: ["full_name"])
     require_any: List[str] = field(default_factory=lambda: ["phone", "email"])
     destinations: List[Dict[str, Any]] = field(default_factory=list)
+    # Offered in the failed-hand-off directive. Empty means the directive
+    # does not name a contact.
+    sales_contact: str = ""
 
 
 @dataclass
@@ -121,6 +132,12 @@ class LeadGenSpec:
 
 
 def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
+    """The catalogue the model reads: every declared field, declaration order.
+
+    Filled fields stay in the list so the model can correct or refresh a value;
+    ``relevant_when`` travels with the entry and is honoured by the SOP, not
+    filtered here.
+    """
     out: List[Dict[str, Any]] = []
     for f in spec.fields:
         entry: Dict[str, Any] = {
@@ -130,8 +147,30 @@ def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
         }
         if f.decline_value is not None:
             entry["decline_value"] = f.decline_value
+        if f.capture_only:
+            entry["capture_only"] = True
+        if f.relevant_when:
+            entry["relevant_when"] = dict(f.relevant_when)
         out.append(entry)
     return out
+
+
+def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, List[str]]]:
+    if data is None or data == "":
+        return None
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must be a mapping")
+    reject_unknown_keys(data, _RELEVANT_WHEN_KEYS, path=path)
+    any_present = [str(x) for x in (data.get("any_present") or []) if x]
+    not_declined = [str(x) for x in (data.get("not_declined") or []) if x]
+    if not any_present and not not_declined:
+        return None
+    gate: Dict[str, List[str]] = {}
+    if any_present:
+        gate["any_present"] = any_present
+    if not_declined:
+        gate["not_declined"] = not_declined
+    return gate
 
 
 def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
@@ -149,6 +188,10 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
         decline_value=data.get("decline_value"),
         merge=bool(data.get("merge", False)),
         phone_locale=str(data.get("phone_locale", "") or ""),
+        capture_only=bool(data.get("capture_only", False)),
+        relevant_when=_parse_relevant_when(
+            data.get("relevant_when"), path=f"{path}.relevant_when"
+        ),
     )
 
 
@@ -158,14 +201,13 @@ def _parse_gap_fill(data: Any) -> GapFillDef:
     if not isinstance(data, dict):
         raise ValueError("gap_fill must be a mapping")
     reject_unknown_keys(data, _GAP_FILL_KEYS, path="gap_fill")
-    return GapFillDef(
-        batch=bool(data.get("batch", True)),
-        priority=[str(x) for x in (data.get("priority") or []) if x],
-        qualification=[str(x) for x in (data.get("qualification") or []) if x],
-        project_qualification=[
-            str(x) for x in (data.get("project_qualification") or []) if x
-        ],
-    )
+    stale = sorted(k for k in _GAP_FILL_DEPRECATED if k in data)
+    if stale:
+        logger.warning(
+            "leadgen gap_fill.%s is ignored; ask order is field declaration order",
+            ", ".join(stale),
+        )
+    return GapFillDef(batch=bool(data.get("batch", True)))
 
 
 def _parse_sync(data: Any) -> SyncDef:
@@ -184,6 +226,7 @@ def _parse_sync(data: Any) -> SyncDef:
             str(x) for x in (data.get("require_any") or ["phone", "email"]) if x
         ],
         destinations=list(data.get("destinations") or []),
+        sales_contact=str(data.get("sales_contact") or "").strip(),
     )
 
 

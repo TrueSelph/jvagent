@@ -15,28 +15,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_REQUIRED_FIELDS: List[str] = [
-    "full_name",
-    "organization",
-    "email",
-    "phone",
-]
-
-DEFAULT_OPTIONAL_FIELDS: List[str] = [
-    "project_description",
-    "project_location",
-    "contact_role",
-    "company_industry",
-    "company_size",
-    "project_budget",
-    "project_timeline",
-    "project_pain_points",
-    "current_tools",
-    "communication_preference",
-    "quote_items",
-    "order_items",
-    "feedback",
-]
+#: No default field vocabulary: the skill spec is the only source of field
+#: names. A record created without an explicit list carries no required fields.
+DEFAULT_REQUIRED_FIELDS: List[str] = []
 
 
 @compound_index(
@@ -238,7 +219,11 @@ class LeadRecord(Node):
     async def get_or_create_for_user(
         cls, user: "User", required_fields: Optional[List[str]] = None
     ) -> "LeadRecord":
-        field_list = required_fields or list(DEFAULT_REQUIRED_FIELDS)
+        field_list = (
+            list(required_fields)
+            if required_fields is not None
+            else list(DEFAULT_REQUIRED_FIELDS)
+        )
         fields_csv = ", ".join(field_list)
 
         existing = await cls.get_for_user(user)
@@ -248,7 +233,7 @@ class LeadRecord(Node):
                 existing.user_node_id = user.id
                 await existing.save()
             current = existing._get_list_field("required_fields")
-            if required_fields and current != field_list:
+            if required_fields is not None and current != field_list:
                 existing.required_fields = fields_csv
                 missing = existing.get_missing_fields()
                 existing.missing_fields = ", ".join(missing)
