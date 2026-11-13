@@ -37,11 +37,13 @@ def _field_properties(action: "LeadGenAction") -> Dict[str, Any]:
             if f.key not in props:
                 props[f.key] = {
                     "type": "string",
-                    "description": f"Lead field: {f.key}",
+                    "description": f.guidance or f"Lead field: {f.key}",
                 }
     for key, cfg in (action.default_fields or {}).items():
         if key not in props:
-            desc = cfg.get("description", "") if isinstance(cfg, dict) else ""
+            desc = ""
+            if isinstance(cfg, dict):
+                desc = str(cfg.get("guidance") or cfg.get("description") or "")
             props[key] = {"type": "string", "description": desc or f"Lead field: {key}"}
     return props
 

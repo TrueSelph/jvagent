@@ -31,10 +31,13 @@ leadgen:
         any_present: [project_description]
   gap_fill:
     batch: true
+    # priority, qualification, and project_qualification are ignored.
+    # Ask order is the field declaration order.
   sync:
     mode: on_capture       # on_capture | on_complete | manual
     min_fields: [full_name]
     require_any: [phone, email]
+    sales_contact: ""      # optional; omitted from the failed-hand-off reply when empty
     # Destination-agnostic: any MCP server + tool. Below is a flat file; a
     # spreadsheet, email, CRM, or DB is the same shape (only server/tool/args
     # change). Templates: {profile_json}, {profile_row}, {profile_keys},
@@ -76,7 +79,11 @@ Tool results expose `fields` (saved values), `missing_fields` (required keys sti
 `optional_fields` (open optional keys whose `relevant_when` passes), `field_reference` (every
 declared field in ask order, with guidance and `required`), and `directive` (the ask or hand-off
 for this reply). The model follows the directive and applies the five ask tests; there is no
-persisted ask pointer, no `ask_next` stamp, and no priority list.
+persisted ask pointer and no `ask_next` stamp. `gap_fill.priority`, `qualification`, and
+`project_qualification` are accepted and ignored so older skills still parse. A failed
+hand-off names `sync.sales_contact` only when that value is set (or `sales_contact` on the
+action). `_leadgen_handoff_stated` is paired with a snapshot of the handed-off fields;
+clearing or replacing one of those values states the hand-off again.
 
 ## Sync template tokens
 

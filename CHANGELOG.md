@@ -27,7 +27,10 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
   (`MAX_OPTIONAL_FIELDS`) so the directive stays a bounded menu. The optional ask
   now names the need criterion ("the one this request needs") instead of a
   permission, and the hand-off sentence is not repeated on later captures
-  (`_leadgen_handoff_stated`).
+  (`_leadgen_handoff_stated`, reset when a snapshotted field changes).
+  `gap_fill.priority`, `qualification`, and `project_qualification` are accepted
+  and ignored. The failed-hand-off reply names `sync.sales_contact` (or the
+  action's `sales_contact`) only when one is configured.
 
 ### Fixed
 

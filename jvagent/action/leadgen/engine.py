@@ -86,13 +86,24 @@ def merge_spec_with_action_defaults(
             min_fields=list(action.sync_min_fields),
             require_any=list(action.sync_require_any),
             destinations=list(action.sync_destinations),
+            sales_contact=merged.sync.sales_contact or action.sales_contact,
         )
+    elif not merged.sync.sales_contact and action.sales_contact:
+        merged.sync.sales_contact = action.sales_contact
     return merged
 
 
-def canonicalize_fields(raw: Dict[str, Any], spec: LeadGenSpec) -> Dict[str, Any]:
+def canonicalize_fields(
+    raw: Dict[str, Any], spec: LeadGenSpec
+) -> tuple[Dict[str, Any], List[str]]:
+    """Map aliases to declared keys. Return undeclared keys separately.
+
+    Undeclared keys are not stored. Callers surface them in
+    ``validation_errors`` so a dropped value is visible to the model.
+    """
     alias_map = spec.alias_map()
     out: Dict[str, Any] = {}
+    unknown: List[str] = []
     known = set(spec.field_keys())
     for key, value in raw.items():
         if key.startswith("_"):
@@ -102,7 +113,9 @@ def canonicalize_fields(raw: Dict[str, Any], spec: LeadGenSpec) -> Dict[str, Any
         canonical = alias_map.get(clean, key)
         if canonical in known:
             out[canonical] = value
-    return out
+        else:
+            unknown.append(str(key))
+    return out, unknown
 
 
 async def validate_fields(
@@ -276,10 +289,9 @@ def _relevant_when_met(
 
 MAX_OPTIONAL_FIELDS = 5
 
-#: Short refusals the model may pass instead of the field's decline text. The
-#: action normalises them so gating and the directive see a real decline; a
-#: field without a decline_value keeps the visitor's words and never guesses.
-DECLINE_PHRASES = frozenset(
+#: Short refusals that mean "no value" on any field that declares a decline.
+#: A field without a decline_value keeps the visitor's words.
+GENERIC_DECLINE_PHRASES = frozenset(
     {
         "no",
         "none",
@@ -294,6 +306,13 @@ DECLINE_PHRASES = frozenset(
         "don't want to say",
         "no thanks",
         "skip",
+    }
+)
+
+#: Withheld-organization phrases. Applied only to organization-like fields so
+#: "no company" is not stored as the decline for an unrelated field.
+_ORG_DECLINE_PHRASES = frozenset(
+    {
         "no organization",
         "no organisation",
         "no company",
@@ -302,14 +321,60 @@ DECLINE_PHRASES = frozenset(
 )
 
 
+def _is_org_field(fdef: Any) -> bool:
+    key = str(getattr(fdef, "key", "") or "").strip().lower()
+    names = [key]
+    names.extend(
+        str(alias).strip().lower().replace(" ", "_").replace("-", "_")
+        for alias in (getattr(fdef, "aliases", None) or [])
+    )
+    return any(
+        name in {"organization", "organisation", "company", "org", "company_name"}
+        or "organization" in name
+        or "organisation" in name
+        for name in names
+        if name
+    )
+
+
 def _is_decline_value(fdef: Any, value: Any) -> bool:
-    """True when the supplied value means a refusal for this field."""
+    """True when the supplied value is a refusal phrase for this field."""
     if fdef is None or getattr(fdef, "decline_value", None) is None:
         return False
     text = str(value or "").strip().lower()
     if not text:
         return False
-    return text == "decline_value" or text in DECLINE_PHRASES
+    if text == "decline_value" or text in GENERIC_DECLINE_PHRASES:
+        return True
+    return text in _ORG_DECLINE_PHRASES and _is_org_field(fdef)
+
+
+def _is_refusal_signal(fdef: Any, value: Any) -> bool:
+    """True when this payload entry should close further optional questions.
+
+    The configured decline text can also be a real answer (organization
+    ``Personal``). Only a refusal phrase, or a decline text that is itself a
+    generic refusal, counts.
+    """
+    if not _is_decline_value(fdef, value):
+        return False
+    text = str(value or "").strip().lower()
+    decline = str(getattr(fdef, "decline_value", "") or "").strip().lower()
+    if (
+        text == decline
+        and text not in GENERIC_DECLINE_PHRASES
+        and text not in _ORG_DECLINE_PHRASES
+    ):
+        return False
+    return True
+
+
+def payload_has_refusal(fields: Dict[str, Any], spec: LeadGenSpec) -> bool:
+    """True when this capture's own values include a new refusal."""
+    for key, value in fields.items():
+        if _is_refusal_signal(spec.get_field(key), value):
+            return True
+    return False
 
 
 def optional_field_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> List[str]:
@@ -334,26 +399,45 @@ def optional_field_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> List[str]:
     return out[:MAX_OPTIONAL_FIELDS]
 
 
-SYNC_COMPLETE_DIRECTIVE = (
-    "The request is with the sales team. Acknowledge the captured value "
-    "naturally — name it only when it adds clarity; do not thank the visitor "
-    "every turn. Reply with the hand-off sentence and ask no further field "
-    "this turn."
-)
+def failed_sync_directive(sales_contact: str = "") -> str:
+    """Hand-off did not run. Name a contact only when one is configured."""
+    contact = str(sales_contact or "").strip()
+    offer = f" Offer the sales contact {contact}." if contact else ""
+    return (
+        "The request is saved but not yet sent. In one sentence say that, "
+        "and name anything still needed in the visitor's own words."
+        + offer
+        + " Never say sent, received, forwarded, or passed on. Ask no further field."
+    )
 
-#: Required fields are complete but the hand-off did not run (no destination, a
-#: destination error, or a denied call). The reply must say so and must never
-#: claim the request was sent.
-SYNC_FAILED_DIRECTIVE = (
-    "The request is saved but not yet sent to the sales team. In one sentence say "
-    "that, name anything still needed in the visitor's own words, and offer the "
-    "sales contact +592-628-4077. Never say sent, received, forwarded, or passed "
-    "on. Ask no further field."
-)
 
-# Internal, underscore-prefixed so it is excluded from the sync digest and from
-# every destination template (see ``sync.compute_digest``).
+#: Default failed-hand-off wording when no sales contact is configured.
+SYNC_FAILED_DIRECTIVE = failed_sync_directive()
+
+# Internal, underscore-prefixed so both are excluded from the sync digest and
+# from every destination template (see ``sync.compute_digest``).
 HANDOFF_STATED_KEY = "_leadgen_handoff_stated"
+HANDOFF_SNAPSHOT_KEY = "_leadgen_handoff_fields"
+
+
+def _public_fields(profile: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in profile.items() if not str(k).startswith("_")}
+
+
+def handoff_already_stated(profile: Dict[str, Any]) -> bool:
+    """True while the handed-off field values are still the ones we stated for.
+
+    A later capture that only adds fields stays inside the same hand-off. A new
+    cycle that clears or replaces a snapshotted value states the hand-off again.
+    A flag with no snapshot (written before snapshots existed) does not count.
+    """
+    if not profile.get(HANDOFF_STATED_KEY):
+        return False
+    snapshot = profile.get(HANDOFF_SNAPSHOT_KEY)
+    if not isinstance(snapshot, dict) or not snapshot:
+        return False
+    public = _public_fields(profile)
+    return all(public.get(key) == value for key, value in snapshot.items())
 
 
 def handoff_directive(
@@ -362,56 +446,59 @@ def handoff_directive(
     already_stated: bool = False,
     just_declined: bool = False,
 ) -> str:
-    """The hand-off reply, plus one optional when the pool is still open.
-
-    ``already_stated`` suppresses the hand-off sentence on later captures; the
-    optional ask keeps the same need criterion.
-    """
+    """Structural hand-off instruction. Wording of the sentence lives on the skill."""
     if just_declined:
         if already_stated:
             return (
-                "The request is already with the sales team; do not repeat the "
-                "hand-off sentence. Reply with this exact sentence — “Noted — the "
-                "request stays with the sales team as it is, and anything you add "
-                "later will update it.” — then ask no field; the visitor declined "
-                "or signalled they do not want more questions."
+                "Hand-off already stated; do not repeat the hand-off sentence. "
+                "The same request stays filed, and anything added later will "
+                "update it. Ask no field."
             )
         return (
-            "The request is with the sales team. Reply with the hand-off sentence, "
-            "acknowledge naturally, and ask no field — the visitor declined or "
-            "signalled they do not want more questions. When the visitor supplied "
-            "an optional value this turn, say it is being added to the same "
-            "request."
+            "Hand-off is complete. Use the skill's hand-off sentence, then ask "
+            "no field — the visitor declined or does not want more questions. "
+            "If they supplied an optional value this turn, say it is being added "
+            "to the same request."
         )
     if not optional_keys:
         if already_stated:
             return (
-                "The request is already with the sales team; do not repeat the "
-                "hand-off sentence. Acknowledge in one sentence that the same "
-                "request is up to date with the sales team; never reply with a "
-                "bare acknowledgement; ask no field."
+                "Hand-off already stated; do not repeat the hand-off sentence. "
+                "Acknowledge in one sentence that the same request is up to date. "
+                "Ask no field."
             )
-        return SYNC_COMPLETE_DIRECTIVE
+        return (
+            "Hand-off is complete. Use the skill's hand-off sentence and ask no "
+            "further field this turn."
+        )
     listed = ", ".join(f"`{k}`" for k in optional_keys)
     if already_stated:
         return (
-            "The request is already with the sales team; do not repeat the "
-            "hand-off sentence, but do say in one sentence that this detail is "
-            "added to the same request — never reply with a bare acknowledgement. "
-            "Acknowledge in one sentence that this detail updates the same request. "
+            "Hand-off already stated; do not repeat the hand-off sentence. "
+            "Say in one sentence that this detail is added to the same request. "
             f"Then ask at most one optional field from {listed} only when the "
-            "visitor engaged with a value and has not refused or signalled they "
-            "are done; otherwise ask no field and close. Never rotate to another "
-            "optional after a refusal."
+            "visitor engaged with a value and has not refused; otherwise ask no "
+            "field. Never rotate to another optional after a refusal."
         )
     return (
-        "The request is with the sales team. Acknowledge the captured value "
-        "naturally; do not thank every turn. Reply with the hand-off sentence, "
-        f"then ask at most one optional field from {listed} only when the visitor "
-        "engaged with a value and has not refused or signalled they are done; "
-        "otherwise ask no field and close. A refusal or ignore moves on; the "
-        "request is already filed."
+        "Hand-off is complete. Use the skill's hand-off sentence, then ask at "
+        f"most one optional field from {listed} only when the visitor engaged "
+        "with a value and has not refused; otherwise ask no field. A refusal "
+        "moves on; the request is already filed."
     )
+
+
+def _visitor_label(spec: LeadGenSpec, key: Optional[str]) -> str:
+    """Short guidance safe to put in a visitor sentence. Never the raw key."""
+    if not key:
+        return ""
+    fdef = spec.get_field(key)
+    if fdef is None:
+        return ""
+    guidance = str(fdef.guidance or "").strip()
+    if guidance and len(guidance) <= 80:
+        return guidance
+    return ""
 
 
 def next_ask_directive(
@@ -419,48 +506,40 @@ def next_ask_directive(
     optional_keys: List[str],
     *,
     just_declined: bool = False,
+    ask_label: str = "",
 ) -> str:
-    """The ask for this reply, derived from the record (not chosen by the model)."""
+    """The ask for this reply. Business close wording stays on the skill."""
     if next_required:
+        label = ask_label.strip() or "this detail"
         return (
-            "Acknowledge the captured value naturally — name it only when it adds "
-            "clarity; do not thank the visitor every turn and do not open every "
-            "reply the same way. Then ask only for "
-            f"`{next_required}` in this reply; do not ask any other field. If the "
-            "visitor refuses it, or answers something else and keeps avoiding it, "
-            "do not ask for it again in that turn: reply with this exact sentence "
-            f"— “{next_required.replace('_', ' ')} is needed to file this request "
-            "— would you like to continue or cancel?” If they continue, ask for it "
-            "once more in fresh words; if they cancel, use the cancel tool. Never "
-            "store a refusal as the value."
+            "Ask only for "
+            f"`{next_required}` in this reply; do not ask any other field. "
+            "If the visitor refuses it, do not ask again in that turn and do not "
+            f"name the field key: reply that {label} is needed to file this "
+            "request — would you like to continue or cancel? If they continue, "
+            "ask once more in fresh words; if they cancel, use the cancel tool. "
+            "Never store a refusal as the value."
         )
     if optional_keys:
         listed = ", ".join(f"`{k}`" for k in optional_keys)
         if just_declined:
             return (
-                "Acknowledge naturally in one short sentence and ask no further "
-                "field. The visitor declined or signalled they do not want more "
-                "questions, so do not rotate to another optional. The request is "
-                "saved, and any further details they give update the same "
-                "request. Do not say it was sent unless the hand-off has "
+                "Ask no further field. The visitor declined or does not want "
+                "more questions, so do not rotate to another optional. The "
+                "request is saved, and any further details they give update the "
+                "same request. Do not say it was sent unless the hand-off has "
                 "completed."
             )
         return (
-            "Acknowledge the captured value naturally — name it only when it adds "
-            "clarity; do not thank the visitor every turn. Required fields are "
-            f"complete. Ask at most one optional field from {listed}, and only "
-            "when the visitor answered with a value and has not refused, skipped, "
-            "or signalled they are done. If the message refuses, skips, says "
-            "'I don't want to say' or 'no more questions', or otherwise shows the "
-            "visitor does not want more questions, acknowledge in one sentence and "
-            "ask no further field. Never rotate to another optional after a "
-            "refusal; optional fields never block the request."
+            "Required fields are complete. Ask at most one optional field from "
+            f"{listed}, and only when the visitor answered with a value and has "
+            "not refused, skipped, or signalled they are done. If they do not "
+            "want more questions, ask no further field. Never rotate to another "
+            "optional after a refusal; optional fields never block the request."
         )
     return (
-        "Acknowledge the captured value naturally only if it adds clarity; do not "
-        "thank the visitor every turn. Required fields are complete and no "
-        "optional field is open. Do not ask another field: answer, confirm, or "
-        "close."
+        "Required fields are complete and no optional field is open. "
+        "Do not ask another field."
     )
 
 
@@ -486,7 +565,10 @@ def capture_state(
         "optional_fields": optional_keys,
         "field_reference": fields_reference(spec),
         "directive": next_ask_directive(
-            next_required, optional_keys, just_declined=just_declined
+            next_required,
+            optional_keys,
+            just_declined=just_declined,
+            ask_label=_visitor_label(spec, next_required),
         ),
     }
 
@@ -513,9 +595,16 @@ async def handle_capture(
     if not raw_fields:
         return json.dumps({"status": "no-op", "reason": "no fields provided"})
 
-    raw_fields = canonicalize_fields(raw_fields, spec)
+    raw_fields, unknown_keys = canonicalize_fields(raw_fields, spec)
 
-    dedup_key = (user.user_id, json.dumps(raw_fields, sort_keys=True, default=str))
+    dedup_key = (
+        user.user_id,
+        json.dumps(
+            {"fields": raw_fields, "unknown": unknown_keys},
+            sort_keys=True,
+            default=str,
+        ),
+    )
     now = time.time()
     if now - _LAST_CAPTURE.get(dedup_key, 0) < _CAPTURE_DEDUP_TTL:
         # A repeated identical call still has to answer with the record. The
@@ -544,7 +633,9 @@ async def handle_capture(
             raw_fields.setdefault("full_name", user.name)
 
     validated, validation_errors = await validate_fields(raw_fields, spec)
-    just_declined = bool(_declined_keys(validated, spec))
+    for key in unknown_keys:
+        validation_errors.setdefault(key, "unknown field")
+    just_declined = payload_has_refusal(raw_fields, spec)
 
     record = await LeadRecord.get_or_create_for_user(
         user, required_fields=spec.get_required_fields()
@@ -612,19 +703,22 @@ async def handle_capture(
             # The hand-off owns this reply; one optional may ride along when
             # the pool is still open, and the pool resumes on the next capture.
             # After the first hand-off the sentence is not repeated.
-            already_stated = bool(profile_data.get(HANDOFF_STATED_KEY))
+            already_stated = handoff_already_stated(profile_data)
             result["directive"] = handoff_directive(
                 result.get("optional_fields") or [],
                 already_stated=already_stated,
                 just_declined=just_declined,
             )
-            if not already_stated:
-                profile_data[HANDOFF_STATED_KEY] = True
-                await record.update_yaml({HANDOFF_STATED_KEY: True})
+            snapshot = _public_fields(profile_data)
+            profile_data[HANDOFF_STATED_KEY] = True
+            profile_data[HANDOFF_SNAPSHOT_KEY] = snapshot
+            await record.update_yaml(
+                {HANDOFF_STATED_KEY: True, HANDOFF_SNAPSHOT_KEY: snapshot}
+            )
         elif not result.get("missing_fields"):
             # Required fields are complete but the hand-off did not run. Say it
             # is saved and not sent; never let the reply claim otherwise.
-            result["directive"] = SYNC_FAILED_DIRECTIVE
+            result["directive"] = failed_sync_directive(spec.sync.sales_contact)
 
         if spec.handlers.on_sync:
             ctx = HookExecutionContext(

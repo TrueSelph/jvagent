@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -14,6 +15,8 @@ from jvagent.action.skill_spec.base import (
     reject_unknown_keys,
 )
 from jvagent.action.skill_spec.registry import BaseSkillRegistry
+
+logger = logging.getLogger(__name__)
 
 LEADGEN_FRONTMATTER_KEY = "leadgen"
 
@@ -37,9 +40,15 @@ _FIELD_KEYS = frozenset(
         "capture_only",
     }
 )
-_GAP_FILL_KEYS = frozenset({"batch"})
+# ``priority``, ``qualification`` and ``project_qualification`` used to order
+# the ask. Declaration order replaced them. They are still accepted so an
+# existing skill parses; the values are ignored.
+_GAP_FILL_DEPRECATED = frozenset({"priority", "qualification", "project_qualification"})
+_GAP_FILL_KEYS = frozenset({"batch"}) | _GAP_FILL_DEPRECATED
 _RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined"})
-_SYNC_KEYS = frozenset({"mode", "min_fields", "require_any", "destinations"})
+_SYNC_KEYS = frozenset(
+    {"mode", "min_fields", "require_any", "destinations", "sales_contact"}
+)
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
 
 
@@ -74,6 +83,9 @@ class SyncDef:
     min_fields: List[str] = field(default_factory=lambda: ["full_name"])
     require_any: List[str] = field(default_factory=lambda: ["phone", "email"])
     destinations: List[Dict[str, Any]] = field(default_factory=list)
+    # Offered in the failed-hand-off directive. Empty means the directive
+    # does not name a contact.
+    sales_contact: str = ""
 
 
 @dataclass
@@ -189,6 +201,12 @@ def _parse_gap_fill(data: Any) -> GapFillDef:
     if not isinstance(data, dict):
         raise ValueError("gap_fill must be a mapping")
     reject_unknown_keys(data, _GAP_FILL_KEYS, path="gap_fill")
+    stale = sorted(k for k in _GAP_FILL_DEPRECATED if k in data)
+    if stale:
+        logger.warning(
+            "leadgen gap_fill.%s is ignored; ask order is field declaration order",
+            ", ".join(stale),
+        )
     return GapFillDef(batch=bool(data.get("batch", True)))
 
 
@@ -208,6 +226,7 @@ def _parse_sync(data: Any) -> SyncDef:
             str(x) for x in (data.get("require_any") or ["phone", "email"]) if x
         ],
         destinations=list(data.get("destinations") or []),
+        sales_contact=str(data.get("sales_contact") or "").strip(),
     )
 
 

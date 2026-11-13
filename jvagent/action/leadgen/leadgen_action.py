@@ -64,6 +64,13 @@ class LeadGenAction(Action):
             "fires."
         ),
     )
+    sales_contact: str = attribute(
+        default="",
+        description=(
+            "Optional contact named when a hand-off did not run. Empty omits "
+            "the offer. A skill sync.sales_contact overrides this."
+        ),
+    )
 
     _registry: LeadGenRegistry = PrivateAttr(default_factory=LeadGenRegistry)
 

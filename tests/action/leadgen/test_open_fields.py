@@ -5,12 +5,16 @@ from __future__ import annotations
 import pytest
 
 from jvagent.action.leadgen.engine import (
+    HANDOFF_SNAPSHOT_KEY,
+    HANDOFF_STATED_KEY,
     MAX_OPTIONAL_FIELDS,
     SYNC_FAILED_DIRECTIVE,
     capture_state,
+    handoff_already_stated,
     handoff_directive,
     next_ask_directive,
     optional_field_keys,
+    payload_has_refusal,
     validate_fields,
 )
 from jvagent.action.leadgen.spec import (
@@ -122,22 +126,27 @@ def test_optional_pool_honours_relevant_when():
 def test_directive_closes_when_nothing_is_open():
     directive = next_ask_directive(None, [])
     assert "Do not ask" in directive
-    assert "do not thank the visitor every turn" in directive
+    assert "no optional field is open" in directive
 
 
 def test_directive_acknowledges_then_asks_the_required_field():
     directive = next_ask_directive("full_name", [])
-    assert "Acknowledge the captured value naturally" in directive
     assert "`full_name`" in directive
     assert "do not ask any other field" in directive
     assert "would you like to continue or cancel" in directive
-    assert "do not thank the visitor every turn" in directive
+    assert "this detail is needed" in directive
+    assert "full_name is needed" not in directive
     assert "Never store a refusal" in directive
+
+
+def test_required_refusal_sentence_uses_guidance_not_the_key():
+    directive = next_ask_directive("full_name", [], ask_label="your name")
+    assert "your name is needed" in directive
+    assert "full_name is needed" not in directive
 
 
 def test_directive_acknowledges_then_asks_the_optional_field():
     directive = next_ask_directive(None, ["project_budget"])
-    assert "Acknowledge the captured value naturally" in directive
     assert "`project_budget`" in directive
     assert "only when the visitor answered with a value" in directive
     assert "Never rotate to another optional after a refusal" in directive
@@ -147,27 +156,28 @@ def test_directive_acknowledges_then_asks_the_optional_field():
 def test_handoff_directive_asks_the_one_the_request_needs():
     closed = handoff_directive([])
     assert "ask no further field" in closed
-    assert "Acknowledge" in closed
+    assert "Hand-off is complete" in closed
     open_pool = handoff_directive(["contact_role", "company_industry"])
     assert "hand-off sentence" in open_pool
     assert "`contact_role`" in open_pool
     assert "engaged with a value" in open_pool
-    assert "A refusal or ignore moves on" in open_pool
+    assert "A refusal" in open_pool
+    assert "ignore moves on" not in open_pool
 
 
 def test_handoff_directive_does_not_repeat_after_the_first():
     repeat = handoff_directive(["project_location"], already_stated=True)
     assert "do not repeat the hand-off sentence" in repeat
-    assert "Acknowledge" in repeat
+    assert "added to the same request" in repeat
     assert "engaged with a value" in repeat
     assert "hand-off sentence" in repeat
-    assert "Reply with the hand-off sentence" not in repeat
+    assert "Use the skill's hand-off sentence, then ask" not in repeat
 
 
 def test_handoff_directive_acknowledges_when_pool_closed_and_stated():
     repeat = handoff_directive([], already_stated=True)
     assert "do not repeat the hand-off sentence" in repeat
-    assert "ask no field" in repeat
+    assert "Ask no field" in repeat
 
 
 def test_optional_pool_is_capped_at_max_optional_fields():
@@ -242,29 +252,26 @@ def test_parse_relevant_when():
     assert ref["relevant_when"]["any_present"] == ["project_description"]
 
 
-def test_parse_rejects_gap_fill_priority():
-    """The soft order moved into catalogue position; a stale key must fail fast."""
-    with pytest.raises(ValueError, match="priority"):
-        parse_leadgen_spec(
+def test_parse_ignores_deprecated_gap_fill_keys(caplog):
+    """Old order keys must not break an existing skill. They are unused."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        spec = parse_leadgen_spec(
             {
                 "fields": [{"key": "project_description"}],
-                "gap_fill": {"priority": ["project_description"]},
+                "gap_fill": {
+                    "batch": False,
+                    "priority": ["project_description"],
+                    "qualification": ["project_description"],
+                },
             },
             source_dir="/tmp",
             default_name="s",
         )
-
-
-def test_parse_rejects_qualification_queues():
-    with pytest.raises(ValueError, match="qualification"):
-        parse_leadgen_spec(
-            {
-                "fields": [{"key": "a"}],
-                "gap_fill": {"qualification": ["a"]},
-            },
-            source_dir="/tmp",
-            default_name="s",
-        )
+    assert spec.gap_fill.batch is False
+    assert "priority" in caplog.text
+    assert "qualification" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -330,14 +337,7 @@ async def test_refusal_phrase_maps_to_the_field_value():
         name="t",
         fields=[FieldDef(key="company_industry", decline_value="Not provided")],
     )
-    for phrase in (
-        "no",
-        "none",
-        "I don't want to say",
-        "n/a",
-        "skip",
-        "no organization",
-    ):
+    for phrase in ("no", "none", "I don't want to say", "n/a", "skip"):
         validated, errors = await validate_fields({"company_industry": phrase}, spec)
         assert errors == {}, phrase
         assert validated["company_industry"] == "Not provided", phrase
@@ -388,7 +388,7 @@ def test_handoff_directive_closes_after_a_decline():
 
 def test_declined_close_names_the_handoff_state():
     text = handoff_directive(["company_size"], just_declined=True)
-    assert "with the sales team" in text
+    assert "Hand-off is complete" in text
     assert "same request" in text
 
 
@@ -405,21 +405,75 @@ def test_pre_sync_declined_close_never_claims_sent():
 
 
 def test_failed_sync_directive_is_truthful():
+    from jvagent.action.leadgen.engine import failed_sync_directive
+
     assert "saved but not yet sent" in SYNC_FAILED_DIRECTIVE
     assert "Never say sent" in SYNC_FAILED_DIRECTIVE
     assert "Ask no further field" in SYNC_FAILED_DIRECTIVE
+    assert "592" not in SYNC_FAILED_DIRECTIVE
+    assert "sales contact" not in SYNC_FAILED_DIRECTIVE
+    named = failed_sync_directive("555-0100")
+    assert "555-0100" in named
+    assert "Offer the sales contact" in named
 
 
 def test_handoff_after_statement_requires_update_wording_not_a_bare_ack():
     text = handoff_directive(["project_location"], already_stated=True)
     assert "added to the same request" in text
-    assert "never reply with a bare acknowledgement" in text
+    assert "do not repeat the hand-off sentence" in text
 
 
 def test_declined_close_after_statement_pins_the_close_sentence():
     text = handoff_directive(
         ["project_location"], already_stated=True, just_declined=True
     )
-    assert "exact sentence" in text
-    assert "anything you add later will update it" in text
-    assert "ask no field" in text
+    assert "will update it" in text
+    assert "Ask no field" in text
+    assert "exact sentence" not in text
+
+
+def test_org_refusal_does_not_apply_to_other_fields():
+    spec = LeadGenSpec(
+        name="t",
+        fields=[
+            FieldDef(key="organization", decline_value="Personal"),
+            FieldDef(key="project_description", decline_value="Not provided"),
+        ],
+    )
+    assert payload_has_refusal({"organization": "Personal"}, spec) is False
+    assert payload_has_refusal({"organization": "no organization"}, spec) is True
+    assert payload_has_refusal({"project_description": "no company"}, spec) is False
+
+
+@pytest.mark.asyncio
+async def test_org_phrase_maps_only_on_an_organization_field():
+    spec = LeadGenSpec(
+        name="t",
+        fields=[
+            FieldDef(key="organization", decline_value="Personal"),
+            FieldDef(key="project_description", decline_value="Not provided"),
+        ],
+    )
+    org, org_errors = await validate_fields({"organization": "no company"}, spec)
+    assert org_errors == {}
+    assert org["organization"] == "Personal"
+    project, project_errors = await validate_fields(
+        {"project_description": "no company"}, spec
+    )
+    assert project_errors == {}
+    assert project["project_description"] == "no company"
+
+
+def test_handoff_flag_resets_when_a_snapshotted_value_changes():
+    stated = {
+        HANDOFF_STATED_KEY: True,
+        HANDOFF_SNAPSHOT_KEY: {"name": "Ann", "project_description": "roof"},
+        "name": "Ann",
+        "project_description": "roof",
+        "contact_role": "buyer",
+    }
+    assert handoff_already_stated(stated) is True
+    new_cycle = dict(stated)
+    del new_cycle["project_description"]
+    assert handoff_already_stated(new_cycle) is False
+    assert handoff_already_stated({HANDOFF_STATED_KEY: True, "name": "Ann"}) is False
