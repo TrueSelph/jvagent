@@ -29,6 +29,7 @@ from .integral_provider import (
     pkce_verifier,
     resolve_mcp_url,
     resolve_scopes_from_auth,
+    resolve_token_identity,
 )
 from .mcp_oauth_action import (
     MCPOAuthAction,
@@ -1044,8 +1045,17 @@ async def _exchange_integral_code(
     if service:
         payload["mcp_services"] = [service]
 
+    # Label the connection with the Core account that authorized it. Without
+    # this the panel falls back to the storage key ("integral") because the
+    # token payload carries no email.
+    identity = await resolve_token_identity(
+        mcp_url, str(payload.get("access_token") or ""), meta
+    )
+    if identity.get("email"):
+        payload["email"] = identity["email"]
+
     # Store the token flat (not nested under ``service_tokens``) so the bearer
     # auth client can read ``access_token`` directly.  ``mcp_services`` still
     # drives the MCPs-panel binding display.
     await action.save_oauth_token(INTEGRAL_SERVER, store_account, payload)
-    return store_account, INTEGRAL_LABEL
+    return identity.get("email") or store_account, INTEGRAL_LABEL

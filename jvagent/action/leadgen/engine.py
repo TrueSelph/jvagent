@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, cast
 
 from jvagent.tooling.tool_executor import get_tool_visitor
 
@@ -14,6 +14,8 @@ from .hooks import HookExecutionContext, call_hook
 from .spec import LeadGenSpec, fields_reference
 from .store import LeadRecord
 from .validators import locale_validator, run_validator
+
+DECLINE_SENTINEL = "decline_value"
 
 if TYPE_CHECKING:
     from .leadgen_action import LeadGenAction
@@ -87,6 +89,7 @@ def merge_spec_with_action_defaults(
             require_any=list(action.sync_require_any),
             destinations=list(action.sync_destinations),
             sales_contact=merged.sync.sales_contact or action.sales_contact,
+            timezone=merged.sync.timezone or "UTC",
         )
     elif not merged.sync.sales_contact and action.sales_contact:
         merged.sync.sales_contact = action.sales_contact
@@ -136,22 +139,18 @@ async def validate_fields(
             if fdef.decline_value is not None:
                 validated[key] = fdef.decline_value
             continue
-        if str_val.strip().lower() == "decline_value":
+        if str_val.strip().lower() == DECLINE_SENTINEL:
             if fdef.decline_value is not None:
                 validated[key] = str(fdef.decline_value)
             else:
                 errors[key] = "this field has no decline value; provide a value"
             continue
-        if _is_decline_value(fdef, str_val):
-            validated[key] = str(fdef.decline_value)
-            continue
         if fdef.decline_value is not None and str_val == str(fdef.decline_value):
             validated[key] = str_val
             continue
-        validator_name = locale_validator(fdef.phone_locale) or fdef.validator
+        # Explicit validator wins; phone_locale is a fallback when unset.
+        validator_name = fdef.validator or locale_validator(fdef.phone_locale)
         if fdef.phone_locale and not validator_name:
-            validator_name = "phone_e164"
-        if fdef.key == "phone" and not validator_name:
             validator_name = "phone_e164"
         if validator_name:
             normalized, err = run_validator(
@@ -230,7 +229,11 @@ async def maybe_auto_sync(
         return {"status": "no-op", "reason": "no destinations configured"}
 
     results, any_success = await sync_mod.sync_to_destinations(
-        action, destinations, profile_data, user_id
+        action,
+        destinations,
+        profile_data,
+        user_id,
+        timezone_name=sync_cfg.timezone or "UTC",
     )
     if any_success:
         updated = dict(profile_data)
@@ -248,6 +251,13 @@ def _field_filled(fields: Dict[str, Any], key: str) -> bool:
     return bool(str(val).strip())
 
 
+def _norm_phrase(value: str) -> str:
+    """Lowercase, strip surrounding punctuation and collapse whitespace."""
+    text = str(value or "").strip().lower()
+    text = text.rstrip(".!?,;: ")
+    return " ".join(text.split())
+
+
 def _declined_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> set:
     """Keys whose stored value equals their own ``decline_value``."""
     out: set = set()
@@ -257,7 +267,7 @@ def _declined_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> set:
         val = fields.get(fdef.key)
         if val is None:
             continue
-        if str(val).strip().lower() == str(fdef.decline_value).strip().lower():
+        if _norm_phrase(str(val)) == _norm_phrase(str(fdef.decline_value)):
             out.add(fdef.key)
     return out
 
@@ -289,95 +299,45 @@ def _relevant_when_met(
 
 MAX_OPTIONAL_FIELDS = 5
 
-#: Short refusals that mean "no value" on any field that declares a decline.
-#: A field without a decline_value keeps the visitor's words.
-GENERIC_DECLINE_PHRASES = frozenset(
-    {
-        "no",
-        "none",
-        "n/a",
-        "na",
-        "not provided",
-        "prefer not to say",
-        "prefer not",
-        "i don't want to say",
-        "i dont want to say",
-        "dont want to say",
-        "don't want to say",
-        "no thanks",
-        "skip",
-    }
-)
 
-#: Withheld-organization phrases. Applied only to organization-like fields so
-#: "no company" is not stored as the decline for an unrelated field.
-_ORG_DECLINE_PHRASES = frozenset(
-    {
-        "no organization",
-        "no organisation",
-        "no company",
-        "personal use",
-    }
-)
-
-
-def _is_org_field(fdef: Any) -> bool:
-    key = str(getattr(fdef, "key", "") or "").strip().lower()
-    names = [key]
-    names.extend(
-        str(alias).strip().lower().replace(" ", "_").replace("-", "_")
-        for alias in (getattr(fdef, "aliases", None) or [])
-    )
-    return any(
-        name in {"organization", "organisation", "company", "org", "company_name"}
-        or "organization" in name
-        or "organisation" in name
-        for name in names
-        if name
-    )
-
-
-def _is_decline_value(fdef: Any, value: Any) -> bool:
-    """True when the supplied value is a refusal phrase for this field."""
-    if fdef is None or getattr(fdef, "decline_value", None) is None:
-        return False
-    text = str(value or "").strip().lower()
-    if not text:
-        return False
-    if text == "decline_value" or text in GENERIC_DECLINE_PHRASES:
-        return True
-    return text in _ORG_DECLINE_PHRASES and _is_org_field(fdef)
-
-
-def _is_refusal_signal(fdef: Any, value: Any) -> bool:
-    """True when this payload entry should close further optional questions.
-
-    The configured decline text can also be a real answer (organization
-    ``Personal``). Only a refusal phrase, or a decline text that is itself a
-    generic refusal, counts.
-    """
-    if not _is_decline_value(fdef, value):
-        return False
-    text = str(value or "").strip().lower()
-    decline = str(getattr(fdef, "decline_value", "") or "").strip().lower()
-    if (
-        text == decline
-        and text not in GENERIC_DECLINE_PHRASES
-        and text not in _ORG_DECLINE_PHRASES
-    ):
-        return False
-    return True
+def _is_decline_sentinel(value: Any) -> bool:
+    return str(value or "").strip().lower() == DECLINE_SENTINEL
 
 
 def payload_has_refusal(fields: Dict[str, Any], spec: LeadGenSpec) -> bool:
-    """True when this capture's own values include a new refusal."""
+    """True when this capture used the language-agnostic decline sentinel."""
     for key, value in fields.items():
-        if _is_refusal_signal(spec.get_field(key), value):
+        if not _is_decline_sentinel(value):
+            continue
+        fdef = spec.get_field(key)
+        if fdef is not None and fdef.decline_value is not None:
             return True
     return False
 
 
-def optional_field_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> List[str]:
+def _apply_channel_defaults(
+    raw_fields: Dict[str, Any],
+    spec: LeadGenSpec,
+    user: Any,
+    channel: str,
+) -> None:
+    """Fill declared fields from channel identity when the skill maps them."""
+    mapping = (spec.resolved_channel_defaults().get(channel.lower()) or {}).items()
+    known = set(spec.field_keys())
+    for field_key, source in mapping:
+        if field_key not in known:
+            continue
+        if raw_fields.get(field_key):
+            continue
+        if source == "user_id" and getattr(user, "user_id", None):
+            raw_fields.setdefault(field_key, user.user_id)
+        elif source == "user_name" and getattr(user, "name", None):
+            raw_fields.setdefault(field_key, user.name)
+
+
+def optional_field_keys(
+    fields: Dict[str, Any], spec: LeadGenSpec, *, ignored: Sequence[str] = ()
+) -> List[str]:
     """Open optional keys that pass their ``relevant_when`` gate.
 
     Keys only: each key's guidance stays in ``field_reference``, so the payload
@@ -393,25 +353,36 @@ def optional_field_keys(fields: Dict[str, Any], spec: LeadGenSpec) -> List[str]:
             continue
         if _field_filled(fields, fdef.key):
             continue
+        if fdef.key in ignored:
+            continue
         if not _relevant_when_met(fields, fdef, declined):
             continue
         out.append(fdef.key)
     return out[:MAX_OPTIONAL_FIELDS]
 
 
-def failed_sync_directive(sales_contact: str = "") -> str:
+def failed_sync_directive(
+    sales_contact: str = "",
+    *,
+    contact_label: str = "contact",
+    entity: str = "request",
+    visitor: str = "visitor",
+) -> str:
     """Hand-off did not run. Name a contact only when one is configured."""
     contact = str(sales_contact or "").strip()
-    offer = f" Offer the sales contact {contact}." if contact else ""
+    label = str(contact_label or "contact").strip() or "contact"
+    ent = str(entity or "request").strip() or "request"
+    who = str(visitor or "visitor").strip() or "visitor"
+    offer = f" Offer the {label} {contact}." if contact else ""
     return (
-        "The request is saved but not yet sent. In one sentence say that, "
-        "and name anything still needed in the visitor's own words."
+        f"The {ent} is saved but not yet sent. In one sentence say that, "
+        f"and name anything still needed in the {who}'s own words."
         + offer
         + " Never say sent, received, forwarded, or passed on. Ask no further field."
     )
 
 
-#: Default failed-hand-off wording when no sales contact is configured.
+#: Default failed-hand-off wording when no contact is configured.
 SYNC_FAILED_DIRECTIVE = failed_sync_directive()
 
 # Internal, underscore-prefixed so both are excluded from the sync digest and
@@ -445,60 +416,93 @@ def handoff_directive(
     *,
     already_stated: bool = False,
     just_declined: bool = False,
+    stop_optional: bool = False,
+    entity: str = "request",
+    visitor: str = "visitor",
+    handoff_team: str = "team",
 ) -> str:
     """Structural hand-off instruction. Wording of the sentence lives on the skill."""
+    ent = str(entity or "request").strip() or "request"
+    who = str(visitor or "visitor").strip() or "visitor"
+    team = str(handoff_team or "team").strip() or "team"
     if just_declined:
         if already_stated:
             return (
                 "Hand-off already stated; do not repeat the hand-off sentence. "
-                "The same request stays filed, and anything added later will "
+                f"The same {ent} stays filed, and anything added later will "
                 "update it. Ask no field."
             )
         return (
             "Hand-off is complete. Use the skill's hand-off sentence, then ask "
-            "no field — the visitor declined or does not want more questions. "
+            f"no field — the {who} declined or does not want more questions. "
             "If they supplied an optional value this turn, say it is being added "
-            "to the same request."
+            f"to the same {ent}."
+        )
+    if stop_optional and optional_keys:
+        if already_stated:
+            return (
+                "Hand-off already stated; do not repeat the hand-off sentence. "
+                f"The optional questions have ended for this {ent}. Ask no field."
+            )
+        return (
+            "Hand-off is complete. Use the skill's hand-off sentence and ask no "
+            f"field — the optional questions have ended for this {ent}."
         )
     if not optional_keys:
         if already_stated:
             return (
                 "Hand-off already stated; do not repeat the hand-off sentence. "
-                "Acknowledge in one sentence that the same request is up to date. "
+                f"Acknowledge in one sentence that the same {ent} is up to date. "
                 "Ask no field."
             )
         return (
             "Hand-off is complete. Use the skill's hand-off sentence and ask no "
             "further field this turn."
         )
-    listed = ", ".join(f"`{k}`" for k in optional_keys)
+    next_optional = optional_keys[0]
     if already_stated:
         return (
             "Hand-off already stated; do not repeat the hand-off sentence. "
-            "Say in one sentence that this detail is added to the same request. "
-            f"Then ask at most one optional field from {listed} only when the "
-            "visitor engaged with a value and has not refused; otherwise ask no "
-            "field. Never rotate to another optional after a refusal."
+            f"Say in one sentence that this detail is added to the same {ent}. "
+            f"Then ask for `{next_optional}` now — one field, one question, in "
+            f"the {who}'s terms and never by its key. Ask it because this turn "
+            "supplied or engaged with a value and did not refuse, skip, or "
+            "signal done. A refusal ends the optional questions: acknowledge "
+            "in one sentence and do not rotate to another field."
         )
     return (
-        "Hand-off is complete. Use the skill's hand-off sentence, then ask at "
-        f"most one optional field from {listed} only when the visitor engaged "
-        "with a value and has not refused; otherwise ask no field. A refusal "
-        "moves on; the request is already filed."
+        "Hand-off is complete. Use the skill's hand-off sentence "
+        f"(the {ent} is with the {team}), then ask for "
+        f"`{next_optional}` now — one field, one question, in the {who}'s "
+        "terms and never by its key. Ask it because this turn supplied or "
+        "engaged with a value and did not refuse, skip, or signal done. A "
+        "refusal ends the optional questions: acknowledge in one sentence, do "
+        f"not rotate to another field — the {ent} is already filed."
     )
 
 
+def _last_user_text(interaction: Any) -> str:
+    for attr in ("utterance", "user_message", "text", "message", "content"):
+        value = getattr(interaction, attr, "")
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
 def _visitor_label(spec: LeadGenSpec, key: Optional[str]) -> str:
-    """Short guidance safe to put in a visitor sentence. Never the raw key."""
+    """Short label safe to put in a visitor sentence. Never the raw key alone."""
     if not key:
         return ""
     fdef = spec.get_field(key)
     if fdef is None:
-        return ""
+        return str(key).replace("_", " ").strip()
+    label = str(getattr(fdef, "label", "") or "").strip()
+    if label:
+        return label
     guidance = str(fdef.guidance or "").strip()
     if guidance and len(guidance) <= 80:
         return guidance
-    return ""
+    return str(key).replace("_", " ").strip()
 
 
 def next_ask_directive(
@@ -507,35 +511,72 @@ def next_ask_directive(
     *,
     just_declined: bool = False,
     ask_label: str = "",
+    stop_optional: bool = False,
+    entity: str = "request",
+    visitor: str = "visitor",
+    refused_label: str = "",
+    declined_label: str = "",
 ) -> str:
     """The ask for this reply. Business close wording stays on the skill."""
+    ent = str(entity or "request").strip() or "request"
+    who = str(visitor or "visitor").strip() or "visitor"
+    if refused_label:
+        return (
+            f"The visitor refused {refused_label}. Do not re-ask it this turn and "
+            f"do not name the field key: reply that {refused_label} is needed to "
+            f"file this {entity} — would you like to continue or cancel? If they "
+            "continue, ask once more in fresh words; if they cancel, use the "
+            "cancel tool. Never store a refusal as the value."
+        )
+    if declined_label and (next_required or optional_keys):
+        if next_required:
+            then = f"Then ask only for `{next_required}` — one field, one question."
+        elif optional_keys:
+            then = f"Then ask only for `{optional_keys[0]}` — one field, one question."
+        else:
+            then = "Ask no further field."
+        return (
+            f"The visitor declined {declined_label}; acknowledge it in one short "
+            f"clause that names {declined_label}, and do not re-ask it. {then} Do "
+            f"not say {declined_label} is needed to file the {entity}."
+        )
     if next_required:
-        label = ask_label.strip() or "this detail"
         return (
             "Ask only for "
             f"`{next_required}` in this reply; do not ask any other field. "
-            "If the visitor refuses it, do not ask again in that turn and do not "
-            f"name the field key: reply that {label} is needed to file this "
-            "request — would you like to continue or cancel? If they continue, "
-            "ask once more in fresh words; if they cancel, use the cancel tool. "
             "Never store a refusal as the value."
         )
+    if just_declined:
+        return (
+            f"Ask no further field. The {who} declined or does not want more "
+            "questions, so do not rotate to another optional. The "
+            f"{ent} is saved, and any further details they give update the same "
+            f"{ent}. Do not say it was sent unless the hand-off has completed."
+        )
+    if stop_optional:
+        return (
+            "Ask no further field. The optional questions have ended for this "
+            f"{ent}; the {ent} stays filed, and any further detail the "
+            f"{who} gives updates it."
+        )
     if optional_keys:
-        listed = ", ".join(f"`{k}`" for k in optional_keys)
         if just_declined:
             return (
-                "Ask no further field. The visitor declined or does not want "
+                f"Ask no further field. The {who} declined or does not want "
                 "more questions, so do not rotate to another optional. The "
-                "request is saved, and any further details they give update the "
-                "same request. Do not say it was sent unless the hand-off has "
+                f"{ent} is saved, and any further details they give update the "
+                f"same {ent}. Do not say it was sent unless the hand-off has "
                 "completed."
             )
+        only = optional_keys[0]
         return (
-            "Required fields are complete. Ask at most one optional field from "
-            f"{listed}, and only when the visitor answered with a value and has "
-            "not refused, skipped, or signalled they are done. If they do not "
-            "want more questions, ask no further field. Never rotate to another "
-            "optional after a refusal; optional fields never block the request."
+            "Required fields are complete. Ask for "
+            f"`{only}` only — one field, one question, in the {who}'s terms "
+            f"and never by its key. Ask it because the {who} answered with a "
+            "value and has not refused, skipped, or signalled they are done. If "
+            "they do not want it, ask no further field; never rotate to another "
+            "optional. Optional fields never block the "
+            f"{ent}."
         )
     return (
         "Required fields are complete and no optional field is open. "
@@ -544,7 +585,13 @@ def next_ask_directive(
 
 
 def capture_state(
-    record: Any, spec: LeadGenSpec, *, just_declined: bool = False
+    record: Any,
+    spec: LeadGenSpec,
+    *,
+    just_declined: bool = False,
+    stop_optional: bool = False,
+    ignored: Sequence[str] = (),
+    refused: Sequence[str] = (),
 ) -> Dict[str, Any]:
     """The record snapshot every capture/retrieve result carries.
 
@@ -557,18 +604,43 @@ def capture_state(
     missing = record.get_missing_fields()
     fields = {k: v for k, v in profile_data.items() if not str(k).startswith("_")}
     next_required = missing[0] if missing else None
-    optional_keys = optional_field_keys(fields, spec)
+    optional_keys = (
+        []
+        if stop_optional
+        else optional_field_keys(fields, spec, ignored=tuple(ignored))
+    )
+    next_optional = optional_keys[0] if optional_keys else None
+    refused_keys = tuple(refused or ())
+    blocking_key = next(
+        (
+            key
+            for key in refused_keys
+            if (lambda fd: fd is not None and fd.required and fd.decline_value is None)(
+                spec.get_field(key)
+            )
+        ),
+        None,
+    )
+    declined_key = next((key for key in refused_keys if key != blocking_key), None)
+    msgs = spec.messages
     return {
         "fields": fields,
         "missing_fields": missing,
         "next_required": next_required,
         "optional_fields": optional_keys,
+        "next_optional": next_optional,
+        "stop_optional": bool(stop_optional),
         "field_reference": fields_reference(spec),
         "directive": next_ask_directive(
             next_required,
             optional_keys,
             just_declined=just_declined,
             ask_label=_visitor_label(spec, next_required),
+            stop_optional=stop_optional,
+            entity=msgs.entity,
+            visitor=msgs.visitor,
+            refused_label=_visitor_label(spec, blocking_key),
+            declined_label=_visitor_label(spec, declined_key),
         ),
     }
 
@@ -626,21 +698,45 @@ async def handle_capture(
     _LAST_CAPTURE[dedup_key] = now
 
     channel = getattr(interaction, "channel", "default") or "default"
-    if channel.lower() == "whatsapp":
-        if "phone" not in raw_fields and user.user_id:
-            raw_fields.setdefault("phone", user.user_id)
-        if not raw_fields.get("full_name") and getattr(user, "name", None):
-            raw_fields.setdefault("full_name", user.name)
+    # Track sentinel refusals before mapping so a real decline text (e.g.
+    # organization ``Personal``) is not mistaken for a refusal signal.
+    sentinel_keys: set = set()
+    for key, value in raw_fields.items():
+        if not _is_decline_sentinel(value):
+            continue
+        fdef = spec.get_field(key)
+        if fdef is not None and fdef.decline_value is not None:
+            sentinel_keys.add(key)
+    if not sentinel_keys:
+        _apply_channel_defaults(raw_fields, spec, user, channel)
 
     validated, validation_errors = await validate_fields(raw_fields, spec)
     for key in unknown_keys:
         validation_errors.setdefault(key, "unknown field")
-    just_declined = payload_has_refusal(raw_fields, spec)
+    just_declined = bool(sentinel_keys)
 
     record = await LeadRecord.get_or_create_for_user(
         user, required_fields=spec.get_required_fields()
     )
     profile_data = record.get_yaml() or {}
+    prev_offered = str(profile_data.get("_leadgen_offered") or "")
+    prev_ignored = list(profile_data.get("_leadgen_ignored") or [])
+    prev_declined = bool(profile_data.get("_leadgen_declined"))
+    refused_keys: list = []
+    for key, value in raw_fields.items():
+        fdef = spec.get_field(key)
+        if fdef is None:
+            continue
+        current = str(value or "").strip().casefold()
+        is_refusal = _is_decline_sentinel(value) or (
+            fdef.decline_value is not None
+            and current == str(fdef.decline_value).strip().casefold()
+        )
+        if not is_refusal:
+            continue
+        if current and current == str(profile_data.get(key) or "").strip().casefold():
+            continue  # already recorded earlier; not a new refusal
+        refused_keys.append(key)
     changed = False
     if validated:
         ctx = HookExecutionContext(
@@ -668,7 +764,37 @@ async def handle_capture(
         validated = apply_merge_fields(validated, profile_data, spec.merge_fields())
         changed = await record.update_yaml(validated)
 
-    state = capture_state(record, spec, just_declined=just_declined)
+    profile_data = record.get_yaml() or {}
+    ignored = list(prev_ignored)
+    # Sentinel refusals close the optional line. A real answer that equals a
+    # decline string is not a refusal.
+    declined_flag = prev_declined or bool(sentinel_keys)
+    if (
+        prev_offered
+        and not changed
+        and not declined_flag
+        and not _field_filled(profile_data, prev_offered)
+        and prev_offered not in ignored
+    ):
+        ignored.append(prev_offered)
+    stop_optional = declined_flag or len(ignored) >= 2
+
+    state = capture_state(
+        record,
+        spec,
+        refused=tuple(refused_keys),
+        just_declined=just_declined,
+        stop_optional=stop_optional,
+        ignored=tuple(ignored),
+    )
+    if hasattr(record, "update_state"):
+        await record.update_state(
+            {
+                "_leadgen_offered": state.get("next_optional") or "",
+                "_leadgen_ignored": ignored,
+                "_leadgen_declined": declined_flag,
+            }
+        )
     result: Dict[str, Any] = {
         "status": (
             "updated"
@@ -704,10 +830,15 @@ async def handle_capture(
             # the pool is still open, and the pool resumes on the next capture.
             # After the first hand-off the sentence is not repeated.
             already_stated = handoff_already_stated(profile_data)
+            msgs = spec.messages
             result["directive"] = handoff_directive(
                 result.get("optional_fields") or [],
                 already_stated=already_stated,
                 just_declined=just_declined,
+                stop_optional=stop_optional,
+                entity=msgs.entity,
+                visitor=msgs.visitor,
+                handoff_team=msgs.handoff_team,
             )
             snapshot = _public_fields(profile_data)
             profile_data[HANDOFF_STATED_KEY] = True
@@ -718,7 +849,13 @@ async def handle_capture(
         elif not result.get("missing_fields"):
             # Required fields are complete but the hand-off did not run. Say it
             # is saved and not sent; never let the reply claim otherwise.
-            result["directive"] = failed_sync_directive(spec.sync.sales_contact)
+            msgs = spec.messages
+            result["directive"] = failed_sync_directive(
+                spec.sync.sales_contact,
+                contact_label=msgs.contact_label,
+                entity=msgs.entity,
+                visitor=msgs.visitor,
+            )
 
         if spec.handlers.on_sync:
             ctx = HookExecutionContext(

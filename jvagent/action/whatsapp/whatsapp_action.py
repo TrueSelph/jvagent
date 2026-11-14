@@ -670,8 +670,19 @@ class WhatsAppAction(Action):
             )
 
     async def _warn_lambda_local_storage(self) -> None:
-        """Log warning when on Lambda with local file storage and non-/tmp path."""
+        """Log warning when on Lambda with local file storage and non-/tmp path.
+
+        Skips when ``JVSPATIAL_FILE_STORAGE_SERVERLESS_SHARED`` is set (operator
+        asserts durable shared storage such as EFS), matching LocalFileInterface.
+        """
         if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            return
+        shared = (
+            os.environ.get("JVSPATIAL_FILE_STORAGE_SERVERLESS_SHARED", "")
+            .strip()
+            .lower()
+        )
+        if shared in ("1", "true", "yes", "on"):
             return
         try:
             from jvagent.core.app import App
@@ -684,9 +695,11 @@ class WhatsAppAction(Action):
             if provider == "local" and root and not root.startswith("/tmp"):
                 logger.warning(
                     "WhatsApp media on Lambda: file_storage is local with "
-                    "root_dir=%r. Lambda /var/task is read-only. Configure "
-                    "file_storage.provider: s3 (or JVSPATIAL_FILE_INTERFACE=s3) "
-                    "or set JVSPATIAL_FILES_ROOT_PATH=/tmp for ephemeral storage.",
+                    "root_dir=%r. Lambda /var/task is read-only. Use EFS under "
+                    "/mnt and set JVSPATIAL_FILE_STORAGE_SERVERLESS_SHARED=1, "
+                    "configure file_storage.provider: s3 "
+                    "(or JVSPATIAL_FILE_INTERFACE=s3), or set "
+                    "JVSPATIAL_FILES_ROOT_PATH=/tmp for ephemeral storage.",
                     root,
                 )
         except Exception:

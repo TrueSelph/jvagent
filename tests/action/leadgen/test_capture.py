@@ -220,7 +220,12 @@ async def test_capture_result_includes_merged_fields():
     }
     assert second["missing_fields"] == []
     assert "next_ask" not in second
-    assert "next_optional" not in second
+    assert second.get("next_optional") in (
+        None,
+        "project_description",
+        "project_location",
+        "contact_role",
+    )
     assert "next_project_optional" not in second
     assert "must_ask" not in second
     assert "open_fields" not in second

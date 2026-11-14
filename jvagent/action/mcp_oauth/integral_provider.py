@@ -590,6 +590,56 @@ def normalize_token_payload(
     }
 
 
+_IDENTITY_TIMEOUT = 8.0
+
+
+async def resolve_token_identity(
+    mcp_url: str,
+    access_token: str,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    """Resolve the Core account email behind an Integral MCP access token.
+
+    The MCPs panel labels a connection with the token's ``email``; without one
+    it falls back to the storage key (``integral``). Core accepts the MCP
+    access token on its own API, so read the identity back after the exchange.
+    Best-effort: a failure returns ``{}`` and never fails the connect.
+    """
+    token = (access_token or "").strip()
+    if not token:
+        return {}
+    base = ""
+    for candidate in (
+        (meta or {}).get("issuer"),
+        (meta or {}).get("token_endpoint"),
+        mcp_url,
+    ):
+        base = _origin(str(candidate or ""))
+        if base:
+            break
+    if not base:
+        return {}
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=_IDENTITY_TIMEOUT, follow_redirects=True
+        ) as client:
+            resp = await client.get(
+                f"{base}/api/auth/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code != 200:
+                return {}
+            body = resp.json()
+    except Exception as exc:
+        logger.debug("Integral identity lookup failed: %s", exc)
+        return {}
+    user = body.get("user") if isinstance(body, dict) else None
+    user = user if isinstance(user, dict) else {}
+    email = str(user.get("email") or "").strip()
+    return {"email": email} if email else {}
+
+
 def payload_is_expired(payload: Optional[Dict[str, Any]]) -> bool:
     """Return True when the stored access token is missing or (near) expired."""
     if not payload:

@@ -52,16 +52,17 @@ class LeadGenAction(Action):
         ),
     )
     sync_min_fields: List[str] = attribute(
-        default_factory=lambda: ["full_name"],
+        default_factory=list,
         description=(
-            "Fields that must all be present before an action-level sync fires."
+            "Fields that must all be present before an action-level sync fires. "
+            "Empty means no min-field gate (skills declare their own)."
         ),
     )
     sync_require_any: List[str] = attribute(
-        default_factory=lambda: ["phone", "email"],
+        default_factory=list,
         description=(
             "At least one of these must be present before an action-level sync "
-            "fires."
+            "fires. Empty means no require-any gate."
         ),
     )
     sales_contact: str = attribute(

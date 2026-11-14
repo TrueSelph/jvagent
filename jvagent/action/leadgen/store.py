@@ -125,6 +125,23 @@ class LeadRecord(Node):
                 missing.append(field)
         return missing
 
+    async def update_state(self, updates: Dict[str, Any]) -> bool:
+        """Merge underscore-only state keys without marking the lead changed.
+
+        ``update_yaml`` sets ``changed=True`` for every underscore key, which
+        would drive an auto-sync and a "Set:" summary line on a turn that saved
+        no lead field. State bookkeeping must not do that.
+        """
+        current = self.get_yaml()
+        merged = dict(current)
+        for key, value in updates.items():
+            if str(key).startswith("_"):
+                merged[key] = value
+        if merged == current:
+            return False
+        await self.set_yaml(merged)
+        return False
+
     async def update_yaml(self, updates: Dict[str, Any]) -> bool:
         current = self.get_yaml()
         changed = False

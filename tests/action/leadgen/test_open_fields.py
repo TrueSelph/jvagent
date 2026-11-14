@@ -85,6 +85,8 @@ def test_capture_state_points_at_the_next_ask():
         "missing_fields",
         "next_required",
         "optional_fields",
+        "next_optional",
+        "stop_optional",
         "field_reference",
         "directive",
     }
@@ -98,8 +100,10 @@ def test_capture_state_points_at_the_next_ask():
         "project_location",
         "contact_role",
     ]
-    for removed in ("next_ask", "next_optional", "next_project_optional", "ask_next"):
+    for removed in ("next_ask", "next_project_optional", "ask_next"):
         assert removed not in state
+    assert state["next_optional"] == "project_description"
+    assert state["stop_optional"] is False
 
 
 def test_capture_state_switches_to_the_optional_pool():
@@ -107,8 +111,8 @@ def test_capture_state_switches_to_the_optional_pool():
     assert state["next_required"] is None
     assert "Required fields are complete" in state["directive"]
     assert "`project_description`" in state["directive"]
-    assert "only when the visitor answered with a value" in state["directive"]
-    assert "Never rotate to another optional after a refusal" in state["directive"]
+    assert "one field, one question" in state["directive"]
+    assert "never rotate to another optional" in state["directive"]
 
 
 def test_optional_pool_honours_relevant_when():
@@ -133,24 +137,27 @@ def test_directive_acknowledges_then_asks_the_required_field():
     directive = next_ask_directive("full_name", [])
     assert "`full_name`" in directive
     assert "do not ask any other field" in directive
-    assert "would you like to continue or cancel" in directive
-    assert "this detail is needed" in directive
-    assert "full_name is needed" not in directive
     assert "Never store a refusal" in directive
+    # The refusal sentence is not part of a normal ask (Q1).
+    assert "would you like to continue or cancel" not in directive
 
 
-def test_required_refusal_sentence_uses_guidance_not_the_key():
-    directive = next_ask_directive("full_name", [], ask_label="your name")
-    assert "your name is needed" in directive
-    assert "full_name is needed" not in directive
+def test_required_refusal_sentence_names_the_refused_field():
+    directive = next_ask_directive(
+        "phone", [], ask_label="phone number", refused_label="the email address"
+    )
+    assert "the email address is needed" in directive
+    assert "would you like to continue or cancel" in directive
+    # Q2: the sentence names the refused field, not the next required one.
+    assert "phone number is needed" not in directive
 
 
 def test_directive_acknowledges_then_asks_the_optional_field():
     directive = next_ask_directive(None, ["project_budget"])
     assert "`project_budget`" in directive
-    assert "only when the visitor answered with a value" in directive
-    assert "Never rotate to another optional after a refusal" in directive
-    assert "optional fields never block the request" in directive
+    assert "answered with a value" in directive
+    assert "never rotate to another optional" in directive
+    assert "Optional fields never block the request" in directive
 
 
 def test_handoff_directive_asks_the_one_the_request_needs():
@@ -159,18 +166,27 @@ def test_handoff_directive_asks_the_one_the_request_needs():
     assert "Hand-off is complete" in closed
     open_pool = handoff_directive(["contact_role", "company_industry"])
     assert "hand-off sentence" in open_pool
-    assert "`contact_role`" in open_pool
-    assert "engaged with a value" in open_pool
+    assert "ask for `contact_role` now" in open_pool
+    assert "`company_industry`" not in open_pool
+    assert "one field, one question" in open_pool
     assert "A refusal" in open_pool
     assert "ignore moves on" not in open_pool
+
+
+def test_handoff_directive_is_agent_neutral_and_names_only_the_first():
+    directive = handoff_directive(["budget_range", "preferred_contact"])
+    assert "`budget_range`" in directive
+    assert "preferred_contact" not in directive
+    for key in ("contact_role", "quote_items", "order_items", "organization"):
+        assert key not in directive
 
 
 def test_handoff_directive_does_not_repeat_after_the_first():
     repeat = handoff_directive(["project_location"], already_stated=True)
     assert "do not repeat the hand-off sentence" in repeat
     assert "added to the same request" in repeat
-    assert "engaged with a value" in repeat
-    assert "hand-off sentence" in repeat
+    assert "ask for `project_location` now" in repeat
+    assert "one field, one question" in repeat
     assert "Use the skill's hand-off sentence, then ask" not in repeat
 
 
@@ -332,15 +348,17 @@ async def test_literal_decline_sentinel_maps_to_the_field_value():
 
 
 @pytest.mark.asyncio
-async def test_refusal_phrase_maps_to_the_field_value():
+async def test_refusal_phrase_without_sentinel_is_stored_as_value():
+    """Phrase dictionaries are gone; only the decline_value sentinel maps."""
     spec = LeadGenSpec(
         name="t",
         fields=[FieldDef(key="company_industry", decline_value="Not provided")],
     )
-    for phrase in ("no", "none", "I don't want to say", "n/a", "skip"):
-        validated, errors = await validate_fields({"company_industry": phrase}, spec)
-        assert errors == {}, phrase
-        assert validated["company_industry"] == "Not provided", phrase
+    validated, errors = await validate_fields(
+        {"company_industry": "no quiero decir"}, spec
+    )
+    assert errors == {}
+    assert validated["company_industry"] == "no quiero decir"
 
 
 @pytest.mark.asyncio
@@ -414,7 +432,12 @@ def test_failed_sync_directive_is_truthful():
     assert "sales contact" not in SYNC_FAILED_DIRECTIVE
     named = failed_sync_directive("555-0100")
     assert "555-0100" in named
-    assert "Offer the sales contact" in named
+    assert "Offer the contact" in named
+    sales = failed_sync_directive(
+        "555-0100", contact_label="sales contact", entity="quote"
+    )
+    assert "Offer the sales contact 555-0100" in sales
+    assert "The quote is saved" in sales
 
 
 def test_handoff_after_statement_requires_update_wording_not_a_bare_ack():
@@ -432,7 +455,7 @@ def test_declined_close_after_statement_pins_the_close_sentence():
     assert "exact sentence" not in text
 
 
-def test_org_refusal_does_not_apply_to_other_fields():
+def test_refusal_signal_is_sentinel_only():
     spec = LeadGenSpec(
         name="t",
         fields=[
@@ -441,27 +464,9 @@ def test_org_refusal_does_not_apply_to_other_fields():
         ],
     )
     assert payload_has_refusal({"organization": "Personal"}, spec) is False
-    assert payload_has_refusal({"organization": "no organization"}, spec) is True
-    assert payload_has_refusal({"project_description": "no company"}, spec) is False
-
-
-@pytest.mark.asyncio
-async def test_org_phrase_maps_only_on_an_organization_field():
-    spec = LeadGenSpec(
-        name="t",
-        fields=[
-            FieldDef(key="organization", decline_value="Personal"),
-            FieldDef(key="project_description", decline_value="Not provided"),
-        ],
-    )
-    org, org_errors = await validate_fields({"organization": "no company"}, spec)
-    assert org_errors == {}
-    assert org["organization"] == "Personal"
-    project, project_errors = await validate_fields(
-        {"project_description": "no company"}, spec
-    )
-    assert project_errors == {}
-    assert project["project_description"] == "no company"
+    assert payload_has_refusal({"organization": "no organization"}, spec) is False
+    assert payload_has_refusal({"organization": "decline_value"}, spec) is True
+    assert payload_has_refusal({"project_description": "decline_value"}, spec) is True
 
 
 def test_handoff_flag_resets_when_a_snapshotted_value_changes():
@@ -477,3 +482,50 @@ def test_handoff_flag_resets_when_a_snapshotted_value_changes():
     del new_cycle["project_description"]
     assert handoff_already_stated(new_cycle) is False
     assert handoff_already_stated({HANDOFF_STATED_KEY: True, "name": "Ann"}) is False
+
+
+def test_stop_optional_empties_the_pool_and_asks_nothing():
+    state = capture_state(
+        _Record({"full_name": "Ann"}, missing=[]), _project_spec(), stop_optional=True
+    )
+    assert state["optional_fields"] == []
+    assert state["next_optional"] is None
+    assert state["stop_optional"] is True
+    assert "Ask no further field" in state["directive"]
+
+
+def test_ignored_optional_is_never_offered_again():
+    spec = _project_spec()
+    fields = {"full_name": "Ann"}
+    pool = optional_field_keys(fields, spec)
+    assert pool
+    after = optional_field_keys(fields, spec, ignored=(pool[0],))
+    assert pool[0] not in after
+
+
+def test_decline_sentinel_detection():
+    from jvagent.action.leadgen.engine import _is_decline_sentinel
+
+    assert _is_decline_sentinel("decline_value")
+    assert _is_decline_sentinel("Decline_Value")
+    assert not _is_decline_sentinel("No.")
+    assert not _is_decline_sentinel("me nah wah say")
+    assert not _is_decline_sentinel("Project Manager")
+
+
+def test_visitor_label_uses_label_then_short_guidance_then_key():
+    from jvagent.action.leadgen.engine import _visitor_label
+    from jvagent.action.leadgen.spec import FieldDef, LeadGenSpec
+
+    spec = LeadGenSpec(
+        name="t",
+        fields=[
+            FieldDef(key="full_name", label="full name", guidance="x" * 100),
+            FieldDef(key="contact_role", guidance="x" * 100),
+            FieldDef(key="email", guidance="email address"),
+        ],
+    )
+    assert _visitor_label(spec, "full_name") == "full name"
+    assert _visitor_label(spec, "contact_role") == "contact role"
+    assert _visitor_label(spec, "email") == "email address"
+    assert _visitor_label(spec, None) == ""

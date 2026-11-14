@@ -94,11 +94,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
             name="leadgen__capture",
             description=(
                 "Save or update lead fields from the latest message. Send every new value in "
-                "one call; map a refusal to the field's decline text (short refusals are "
-                "normalised; never send the literal token decline_value). Returns status, fields, "
-                "missing_fields, next_required, optional_fields, field_reference, "
-                "validation_errors, sync_result, and a directive. Follow the directive; a "
-                "capture is not a close."
+                "one call; for a refusal in any language send the literal token decline_value "
+                "for that field (mapped to the field's decline text). Returns status, fields, "
+                "missing_fields, next_required, optional_fields, next_optional, "
+                "stop_optional, field_reference, validation_errors, sync_result, and a "
+                "directive. Follow the directive; stop_optional means ask no further "
+                "optional. A capture is not a close."
             ),
             parameters_schema={
                 "type": "object",
@@ -110,14 +111,12 @@ def _build_core_tools(action: "LeadGenAction") -> List[Tool]:
         Tool(
             name="leadgen__retrieve",
             description=(
-                "Load the current lead profile, next_required, optional_fields, field_reference, "
-                "and the ask directive. Use mid-conversation, once "
-                "a request cycle is already underway, when you need profile context and "
-                "the visitor supplied no new lead data. NEVER the first call on a "
-                "post-sync turn: when the skill provides a prepare tool, it runs first — "
-                'even for a bare greeting like "hey" with no product named. Do not use '
-                "retrieve to restore the profile after a sync or to open a turn; it reads "
-                "the cleared record and re-asks for details the visitor already gave."
+                "Load the current lead profile, next_required, optional_fields, "
+                "next_optional, stop_optional, field_reference, "
+                "and the ask directive. Use mid-conversation when you need "
+                "profile context and the visitor supplied no new lead data. "
+                "Do not use retrieve to open a new capture cycle after a hand-off; "
+                "when the skill provides a prepare tool, that tool starts the next cycle."
             ),
             parameters_schema=optional_skill,
             execute=_retrieve,

@@ -517,3 +517,60 @@ def test_same_email_microsoft_keeps_outlook_and_onedrive_tokens():
     assert tok["service_tokens"]["onedrive"]["refresh_token"] == "rt-files"
     assert "Files.ReadWrite.All" not in tok["service_tokens"]["outlook"]["scopes"]
     assert "Mail.Send" not in tok["service_tokens"]["onedrive"]["scopes"]
+
+
+async def test_integral_exchange_stores_resolved_identity(monkeypatch):
+    from types import SimpleNamespace
+
+    from jvagent.action.mcp_oauth import endpoints as ep
+
+    async def fake_mcp_url():
+        return "https://core.example.com/api/mcp/integral_core"
+
+    async def fake_discover(**kwargs):
+        return {
+            "issuer": "https://core.example.com",
+            "token_endpoint": "https://core.example.com/api/oauth/token",
+        }
+
+    async def fake_client(server):
+        return SimpleNamespace(client_id="cid")
+
+    async def fake_exchange(meta, **kwargs):
+        return {"access_token": "tok", "expires_in": 3600}
+
+    async def fake_identity(mcp_url, access_token, meta=None):
+        assert access_token == "tok"
+        return {"email": "admin@integral.com"}
+
+    async def fake_auth_cfg():
+        return {}
+
+    def fake_scopes(cfg):
+        return ""
+
+    saved = {}
+
+    class FakeAction:
+        async def save_oauth_token(self, server, account, payload):
+            saved.update(server=server, account=account, payload=payload)
+
+    monkeypatch.setattr(ep, "_integral_mcp_url", fake_mcp_url)
+    monkeypatch.setattr(ep, "discover_authorization_server", fake_discover)
+    monkeypatch.setattr(ep, "load_registered_client", fake_client)
+    monkeypatch.setattr(ep, "exchange_authorization_code", fake_exchange)
+    monkeypatch.setattr(ep, "resolve_token_identity", fake_identity)
+    monkeypatch.setattr(ep, "_integral_auth_cfg", fake_auth_cfg)
+    monkeypatch.setattr(ep, "resolve_scopes_from_auth", fake_scopes)
+
+    record = SimpleNamespace(code_verifier="v", redirect_uri="https://a/cb")
+    account, label = await ep._exchange_integral_code(
+        FakeAction(), "code", record, "integral"
+    )
+
+    assert saved["server"] == "integral_core"
+    assert saved["account"] == "integral"
+    assert saved["payload"]["email"] == "admin@integral.com"
+    assert "display_name" not in saved["payload"]
+    assert account == "admin@integral.com"
+    assert label == "Integral"

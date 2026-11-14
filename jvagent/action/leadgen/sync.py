@@ -6,18 +6,23 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
 DIGEST_KEY = "_leadgen_sync_digest"
 LEGACY_DIGEST_KEY = "_lead_sync_mcp_DIGEST"
-UTC_MINUS_4 = timezone(timedelta(hours=-4))
 
 
-def _now_utc_minus_4() -> str:
-    return datetime.now(UTC_MINUS_4).strftime("%Y-%m-%d %H:%M")
+def _now_in_timezone(tz_name: str = "UTC") -> str:
+    tz: tzinfo
+    try:
+        tz = ZoneInfo(str(tz_name or "UTC").strip() or "UTC")
+    except (ZoneInfoNotFoundError, KeyError, ValueError):
+        tz = timezone.utc
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M")
 
 
 def compute_digest(data: Dict[str, Any]) -> str:
@@ -37,7 +42,13 @@ def get_stored_digest(profile_data: Dict[str, Any]) -> Optional[str]:
     return profile_data.get(DIGEST_KEY) or profile_data.get(LEGACY_DIGEST_KEY)
 
 
-def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
+def substitute(
+    val: Any,
+    profile_data: Dict[str, Any],
+    user_id: str,
+    *,
+    timezone_name: str = "UTC",
+) -> Any:
     # Exclude internal, underscore-prefixed keys (e.g. the stored sync digest)
     # from every template — they are bookkeeping, not lead data, and must not
     # leak into a synced destination. Matches profile_keys/profile_row.
@@ -45,13 +56,14 @@ def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
     profile_json = json.dumps(public, default=str)
     profile_keys = sorted(public)
     profile_row = [str(public.get(k, "")) for k in profile_keys]
+    last_updated = _now_in_timezone(timezone_name)
 
     def _replace(s: str) -> str:
         s = s.replace("{user_id}", str(user_id))
         s = s.replace("{profile_json}", profile_json)
         s = s.replace("{profile_keys}", json.dumps(profile_keys))
         s = s.replace("{profile_row}", json.dumps(profile_row))
-        s = s.replace("{last_updated}", _now_utc_minus_4())
+        s = s.replace("{last_updated}", last_updated)
         for k, v in profile_data.items():
             s = s.replace(f"{{{k}}}", str(v) if v is not None else "")
         # Any remaining {placeholder} refers to a field that has not been
@@ -64,14 +76,22 @@ def substitute(val: Any, profile_data: Dict[str, Any], user_id: str) -> Any:
         try:
             parsed = json.loads(replaced)
             if isinstance(parsed, (list, dict)):
-                return substitute(parsed, profile_data, user_id)
+                return substitute(
+                    parsed, profile_data, user_id, timezone_name=timezone_name
+                )
         except (json.JSONDecodeError, ValueError):
             pass
         return replaced
     if isinstance(val, list):
-        return [substitute(item, profile_data, user_id) for item in val]
+        return [
+            substitute(item, profile_data, user_id, timezone_name=timezone_name)
+            for item in val
+        ]
     if isinstance(val, dict):
-        return {k: substitute(v, profile_data, user_id) for k, v in val.items()}
+        return {
+            k: substitute(v, profile_data, user_id, timezone_name=timezone_name)
+            for k, v in val.items()
+        }
     return val
 
 
@@ -98,6 +118,8 @@ async def sync_to_destinations(
     destinations: List[Dict[str, Any]],
     profile_data: Dict[str, Any],
     user_id: str,
+    *,
+    timezone_name: str = "UTC",
 ) -> Tuple[Dict[str, str], bool]:
     if not destinations:
         return {}, False
@@ -142,7 +164,13 @@ async def sync_to_destinations(
             )
             results[server_name] = "skipped: connector not configured"
             continue
-        ok, msg = await _sync_mcp(mcp_action, entry, profile_data, user_id)
+        ok, msg = await _sync_mcp(
+            mcp_action,
+            entry,
+            profile_data,
+            user_id,
+            timezone_name=timezone_name,
+        )
         results[server_name] = "ok" if ok else msg
         if ok:
             any_success = True
@@ -155,6 +183,8 @@ async def _sync_mcp(
     entry: Dict[str, Any],
     profile_data: Dict[str, Any],
     uid: str,
+    *,
+    timezone_name: str = "UTC",
 ) -> Tuple[bool, str]:
     server_name = (entry.get("server") or "").strip()
     tool_name = (entry.get("tool") or "").strip()
@@ -166,7 +196,7 @@ async def _sync_mcp(
     if not tool_name:
         return False, f"Missing 'tool' for MCP entry '{server_name}'."
 
-    resolved_args = substitute(raw_args, profile_data, uid)
+    resolved_args = substitute(raw_args, profile_data, uid, timezone_name=timezone_name)
 
     if hasattr(mcp_action, "ensure_servers"):
         try:

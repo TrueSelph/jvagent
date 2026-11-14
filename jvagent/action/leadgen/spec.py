@@ -16,19 +16,35 @@ from jvagent.action.skill_spec.base import (
 )
 from jvagent.action.skill_spec.registry import BaseSkillRegistry
 
+from .validators import known_validators
+
 logger = logging.getLogger(__name__)
 
 LEADGEN_FRONTMATTER_KEY = "leadgen"
 
 SyncMode = Literal["on_capture", "on_complete", "manual"]
 
+#: No channel autofill unless the skill declares ``channel_defaults``.
+DEFAULT_CHANNEL_DEFAULTS: Dict[str, Dict[str, str]] = {}
+
 _LEADGEN_KEYS = frozenset(
-    {"title", "summary", "fields", "gap_fill", "sync", "handlers", "skill_tools"}
+    {
+        "title",
+        "summary",
+        "fields",
+        "gap_fill",
+        "sync",
+        "handlers",
+        "skill_tools",
+        "messages",
+        "channel_defaults",
+    }
 )
 _FIELD_KEYS = frozenset(
     {
         "key",
         "guidance",
+        "label",
         "required",
         "aliases",
         "validator",
@@ -47,15 +63,19 @@ _GAP_FILL_DEPRECATED = frozenset({"priority", "qualification", "project_qualific
 _GAP_FILL_KEYS = frozenset({"batch"}) | _GAP_FILL_DEPRECATED
 _RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined"})
 _SYNC_KEYS = frozenset(
-    {"mode", "min_fields", "require_any", "destinations", "sales_contact"}
+    {"mode", "min_fields", "require_any", "destinations", "sales_contact", "timezone"}
 )
 _HANDLER_KEYS = frozenset({"post_capture", "qualify", "on_sync"})
+_MESSAGES_KEYS = frozenset({"entity", "handoff_team", "contact_label", "visitor"})
+_CHANNEL_DEFAULT_SOURCES = frozenset({"user_id", "user_name"})
 
 
 @dataclass
 class FieldDef:
     key: str
     guidance: str = ""
+    # Short visitor-facing name for directives when guidance is long.
+    label: str = ""
     required: bool = False
     aliases: List[str] = field(default_factory=list)
     validator: str = ""
@@ -80,12 +100,24 @@ class GapFillDef:
 @dataclass
 class SyncDef:
     mode: SyncMode = "on_capture"
-    min_fields: List[str] = field(default_factory=lambda: ["full_name"])
-    require_any: List[str] = field(default_factory=lambda: ["phone", "email"])
+    min_fields: List[str] = field(default_factory=list)
+    require_any: List[str] = field(default_factory=list)
     destinations: List[Dict[str, Any]] = field(default_factory=list)
     # Offered in the failed-hand-off directive. Empty means the directive
     # does not name a contact.
     sales_contact: str = ""
+    # IANA timezone for ``{last_updated}`` in sync templates.
+    timezone: str = "UTC"
+
+
+@dataclass
+class MessagesDef:
+    """Neutral hand-off vocabulary. Skills override for domain wording."""
+
+    entity: str = "request"
+    handoff_team: str = "team"
+    contact_label: str = "contact"
+    visitor: str = "visitor"
 
 
 @dataclass
@@ -105,6 +137,9 @@ class LeadGenSpec:
     sync: SyncDef = field(default_factory=SyncDef)
     handlers: HandlersDef = field(default_factory=HandlersDef)
     skill_tools: List[SkillToolDef] = field(default_factory=list)
+    messages: MessagesDef = field(default_factory=MessagesDef)
+    # None → DEFAULT_CHANNEL_DEFAULTS; {} → disable autofill.
+    channel_defaults: Optional[Dict[str, Dict[str, str]]] = None
     source_dir: str = ""
 
     def get_required_fields(self) -> List[str]:
@@ -130,6 +165,11 @@ class LeadGenSpec:
     def merge_fields(self) -> List[str]:
         return [f.key for f in self.fields if f.merge]
 
+    def resolved_channel_defaults(self) -> Dict[str, Dict[str, str]]:
+        if self.channel_defaults is None:
+            return dict(DEFAULT_CHANNEL_DEFAULTS)
+        return dict(self.channel_defaults)
+
 
 def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
     """The catalogue the model reads: every declared field, declaration order.
@@ -145,6 +185,8 @@ def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
             "guidance": f.guidance,
             "required": f.required,
         }
+        if f.label:
+            entry["label"] = f.label
         if f.decline_value is not None:
             entry["decline_value"] = f.decline_value
         if f.capture_only:
@@ -178,12 +220,19 @@ def _parse_field(data: Dict[str, Any], *, index: int) -> FieldDef:
     if not isinstance(data, dict):
         raise ValueError(f"Field at {path} must be a mapping")
     reject_unknown_keys(data, _FIELD_KEYS, path=path)
+    validator = str(data.get("validator", "") or "").strip()
+    if validator and validator.lower() not in known_validators():
+        raise ValueError(
+            f"{path}.validator unknown '{validator}'; "
+            f"known: {', '.join(sorted(known_validators()))}"
+        )
     return FieldDef(
         key=str(data.get("key", "") or "").strip(),
         guidance=str(data.get("guidance", "") or ""),
+        label=str(data.get("label", "") or "").strip(),
         required=bool(data.get("required", False)),
         aliases=[str(a) for a in (data.get("aliases") or []) if a],
-        validator=str(data.get("validator", "") or "").strip(),
+        validator=validator,
         validator_args=dict(data.get("validator_args") or {}),
         decline_value=data.get("decline_value"),
         merge=bool(data.get("merge", False)),
@@ -219,15 +268,66 @@ def _parse_sync(data: Any) -> SyncDef:
     mode = str(data.get("mode") or "on_capture").strip().lower()
     if mode not in ("on_capture", "on_complete", "manual"):
         raise ValueError("sync.mode must be on_capture, on_complete, or manual")
+    # Omitted keys → empty lists (agent-agnostic). Explicit empty list stays empty.
+    if "min_fields" in data:
+        min_fields = [str(x) for x in (data.get("min_fields") or []) if x]
+    else:
+        min_fields = []
+    if "require_any" in data:
+        require_any = [str(x) for x in (data.get("require_any") or []) if x]
+    else:
+        require_any = []
     return SyncDef(
         mode=mode,  # type: ignore[arg-type]
-        min_fields=[str(x) for x in (data.get("min_fields") or ["full_name"]) if x],
-        require_any=[
-            str(x) for x in (data.get("require_any") or ["phone", "email"]) if x
-        ],
+        min_fields=min_fields,
+        require_any=require_any,
         destinations=list(data.get("destinations") or []),
         sales_contact=str(data.get("sales_contact") or "").strip(),
+        timezone=str(data.get("timezone") or "UTC").strip() or "UTC",
     )
+
+
+def _parse_messages(data: Any) -> MessagesDef:
+    if not data:
+        return MessagesDef()
+    if not isinstance(data, dict):
+        raise ValueError("messages must be a mapping")
+    reject_unknown_keys(data, _MESSAGES_KEYS, path="messages")
+    return MessagesDef(
+        entity=str(data.get("entity") or "request").strip() or "request",
+        handoff_team=str(data.get("handoff_team") or "team").strip() or "team",
+        contact_label=str(data.get("contact_label") or "contact").strip() or "contact",
+        visitor=str(data.get("visitor") or "visitor").strip() or "visitor",
+    )
+
+
+def _parse_channel_defaults(data: Any) -> Optional[Dict[str, Dict[str, str]]]:
+    """None when omitted (use framework default); ``{}`` disables autofill."""
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError("channel_defaults must be a mapping")
+    out: Dict[str, Dict[str, str]] = {}
+    for channel, mapping in data.items():
+        ch = str(channel or "").strip().lower()
+        if not ch:
+            continue
+        if not isinstance(mapping, dict):
+            raise ValueError(f"channel_defaults.{ch} must be a mapping")
+        resolved: Dict[str, str] = {}
+        for field_key, source in mapping.items():
+            key = str(field_key or "").strip()
+            src = str(source or "").strip().lower()
+            if not key:
+                continue
+            if src not in _CHANNEL_DEFAULT_SOURCES:
+                raise ValueError(
+                    f"channel_defaults.{ch}.{key} source must be "
+                    f"user_id or user_name, got '{source}'"
+                )
+            resolved[key] = src
+        out[ch] = resolved
+    return out
 
 
 def _parse_handlers(data: Any) -> HandlersDef:
@@ -265,6 +365,12 @@ def parse_leadgen_spec(
         require_mapping=False,
     )
 
+    channel_defaults: Optional[Dict[str, Dict[str, str]]]
+    if "channel_defaults" in data:
+        channel_defaults = _parse_channel_defaults(data.get("channel_defaults"))
+    else:
+        channel_defaults = None
+
     return LeadGenSpec(
         name=default_name,
         title=str(data.get("title", "") or ""),
@@ -274,6 +380,8 @@ def parse_leadgen_spec(
         sync=_parse_sync(data.get("sync")),
         handlers=_parse_handlers(data.get("handlers")),
         skill_tools=skill_tools,
+        messages=_parse_messages(data.get("messages")),
+        channel_defaults=channel_defaults,
         source_dir=source_dir,
     )
 

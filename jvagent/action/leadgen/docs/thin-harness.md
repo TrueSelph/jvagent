@@ -13,7 +13,8 @@
 - `LeadRecord` persistence
 - Auto-sync threshold evaluation and MCP dispatch
 - Digest dedup
-- Never classify user intent in action code
+- Never classify user intent in action code (no order/buy heuristics, no
+  domain item-line rewriting — those belong in skill `post_capture` hooks)
 
 ## Invariants
 

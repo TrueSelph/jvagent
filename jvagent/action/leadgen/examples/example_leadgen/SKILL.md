@@ -18,6 +18,11 @@ leadgen:
   summary: >-
     Reference leadgen skill for product inquiries. Copy to agents/.../skills/<name>/
     and register in agent.yaml orchestrator skills.
+  messages:
+    entity: request
+    handoff_team: sales team
+    contact_label: sales contact
+    visitor: visitor
   fields:
     - key: full_name
       required: true
@@ -76,4 +81,4 @@ leadgen:
 ### Tone
 
 - Weave data collection into helpful answers — never interrogate.
-- When the user declines email, save `email="N/A"` immediately.
+- When the user declines email, send `email: decline_value` (maps to `N/A`).

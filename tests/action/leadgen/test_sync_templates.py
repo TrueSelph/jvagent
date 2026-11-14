@@ -82,6 +82,17 @@ def test_substitute_field_token():
     assert sync_mod.substitute("{name}", data, "u1") == "Jane"
 
 
+def test_substitute_last_updated_uses_timezone():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    out = sync_mod.substitute("{last_updated}", {}, "u1", timezone_name="UTC")
+    # YYYY-MM-DD HH:MM
+    assert len(out) == 16
+    parsed = datetime.strptime(out, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("UTC"))
+    assert abs((datetime.now(ZoneInfo("UTC")) - parsed).total_seconds()) < 120
+
+
 def test_substitute_excludes_internal_keys():
     """Internal (_) keys must not leak into synced output."""
     data = {"name": "Jane", sync_mod.DIGEST_KEY: "deadbeef"}
