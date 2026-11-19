@@ -47,7 +47,6 @@ leadgen:
       guidance: Brief description of their project or need
   gap_fill:
     batch: true
-    priority: [name, phone, email, organization]
   sync:
     mode: on_capture
     min_fields: [name]

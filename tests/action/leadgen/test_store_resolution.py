@@ -100,3 +100,13 @@ async def test_append_to_section_does_not_wipe_lead_record():
     finally:
         await db.close()
         clear_default_context()
+
+
+def test_no_core_field_vocabulary():
+    """The action has no default field vocabulary; the skill spec is the source."""
+    from jvagent.action.leadgen.store import DEFAULT_REQUIRED_FIELDS
+
+    assert DEFAULT_REQUIRED_FIELDS == []
+    record = LeadRecord()
+    assert record.get_required_fields() == []
+    assert record.get_missing_fields() == []

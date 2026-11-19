@@ -425,7 +425,7 @@ Admin helpers:
 **Media and voice (meta provider):**
 
 - Inbound media: Meta sends a media id in the webhook; jvagent downloads via Graph and feeds the same pipeline as bridge providers (vision, STT, etc.).
-- Outbound media: agent replies upload files from jvagent public URLs (`JVAGENT_PUBLIC_BASE_URL` + `/api/files/...`) to Meta before send.
+- Outbound media: agent replies upload files from jvagent signed proxy URLs (`JVAGENT_PUBLIC_BASE_URL` + `/p/{code}`, or `/api/files/...` when public reads are enabled) to Meta before send.
 - Typing: uses inbound `wamid` (`message_id`) with Meta’s read + typing_indicator API.
 - Outbound voice notes (native PTT bubble): requires OGG/OPUS; when TTS returns MP3, jvagent transcodes via **ffmpeg** on PATH (`libopus` → OGG) before upload when available; otherwise sends as a basic audio file.
 
@@ -446,6 +446,9 @@ Bridge-only variables (`WHATSAPP_API_URL`, `WHATSAPP_API_KEY`, `WHATSAPP_SESSION
 # Used for webhook generation and to resolve relative media URLs (e.g. TTS audio)
 # to absolute URLs when the adapter fetches files for sending
 JVAGENT_PUBLIC_BASE_URL=https://your-app.com
+
+# Signed proxy URLs for outbound media (TTS voice notes). Required when auth is enabled.
+JVSPATIAL_PROXY_ENABLED=true
 
 # Session Registration Timeout (optional, default: 120 seconds)
 # HTTP client timeout for session registration during startup
@@ -491,7 +494,7 @@ When `stt_action` and `tts_action` are configured, the action supports voice mes
 
 - **Inbound PTT**: Voice messages are transcribed via the STT action. The adapter passes the correct audio format (WhatsApp voice uses OGG-Opus) to the generic STT layer.
 - **Outbound voice reply**: When the user sends a PTT, the agent can respond with a synthesized voice message. ReplyAction applies voice-optimized formatting (short replies, no markdown), and the TTS action generates audio. The adapter sends the result as a voice message.
-- **Media URLs**: TTS and other media may return relative URLs (e.g. `/api/files/...` under the default `JVSPATIAL_API_PREFIX`). The adapter prepends `base_url` (from `JVAGENT_PUBLIC_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `JVAGENT_PUBLIC_BASE_URL` is set and publicly reachable.
+- **Media URLs**: TTS and other media return relative URLs. With `JVSPATIAL_PROXY_ENABLED=true`, TTS returns a signed proxy URL (e.g. `/p/{code}`) that adapters and LLM providers can fetch anonymously. The adapter prepends `base_url` (from `JVAGENT_PUBLIC_BASE_URL`) to produce absolute URLs before fetching for delivery. Ensure `JVAGENT_PUBLIC_BASE_URL` is set and publicly reachable. Direct `/api/files/...` URLs require authentication when auth is enabled unless `JVSPATIAL_FILES_PUBLIC_READ=true`.
 
 ## Images and Vision
 
@@ -645,11 +648,13 @@ After routing works, deferred logs should include **`Deferred whatsapp media bat
 
 **Symptoms**:
 - TTS voice replies or other media fail with fetch errors
-- Log shows relative URL path (e.g. `/api/files/...`)
+- Log shows relative URL path (e.g. `/api/files/...`) and a `401` for the media request
 
 **Solutions**:
-1. **Set JVAGENT_PUBLIC_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `JVAGENT_PUBLIC_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
-2. **Configure base_url on action**: In agent.yaml, set `base_url: "${JVAGENT_PUBLIC_BASE_URL}"` for the WhatsApp action.
+1. **Enable signed proxy URLs**: Set `JVSPATIAL_PROXY_ENABLED=true`. TTS `as_url=True` then returns `/p/{code}`, which the adapter can fetch anonymously.
+2. **Set JVAGENT_PUBLIC_BASE_URL**: The adapter needs an absolute URL to fetch media. Ensure `JVAGENT_PUBLIC_BASE_URL` is set (e.g. `https://your-app.com`) and is publicly reachable.
+3. **Configure base_url on action**: In agent.yaml, set `base_url: "${JVAGENT_PUBLIC_BASE_URL}"` for the WhatsApp action.
+4. **Fallback only**: `JVSPATIAL_FILES_PUBLIC_READ=true` makes direct `/api/files/...` reads anonymous, but exposes every stored file by path. Prefer proxy URLs.
 
 #### Problem: Lambda batch mode - media not processed until follow-up message
 

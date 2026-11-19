@@ -2,11 +2,12 @@
 
 Conversational lead capture for orchestrator agents — interview-style skill foundation without turn-lock.
 
-Capturing contact details is treated as a **standing goal**: after helping, the
-agent proactively asks for the next missing field (name → email/phone), tied to
-value, and eases off once the required fields are captured. Capture, retrieve,
-and sync persist to a single `LeadRecord` per user (recalled across sessions on
-return visits).
+Capturing profile fields is treated as a **standing goal**: after helping, the
+agent proactively asks for the next missing required field, tied to value, and
+eases off once required fields are captured. Capture, retrieve, and sync persist
+to a single `LeadRecord` per user (recalled across sessions on return visits).
+Field names, hand-off wording, and sync gates come from the skill — the core is
+agent-agnostic.
 
 ## Quick start
 
@@ -19,12 +20,24 @@ return visits).
    write/append tool (flat file, spreadsheet, email, CRM, DB). A skill may
    instead declare its own `sync:` block to self-contain sync.
 
+## Flexibility
+
+The action carries **no domain field vocabulary**: field names, `required`,
+validators, `capture_only`, `merge`, `relevant_when`, `label`, sync gates,
+`messages`, `channel_defaults`, and handlers come only from the skill's
+`leadgen:` block. Domain rewriting (item lines, order vs quote intent) belongs
+in skill hooks — never in the capture engine. `capture_only` fields are
+captured only when volunteered. `phone_locale` resolves a built-in
+`phone_<locale>` when no explicit `validator` is set (for example `GY`); an
+unknown locale falls back to E164. Sync gates and channel autofill default to
+empty. Refusals use the `decline_value` sentinel (any language).
+
 ## Tools
 
 | Tool | Purpose |
 |------|---------|
-| `leadgen__capture` | Save partial lead fields; returns `missing_fields` + `next_ask` + `gap_fill_priority`; auto-syncs when thresholds met |
-| `leadgen__retrieve` | Load profile + `missing_fields` + `next_ask` + `field_reference` |
+| `leadgen__capture` | Save partial lead fields; returns `status`, `fields_saved`, `fields`, `missing_fields`, `next_required`, `optional_fields`, `field_reference`, `validation_errors`, `sync_result`, and the ask `directive`; auto-syncs when thresholds met |
+| `leadgen__retrieve` | Load profile + `missing_fields`, `next_required`, `optional_fields`, `field_reference`, and the ask `directive` |
 | `leadgen__status` | Progress snapshot |
 | `leadgen__sync` | Manual sync (`sync_mode: manual`) |
 
@@ -33,6 +46,7 @@ return visits).
 - [frontmatter-schema.md](docs/frontmatter-schema.md)
 - [extending.md](docs/extending.md)
 - [thin-harness.md](docs/thin-harness.md)
+- [troubleshooting.md](docs/troubleshooting.md)
 
 ## Reference
 

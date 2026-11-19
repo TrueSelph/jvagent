@@ -757,10 +757,10 @@ Run one user/session, not one utterance per fresh user:
 Verify:
 
 ```bash
-python3 "$HOME/.config/kilo/skills/jv_prompt/scripts/live_report.py" \
+python3 "$HOME/.config/kilo/skills/jv-prompt/scripts/live_report.py" \
   --db <app> --agent <persisted-agent-id> --channel web \
   --run "<request>|<contact>|<second request>|<repeat>|<new intent>|thanks"
-python3 "$HOME/.config/kilo/skills/jv_prompt/scripts/db_read.py" \
+python3 "$HOME/.config/kilo/skills/jv-prompt/scripts/db_read.py" \
   --db <app> --entity HandoffQuestion --limit 5
 ```
 

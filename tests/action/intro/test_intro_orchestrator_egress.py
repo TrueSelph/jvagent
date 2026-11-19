@@ -1,8 +1,8 @@
 """IntroInteractAction + orchestrator egress integration.
 
-Pins the first-engagement contract: intro contributes a response parameter on
-``visitor.new_user``, and orchestrator egress (via ReplyAction gather/respond)
-honors it on the first reply.
+Pins the first-engagement contract: intro contributes orchestration + response
+parameters on ``visitor.new_user``, and orchestrator egress (via ReplyAction
+gather/respond) honors the response-scoped one on the first reply.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from jvagent.action.intro.intro_interact_action import IntroInteractAction
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
+from jvagent.action.parameters import SCOPE_ORCHESTRATION, SCOPE_RESPONSE
 from jvagent.action.reply.reply_action import ReplyAction
 
 pytest_plugins = ["tests.action.orchestrator.conftest"]
@@ -75,13 +76,17 @@ def _interaction_with_queues():
     return interaction
 
 
-async def test_intro_adds_parameter_for_new_user_only():
+async def test_intro_adds_dual_scope_parameters_for_new_user_only():
     intro = IntroInteractAction()
     interaction = _interaction_with_queues()
 
     await intro.execute(_IntroVisitor(new_user=True, interaction=interaction))
-    assert len(interaction.parameters) == 1
-    assert interaction.parameters[0]["response"] == intro.directive
+    assert len(interaction.parameters) == 2
+    scopes = {p["scope"] for p in interaction.parameters}
+    assert scopes == {SCOPE_ORCHESTRATION, SCOPE_RESPONSE}
+    for param in interaction.parameters:
+        assert param["key"] == "intro.first_message"
+        assert param["response"] == intro.directive
 
     interaction.parameters.clear()
     visitor = _IntroVisitor(new_user=False, interaction=interaction)

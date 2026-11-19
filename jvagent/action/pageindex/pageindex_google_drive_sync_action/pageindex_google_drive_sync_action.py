@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import inspect
 import logging
 import os
 import threading
@@ -14,7 +15,7 @@ from jvspatial.core.context import GraphContext
 from jvspatial.db import get_prime_database
 from jvspatial.exceptions import DatabaseError, ValidationError
 
-from jvagent.action.google.google_action import GoogleAction
+from jvagent.action.google.google_action import GoogleAction, GoogleAuthRequiredError
 from jvagent.action.pageindex.adapter import strip_redundant_md_suffix
 from jvagent.action.pageindex.config import (
     get_pageindex_node_summary,
@@ -919,6 +920,13 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             empty_result["message"] = f"No {self.page_index_action} found"
             return empty_result
 
+        # Fail here, before any folder listing or queue work, when the Drive
+        # credential cannot be used. ``inspect`` guards test doubles that are
+        # not real Actions and therefore have no coroutine preflight.
+        preflight = getattr(google_drive_action, "assert_authorized", None)
+        if inspect.iscoroutinefunction(preflight):
+            await preflight()
+
         if not google_drive_folders:
             google_drive_folders = self.google_drive_folders
         if not google_drive_folders:
@@ -1003,6 +1011,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         )
                         folder_name = str(drive_meta.get("name") or "")
                         drive_id = google_drive_folder_id
+                    except GoogleAuthRequiredError:
+                        raise
                     except Exception:
                         logger.warning(
                             "Could not fetch Drive folder/drive name for "
@@ -1019,6 +1029,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         exc_info=True,
                     )
                     _invalidate_drive_service()
+            except GoogleAuthRequiredError:
+                # A credential problem ends the run; continuing would only
+                # re-raise on the listing below with a less useful stack.
+                raise
             except Exception:
                 logger.warning(
                     "Could not fetch Drive folder/drive name for folder_id=%s",

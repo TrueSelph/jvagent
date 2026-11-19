@@ -143,8 +143,21 @@ class OrchestratorLoopMixin:
             parts.append(str(obs.get("args", "")))
         return "\n".join(parts)
 
+    @staticmethod
+    def _handoff_in_observations(observations) -> bool:
+        for obs in observations or ():
+            text = str(obs.get("observation", "") if isinstance(obs, dict) else obs)
+            if "Hand-off is complete" in text or "Hand-off already stated" in text:
+                return True
+        return False
+
     def _grounding_deflection(
-        self, text: str, substantive_tool_calls: int, corpus: str = "", visitor=None
+        self,
+        text: str,
+        substantive_tool_calls: int,
+        corpus: str = "",
+        visitor=None,
+        handoff_required: bool = False,
     ):
         """Guard observation from any ``enforcement: guard`` parameter in force.
 
@@ -164,6 +177,7 @@ class OrchestratorLoopMixin:
         context = {
             "substantive_tool_calls": substantive_tool_calls,
             "corpus": corpus,
+            "handoff_required": bool(handoff_required),
         }
         for param in parameters_with_enforcement(pool, ENFORCEMENT_GUARD):
             for detector in detectors_for(param, ENFORCEMENT_GUARD):
@@ -1041,6 +1055,7 @@ class OrchestratorLoopMixin:
                     str(get_prompt_cache().get("session_context") or ""),
                 ),
                 visitor,
+                handoff_required=self._handoff_in_observations(state.observations),
             )
             if nudge is not None:
                 state.grounding_deflections += 1
@@ -1289,6 +1304,7 @@ class OrchestratorLoopMixin:
                     str(get_prompt_cache().get("session_context") or ""),
                 ),
                 visitor,
+                handoff_required=self._handoff_in_observations(state.observations),
             )
             if nudge is not None:
                 state.grounding_deflections += 1

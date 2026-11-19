@@ -319,3 +319,61 @@ def test_resolve_scopes_from_auth_precedence(monkeypatch):
         )
         == "entry.create"
     )
+
+
+async def test_resolve_token_identity_reads_core_account_email(monkeypatch):
+    """The panel label comes from Core, not the storage key ``integral``."""
+    seen = {}
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, headers=None):
+            seen["url"] = url
+            seen["auth"] = (headers or {}).get("Authorization")
+            return _Resp(
+                200,
+                {
+                    "user": {
+                        "email": "admin@integral.com",
+                        "display_name": "Admin",
+                        "active_workspace_id": "n.Workspace.1",
+                    }
+                },
+            )
+
+    monkeypatch.setattr(ip.httpx, "AsyncClient", _Client)
+    identity = await ip.resolve_token_identity(MCP_URL, "tok", AS_META)
+
+    assert identity == {"email": "admin@integral.com"}
+    assert seen["url"] == f"{ORIGIN}/api/auth/me"
+    assert seen["auth"] == "Bearer tok"
+
+
+async def test_resolve_token_identity_without_token_is_empty():
+    assert await ip.resolve_token_identity(MCP_URL, "") == {}
+
+
+async def test_resolve_token_identity_falls_back_on_error(monkeypatch):
+    class _Boom:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, headers=None):
+            raise RuntimeError("core unreachable")
+
+    monkeypatch.setattr(ip.httpx, "AsyncClient", _Boom)
+    assert await ip.resolve_token_identity(MCP_URL, "tok", AS_META) == {}
