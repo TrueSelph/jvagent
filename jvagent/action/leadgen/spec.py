@@ -61,7 +61,7 @@ _FIELD_KEYS = frozenset(
 # existing skill parses; the values are ignored.
 _GAP_FILL_DEPRECATED = frozenset({"priority", "qualification", "project_qualification"})
 _GAP_FILL_KEYS = frozenset({"batch"}) | _GAP_FILL_DEPRECATED
-_RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined"})
+_RELEVANT_WHEN_KEYS = frozenset({"any_present", "not_declined", "values_not"})
 _SYNC_KEYS = frozenset(
     {"mode", "min_fields", "require_any", "destinations", "sales_contact", "timezone"}
 )
@@ -87,9 +87,10 @@ class FieldDef:
     capture_only: bool = False
     # Eligibility gate the catalogue carries for the model to honour: the field
     # is askable only once at least one ``any_present`` key is filled, and never
-    # while a ``not_declined`` key holds its own ``decline_value``. Absent =
-    # always eligible.
-    relevant_when: Optional[Dict[str, List[str]]] = None
+    # while a ``not_declined`` key holds its own ``decline_value``. ``values_not``
+    # maps a filled key to banned values (case-insensitive) that keep the field
+    # ineligible. Absent = always eligible.
+    relevant_when: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -197,7 +198,7 @@ def fields_reference(spec: LeadGenSpec) -> List[Dict[str, Any]]:
     return out
 
 
-def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, List[str]]]:
+def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, Any]]:
     if data is None or data == "":
         return None
     if not isinstance(data, dict):
@@ -205,13 +206,23 @@ def _parse_relevant_when(data: Any, *, path: str) -> Optional[Dict[str, List[str
     reject_unknown_keys(data, _RELEVANT_WHEN_KEYS, path=path)
     any_present = [str(x) for x in (data.get("any_present") or []) if x]
     not_declined = [str(x) for x in (data.get("not_declined") or []) if x]
-    if not any_present and not not_declined:
+    raw_values_not = data.get("values_not") or {}
+    if raw_values_not and not isinstance(raw_values_not, dict):
+        raise ValueError(f"{path}.values_not must be a mapping of field → list")
+    values_not: Dict[str, List[str]] = {}
+    for key, vals in raw_values_not.items():
+        banned = [str(v) for v in (vals or []) if v]
+        if banned:
+            values_not[str(key)] = banned
+    if not any_present and not not_declined and not values_not:
         return None
-    gate: Dict[str, List[str]] = {}
+    gate: Dict[str, Any] = {}
     if any_present:
         gate["any_present"] = any_present
     if not_declined:
         gate["not_declined"] = not_declined
+    if values_not:
+        gate["values_not"] = values_not
     return gate
 
 

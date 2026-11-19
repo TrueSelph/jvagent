@@ -10,6 +10,14 @@ and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) /
 
 ### Changed
 
+- **`IntroInteractAction` publishes dual-scope intro parameters.** On
+  `visitor.new_user` it now adds `intro.first_message` at both
+  `orchestration` and `response` scope with the configured `directive` text, so
+  the executive that authors the reply sees the custom intro (not only
+  ReplyAction compose). Agents should put the full intro in
+  `intro_interact_action.directive` and not duplicate it into
+  `orchestrator.system_prompt_extra`.
+
 - **Leadgen is LLM-driven.** Removed `ask_next` and the `pending_activation` guard;
   capture/retrieve results now include `optional_fields` (the optional pool with
   guidance) and `validation_errors`; the base procedure is generic (required first,

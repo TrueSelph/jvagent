@@ -174,6 +174,13 @@ async def sync_to_destinations(
         results[server_name] = "ok" if ok else msg
         if ok:
             any_success = True
+        else:
+            logger.warning(
+                "leadgen sync: destination=%s failed user=%s: %s",
+                server_name,
+                user_id,
+                msg,
+            )
 
     return results, any_success
 

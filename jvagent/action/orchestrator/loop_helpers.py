@@ -234,7 +234,7 @@ def _guard_missing_handoff_sentence(text: str, context: dict) -> str:
         return ""
     return (
         "This turn completes a hand-off: state in one sentence that the request "
-        "is already with the sales team, then the rest of the reply."
+        "is with the sales team, then the rest of the reply."
     )
 
 

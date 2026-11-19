@@ -88,7 +88,7 @@ allowed-tools: []
 | `decline_value` | string | Stored when the model sends the sentinel `decline_value` (refusal in any language) |
 | `merge` | bool | Comma-merge list fields on update |
 | `phone_locale` | string | Resolves a built-in `phone_<locale>` validator on any field (`GY`, `E164`); unknown locale falls back to E164 |
-| `relevant_when` | map | Optional gate: `{ any_present: [keys], not_declined: [keys] }` — askable only once a listed key is filled, and never while a `not_declined` key holds its own `decline_value`; the gate travels in `field_reference` |
+| `relevant_when` | map | Optional gate: `{ any_present: [keys], not_declined: [keys], values_not: { key: [banned…] } }` — askable only once a listed key is filled, never while a `not_declined` key holds its own `decline_value`, and never while a `values_not` key holds a banned value; the gate travels in `field_reference` |
 
 ## Messages
 

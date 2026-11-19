@@ -433,10 +433,11 @@ def handoff_directive(
                 "update it. Ask no field."
             )
         return (
-            "Hand-off is complete. Use the skill's hand-off sentence, then ask "
-            f"no field — the {who} declined or does not want more questions. "
-            "If they supplied an optional value this turn, say it is being added "
-            f"to the same {ent}."
+            "Hand-off is complete. Use the skill's hand-off sentence "
+            f"(the {ent} has been sent to the {team}), then ask no field — the "
+            f"{who} declined or does not want more questions. If they supplied "
+            "an optional value this turn, say it is being added to the same "
+            f"{ent}."
         )
     if stop_optional and optional_keys:
         if already_stated:
@@ -445,8 +446,9 @@ def handoff_directive(
                 f"The optional questions have ended for this {ent}. Ask no field."
             )
         return (
-            "Hand-off is complete. Use the skill's hand-off sentence and ask no "
-            f"field — the optional questions have ended for this {ent}."
+            "Hand-off is complete. Use the skill's hand-off sentence "
+            f"(the {ent} has been sent to the {team}) and ask no field — the "
+            f"optional questions have ended for this {ent}."
         )
     if not optional_keys:
         if already_stated:
@@ -456,8 +458,9 @@ def handoff_directive(
                 "Ask no field."
             )
         return (
-            "Hand-off is complete. Use the skill's hand-off sentence and ask no "
-            "further field this turn."
+            "Hand-off is complete. Use the skill's hand-off sentence "
+            f"(the {ent} has been sent to the {team}) and ask no further field "
+            "this turn."
         )
     next_optional = optional_keys[0]
     if already_stated:
@@ -472,12 +475,14 @@ def handoff_directive(
         )
     return (
         "Hand-off is complete. Use the skill's hand-off sentence "
-        f"(the {ent} is with the {team}), then ask for "
+        f"(the {ent} has been sent to the {team}), then ask for "
         f"`{next_optional}` now — one field, one question, in the {who}'s "
-        "terms and never by its key. Ask it because this turn supplied or "
-        "engaged with a value and did not refuse, skip, or signal done. A "
-        "refusal ends the optional questions: acknowledge in one sentence, do "
-        f"not rotate to another field — the {ent} is already filed."
+        "terms and never by its key, and state the reason inside that "
+        f"question: the details help the {team} prepare the follow-up. Ask it "
+        "because this turn supplied or engaged with a value and did not "
+        "refuse, skip, or signal done. A refusal ends the optional questions: "
+        "acknowledge in one sentence, do not rotate to another field — the "
+        f"{ent} stays with the {team} and anything added updates it."
     )
 
 

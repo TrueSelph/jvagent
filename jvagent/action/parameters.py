@@ -206,7 +206,7 @@ CORE_PARAMETERS: List[Dict[str, Any]] = [
         "scope": SCOPE_RESPONSE,
         "response": (
             "When a turn completes a hand-off, say in one sentence that the "
-            "request is already with the sales team before anything else."
+            "request is with the sales team before anything else."
         ),
     },
     {

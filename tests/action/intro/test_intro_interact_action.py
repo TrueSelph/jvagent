@@ -1,14 +1,15 @@
 """Tests for IntroInteractAction.
 
-The intro contributes its first-message self-introduction as a response-shaping
-*parameter* (HOW), not a *directive* (WHAT), so ReplyAction weaves the greeting
-into the same reply as the substantive answer instead of emitting a separate
-mandated section. These tests pin that contract with a lightweight fake visitor.
+The intro contributes its first-message self-introduction as orchestration-
+and response-scoped *parameters* (HOW), not a *directive* (WHAT), so the
+executive sees the custom intro when authoring the reply and ReplyAction can
+still weave the greeting into the same reply as the substantive answer.
 """
 
 import pytest
 
 from jvagent.action.intro.intro_interact_action import IntroInteractAction
+from jvagent.action.parameters import SCOPE_ORCHESTRATION, SCOPE_RESPONSE
 
 
 class _FakeVisitor:
@@ -30,18 +31,20 @@ class _FakeVisitor:
 
 
 @pytest.mark.asyncio
-async def test_new_user_adds_parameter_not_directive():
+async def test_new_user_adds_dual_scope_parameters_not_directive():
     action = IntroInteractAction()
     visitor = _FakeVisitor(new_user=True)
 
     await action.execute(visitor)
 
     assert visitor.directives == []  # no standalone directive
-    assert len(visitor.parameters) == 1
-    param = visitor.parameters[0]
-    assert param["response"] == action.directive
-    # Unconditional (interaction-scoped): the action already gates on new_user.
-    assert "condition" not in param or not param["condition"]
+    assert len(visitor.parameters) == 2
+    scopes = {p["scope"] for p in visitor.parameters}
+    assert scopes == {SCOPE_ORCHESTRATION, SCOPE_RESPONSE}
+    for param in visitor.parameters:
+        assert param["key"] == "intro.first_message"
+        assert param["response"] == action.directive
+        assert "condition" not in param or not param["condition"]
 
 
 @pytest.mark.asyncio
